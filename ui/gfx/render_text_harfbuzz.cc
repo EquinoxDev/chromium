@@ -12,7 +12,6 @@
 #include "base/feature_list.h"
 #include "base/hash.h"
 #include "base/i18n/base_i18n_switches.h"
-#include "base/i18n/bidi_line_iterator.h"
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/char_iterator.h"
 #include "base/macros.h"
@@ -28,7 +27,9 @@
 #include "third_party/icu/source/common/unicode/ubidi.h"
 #include "third_party/icu/source/common/unicode/utf16.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkFontMetrics.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "ui/gfx/bidi_line_iterator.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/decorated_text.h"
 #include "ui/gfx/font.h"
@@ -195,10 +196,10 @@ size_t FindRunBreakingCharacter(const base::string16& text,
 // Consider 3 characters with the script values {Kana}, {Hira, Kana}, {Kana}.
 // Without script extensions only the first script in each set would be taken
 // into account, resulting in 3 runs where 1 would be enough.
-int ScriptInterval(const base::string16& text,
-                   size_t start,
-                   size_t length,
-                   UScriptCode* script) {
+size_t ScriptInterval(const base::string16& text,
+                      size_t start,
+                      size_t length,
+                      UScriptCode* script) {
   DCHECK_GT(length, 0U);
 
   UScriptCode scripts[kMaxScripts] = { USCRIPT_INVALID_CODE };
@@ -1100,9 +1101,9 @@ void ShapeRunWithFont(const ShapeRunWithFontInput& in,
   // Note that the value of the |item_offset| argument (here specified as
   // |in.range.start()|) does affect the result, so we will have to adjust
   // the computed offsets.
-  hb_buffer_add_utf16(buffer,
-                      reinterpret_cast<const uint16_t*>(in.text.c_str()),
-                      in.text.length(), in.range.start(), in.range.length());
+  hb_buffer_add_utf16(
+      buffer, reinterpret_cast<const uint16_t*>(in.text.c_str()),
+      static_cast<int>(in.text.length()), in.range.start(), in.range.length());
   hb_buffer_set_script(buffer, ICUScriptToHBScript(in.script));
   hb_buffer_set_direction(buffer,
                           in.is_rtl ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
@@ -1697,18 +1698,9 @@ void RenderTextHarfBuzz::ItemizeTextToRuns(
   // If ICU fails to itemize the text, we create a run that spans the entire
   // text. This is needed because leaving the runs set empty causes some clients
   // to misbehave since they expect non-zero text metrics from a non-empty text.
-  base::i18n::BiDiLineIterator bidi_iterator;
-  base::i18n::BiDiLineIterator::CustomBehavior behavior =
-      base::i18n::BiDiLineIterator::CustomBehavior::NONE;
+  ui::gfx::BiDiLineIterator bidi_iterator;
 
-  // If the feature flag is enabled, use the special URL behaviour on the Bidi
-  // algorithm, if this is a URL.
-  if (base::FeatureList::IsEnabled(features::kLeftToRightUrls) &&
-      directionality_mode() == DIRECTIONALITY_AS_URL) {
-    behavior = base::i18n::BiDiLineIterator::CustomBehavior::AS_URL;
-  }
-
-  if (!bidi_iterator.Open(text, GetTextDirection(text), behavior)) {
+  if (!bidi_iterator.Open(text, GetTextDirection(text))) {
     auto run = std::make_unique<internal::TextRunHarfBuzz>(
         font_list().GetPrimaryFont());
     run->range = Range(0, text.length());
@@ -1735,12 +1727,12 @@ void RenderTextHarfBuzz::ItemizeTextToRuns(
     Range run_range;
     internal::TextRunHarfBuzz::FontParams font_params(primary_font);
     run_range.set_start(run_break);
-    font_params.italic = style.style(ITALIC);
+    font_params.italic = style.style(TEXT_STYLE_ITALIC);
     font_params.baseline_type = style.baseline();
     font_params.font_size = style.font_size_override();
-    font_params.strike = style.style(STRIKE);
-    font_params.underline = style.style(UNDERLINE);
-    font_params.heavy_underline = style.style(HEAVY_UNDERLINE);
+    font_params.strike = style.style(TEXT_STYLE_STRIKE);
+    font_params.underline = style.style(TEXT_STYLE_UNDERLINE);
+    font_params.heavy_underline = style.style(TEXT_STYLE_HEAVY_UNDERLINE);
     font_params.weight = style.weight();
     int32_t script_item_break = 0;
     bidi_iterator.GetLogicalRun(run_break, &script_item_break,

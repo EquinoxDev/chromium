@@ -24,6 +24,9 @@
 #include "base/trace_event/trace_event.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/windows_version.h"
+#include "third_party/skia/include/core/SkPath.h"
+#include "ui/accessibility/accessibility_switches.h"
+#include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/accessibility/platform/ax_system_caret_win.h"
 #include "ui/base/ime/input_method.h"
@@ -47,7 +50,6 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/icon_util.h"
-#include "ui/gfx/path.h"
 #include "ui/gfx/path_win.h"
 #include "ui/gfx/win/hwnd_util.h"
 #include "ui/gfx/win/rendering_window_manager.h"
@@ -397,7 +399,6 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       pen_processor_(
           &id_generator_,
           base::FeatureList::IsEnabled(features::kDirectManipulationStylus)),
-      in_size_loop_(false),
       touch_down_contexts_(0),
       last_mouse_hwheel_time_(0),
       dwm_transition_desired_(false),
@@ -850,6 +851,7 @@ void HWNDMessageHandler::SetCursor(HCURSOR cursor) {
 }
 
 void HWNDMessageHandler::FrameTypeChanged() {
+  needs_dwm_frame_clear_ = true;
   if (!custom_window_region_.is_valid() && IsFrameSystemDrawn())
     dwm_transition_desired_ = true;
   if (!dwm_transition_desired_ || !IsFullscreen())
@@ -1424,7 +1426,7 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
     OffsetRect(&work_rect, -window_rect.left, -window_rect.top);
     new_region.reset(CreateRectRgnIndirect(&work_rect));
   } else {
-    gfx::Path window_mask;
+    SkPath window_mask;
     delegate_->GetWindowMask(gfx::Size(window_rect.right - window_rect.left,
                                        window_rect.bottom - window_rect.top),
                              &window_mask);
@@ -1691,9 +1693,11 @@ void HWNDMessageHandler::OnEnterSizeMove() {
 LRESULT HWNDMessageHandler::OnEraseBkgnd(HDC dc) {
   gfx::Insets insets;
   if (ui::win::IsAeroGlassEnabled() &&
-      delegate_->GetDwmFrameInsetsInPixels(&insets) && !insets.IsEmpty()) {
+      delegate_->GetDwmFrameInsetsInPixels(&insets) && !insets.IsEmpty() &&
+      needs_dwm_frame_clear_) {
     // This is necessary to avoid white flashing in the titlebar area around the
     // minimize/maximize/close buttons.
+    needs_dwm_frame_clear_ = false;
     RECT client_rect;
     GetClientRect(hwnd(), &client_rect);
     base::win::ScopedGDIObject<HBRUSH> brush(CreateSolidBrush(0));
@@ -1765,13 +1769,31 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
   DWORD obj_id = static_cast<DWORD>(static_cast<DWORD_PTR>(l_param));
 
   // Accessibility readers will send an OBJID_CLIENT message
-  if (delegate_->GetNativeViewAccessible() &&
-      static_cast<DWORD>(OBJID_CLIENT) == obj_id) {
-    // Retrieve MSAA dispatch object for the root view.
-    Microsoft::WRL::ComPtr<IAccessible> root(
-        delegate_->GetNativeViewAccessible());
-    reference_result = LresultFromObject(IID_IAccessible, w_param,
-        static_cast<IAccessible*>(root.Detach()));
+  if (delegate_->GetNativeViewAccessible()) {
+    bool is_uia_request = static_cast<DWORD>(UiaRootObjectId) == obj_id;
+    bool is_msaa_request = static_cast<DWORD>(OBJID_CLIENT) == obj_id;
+
+    // Expose either the UIA or the MSAA implementation, but not both, depending
+    // on the state of the feature flag.
+    if (is_uia_request &&
+        ::switches::IsExperimentalAccessibilityPlatformUIAEnabled()) {
+      // Retrieve UIA object for the root view.
+      if (!ax_fragment_root_)
+        ax_fragment_root_ = std::make_unique<ui::AXFragmentRootWin>(
+            hwnd(), delegate_->GetNativeViewAccessible());
+      Microsoft::WRL::ComPtr<IRawElementProviderSimple> root;
+      ax_fragment_root_->GetNativeViewAccessible()->QueryInterface(
+          IID_PPV_ARGS(&root));
+      reference_result =
+          UiaReturnRawElementProvider(hwnd(), w_param, l_param, root.Get());
+    } else if (is_msaa_request &&
+               !::switches::IsExperimentalAccessibilityPlatformUIAEnabled()) {
+      // Retrieve MSAA dispatch object for the root view.
+      Microsoft::WRL::ComPtr<IAccessible> root(
+          delegate_->GetNativeViewAccessible());
+      reference_result = LresultFromObject(
+          IID_IAccessible, w_param, static_cast<IAccessible*>(root.Detach()));
+    }
   } else if (::GetFocus() == hwnd() && ax_system_caret_ &&
              static_cast<DWORD>(OBJID_CARET) == obj_id) {
     Microsoft::WRL::ComPtr<IAccessible> ax_system_caret_accessible =
@@ -2475,22 +2497,12 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
     return;
   }
 
+  if (delegate_->HandleCommand(notification_code))
+    return;
+
   // If the delegate can't handle it, the system implementation will be called.
-  if (!delegate_->HandleCommand(notification_code)) {
-    // If the window is being resized by dragging the borders of the window
-    // with the mouse/touch/keyboard, we flag as being in a size loop.
-    if ((notification_code & sc_mask) == SC_SIZE)
-      in_size_loop_ = true;
-    base::WeakPtr<HWNDMessageHandler> ref(
-        msg_handler_weak_factory_.GetWeakPtr());
-
-    DefWindowProc(hwnd(), WM_SYSCOMMAND, notification_code,
-                  MAKELPARAM(point.x(), point.y()));
-
-    if (!ref.get())
-      return;
-    in_size_loop_ = false;
-  }
+  DefWindowProc(hwnd(), WM_SYSCOMMAND, notification_code,
+                MAKELPARAM(point.x(), point.y()));
 }
 
 void HWNDMessageHandler::OnThemeChanged() {
@@ -2738,9 +2750,9 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
     window_pos->flags &= ~SWP_SHOWWINDOW;
   }
 
-  if (window_pos->flags & SWP_SHOWWINDOW)
+  if (window_pos->flags & SWP_SHOWWINDOW) {
     delegate_->HandleVisibilityChanging(true);
-  else if (window_pos->flags & SWP_HIDEWINDOW) {
+  } else if (window_pos->flags & SWP_HIDEWINDOW) {
     SetDwmFrameExtension(DwmFrameState::OFF);
     delegate_->HandleVisibilityChanging(false);
   }
@@ -3130,8 +3142,10 @@ void HWNDMessageHandler::PerformDwmTransition() {
     // open they will re-appear with a non-deterministic Z-order.
     // Note: caused http://crbug.com/895855, where a laptop lid close+reopen
     // puts window in the background but acts like a foreground window. Fixed by
-    // not calling this unless DWM composition actually changes.
-    UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER;
+    // not calling this unless DWM composition actually changes. Finally, since
+    // we don't want windows stealing focus if they're not already active, we
+    // set SWP_NOACTIVATE.
+    UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
     SetWindowPos(hwnd(), NULL, 0, 0, 0, 0, flags | SWP_HIDEWINDOW);
     SetWindowPos(hwnd(), NULL, 0, 0, 0, 0, flags | SWP_SHOWWINDOW);
   }

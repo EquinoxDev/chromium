@@ -10,7 +10,6 @@
 #include <set>
 #include <unordered_map>
 
-#include "base/containers/hash_tables.h"
 #include "base/observer_list.h"
 #include "ui/accessibility/ax_export.h"
 #include "ui/accessibility/ax_node.h"
@@ -171,7 +170,9 @@ class AX_EXPORT AXTree : public AXNode::OwnerTree {
                   bool is_new_root,
                   AXTreeUpdateState* update_state);
 
-  void CallNodeChangeCallbacks(AXNode* node, const AXNodeData& new_data);
+  void CallNodeChangeCallbacks(AXNode* node,
+                               const AXNodeData& old_data,
+                               const AXNodeData& new_data);
 
   void UpdateReverseRelations(AXNode* node, const AXNodeData& new_data);
 

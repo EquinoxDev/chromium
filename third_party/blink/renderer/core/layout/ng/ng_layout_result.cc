@@ -17,7 +17,11 @@ namespace blink {
 NGLayoutResult::NGLayoutResult(
     scoped_refptr<const NGPhysicalFragment> physical_fragment,
     NGBoxFragmentBuilder* builder)
+<<<<<<< HEAD
     : NGLayoutResult(builder) {
+=======
+    : NGLayoutResult(builder, /* cache_space */ true) {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   intrinsic_block_size_ = builder->intrinsic_block_size_;
   minimal_space_shortage_ = builder->minimal_space_shortage_;
   initial_break_before_ = builder->initial_break_before_;
@@ -31,14 +35,22 @@ NGLayoutResult::NGLayoutResult(
 NGLayoutResult::NGLayoutResult(
     scoped_refptr<const NGPhysicalFragment> physical_fragment,
     NGLineBoxFragmentBuilder* builder)
+<<<<<<< HEAD
     : NGLayoutResult(builder) {
+=======
+    : NGLayoutResult(builder, /* cache_space */ false) {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   physical_fragment_ = std::move(physical_fragment);
   oof_positioned_descendants_ = std::move(builder->oof_positioned_descendants_);
 }
 
 NGLayoutResult::NGLayoutResult(NGLayoutResultStatus status,
                                NGBoxFragmentBuilder* builder)
+<<<<<<< HEAD
     : NGLayoutResult(builder) {
+=======
+    : NGLayoutResult(builder, /* cache_space */ false) {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   adjoining_floats_ = kFloatTypeNone;
   depends_on_percentage_block_size_ = false;
   status_ = status;
@@ -49,7 +61,12 @@ NGLayoutResult::NGLayoutResult(NGLayoutResultStatus status,
 // We can't use =default here because RefCounted can't be copied.
 NGLayoutResult::NGLayoutResult(const NGLayoutResult& other,
                                base::Optional<LayoutUnit> bfc_block_offset)
+<<<<<<< HEAD
     : physical_fragment_(other.physical_fragment_),
+=======
+    : space_(other.space_),
+      physical_fragment_(other.physical_fragment_),
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       oof_positioned_descendants_(other.oof_positioned_descendants_),
       unpositioned_list_marker_(other.unpositioned_list_marker_),
       exclusion_space_(other.exclusion_space_),
@@ -60,6 +77,7 @@ NGLayoutResult::NGLayoutResult(const NGLayoutResult& other,
       minimal_space_shortage_(other.minimal_space_shortage_),
       initial_break_before_(other.initial_break_before_),
       final_break_after_(other.final_break_after_),
+      has_valid_space_(other.has_valid_space_),
       has_forced_break_(other.has_forced_break_),
       is_pushed_by_floats_(other.is_pushed_by_floats_),
       adjoining_floats_(other.adjoining_floats_),
@@ -68,12 +86,25 @@ NGLayoutResult::NGLayoutResult(const NGLayoutResult& other,
           other.depends_on_percentage_block_size_),
       status_(other.status_) {}
 
+<<<<<<< HEAD
 NGLayoutResult::NGLayoutResult(NGContainerFragmentBuilder* builder)
     : unpositioned_list_marker_(builder->unpositioned_list_marker_),
+=======
+NGLayoutResult::NGLayoutResult(NGContainerFragmentBuilder* builder,
+                               bool cache_space)
+    : space_(cache_space && builder->space_
+                 ? NGConstraintSpace(*builder->space_)
+                 : NGConstraintSpace()),
+      unpositioned_list_marker_(builder->unpositioned_list_marker_),
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       exclusion_space_(std::move(builder->exclusion_space_)),
       bfc_line_offset_(builder->bfc_line_offset_),
       bfc_block_offset_(builder->bfc_block_offset_),
       end_margin_strut_(builder->end_margin_strut_),
+<<<<<<< HEAD
+=======
+      has_valid_space_(cache_space && builder->space_),
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       has_forced_break_(false),
       is_pushed_by_floats_(builder->is_pushed_by_floats_),
       adjoining_floats_(builder->adjoining_floats_),

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
 #include "base/macros.h"
@@ -26,6 +27,7 @@
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_controller_delegate.h"
@@ -88,6 +90,10 @@ const int kBubbleTipSizeTopBottom = 11;
 // trigger a mouse menu item activation (regardless of how long the menu has
 // been showing).
 const float kMaximumLengthMovedToActivate = 4.0f;
+
+// Time to complete a cycle of the menu item alert animation.
+constexpr base::TimeDelta kAlertAnimationThrobDuration =
+    base::TimeDelta::FromMilliseconds(1000);
 
 // Returns true if the mnemonic of |menu| matches key.
 bool MatchesMnemonic(MenuItemView* menu, base::char16 key) {
@@ -706,12 +712,15 @@ void MenuController::OnMouseReleased(SubmenuView* source,
     }
   }
 
-  // We can use Ctrl+click or the middle mouse button to recursively open urls
-  // for selected folder menu items. If it's only a left click, show the
-  // contents of the folder.
-  if (!part.is_scroll() && part.menu &&
-      !(part.should_submenu_show && part.menu->HasSubmenu() &&
-        (event.flags() & ui::EF_LEFT_MOUSE_BUTTON))) {
+  // A plain left click on a folder that has children serves to open that folder
+  // by setting the selection, rather than executing a command via the delegate
+  // or doing anything else.
+  // TODO(ellyjones): Why isn't a case needed here for EF_CONTROL_DOWN?
+  bool plain_left_click_with_children =
+      part.should_submenu_show && part.menu && part.menu->HasSubmenu() &&
+      (event.flags() & ui::EF_LEFT_MOUSE_BUTTON) &&
+      !(event.flags() & ui::EF_COMMAND_DOWN);
+  if (!part.is_scroll() && part.menu && !plain_left_click_with_children) {
     if (active_mouse_view_tracker_->view()) {
       SendMouseReleaseToActiveView(source, event);
       return;
@@ -781,7 +790,7 @@ void MenuController::OnMouseMoved(SubmenuView* source,
     ConvertLocatedEventForRootView(source, root_view, &event_for_root);
     View* view = root_view->GetEventHandlerForPoint(event_for_root.location());
     Button* button = Button::AsButton(view);
-    if (button && button->IsHotTracked())
+    if (button)
       SetHotTrackedButton(button);
   }
 
@@ -921,7 +930,7 @@ void MenuController::ViewHierarchyChanged(
 bool MenuController::GetDropFormats(
     SubmenuView* source,
     int* formats,
-    std::set<ui::Clipboard::FormatType>* format_types) {
+    std::set<ui::ClipboardFormatType>* format_types) {
   return source->GetMenuItem()->GetDelegate()->GetDropFormats(
       source->GetMenuItem(), formats, format_types);
 }
@@ -1197,6 +1206,18 @@ void MenuController::OnMenuItemDestroying(MenuItemView* menu_item) {
   if (menu_closure_animation_ && menu_closure_animation_->item() == menu_item)
     menu_closure_animation_.reset();
 #endif
+  UnregisterAlertedItem(menu_item);
+}
+
+void MenuController::AnimationProgressed(const gfx::Animation* animation) {
+  DCHECK_EQ(animation, &alert_animation_);
+
+  // Schedule paints at each alerted menu item. The menu items pull the
+  // animation's current value in their OnPaint methods.
+  for (MenuItemView* item : alerted_items_) {
+    if (item->GetParentMenuItem()->SubmenuIsShowing())
+      item->SchedulePaint();
+  }
 }
 
 void MenuController::SetSelection(MenuItemView* menu_item,
@@ -1246,9 +1267,6 @@ void MenuController::SetSelection(MenuItemView* menu_item,
     menu_item->SetSelectionOfActionableSubmenu(
         (selection_types & SELECTION_OPEN_SUBMENU) != 0);
   }
-
-  if (menu_item && menu_item->GetDelegate())
-    menu_item->GetDelegate()->SelectionChanged(menu_item);
 
   DCHECK(menu_item || (selection_types & SELECTION_EXIT) != 0);
 
@@ -1490,7 +1508,8 @@ MenuController::MenuController(bool for_drop,
                                internal::MenuControllerDelegate* delegate)
     : for_drop_(for_drop),
       active_mouse_view_tracker_(std::make_unique<ViewTracker>()),
-      delegate_(delegate) {
+      delegate_(delegate),
+      alert_animation_(this) {
   delegate_stack_.push_back(delegate_);
   active_instance_ = this;
 }
@@ -1842,9 +1861,7 @@ void MenuController::CommitPendingSelection() {
 
   // Hide the old menu.
   for (size_t i = paths_differ_at; i < current_path.size(); ++i) {
-    if (current_path[i]->HasSubmenu()) {
-      current_path[i]->GetSubmenu()->Hide();
-    }
+    CloseMenu(current_path[i]);
   }
 
   // Copy pending to state_, making sure to preserve the direction menus were
@@ -1907,6 +1924,10 @@ void MenuController::CloseMenu(MenuItemView* item) {
   DCHECK(item);
   if (!item->HasSubmenu())
     return;
+
+  for (int i = 0; i < item->GetSubmenu()->GetMenuItemCount(); ++i)
+    UnregisterAlertedItem(item->GetSubmenu()->GetMenuItemAt(i));
+
   item->GetSubmenu()->Hide();
 }
 
@@ -1943,12 +1964,18 @@ void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
   state_.open_leading.push_back(resulting_direction);
   bool do_capture = (!did_capture_ && !for_drop_);
   showing_submenu_ = true;
-  if (show) {
-    // Menus are the only place using kGroupingPropertyKey, so any value (other
-    // than 0) is fine.
-    const int kGroupingId = 1001;
 
+  // Register alerted MenuItemViews so we can animate them. We do this here to
+  // handle both newly-opened submenus and submenus that have changed.
+  for (int i = 0; i < item->GetSubmenu()->GetMenuItemCount(); ++i) {
+    MenuItemView* const subitem = item->GetSubmenu()->GetMenuItemAt(i);
+    if (subitem->is_alerted())
+      RegisterAlertedItem(subitem);
+  }
+
+  if (show) {
     item->GetSubmenu()->ShowAt(owner_, bounds, do_capture);
+
     // Figure out if the mouse is under the menu; if so, remember the mouse
     // location so we can ignore the first mouse move event(s) with that
     // location. We do this after ShowAt because ConvertPointFromScreen
@@ -1963,9 +1990,15 @@ void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
         menu_open_mouse_loc_ = mouse_pos;
     }
 
+    // Menus are the only place using kGroupingPropertyKey, so any value (other
+    // than 0) is fine.
+    constexpr int kGroupingId = 1001;
     item->GetSubmenu()->GetWidget()->SetNativeWindowProperty(
         TooltipManager::kGroupingPropertyKey,
         reinterpret_cast<void*>(kGroupingId));
+
+    // Set the selection indices for this menu level based on traversal order.
+    SetSelectionIndices(item);
   } else {
     item->GetSubmenu()->Reposition(bounds);
   }
@@ -2241,7 +2274,7 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
 
   if (!item->GetParentMenuItem()) {
     // This is a top-level menu, position it relative to the anchor bounds.
-    const gfx::Rect& anchor_bounds = pending_state_.initial_bounds;
+    const gfx::Rect& anchor_bounds = state_.initial_bounds;
 
     // First the size gets reduced to the possible space.
     if (!monitor_bounds.IsEmpty()) {
@@ -2261,6 +2294,14 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
       } else if (state_.anchor == MENU_ANCHOR_BUBBLE_BELOW) {
         max_height = monitor_bounds.bottom() - anchor_bounds.bottom() +
                      kBubbleTipSizeTopBottom;
+      } else if (state_.anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_ABOVE) {
+        // Don't consider |border_and_shadow_insets| because when the max size
+        // is enforced, the scroll view is shown and the md shadows are not
+        // applied.
+        max_height =
+            std::max(anchor_bounds.y() - monitor_bounds.y(),
+                     monitor_bounds.bottom() - anchor_bounds.bottom()) -
+            menu_config.touchable_anchor_offset;
       }
       // The menu should always have a non-empty available area.
       DCHECK_GE(max_width, kBubbleTipSizeLeftRight);
@@ -2300,11 +2341,13 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
     } else if (state_.anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_ABOVE) {
       // Align the left edges of the menu and anchor, and the bottom of the menu
       // with the top of the anchor.
-      x = anchor_bounds.x() - border_and_shadow_insets.left();
+      x = std::max(monitor_bounds.x(),
+                   anchor_bounds.x() - border_and_shadow_insets.left());
       y = anchor_bounds.y() - menu_size.height() +
           border_and_shadow_insets.bottom() -
           menu_config.touchable_anchor_offset;
-      // Align the right of the container with the right of the anchor.
+
+      // Align the right of the menu with the right of the anchor.
       if (x + menu_size.width() > monitor_bounds.width()) {
         x = anchor_bounds.right() - menu_size.width() +
             border_and_shadow_insets.right();
@@ -2326,10 +2369,13 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
         x = anchor_bounds.right() - border_and_shadow_insets.left() +
             menu_config.touchable_anchor_offset;
       }
-      // Align the bottom of the menu to the bottom of the anchor.
-      if (y + menu_size.height() > monitor_bounds.height()) {
+      // Prefer aligning the bottom of the menu to the bottom of the anchor.
+      if (y + menu_size.height() > monitor_bounds.bottom()) {
         y = anchor_bounds.bottom() - menu_size.height() +
             border_and_shadow_insets.bottom();
+        // For some very tall menus, this may still be off screen.
+        if (y < monitor_bounds.y())
+          y = monitor_bounds.y();
       }
     } else if (state_.anchor == MENU_ANCHOR_BUBBLE_TOUCHABLE_RIGHT) {
       // Align the left of the menu with the right of the anchor, and the top of
@@ -2343,7 +2389,7 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(MenuItemView* item,
             border_and_shadow_insets.right() -
             menu_config.touchable_anchor_offset;
       }
-      if (y + menu_size.height() > monitor_bounds.height()) {
+      if (y + menu_size.height() > monitor_bounds.bottom()) {
         // Align the bottom of the menu with the bottom of the anchor.
         y = anchor_bounds.bottom() - menu_size.height() +
             border_and_shadow_insets.bottom();
@@ -2441,6 +2487,37 @@ void MenuController::IncrementSelection(
   }
 }
 
+void MenuController::SetSelectionIndices(MenuItemView* parent) {
+  std::vector<View*> ordering;
+  SubmenuView* const submenu = parent->GetSubmenu();
+
+  for (int i = 0; i < submenu->GetMenuItemCount(); ++i) {
+    MenuItemView* const item = submenu->GetMenuItemAt(i);
+    if (!item->visible() || !item->enabled())
+      continue;
+
+    bool found_focusable = false;
+    if (item->has_children()) {
+      for (View* child = GetInitialFocusableView(item, true); child;
+           child = GetNextFocusableView(item, child, true)) {
+        ordering.push_back(child);
+        found_focusable = true;
+      }
+    }
+    if (!found_focusable)
+      ordering.push_back(item);
+  }
+
+  if (ordering.empty())
+    return;
+
+  const int set_size = ordering.size();
+  for (int i = 0; i < set_size; ++i) {
+    const int set_pos = i + 1;  // 1-indexed
+    ordering[i]->GetViewAccessibility().OverridePosInSet(set_pos, set_size);
+  }
+}
+
 void MenuController::MoveSelectionToFirstOrLastItem(
     SelectionIncrementDirectionType direction) {
   MenuItemView* item = pending_state_.item;
@@ -2507,6 +2584,10 @@ void MenuController::OpenSubmenuChangeSelectionIfCan() {
   if (item->GetSubmenu()->GetMenuItemCount() > 0)
     to_select = FindInitialSelectableMenuItem(item, INCREMENT_SELECTION_DOWN);
   if (to_select) {
+    // Selection is going from the ACTIONABLE to the SUBMENU region of the
+    // ACTIONABLE_SUBMENU, so highlight the SUBMENU area.
+    if (item->type_ == MenuItemView::ACTIONABLE_SUBMENU)
+      item->SetSelectionOfActionableSubmenu(true);
     SetSelection(to_select, SELECTION_UPDATE_IMMEDIATELY);
     return;
   }
@@ -2956,6 +3037,24 @@ bool MenuController::ShouldContinuePrefixSelection() const {
   if (!item->SubmenuIsShowing())
     item = item->GetParentMenuItem();
   return item->GetSubmenu()->GetPrefixSelector()->ShouldContinueSelection();
+}
+
+void MenuController::RegisterAlertedItem(MenuItemView* item) {
+  alerted_items_.insert(item);
+  // Start animation if necessary. We stop the animation once no alerted
+  // items are showing.
+  if (!alert_animation_.is_animating()) {
+    alert_animation_.SetThrobDuration(
+        kAlertAnimationThrobDuration.InMilliseconds());
+    alert_animation_.StartThrobbing(-1);
+  }
+}
+
+void MenuController::UnregisterAlertedItem(MenuItemView* item) {
+  alerted_items_.erase(item);
+  // Stop animation if necessary.
+  if (alerted_items_.empty())
+    alert_animation_.Stop();
 }
 
 bool MenuController::CanProcessInputEvents() const {

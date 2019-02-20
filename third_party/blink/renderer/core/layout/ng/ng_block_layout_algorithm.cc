@@ -352,7 +352,7 @@ NGLogicalOffset NGBlockLayoutAlgorithm::CalculateLogicalOffset(
   return {inline_offset, LayoutUnit()};
 }
 
-scoped_refptr<NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
+scoped_refptr<const NGLayoutResult> NGBlockLayoutAlgorithm::Layout() {
   NGBoxStrut borders = ComputeBorders(ConstraintSpace(), Node());
   NGBoxStrut padding = ComputePadding(ConstraintSpace(), Style());
   border_padding_ = borders + padding;
@@ -709,11 +709,11 @@ const NGPaintFragment* NGBlockLayoutAlgorithm::ReusableLineBoxContainer(
     return nullptr;
 
   // Cached fragments are not for intermediate layout.
-  if (constraint_space_.IsIntermediateLayout())
+  if (ConstraintSpace().IsIntermediateLayout())
     return nullptr;
 
   // Block fragmentation is not supported yet.
-  if (constraint_space_.HasBlockFragmentation())
+  if (ConstraintSpace().HasBlockFragmentation())
     return nullptr;
 
   // Laying out from a break token is not supported yet, because this logic
@@ -727,7 +727,7 @@ const NGPaintFragment* NGBlockLayoutAlgorithm::ReusableLineBoxContainer(
   if (!paint_fragment)
     return nullptr;
 
-  if (!inline_node.PrepareReuseFragments(constraint_space_))
+  if (!inline_node.PrepareReuseFragments(ConstraintSpace()))
     return nullptr;
 
   return paint_fragment;
@@ -969,7 +969,7 @@ bool NGBlockLayoutAlgorithm::HandleNewFormattingContext(
                           !child_margin_got_separated &&
                           child_determined_bfc_offset;
   NGLayoutOpportunity opportunity;
-  scoped_refptr<NGLayoutResult> layout_result;
+  scoped_refptr<const NGLayoutResult> layout_result;
   std::tie(layout_result, opportunity) = LayoutNewFormattingContext(
       child, child_break_token, child_data,
       {child_origin_line_offset, child_bfc_offset_estimate}, abort_if_cleared);
@@ -1094,7 +1094,7 @@ bool NGBlockLayoutAlgorithm::HandleNewFormattingContext(
   return true;
 }
 
-std::pair<scoped_refptr<NGLayoutResult>, NGLayoutOpportunity>
+std::pair<scoped_refptr<const NGLayoutResult>, NGLayoutOpportunity>
 NGBlockLayoutAlgorithm::LayoutNewFormattingContext(
     NGLayoutInputNode child,
     const NGBreakToken* child_break_token,
@@ -1170,7 +1170,7 @@ NGBlockLayoutAlgorithm::LayoutNewFormattingContext(
     // exclusion space.
     DCHECK(child_space.ExclusionSpace().IsEmpty());
 
-    scoped_refptr<NGLayoutResult> layout_result =
+    scoped_refptr<const NGLayoutResult> layout_result =
         ToNGBlockNode(child).Layout(child_space, child_break_token);
 
     // Since this child establishes a new formatting context, no exclusion space
@@ -1239,22 +1239,32 @@ bool NGBlockLayoutAlgorithm::HandleInflow(
       has_clearance_past_adjoining_floats, /* is_new_fc */ false);
   NGConstraintSpace child_space =
       CreateConstraintSpaceForChild(child, child_data, child_available_size_);
-  scoped_refptr<NGLayoutResult> layout_result = child.Layout(
+  scoped_refptr<const NGLayoutResult> layout_result = child.Layout(
       child_space, child_break_token, &inline_child_layout_context_);
 
   // To save space of the stack when we recurse into |NGBlockNode::Layout|
   // above, the rest of this function is continued within |FinishInflow|.
   // However it should be read as one function.
+<<<<<<< HEAD
   return FinishInflow(child, child_break_token, child_space, layout_result,
                       &child_data, previous_inflow_position,
                       previous_inline_break_token);
+=======
+  return FinishInflow(child, child_break_token, child_space,
+                      std::move(layout_result), &child_data,
+                      previous_inflow_position, previous_inline_break_token);
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 }
 
 bool NGBlockLayoutAlgorithm::FinishInflow(
     NGLayoutInputNode child,
     const NGBreakToken* child_break_token,
     const NGConstraintSpace& child_space,
+<<<<<<< HEAD
     scoped_refptr<NGLayoutResult> layout_result,
+=======
+    scoped_refptr<const NGLayoutResult> layout_result,
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     NGInflowChildData* child_data,
     NGPreviousInflowPosition* previous_inflow_position,
     scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token) {
@@ -2055,7 +2065,7 @@ NGConstraintSpace NGBlockLayoutAlgorithm::CreateConstraintSpaceForChild(
   if (floats_bfc_block_offset)
     builder.SetFloatsBfcBlockOffset(floats_bfc_block_offset);
 
-  LayoutUnit clearance_offset = constraint_space_.IsNewFormattingContext()
+  LayoutUnit clearance_offset = ConstraintSpace().IsNewFormattingContext()
                                     ? LayoutUnit::Min()
                                     : ConstraintSpace().ClearanceOffset();
   if (child.IsBlock()) {
@@ -2346,7 +2356,7 @@ void NGBlockLayoutAlgorithm::PositionOrPropagateListMarker(
       return;
     container_builder_.SetUnpositionedListMarker(NGUnpositionedListMarker());
   }
-  if (list_marker.AddToBox(constraint_space_, Style().GetFontBaseline(),
+  if (list_marker.AddToBox(ConstraintSpace(), Style().GetFontBaseline(),
                            *layout_result.PhysicalFragment(), content_offset,
                            &container_builder_, border_scrollbar_padding_))
     return;
@@ -2364,7 +2374,7 @@ void NGBlockLayoutAlgorithm::PositionListMarkerWithoutLineBoxes() {
   // Position the list marker without aligning to line boxes.
   LayoutUnit marker_block_size =
       container_builder_.UnpositionedListMarker().AddToBoxWithoutLineBoxes(
-          constraint_space_, Style().GetFontBaseline(), &container_builder_);
+          ConstraintSpace(), Style().GetFontBaseline(), &container_builder_);
   container_builder_.SetUnpositionedListMarker(NGUnpositionedListMarker());
 
   // Whether the list marker should affect the block size or not is not

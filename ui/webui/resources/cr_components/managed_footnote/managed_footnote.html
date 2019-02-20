@@ -1,20 +1,19 @@
 <link rel="import" href="../../html/polymer.html">
 
+<link rel="import" href="chrome://resources/polymer/v1_0/iron-icon/iron-icon.html">
+<link rel="import" href="chrome://resources/polymer/v1_0/paper-styles/color.html">
 <link rel="import" href="../../cr_elements/icons.html">
+<link rel="import" href="../../cr_elements/shared_vars_css.html">
 <link rel="import" href="../../html/i18n_behavior.html">
 <link rel="import" href="../../html/load_time_data.html">
-<link rel="import" href="../../polymer/v1_0/iron-icon/iron-icon.html">
-<link rel="import" href="../../polymer/v1_0/paper-styles/color.html">
 
 <dom-module id="managed-footnote">
   <template>
     <style>
       :host {
-        --iron-icon-fill-color: var(--google-grey-refresh-700);
-
         align-items: center;
-        border-top: 1px solid var(--google-grey-300);
-        color: var(--google-grey-refresh-700);
+        border-top: 1px solid var(--cr-separator-color);
+        color: var(--cr-secondary-text-color);
         display: none;
         /* Should be 13px when <html> font-size is 16px */
         font-size: 0.8125rem;
@@ -27,14 +26,15 @@
       }
 
       a[href] {
-        color: var(--google-blue-500);
+        color: var(--cr-link-color);
         text-decoration: none;
       }
 
       iron-icon {
+        align-self: flex-start;
         flex-shrink: 0;
         height: 20px;
-        padding-inline-end: 8px;
+        padding-inline-end: var(--managed-footnote-icon-padding, 8px);
         width: 20px;
       }
     </style>

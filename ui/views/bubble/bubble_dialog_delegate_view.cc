@@ -4,6 +4,7 @@
 
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -139,8 +140,8 @@ ClientView* BubbleDialogDelegateView::CreateClientView(Widget* widget) {
 NonClientFrameView* BubbleDialogDelegateView::CreateNonClientFrameView(
     Widget* widget) {
   BubbleFrameView* frame = new BubbleDialogFrameView(title_margins_);
-
   LayoutProvider* provider = LayoutProvider::Get();
+
   frame->set_footnote_margins(
       provider->GetInsetsMetric(INSETS_DIALOG_SUBSECTION));
   frame->SetFootnoteView(CreateFootnoteView());
@@ -150,16 +151,27 @@ NonClientFrameView* BubbleDialogDelegateView::CreateNonClientFrameView(
     adjusted_arrow = BubbleBorder::horizontal_mirror(adjusted_arrow);
   std::unique_ptr<BubbleBorder> border =
       std::make_unique<BubbleBorder>(adjusted_arrow, GetShadow(), color());
-  // If custom shadows aren't supported we fall back to an OS provided square
-  // shadow.
-  if (!CustomShadowsSupported())
-    border->SetCornerRadius(0);
+  if (CustomShadowsSupported() && ShouldHaveRoundCorners()) {
+    const int corner_radius = provider->GetCornerRadiusMetric(EMPHASIS_HIGH);
+    border->SetCornerRadius(corner_radius);
+  }
+
   frame->SetBubbleBorder(std::move(border));
   return frame;
 }
 
 const char* BubbleDialogDelegateView::GetClassName() const {
   return kViewClassName;
+}
+
+void BubbleDialogDelegateView::OnWidgetClosing(Widget* widget) {
+  // To prevent keyboard focus traversal issues, the anchor view's
+  // kAnchoredDialogKey property is cleared immediately upon Close(). This
+  // avoids a bug that occured when a focused anchor view is made unfocusable
+  // right after the bubble is closed. Previously, focus would advance into the
+  // bubble then would be lost when the bubble was destroyed.
+  if (widget == GetWidget() && GetAnchorView())
+    GetAnchorView()->ClearProperty(kAnchoredDialogKey);
 }
 
 void BubbleDialogDelegateView::OnWidgetDestroying(Widget* widget) {

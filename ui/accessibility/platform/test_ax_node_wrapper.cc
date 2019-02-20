@@ -4,8 +4,10 @@
 
 #include "ui/accessibility/platform/test_ax_node_wrapper.h"
 
-#include "base/containers/hash_tables.h"
+#include <unordered_map>
+
 #include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_table_info.h"
 #include "ui/accessibility/ax_tree_observer.h"
@@ -20,6 +22,13 @@ std::unordered_map<AXNode*, TestAXNodeWrapper*> g_node_to_wrapper_map;
 
 // A global coordinate offset.
 gfx::Vector2d g_offset;
+
+// A global map that stores which node is focused on a determined tree.
+//   - If a tree has no node being focused, there shouldn't be any entry on the
+//     map associated with such tree, i.e. a pair {tree, nullptr} is invalid.
+//   - For testing purposes, assume there is a single node being focused in the
+//     entire tree and if such node is deleted, focus is completely lost.
+std::unordered_map<AXTree*, AXNode*> g_focused_node_in_tree;
 
 // A simple implementation of AXTreeObserver to catch when AXNodes are
 // deleted so we can delete their wrappers.
@@ -109,7 +118,7 @@ TestAXNodeWrapper* TestAXNodeWrapper::HitTestSyncInternal(int x, int y) {
   // Here we find the deepest child whose bounding box contains the given point.
   // The assuptions are that there are no overlapping bounding rects and that
   // all children have smaller bounding rects than their parents.
-  if (!GetClippedScreenBoundsRect().Contains(gfx::Rect(x, y)))
+  if (!GetClippedScreenBoundsRect().Contains(gfx::Rect(x, y, 0, 0)))
     return nullptr;
 
   for (int i = 0; i < GetChildCount(); i++) {
@@ -129,6 +138,17 @@ gfx::NativeViewAccessible TestAXNodeWrapper::HitTestSync(int x, int y) {
   TestAXNodeWrapper* wrapper = HitTestSyncInternal(x, y);
   return wrapper ? wrapper->ax_platform_node()->GetNativeViewAccessible()
                  : nullptr;
+}
+
+gfx::NativeViewAccessible TestAXNodeWrapper::GetFocus() {
+  auto focused = g_focused_node_in_tree.find(tree_);
+  if (focused != g_focused_node_in_tree.end() &&
+      focused->second->IsDescendantOf(node_)) {
+    return GetOrCreate(tree_, focused->second)
+        ->ax_platform_node()
+        ->GetNativeViewAccessible();
+  }
+  return nullptr;
 }
 
 // Walk the AXTree and ensure that all wrappers are created
@@ -195,12 +215,28 @@ void TestAXNodeWrapper::ReplaceBoolAttribute(ax::mojom::BoolAttribute attribute,
   node_->SetData(new_data);
 }
 
+bool TestAXNodeWrapper::IsTable() const {
+  return node_->IsTable();
+}
+
 int TestAXNodeWrapper::GetTableRowCount() const {
   return node_->GetTableRowCount();
 }
 
 int TestAXNodeWrapper::GetTableColCount() const {
   return node_->GetTableColCount();
+}
+
+int TestAXNodeWrapper::GetTableAriaRowCount() const {
+  return node_->GetTableAriaRowCount();
+}
+
+int TestAXNodeWrapper::GetTableAriaColCount() const {
+  return node_->GetTableAriaColCount();
+}
+
+int TestAXNodeWrapper::GetTableCellCount() const {
+  return node_->GetTableCellCount();
 }
 
 const std::vector<int32_t> TestAXNodeWrapper::GetColHeaderNodeIds() const {
@@ -229,6 +265,46 @@ const std::vector<int32_t> TestAXNodeWrapper::GetRowHeaderNodeIds(
   return header_ids;
 }
 
+bool TestAXNodeWrapper::IsTableRow() const {
+  return node_->IsTableRow();
+}
+
+int TestAXNodeWrapper::GetTableRowRowIndex() const {
+  return node_->GetTableRowRowIndex();
+}
+
+bool TestAXNodeWrapper::IsTableCellOrHeader() const {
+  return node_->IsTableCellOrHeader();
+}
+
+int TestAXNodeWrapper::GetTableCellIndex() const {
+  return node_->GetTableCellIndex();
+}
+
+int TestAXNodeWrapper::GetTableCellColIndex() const {
+  return node_->GetTableCellColIndex();
+}
+
+int TestAXNodeWrapper::GetTableCellRowIndex() const {
+  return node_->GetTableCellRowIndex();
+}
+
+int TestAXNodeWrapper::GetTableCellColSpan() const {
+  return node_->GetTableCellColSpan();
+}
+
+int TestAXNodeWrapper::GetTableCellRowSpan() const {
+  return node_->GetTableCellRowSpan();
+}
+
+int TestAXNodeWrapper::GetTableCellAriaColIndex() const {
+  return node_->GetTableCellAriaColIndex();
+}
+
+int TestAXNodeWrapper::GetTableCellAriaRowIndex() const {
+  return node_->GetTableCellAriaRowIndex();
+}
+
 int32_t TestAXNodeWrapper::GetCellId(int32_t row_index,
                                      int32_t col_index) const {
   ui::AXNode* cell = node_->GetTableCellFromCoords(row_index, col_index);
@@ -238,8 +314,13 @@ int32_t TestAXNodeWrapper::GetCellId(int32_t row_index,
   return -1;
 }
 
-int32_t TestAXNodeWrapper::GetTableCellIndex() const {
-  return node_->GetTableCellIndex();
+gfx::AcceleratedWidget
+TestAXNodeWrapper::GetTargetForNativeAccessibilityEvent() {
+#if defined(OS_WIN)
+  return gfx::kMockAcceleratedWidget;
+#else
+  return AXPlatformNodeDelegateBase::GetTargetForNativeAccessibilityEvent();
+#endif
 }
 
 int32_t TestAXNodeWrapper::CellIndexToId(int32_t cell_index) const {
@@ -279,23 +360,57 @@ bool TestAXNodeWrapper::AccessibilityPerformAction(
     return true;
   }
 
+  if (data.action == ax::mojom::Action::kFocus) {
+    g_focused_node_in_tree[tree_] = node_;
+    return true;
+  }
+
   return true;
+}
+
+base::string16 TestAXNodeWrapper::GetLocalizedRoleDescriptionForUnlabeledImage()
+    const {
+  return base::ASCIIToUTF16("Unlabeled image");
+}
+
+base::string16 TestAXNodeWrapper::GetLocalizedStringForImageAnnotationStatus(
+    ax::mojom::ImageAnnotationStatus status) const {
+  switch (status) {
+    case ax::mojom::ImageAnnotationStatus::kEligibleForAnnotation:
+      return base::ASCIIToUTF16(
+          "To get missing image descriptions, open the context menu.");
+    case ax::mojom::ImageAnnotationStatus::kAnnotationPending:
+      return base::ASCIIToUTF16("Getting description...");
+    case ax::mojom::ImageAnnotationStatus::kAnnotationEmpty:
+      return base::ASCIIToUTF16("No description is available.");
+    case ax::mojom::ImageAnnotationStatus::kAnnotationAdult:
+      return base::ASCIIToUTF16("Appears to be adult content.");
+    case ax::mojom::ImageAnnotationStatus::kAnnotationProcessFailed:
+      return base::ASCIIToUTF16("Unable to get a description.");
+    case ax::mojom::ImageAnnotationStatus::kNone:
+    case ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationSucceeded:
+      return base::string16();
+  }
+
+  NOTREACHED();
+  return base::string16();
 }
 
 bool TestAXNodeWrapper::ShouldIgnoreHoveredStateForTesting() {
   return true;
 }
 
-std::set<int32_t> TestAXNodeWrapper::GetReverseRelations(
-    ax::mojom::IntAttribute attr,
-    int32_t dst_id) {
-  return tree_->GetReverseRelations(attr, dst_id);
+std::set<AXPlatformNode*> TestAXNodeWrapper::GetReverseRelations(
+    ax::mojom::IntAttribute attr) {
+  DCHECK(IsNodeIdIntAttribute(attr));
+  return GetNodesForNodeIds(tree_->GetReverseRelations(attr, GetData().id));
 }
 
-std::set<int32_t> TestAXNodeWrapper::GetReverseRelations(
-    ax::mojom::IntListAttribute attr,
-    int32_t dst_id) {
-  return tree_->GetReverseRelations(attr, dst_id);
+std::set<AXPlatformNode*> TestAXNodeWrapper::GetReverseRelations(
+    ax::mojom::IntListAttribute attr) {
+  DCHECK(IsNodeIdIntListAttribute(attr));
+  return GetNodesForNodeIds(tree_->GetReverseRelations(attr, GetData().id));
 }
 
 const ui::AXUniqueId& TestAXNodeWrapper::GetUniqueId() const {
@@ -306,6 +421,14 @@ TestAXNodeWrapper::TestAXNodeWrapper(AXTree* tree, AXNode* node)
     : tree_(tree),
       node_(node),
       platform_node_(AXPlatformNode::Create(this)) {
+}
+
+bool TestAXNodeWrapper::IsOrderedSetItem() const {
+  return node_->IsOrderedSetItem();
+}
+
+bool TestAXNodeWrapper::IsOrderedSet() const {
+  return node_->IsOrderedSet();
 }
 
 int32_t TestAXNodeWrapper::GetPosInSet() const {

@@ -34,6 +34,11 @@ class ASH_EXPORT AppListButton : public ShelfControlButton,
                                  public TabletModeObserver,
                                  public DefaultVoiceInteractionObserver {
  public:
+<<<<<<< HEAD
+=======
+  static const char kViewClassName[];
+
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   AppListButton(ShelfView* shelf_view, Shelf* shelf);
   ~AppListButton() override;
 
@@ -44,6 +49,7 @@ class ASH_EXPORT AppListButton : public ShelfControlButton,
 
   // views::Button:
   void OnGestureEvent(ui::GestureEvent* event) override;
+  const char* GetClassName() const override;
 
  protected:
   // views::Button:

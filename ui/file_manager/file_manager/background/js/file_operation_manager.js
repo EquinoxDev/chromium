@@ -92,13 +92,14 @@ FileOperationManagerImpl.prototype.getPendingCopyTasksForTesting = function() {
  * @param {string} taskId ID of task to be canceled.
  */
 FileOperationManagerImpl.prototype.requestTaskCancel = function(taskId) {
-  var task = null;
+  let task = null;
 
   // If the task is not on progress, remove it immediately.
   for (var i = 0; i < this.pendingCopyTasks_.length; i++) {
     task = this.pendingCopyTasks_[i];
-    if (task.taskId !== taskId)
+    if (task.taskId !== taskId) {
       continue;
+    }
     task.requestCancel();
     this.eventRouter_.sendProgressEvent(
         fileOperationUtil.EventRouter.EventType.CANCELED,
@@ -107,16 +108,18 @@ FileOperationManagerImpl.prototype.requestTaskCancel = function(taskId) {
     this.pendingCopyTasks_.splice(i, 1);
   }
 
-  for (var volumeId in this.runningCopyTasks_) {
+  for (const volumeId in this.runningCopyTasks_) {
     task = this.runningCopyTasks_[volumeId];
-    if (task.taskId === taskId)
+    if (task.taskId === taskId) {
       task.requestCancel();
+    }
   }
 
   for (var i = 0; i < this.deleteTasks_.length; i++) {
     task = this.deleteTasks_[i];
-    if (task.taskId !== taskId)
+    if (task.taskId !== taskId) {
       continue;
+    }
     task.cancelRequested = true;
     // If the task is not on progress, remove it immediately.
     if (i !== 0) {
@@ -138,31 +141,36 @@ FileOperationManagerImpl.prototype.requestTaskCancel = function(taskId) {
  * @return {Promise} Promise fulfilled with the filtered entry. This is not
  *     rejected.
  */
-FileOperationManagerImpl.prototype.filterSameDirectoryEntry = function(
-    sourceEntries, targetEntry, isMove) {
-  if (!isMove)
+FileOperationManagerImpl.prototype.filterSameDirectoryEntry = (sourceEntries, targetEntry, isMove) => {
+  if (!isMove) {
     return Promise.resolve(sourceEntries);
+  }
   // Utility function to concat arrays.
-  var compactArrays = function(arrays) {
-    return arrays.filter(function(element) { return !!element; });
+  const compactArrays = arrays => {
+    return arrays.filter(element => {
+      return !!element;
+    });
   };
   // Call processEntry for each item of entries.
-  var processEntries = function(entries) {
-    var promises = entries.map(processFileOrDirectoryEntries);
+  const processEntries = entries => {
+    const promises = entries.map(processFileOrDirectoryEntries);
     return Promise.all(promises).then(compactArrays);
   };
   // Check all file entries and keeps only those need sharing operation.
-  var processFileOrDirectoryEntries = function(entry) {
-    return new Promise(function(resolve) {
-      entry.getParent(function(inParentEntry) {
-        if (!util.isSameEntry(inParentEntry, targetEntry))
-          resolve(entry);
-        else
-          resolve(null);
-      }, function(error) {
-        console.error(error.stack || error);
-        resolve(null);
-      });
+  var processFileOrDirectoryEntries = entry => {
+    return new Promise(resolve => {
+      entry.getParent(
+          inParentEntry => {
+            if (!util.isSameEntry(inParentEntry, targetEntry)) {
+              resolve(entry);
+            } else {
+              resolve(null);
+            }
+          },
+          error => {
+            console.error(error.stack || error);
+            resolve(null);
+          });
     });
   };
   return processEntries(sourceEntries);
@@ -183,17 +191,20 @@ FileOperationManagerImpl.prototype.filterSameDirectoryEntry = function(
 FileOperationManagerImpl.prototype.paste = function(
     sourceEntries, targetEntry, isMove, opt_taskId) {
   // Do nothing if sourceEntries is empty.
-  if (sourceEntries.length === 0)
+  if (sourceEntries.length === 0) {
     return;
+  }
 
-  this.filterSameDirectoryEntry(sourceEntries, targetEntry, isMove).then(
-      function(entries) {
-        if (entries.length === 0)
+  this.filterSameDirectoryEntry(sourceEntries, targetEntry, isMove)
+      .then(entries => {
+        if (entries.length === 0) {
           return;
+        }
         this.queueCopy_(targetEntry, entries, isMove, opt_taskId);
-  }.bind(this)).catch(function(error) {
-    console.error(error.stack || error);
-  });
+      })
+      .catch(error => {
+        console.error(error.stack || error);
+      });
 };
 
 /**
@@ -210,8 +221,8 @@ FileOperationManagerImpl.prototype.paste = function(
  */
 FileOperationManagerImpl.prototype.queueCopy_ = function(
     targetDirEntry, entries, isMove, opt_taskId) {
-  var task;
-  var taskId = opt_taskId || this.generateTaskId();
+  let task;
+  const taskId = opt_taskId || this.generateTaskId();
   if (isMove) {
     // When moving between different volumes, moving is implemented as a copy
     // and delete. This is because moving between volumes is slow, and moveTo()
@@ -233,10 +244,10 @@ FileOperationManagerImpl.prototype.queueCopy_ = function(
       task.getStatus(),
       task.taskId);
 
-  task.initialize(function() {
+  task.initialize(() => {
     this.pendingCopyTasks_.push(task);
     this.serviceAllTasks_();
-  }.bind(this));
+  });
 };
 
 /**
@@ -255,10 +266,10 @@ FileOperationManagerImpl.prototype.serviceAllTasks_ = function() {
   }
 
   if (!this.volumeManager_) {
-    volumeManagerFactory.getInstance().then(function(volumeManager) {
+    volumeManagerFactory.getInstance().then(volumeManager => {
       this.volumeManager_ = volumeManager;
       this.serviceAllTasks_();
-    }.bind(this));
+    });
     return;
   }
 
@@ -266,14 +277,14 @@ FileOperationManagerImpl.prototype.serviceAllTasks_ = function() {
   chrome.power.requestKeepAwake('system');
 
   // Find next task which can run at now.
-  var nextTask = null;
-  var nextTaskVolumeId = null;
-  for (var i = 0; i < this.pendingCopyTasks_.length; i++) {
-    var task = this.pendingCopyTasks_[i];
+  let nextTask = null;
+  let nextTaskVolumeId = null;
+  for (let i = 0; i < this.pendingCopyTasks_.length; i++) {
+    const task = this.pendingCopyTasks_[i];
 
     // Fails a copy task of which it fails to get volume info. The destination
     // volume might be already unmounted.
-    var volumeInfo = this.volumeManager_.getVolumeInfo(
+    const volumeInfo = this.volumeManager_.getVolumeInfo(
         /** @type {!DirectoryEntry} */ (task.targetDirEntry));
     if (volumeInfo === null) {
       this.eventRouter_.sendProgressEvent(
@@ -299,27 +310,28 @@ FileOperationManagerImpl.prototype.serviceAllTasks_ = function() {
   }
 
   // There is no task which can run at now.
-  if (nextTask === null)
+  if (nextTask === null) {
     return;
+  }
 
-  var onTaskProgress = function(task) {
+  const onTaskProgress = function(task) {
     this.eventRouter_.sendProgressEvent(
         fileOperationUtil.EventRouter.EventType.PROGRESS,
         task.getStatus(),
         task.taskId);
   }.bind(this, nextTask);
 
-  var onEntryChanged = function(kind, entry) {
+  const onEntryChanged = (kind, entry) => {
     this.eventRouter_.sendEntryChangedEvent(kind, entry);
-  }.bind(this);
+  };
 
   // Since getVolumeInfo of targetDirEntry might not be available when this
   // callback is called, bind volume id here.
-  var onTaskError = function(volumeId, err) {
-    var task = this.runningCopyTasks_[volumeId];
+  const onTaskError = function(volumeId, err) {
+    const task = this.runningCopyTasks_[volumeId];
     delete this.runningCopyTasks_[volumeId];
 
-    var reason = err.data.name === util.FileError.ABORT_ERR ?
+    const reason = err.data.name === util.FileError.ABORT_ERR ?
         fileOperationUtil.EventRouter.EventType.CANCELED :
         fileOperationUtil.EventRouter.EventType.ERROR;
     this.eventRouter_.sendProgressEvent(reason,
@@ -329,8 +341,8 @@ FileOperationManagerImpl.prototype.serviceAllTasks_ = function() {
     this.serviceAllTasks_();
   }.bind(this, nextTaskVolumeId);
 
-  var onTaskSuccess = function(volumeId) {
-    var task = this.runningCopyTasks_[volumeId];
+  const onTaskSuccess = function(volumeId) {
+    const task = this.runningCopyTasks_[volumeId];
     delete this.runningCopyTasks_[volumeId];
 
     this.eventRouter_.sendProgressEvent(
@@ -356,7 +368,7 @@ FileOperationManagerImpl.prototype.serviceAllTasks_ = function() {
  * @param {Array<Entry>} entries The entries.
  */
 FileOperationManagerImpl.prototype.deleteEntries = function(entries) {
-  var task =
+  const task =
       /** @type {!fileOperationUtil.DeleteTask} */ (Object.preventExtensions({
         entries: entries,
         taskId: this.generateTaskId(),
@@ -367,16 +379,16 @@ FileOperationManagerImpl.prototype.deleteEntries = function(entries) {
       }));
 
   // Obtains entry size and sum them up.
-  var group = new AsyncUtil.Group();
-  for (var i = 0; i < task.entries.length; i++) {
+  const group = new AsyncUtil.Group();
+  for (let i = 0; i < task.entries.length; i++) {
     group.add(function(entry, callback) {
       metadataProxy.getEntryMetadata(entry).then(
-          function(metadata) {
+          metadata => {
             task.entrySize[entry.toURL()] = metadata.size;
             task.totalBytes += metadata.size;
             callback();
           },
-          function() {
+          () => {
             // Fail to obtain the metadata. Use fake value 1.
             task.entrySize[entry.toURL()] = 1;
             task.totalBytes += 1;
@@ -386,13 +398,14 @@ FileOperationManagerImpl.prototype.deleteEntries = function(entries) {
   }
 
   // Add a delete task.
-  group.run(function() {
+  group.run(() => {
     this.deleteTasks_.push(task);
     this.eventRouter_.sendDeleteEvent(
         fileOperationUtil.EventRouter.EventType.BEGIN, task);
-    if (this.deleteTasks_.length === 1)
+    if (this.deleteTasks_.length === 1) {
       this.serviceAllDeleteTasks_();
-  }.bind(this));
+    }
+  });
 };
 
 /**
@@ -406,11 +419,12 @@ FileOperationManagerImpl.prototype.deleteEntries = function(entries) {
 FileOperationManagerImpl.prototype.serviceAllDeleteTasks_ = function() {
   this.serviceDeleteTask_(
       this.deleteTasks_[0],
-      function() {
+      () => {
         this.deleteTasks_.shift();
-        if (this.deleteTasks_.length)
+        if (this.deleteTasks_.length) {
           this.serviceAllDeleteTasks_();
-      }.bind(this));
+        }
+      });
 };
 
 /**
@@ -422,11 +436,11 @@ FileOperationManagerImpl.prototype.serviceAllDeleteTasks_ = function() {
  */
 FileOperationManagerImpl.prototype.serviceDeleteTask_ = function(
     task, callback) {
-  var queue = new AsyncUtil.Queue();
+  const queue = new AsyncUtil.Queue();
 
   // Delete each entry.
-  var error = null;
-  var deleteOneEntry = function(inCallback) {
+  let error = null;
+  const deleteOneEntry = inCallback => {
     if (!task.entries.length || task.cancelRequested || error) {
       inCallback();
       return;
@@ -435,34 +449,35 @@ FileOperationManagerImpl.prototype.serviceDeleteTask_ = function(
         fileOperationUtil.EventRouter.EventType.PROGRESS, task);
     util.removeFileOrDirectory(
         task.entries[0],
-        function() {
+        () => {
           this.eventRouter_.sendEntryChangedEvent(
               util.EntryChangedKind.DELETED, task.entries[0]);
           task.processedBytes += task.entrySize[task.entries[0].toURL()];
           task.entries.shift();
           deleteOneEntry(inCallback);
-        }.bind(this),
-        function(inError) {
+        },
+        inError => {
           error = inError;
           inCallback();
-        }.bind(this));
-  }.bind(this);
+        });
+  };
   queue.run(deleteOneEntry);
 
   // Send an event and finish the async steps.
-  queue.run(function(inCallback) {
-    var EventType = fileOperationUtil.EventRouter.EventType;
-    var reason;
-    if (error)
+  queue.run(inCallback => {
+    const EventType = fileOperationUtil.EventRouter.EventType;
+    let reason;
+    if (error) {
       reason = EventType.ERROR;
-    else if (task.cancelRequested)
+    } else if (task.cancelRequested) {
       reason = EventType.CANCELED;
-    else
+    } else {
       reason = EventType.SUCCESS;
+    }
     this.eventRouter_.sendDeleteEvent(reason, task);
     inCallback();
     callback();
-  }.bind(this));
+  });
 };
 
 /**
@@ -473,16 +488,16 @@ FileOperationManagerImpl.prototype.serviceDeleteTask_ = function(
  */
 FileOperationManagerImpl.prototype.zipSelection = function(
     selectionEntries, dirEntry) {
-  var zipTask = new fileOperationUtil.ZipTask(
+  const zipTask = new fileOperationUtil.ZipTask(
       this.generateTaskId(), selectionEntries, dirEntry, dirEntry);
   this.eventRouter_.sendProgressEvent(
       fileOperationUtil.EventRouter.EventType.BEGIN,
       zipTask.getStatus(),
       zipTask.taskId);
-  zipTask.initialize(function() {
+  zipTask.initialize(() => {
     this.pendingCopyTasks_.push(zipTask);
     this.serviceAllTasks_();
-  }.bind(this));
+  });
 };
 
 /**

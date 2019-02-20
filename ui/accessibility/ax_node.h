@@ -11,6 +11,7 @@
 #include <ostream>
 #include <vector>
 
+#include "build/build_config.h"
 #include "ui/accessibility/ax_export.h"
 #include "ui/accessibility/ax_node_data.h"
 
@@ -53,6 +54,9 @@ class AX_EXPORT AXNode final {
   const AXNodeData& data() const { return data_; }
   const std::vector<AXNode*>& children() const { return children_; }
   int index_in_parent() const { return index_in_parent_; }
+
+  // Returns ownership of |data_| to the caller; effectively clearing |data_|.
+  AXNodeData&& TakeData();
 
   // Get the child at the given index.
   AXNode* ChildAtIndex(int index) const { return children_[index]; }
@@ -188,7 +192,9 @@ class AX_EXPORT AXNode final {
     return data().GetHtmlAttribute(attribute, value);
   }
 
-  // PosInSet and SetSize public methods
+  // PosInSet and SetSize public methods.
+  bool IsOrderedSetItem() const;
+  bool IsOrderedSet() const;
   int32_t GetPosInSet();
   int32_t GetSetSize();
 
@@ -248,6 +254,12 @@ class AX_EXPORT AXNode final {
   // Table row-like nodes.
   bool IsTableRow() const;
   int32_t GetTableRowRowIndex() const;
+
+#if defined(OS_MACOSX)
+  // Table column-like nodes. These nodes are only present on macOS.
+  bool IsTableColumn() const;
+  int32_t GetTableColColIndex() const;
+#endif  // defined(OS_MACOSX)
 
   // Table cell-like nodes.
   bool IsTableCellOrHeader() const;

@@ -298,6 +298,14 @@ NEW_PERF_RECIPE_MIGRATED_TESTERS = {
           ],
         },
         {
+          'isolate': 'angle_perftests',
+          'num_shards': 1,
+          'telemetry': False,
+          'extra_args': [
+              '--shard-timeout=300'
+          ],
+        },
+        {
           'isolate': 'media_perftests',
           'num_shards': 1,
           'telemetry': False,
@@ -923,27 +931,20 @@ def generate_telemetry_args(tester_config):
 
   return test_args
 
+
 def generate_non_telemetry_args(test_name):
   # --gtest-benchmark-name so the benchmark name is consistent with the test
   # step's name. This is not always the same as the test binary's name (see
   # crbug.com/870692).
-  # --non-telemetry tells run_performance_tests.py that this test needs
-  #   to be executed differently
-  # --migrated-test tells run_performance_test_wrapper that this has
-  #   non-telemetry test has been migrated to the new recipe.
   return [
     '--gtest-benchmark-name', test_name,
-    '--non-telemetry=true',
-    '--migrated-test=true'
   ]
+
 
 def generate_performance_test(tester_config, test):
   isolate_name = test['isolate']
 
-  # Check to see if the name is different than the isolate
-  test_suite = isolate_name
-  if test.get('test_suite', False):
-    test_suite = test['test_suite']
+  test_suite = test.get('test_suite', isolate_name)
 
   if test.get('telemetry', True):
     test_args = generate_telemetry_args(tester_config)
@@ -979,7 +980,6 @@ def generate_performance_test(tester_config, test):
     'dimension_sets': [
       tester_config['dimension']
     ],
-    'upload_test_results': True,
     'shards': shards,
   }
   return result

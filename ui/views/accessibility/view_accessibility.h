@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/macros.h"
 #include "base/strings/string16.h"
@@ -65,6 +66,13 @@ class VIEWS_EXPORT ViewAccessibility {
   void OverrideIsIgnored(bool value);
   void OverrideBounds(const gfx::RectF& bounds);
 
+  // Override indexes used by some screen readers when describing elements in a
+  // menu, list, etc. If not specified, a view's index in its parent and its
+  // parent's number of children provide the values for these.
+  //
+  // Note: |pos_in_set| is 1-indexed.
+  void OverridePosInSet(int pos_in_set, int set_size);
+
   virtual gfx::NativeViewAccessible GetNativeObject();
   virtual void NotifyAccessibilityEvent(ax::mojom::Event event_type) {}
 #if defined(OS_MACOSX)
@@ -99,6 +107,11 @@ class VIEWS_EXPORT ViewAccessibility {
 
   int virtual_child_count() const {
     return static_cast<int>(virtual_children_.size());
+  }
+
+  AXVirtualView* virtual_child_at(int index) {
+    return const_cast<AXVirtualView*>(
+        const_cast<const ViewAccessibility*>(this)->virtual_child_at(index));
   }
 
   const AXVirtualView* virtual_child_at(int index) const {

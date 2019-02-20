@@ -28,10 +28,15 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
  public:
   NGLineBoxFragmentBuilder(NGInlineNode node,
                            scoped_refptr<const ComputedStyle> style,
+                           const NGConstraintSpace* space,
                            WritingMode writing_mode,
                            TextDirection)
       : NGContainerFragmentBuilder(node,
                                    style,
+<<<<<<< HEAD
+=======
+                                   space,
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
                                    writing_mode,
                                    TextDirection::kLtr),
         line_box_type_(NGPhysicalLineBoxFragment::kNormalLineBox),
@@ -64,7 +69,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
   struct Child {
     DISALLOW_NEW();
 
-    scoped_refptr<NGLayoutResult> layout_result;
+    scoped_refptr<const NGLayoutResult> layout_result;
     scoped_refptr<const NGPhysicalFragment> fragment;
     LayoutObject* out_of_flow_positioned_box = nullptr;
     LayoutObject* unpositioned_float = nullptr;
@@ -93,7 +98,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
     // bidi level and affects bidi reordering.
     Child(UBiDiLevel bidi_level) : bidi_level(bidi_level) {}
     // Create an in-flow |NGLayoutResult|.
-    Child(scoped_refptr<NGLayoutResult> layout_result,
+    Child(scoped_refptr<const NGLayoutResult> layout_result,
           NGLogicalOffset offset,
           LayoutUnit inline_size,
           UBiDiLevel bidi_level)
@@ -129,7 +134,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
     Child(LayoutObject* unpositioned_float, UBiDiLevel bidi_level)
         : unpositioned_float(unpositioned_float), bidi_level(bidi_level) {}
     // Create a positioned float.
-    Child(scoped_refptr<NGLayoutResult> layout_result,
+    Child(scoped_refptr<const NGLayoutResult> layout_result,
           NGBfcOffset bfc_offset,
           UBiDiLevel bidi_level)
         : layout_result(std::move(layout_result)),
@@ -201,7 +206,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
       children_.emplace_back(std::forward<Args>(args)...);
     }
     void InsertChild(unsigned index,
-                     scoped_refptr<NGLayoutResult> layout_result,
+                     scoped_refptr<const NGLayoutResult> layout_result,
                      const NGLogicalOffset& offset,
                      LayoutUnit inline_size,
                      UBiDiLevel bidi_level) {
@@ -221,7 +226,7 @@ class CORE_EXPORT NGLineBoxFragmentBuilder final
   void AddChildren(ChildList&);
 
   // Creates the fragment. Can only be called once.
-  scoped_refptr<NGLayoutResult> ToLineBoxFragment();
+  scoped_refptr<const NGLayoutResult> ToLineBoxFragment();
 
  private:
   NGLineHeightMetrics metrics_;

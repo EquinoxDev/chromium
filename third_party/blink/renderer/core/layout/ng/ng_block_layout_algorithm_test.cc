@@ -36,7 +36,7 @@ class NGBlockLayoutAlgorithmTest : public NGBaseLayoutAlgorithmTest {
   scoped_refptr<const NGPhysicalBoxFragment> RunBlockLayoutAlgorithm(
       const NGConstraintSpace& space,
       NGBlockNode node) {
-    scoped_refptr<NGLayoutResult> result =
+    scoped_refptr<const NGLayoutResult> result =
         NGBlockLayoutAlgorithm(node, space).Layout();
 
     return ToNGPhysicalBoxFragment(result->PhysicalFragment());
@@ -108,7 +108,7 @@ TEST_F(NGBlockLayoutAlgorithmTest, Caching) {
       ToLayoutBlockFlow(GetLayoutObjectByElementId("box"));
   NGBlockNode node(block_flow);
 
-  scoped_refptr<NGLayoutResult> result(node.Layout(space, nullptr));
+  scoped_refptr<const NGLayoutResult> result(node.Layout(space, nullptr));
   EXPECT_EQ(NGPhysicalSize(LayoutUnit(30), LayoutUnit(40)),
             result->PhysicalFragment()->Size());
 
@@ -159,7 +159,11 @@ TEST_F(NGBlockLayoutAlgorithmTest, MinInlineSizeCaching) {
       ToLayoutBlockFlow(GetLayoutObjectByElementId("box"));
   NGBlockNode node(block_flow);
 
+<<<<<<< HEAD
   scoped_refptr<NGLayoutResult> result(node.Layout(space, nullptr));
+=======
+  scoped_refptr<const NGLayoutResult> result(node.Layout(space, nullptr));
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   EXPECT_EQ(NGPhysicalSize(LayoutUnit(30), LayoutUnit(40)),
             result->PhysicalFragment()->Size());
 
@@ -238,12 +242,20 @@ TEST_F(NGBlockLayoutAlgorithmTest, PercentageBlockSizeQuirkDescendantsCaching) {
       WritingMode::kHorizontalTb, TextDirection::kLtr,
       NGLogicalSize(LayoutUnit(100), LayoutUnit(200)));
 
+<<<<<<< HEAD
   auto run_test = [&](auto id) -> scoped_refptr<NGLayoutResult> {
+=======
+  auto run_test = [&](auto id) -> scoped_refptr<const NGLayoutResult> {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     // Grab the box under test.
     LayoutBlockFlow* box = ToLayoutBlockFlow(GetLayoutObjectByElementId(id));
 
     // Check that we have a cache hit with space100.
+<<<<<<< HEAD
     scoped_refptr<NGLayoutResult> result =
+=======
+    scoped_refptr<const NGLayoutResult> result =
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
         box->CachedLayoutResult(space100, nullptr);
     EXPECT_NE(result.get(), nullptr);
 

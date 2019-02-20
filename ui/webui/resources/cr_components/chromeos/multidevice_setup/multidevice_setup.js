@@ -6,7 +6,6 @@ cr.exportPath('multidevice_setup');
 
 /** @enum {string} */
 multidevice_setup.PageName = {
-  FAILURE: 'setup-failed-page',
   PASSWORD: 'password-page',
   SUCCESS: 'setup-succeeded-page',
   START: 'start-setup-page',
@@ -80,7 +79,7 @@ cr.define('multidevice_setup', function() {
        * DOM Element corresponding to the visible page.
        *
        * @private {!PasswordPageElement|!StartSetupPageElement|
-       *           !SetupSucceededPageElement|!SetupFailedPageElement}
+       *           !SetupSucceededPageElement}
        */
       visiblePage_: Object,
 
@@ -153,6 +152,7 @@ cr.define('multidevice_setup', function() {
             }
 
             this.devices_ = responseParams.eligibleHostDevices;
+            this.fire('forward-button-focus-requested');
           })
           .catch((error) => {
             console.warn('Mojo service failure: ' + error);
@@ -171,6 +171,7 @@ cr.define('multidevice_setup', function() {
 
       this.$$('password-page').clearPasswordTextInput();
       this.visiblePageName = PageName.START;
+      this.fire('forward-button-focus-requested');
     },
 
     /** @private */
@@ -190,9 +191,6 @@ cr.define('multidevice_setup', function() {
     /** @private */
     navigateForward_: function() {
       switch (this.visiblePageName) {
-        case PageName.FAILURE:
-          this.visiblePageName = PageName.START;
-          return;
         case PageName.PASSWORD:
           this.$$('password-page').clearPasswordTextInput();
           this.setHostDevice_();
@@ -215,7 +213,7 @@ cr.define('multidevice_setup', function() {
       // An authentication token must be set if a password is required.
       assert(this.delegate.isPasswordRequiredToSetHost() == !!this.authToken_);
 
-      let deviceId = /** @type {string} */ (this.selectedDeviceId_);
+      const deviceId = /** @type {string} */ (this.selectedDeviceId_);
       this.delegate.setHostDevice(deviceId, this.authToken_)
           .then((responseParams) => {
             if (!responseParams.success) {

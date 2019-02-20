@@ -39,13 +39,12 @@ test.util.executeTestMessage = null;
 /**
  * Registers message listener, which runs test utility functions.
  */
-test.util.registerRemoteTestUtils = function() {
+test.util.registerRemoteTestUtils = () => {
   let responsesWaitingForLoad = [];
 
   // Return true for asynchronous functions, which keeps the connection to the
   // caller alive; Return false for synchronous functions.
-  chrome.runtime.onMessageExternal.addListener(function(
-      request, sender, sendResponse) {
+  chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
     /**
      * List of extension ID of the testing extension.
      * @type {Array<string>}
@@ -70,22 +69,24 @@ test.util.registerRemoteTestUtils = function() {
     window.IN_TEST = true;
 
     // If testing functions are loaded just run the requested function.
-    if (test.util.executeTestMessage !== null)
+    if (test.util.executeTestMessage !== null) {
       return test.util.executeTestMessage(request, sendResponse);
+    }
 
     // Queue the request/response pair.
     const obj = {request, sendResponse};
     responsesWaitingForLoad.push(obj);
 
     // Only load the script with testing functions in the first request.
-    if (responsesWaitingForLoad.length > 1)
+    if (responsesWaitingForLoad.length > 1) {
       return true;
+    }
 
     // Asynchronously load the testing functions.
     let script = document.createElement('script');
     document.body.appendChild(script);
 
-    script.onload = function() {
+    script.onload = () => {
       // Run queued request/response pairs.
       responsesWaitingForLoad.forEach((queueObj) => {
         test.util.executeTestMessage(queueObj.request, queueObj.sendResponse);
@@ -93,7 +94,7 @@ test.util.registerRemoteTestUtils = function() {
       responsesWaitingForLoad = [];
     };
 
-    script.onerror = function(/** Event */ event) {
+    script.onerror = /** Event */ event => {
       console.error('Failed to load the run-time test script: ' + event);
       throw new Error('Failed to load the run-time test script: ' + event);
     };

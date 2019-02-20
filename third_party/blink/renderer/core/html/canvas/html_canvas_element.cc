@@ -994,6 +994,7 @@ void HTMLCanvasElement::PushFrame(scoped_refptr<CanvasResource> image,
 }
 
 bool HTMLCanvasElement::ShouldAccelerate(AccelerationCriteria criteria) const {
+<<<<<<< HEAD
   if (base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas))
     return true;
 
@@ -1017,21 +1018,49 @@ bool HTMLCanvasElement::ShouldAccelerate(AccelerationCriteria criteria) const {
     Settings* settings = GetDocument().GetSettings();
     if (!settings ||
         canvas_pixel_count < settings->GetMinimumAccelerated2dCanvasSize()) {
+=======
+  // With this feature enabled we want to accelerate canvases whenever we can.
+  // This does not include when the context_provider CANNOT accelerated
+  // canvases.
+  if (!base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas)) {
+    if (context_ && !Is2d())
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       return false;
+
+    // The following is necessary for handling the special case of canvases in
+    // the dev tools overlay, which run in a process that supports accelerated
+    // 2d canvas but in a special compositing context that does not.
+    if (GetLayoutBox() && !GetLayoutBox()->HasAcceleratedCompositing())
+      return false;
+
+    base::CheckedNumeric<int> checked_canvas_pixel_count = Size().Width();
+    checked_canvas_pixel_count *= Size().Height();
+    if (!checked_canvas_pixel_count.IsValid())
+      return false;
+    int canvas_pixel_count = checked_canvas_pixel_count.ValueOrDie();
+
+    // Do not use acceleration for small canvas.
+    if (criteria != kIgnoreResourceLimitCriteria) {
+      Settings* settings = GetDocument().GetSettings();
+      if (!settings ||
+          canvas_pixel_count < settings->GetMinimumAccelerated2dCanvasSize()) {
+        return false;
+      }
+
+      // When GPU allocated memory runs low (due to having created too many
+      // accelerated canvases), the compositor starves and browser becomes
+      // laggy. Thus, we should stop allocating more GPU memory to new canvases
+      // created when the current memory usage exceeds the threshold.
+      if (global_gpu_memory_usage_ >= kMaxGlobalGPUMemoryUsage)
+        return false;
+
+      // Allocating too many GPU resources can makes us run into the driver's
+      // resource limits. So we need to keep the number of texture resources
+      // under tight control
+      if (global_accelerated_context_count_ >=
+          kMaxGlobalAcceleratedResourceCount)
+        return false;
     }
-
-    // When GPU allocated memory runs low (due to having created too many
-    // accelerated canvases), the compositor starves and browser becomes laggy.
-    // Thus, we should stop allocating more GPU memory to new canvases created
-    // when the current memory usage exceeds the threshold.
-    if (global_gpu_memory_usage_ >= kMaxGlobalGPUMemoryUsage)
-      return false;
-
-    // Allocating too many GPU resources can makes us run into the driver's
-    // resource limits. So we need to keep the number of texture resources
-    // under tight control
-    if (global_accelerated_context_count_ >= kMaxGlobalAcceleratedResourceCount)
-      return false;
   }
 
   // Avoid creating |contextProvider| until we're sure we want to try use it,

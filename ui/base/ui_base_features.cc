@@ -4,8 +4,6 @@
 
 #include "ui/base/ui_base_features.h"
 
-#include "ui/base/ui_base_switches_util.h"
-
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif
@@ -45,7 +43,7 @@ const base::Feature kSettingsShowsPerKeyboardSettings = {
 const base::Feature kInputMethodSettingsUiUpdate = {
     "InputMethodSettingsUiUpdate", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Allows system keyboard event capture when |features::kKeyboardLockApi| is on.
+// Allows system keyboard event capture via the keyboard lock API.
 const base::Feature kSystemKeyboardLock{"SystemKeyboardLock",
                                         base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -83,7 +81,7 @@ const base::Feature kUiCompositorScrollWithLayers = {
 #if defined(OS_WIN)
 // Enables InputPane API for controlling on screen keyboard.
 const base::Feature kInputPaneOnScreenKeyboard = {
-    "InputPaneOnScreenKeyboard", base::FEATURE_DISABLED_BY_DEFAULT};
+    "InputPaneOnScreenKeyboard", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables using WM_POINTER instead of WM_TOUCH for touch events.
 const base::Feature kPointerEventsForTouch = {"PointerEventsForTouch",
@@ -100,6 +98,11 @@ bool IsUsingWMPointerForTouch() {
 // Enables DirectManipulation API for processing Precision Touchpad events.
 const base::Feature kPrecisionTouchpad{"PrecisionTouchpad",
                                        base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables Logging for DirectManipulation.
+const base::Feature kPrecisionTouchpadLogging{
+    "PrecisionTouchpadLogging", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables Swipe left/right to navigation back/forward API for processing
 // Precision Touchpad events.
 const base::Feature kPrecisionTouchpadScrollPhase{
@@ -128,8 +131,13 @@ const base::Feature kMash = {"Mash", base::FEATURE_DISABLED_BY_DEFAULT};
 const base::Feature kMashOopViz = {"MashOopViz",
                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Runs the window service in-process. Launch bug https://crbug.com/909816
 const base::Feature kSingleProcessMash = {"SingleProcessMash",
+#if defined(OS_CHROMEOS)
+                                          base::FEATURE_ENABLED_BY_DEFAULT};
+#else
                                           base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 
 bool IsUsingWindowService() {
   return IsSingleProcessMash() || IsMultiProcessMash();
@@ -176,6 +184,14 @@ bool IsOzoneDrmMojo() {
          IsMultiProcessMash();
 }
 
+#if defined(OS_MACOSX)
+const base::Feature kDarkMode = {"DarkMode", base::FEATURE_ENABLED_BY_DEFAULT};
+#else
 const base::Feature kDarkMode = {"DarkMode", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 
+#if defined(OS_CHROMEOS)
+const base::Feature kHandwritingGesture = {"HandwritingGesture",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 }  // namespace features

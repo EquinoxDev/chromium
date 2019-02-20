@@ -2021,16 +2021,22 @@
     "expiry_milestone": 76
   },
   {
+<<<<<<< HEAD
     "name": "enable_android_messages_integration",
     "owners": [ "azeemarshad", "jlklein", "khorimoto" ],
+=======
+    "name": "use_messages_google_com_domain",
+    "owners": [ "azeemarshad", "khorimoto" ],
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     "expiry_milestone": 76
   },
   {
-    "name": "use_messages_google_com_domain",
+    "name": "use_messages_staging_url",
     "owners": [ "azeemarshad", "khorimoto" ],
     "expiry_milestone": 76
   },
   {
+<<<<<<< HEAD
     "name": "use_messages_staging_url",
     "owners": [ "azeemarshad", "khorimoto" ],
     "expiry_milestone": 76
@@ -2041,6 +2047,13 @@
     "expiry_milestone": 76
   },
   {
+=======
+    "name": "enable_messages_web_push",
+    "owners": [ "azeemarshad", "jlklein", "khorimoto" ],
+    "expiry_milestone": 76
+  },
+  {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     "name": "enforce-tls13-downgrade",
     "owners": [ "davidben", "svaldez" ],
     "expiry_milestone": 76
@@ -3038,7 +3051,7 @@
   },
   {
     "name": "unfiltered-bluetooth-devices",
-    // "owners": [ "your-team" ],
+    "owners": [ "sonnysasaka", "qiyuh@google.com" ],
     "expiry_milestone": 76
   },
   {

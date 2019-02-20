@@ -11,14 +11,11 @@
 
 #include "base/macros.h"
 #include "base/threading/thread_checker.h"
+#include "mojo/public/cpp/system/handle.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/ozone/public/platform_window_surface.h"
 
 namespace ui {
-
-namespace mojom {
-class ScenicGpuHost;
-}
 
 class ScenicSurfaceFactory;
 
@@ -31,21 +28,30 @@ class ScenicSurfaceFactory;
 // The texture is updated through an image pipe.
 class ScenicSurface : public ui::PlatformWindowSurface {
  public:
-  ScenicSurface(ScenicSurfaceFactory* scenic_surface_factory,
-                fuchsia::ui::scenic::Scenic* scenic,
-                mojom::ScenicGpuHost* gpu_host,
-                gfx::AcceleratedWidget window);
+  ScenicSurface(
+      ScenicSurfaceFactory* scenic_surface_factory,
+      gfx::AcceleratedWidget window,
+      scenic::SessionPtrAndListenerRequest sesion_and_listener_request);
   ~ScenicSurface() override;
 
   // Sets the texture of the surface to a new image pipe.
   void SetTextureToNewImagePipe(
       fidl::InterfaceRequest<fuchsia::images::ImagePipe> image_pipe_request);
 
-  // Links the surface to the window in the browser process.
-  void LinkToParent();
+  // Sets the texture of the surface to an image resource.
+  void SetTextureToImage(const scenic::Image& image);
 
-  // Flushes commands to scenic & executes them.
-  void Commit();
+  // Creates token to links the surface to the window in the browser process.
+  mojo::ScopedHandle CreateParentExportToken();
+
+  void AssertBelongsToCurrentThread() {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  }
+
+  scenic::Session* scenic_session() {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+    return &scenic_session_;
+  }
 
  private:
   scenic::Session scenic_session_;
@@ -54,7 +60,6 @@ class ScenicSurface : public ui::PlatformWindowSurface {
   scenic::Material material_;
 
   ScenicSurfaceFactory* const scenic_surface_factory_;
-  mojom::ScenicGpuHost* const gpu_host_;
   const gfx::AcceleratedWidget window_;
 
   THREAD_CHECKER(thread_checker_);

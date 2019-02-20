@@ -39,6 +39,7 @@ class Insets;
 }  // namespace gfx
 
 namespace ui  {
+class AXFragmentRootWin;
 class AXSystemCaretWin;
 class InputMethod;
 class TextInputClient;
@@ -664,9 +665,6 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
 
   PenEventProcessor pen_processor_;
 
-  // Set to true if we are in the context of a sizing operation.
-  bool in_size_loop_;
-
   // Stores a pointer to the WindowEventTarget interface implemented by this
   // class. Allows callers to retrieve the interface pointer.
   std::unique_ptr<ui::ViewProp> prop_window_target_;
@@ -716,6 +714,9 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // Some assistive software need to track the location of the caret.
   std::unique_ptr<ui::AXSystemCaretWin> ax_system_caret_;
 
+  // Implements IRawElementProviderFragmentRoot when UIA is enabled
+  std::unique_ptr<ui::AXFragmentRootWin> ax_fragment_root_;
+
   // The location where the user clicked on the caption. We cache this when we
   // receive the WM_NCLBUTTONDOWN message. We use this in the subsequent
   // WM_NCMOUSEMOVE message to see if the mouse actually moved.
@@ -742,6 +743,13 @@ class VIEWS_EXPORT HWNDMessageHandler : public gfx::WindowImpl,
   // True if we enable feature kPrecisionTouchpadScrollPhase. Indicate we will
   // report the scroll phase information or not.
   bool precision_touchpad_scroll_phase_enabled_;
+
+  // True if DWM frame should be cleared on next WM_ERASEBKGND message.  This is
+  // necessary to avoid white flashing in the titlebar area around the
+  // minimize/maximize/close buttons.  Clearing the frame on every WM_ERASEBKGND
+  // message causes black flickering in the titlebar region so we do it on for
+  // the first message after frame type changes.
+  bool needs_dwm_frame_clear_ = true;
 
   // This is a map of the HMONITOR to full screeen window instance. It is safe
   // to keep a raw pointer to the HWNDMessageHandler instance as we track the

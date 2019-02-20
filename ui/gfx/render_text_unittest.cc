@@ -69,9 +69,9 @@ const char kRtlLtrRtl[] = "\u05d0a\u05d1";
 
 // Bitmasks based on gfx::TextStyle.
 enum {
-  ITALIC_MASK = 1 << ITALIC,
-  STRIKE_MASK = 1 << STRIKE,
-  UNDERLINE_MASK = 1 << UNDERLINE,
+  ITALIC_MASK = 1 << TEXT_STYLE_ITALIC,
+  STRIKE_MASK = 1 << TEXT_STYLE_STRIKE,
+  UNDERLINE_MASK = 1 << TEXT_STYLE_UNDERLINE,
 };
 
 // Checks whether |range| contains |index|. This is not the same as calling
@@ -333,8 +333,12 @@ class RenderTextTest : public testing::Test {
         renderer_(canvas()) {}
 
  protected:
-  cc::PaintFlags& GetRendererPaint() {
+  const cc::PaintFlags& GetRendererPaint() {
     return test::RenderTextTestApi::GetRendererPaint(renderer());
+  }
+
+  const SkFont& GetRendererFont() {
+    return test::RenderTextTestApi::GetRendererFont(renderer());
   }
 
   void DrawVisualText() { test_api_->DrawVisualText(renderer()); }
@@ -397,7 +401,7 @@ class RenderTextTest : public testing::Test {
     test_api_.reset(new test::RenderTextTestApi(GetRenderText()));
   }
 
-  RenderTextHarfBuzz* GetRenderText() { return render_text_.get(); };
+  RenderTextHarfBuzz* GetRenderText() { return render_text_.get(); }
 
   Rect GetSubstringBoundsUnion(const Range& range) {
     const std::vector<Rect> bounds = render_text_->GetSubstringBounds(range);
@@ -481,7 +485,7 @@ class RenderTextTest : public testing::Test {
 
   Canvas* canvas() { return &canvas_; }
   TestSkiaTextRenderer* renderer() { return &renderer_; }
-  test::RenderTextTestApi* test_api() { return test_api_.get(); };
+  test::RenderTextTestApi* test_api() { return test_api_.get(); }
 
  private:
   // Needed to bypass DCHECK in GetFallbackFont.
@@ -504,7 +508,7 @@ TEST_F(RenderTextTest, DefaultStyles) {
     EXPECT_TRUE(test_api()->colors().EqualsValueForTesting(SK_ColorBLACK));
     EXPECT_TRUE(test_api()->baselines().EqualsValueForTesting(NORMAL_BASELINE));
     EXPECT_TRUE(test_api()->font_size_overrides().EqualsValueForTesting(0));
-    for (size_t style = 0; style < NUM_TEXT_STYLES; ++style)
+    for (size_t style = 0; style < static_cast<int>(TEXT_STYLE_COUNT); ++style)
       EXPECT_TRUE(test_api()->styles()[style].EqualsValueForTesting(false));
     render_text->SetText(UTF8ToUTF16(cases[i]));
   }
@@ -517,21 +521,24 @@ TEST_F(RenderTextTest, SetStyles) {
   render_text->SetColor(color);
   render_text->SetBaselineStyle(SUPERSCRIPT);
   render_text->SetWeight(Font::Weight::BOLD);
-  render_text->SetStyle(UNDERLINE, false);
+  render_text->SetStyle(TEXT_STYLE_UNDERLINE, false);
   const char* const cases[] = {kWeak, kLtr, "Hello", kRtl, "", ""};
   for (size_t i = 0; i < base::size(cases); ++i) {
     EXPECT_TRUE(test_api()->colors().EqualsValueForTesting(color));
     EXPECT_TRUE(test_api()->baselines().EqualsValueForTesting(SUPERSCRIPT));
     EXPECT_TRUE(
         test_api()->weights().EqualsValueForTesting(Font::Weight::BOLD));
-    EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsValueForTesting(false));
+    EXPECT_TRUE(
+        test_api()->styles()[TEXT_STYLE_UNDERLINE].EqualsValueForTesting(
+            false));
     render_text->SetText(UTF8ToUTF16(cases[i]));
 
     // Ensure custom default styles can be applied after text has been set.
     if (i == 1)
-      render_text->SetStyle(STRIKE, true);
+      render_text->SetStyle(TEXT_STYLE_STRIKE, true);
     if (i >= 1)
-      EXPECT_TRUE(test_api()->styles()[STRIKE].EqualsValueForTesting(true));
+      EXPECT_TRUE(
+          test_api()->styles()[TEXT_STYLE_STRIKE].EqualsValueForTesting(true));
   }
 }
 
@@ -583,32 +590,37 @@ TEST_F(RenderTextTest, ApplyStyles) {
       {{0, Font::Weight::NORMAL}, {2, Font::Weight::BOLD}}));
 
   // Ensure ranged values adjust to accommodate text length changes.
-  render_text->ApplyStyle(ITALIC, true, Range(0, 2));
-  render_text->ApplyStyle(ITALIC, true, Range(3, 6));
-  render_text->ApplyStyle(ITALIC, true, Range(7, text_length));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(0, 2));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(3, 6));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(7, text_length));
   std::vector<std::pair<size_t, bool>> expected_italic = {
       {0, true}, {2, false}, {3, true}, {6, false}, {7, true}};
-  EXPECT_TRUE(test_api()->styles()[ITALIC].EqualsForTesting(expected_italic));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_ITALIC].EqualsForTesting(
+      expected_italic));
 
   // Changing the text should clear any breaks except for the first one.
   render_text->SetText(UTF8ToUTF16("0123456"));
   expected_italic.resize(1);
-  EXPECT_TRUE(test_api()->styles()[ITALIC].EqualsForTesting(expected_italic));
-  render_text->ApplyStyle(ITALIC, false, Range(2, 4));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_ITALIC].EqualsForTesting(
+      expected_italic));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, false, Range(2, 4));
   render_text->SetText(UTF8ToUTF16("012345678"));
-  EXPECT_TRUE(test_api()->styles()[ITALIC].EqualsForTesting(expected_italic));
-  render_text->ApplyStyle(ITALIC, false, Range(0, 1));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_ITALIC].EqualsForTesting(
+      expected_italic));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, false, Range(0, 1));
   render_text->SetText(UTF8ToUTF16("0123456"));
   expected_italic.begin()->second = false;
-  EXPECT_TRUE(test_api()->styles()[ITALIC].EqualsForTesting(expected_italic));
-  render_text->ApplyStyle(ITALIC, true, Range(2, 4));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_ITALIC].EqualsForTesting(
+      expected_italic));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(2, 4));
   render_text->SetText(UTF8ToUTF16("012345678"));
-  EXPECT_TRUE(test_api()->styles()[ITALIC].EqualsForTesting(expected_italic));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_ITALIC].EqualsForTesting(
+      expected_italic));
 
   // Styles shouldn't be changed mid-grapheme.
   render_text->SetText(UTF8ToUTF16("0\u0915\u093f1\u0915\u093f2"));
-  render_text->ApplyStyle(UNDERLINE, true, Range(2, 5));
-  EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsForTesting(
+  render_text->ApplyStyle(TEXT_STYLE_UNDERLINE, true, Range(2, 5));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_UNDERLINE].EqualsForTesting(
       {{0, false}, {1, true}, {6, false}}));
 }
 
@@ -618,7 +630,7 @@ TEST_F(RenderTextTest, AppendTextKeepsStyles) {
   render_text->SetText(UTF8ToUTF16("abcd"));
   render_text->ApplyColor(SK_ColorRED, Range(0, 1));
   render_text->ApplyBaselineStyle(SUPERSCRIPT, Range(1, 2));
-  render_text->ApplyStyle(UNDERLINE, true, Range(2, 3));
+  render_text->ApplyStyle(TEXT_STYLE_UNDERLINE, true, Range(2, 3));
   render_text->ApplyFontSizeOverride(20, Range(3, 4));
   // Verify basic functionality.
   const std::vector<std::pair<size_t, SkColor>> expected_color = {
@@ -629,7 +641,8 @@ TEST_F(RenderTextTest, AppendTextKeepsStyles) {
   EXPECT_TRUE(test_api()->baselines().EqualsForTesting(expected_baseline));
   const std::vector<std::pair<size_t, bool>> expected_style = {
       {0, false}, {2, true}, {3, false}};
-  EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsForTesting(expected_style));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_UNDERLINE].EqualsForTesting(
+      expected_style));
   const std::vector<std::pair<size_t, int>> expected_font_size = {{0, 0},
                                                                   {3, 20}};
   EXPECT_TRUE(
@@ -640,7 +653,8 @@ TEST_F(RenderTextTest, AppendTextKeepsStyles) {
   EXPECT_EQ(render_text->GetDisplayText(), UTF8ToUTF16("abcdefg"));
   EXPECT_TRUE(test_api()->colors().EqualsForTesting(expected_color));
   EXPECT_TRUE(test_api()->baselines().EqualsForTesting(expected_baseline));
-  EXPECT_TRUE(test_api()->styles()[UNDERLINE].EqualsForTesting(expected_style));
+  EXPECT_TRUE(test_api()->styles()[TEXT_STYLE_UNDERLINE].EqualsForTesting(
+      expected_style));
   EXPECT_TRUE(
       test_api()->font_size_overrides().EqualsForTesting(expected_font_size));
 }
@@ -957,7 +971,7 @@ TEST_F(RenderTextTest, MultilineElide) {
   // with these styles. This can expose a behavior in layout where text is
   // slightly different width. This must be done after |SetText()|.
   render_text->ApplyWeight(Font::Weight::BOLD, Range(1, 20));
-  render_text->ApplyStyle(ITALIC, true, Range(1, 20));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(1, 20));
   render_text->SetMultiline(true);
   render_text->SetElideBehavior(ELIDE_TAIL);
   render_text->SetMaxLines(3);
@@ -1006,7 +1020,7 @@ TEST_F(RenderTextTest, MultilineElideWrap) {
   render_text->SetText(input_text);
 
   render_text->ApplyWeight(Font::Weight::BOLD, Range(1, 20));
-  render_text->ApplyStyle(ITALIC, true, Range(1, 20));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(1, 20));
   render_text->SetMultiline(true);
   render_text->SetMaxLines(3);
   render_text->SetElideBehavior(ELIDE_TAIL);
@@ -3882,72 +3896,6 @@ TEST_F(RenderTextTest, HarfBuzz_RunDirection_URLs) {
   render_text->SetDirectionalityMode(DIRECTIONALITY_AS_URL);
   test_api()->EnsureLayout();
   EXPECT_EQ(kExpectedRunListNormalBidi, GetRunListStructureString());
-
-  // Test the above again, but with LeftToRightUrls feature enabled.
-  base::test::ScopedFeatureList scoped_list;
-  scoped_list.InitAndEnableFeature(features::kLeftToRightUrls);
-
-  // DIRECTIONALITY_FORCE_LTR should be the same as above.
-  render_text->SetDirectionalityMode(DIRECTIONALITY_FORCE_LTR);
-  test_api()->EnsureLayout();
-  EXPECT_EQ(kExpectedRunListNormalBidi, GetRunListStructureString());
-
-  // DIRECTIONALITY_AS_URL should treat URL syntax as strong LTR, to ensure
-  // isolation between RTL characters in different components of the URL.
-  render_text->SetDirectionalityMode(DIRECTIONALITY_AS_URL);
-  test_api()->EnsureLayout();
-  // TODO(mgiuca): Consider whether the rule should instead be "treat URL syntax
-  // as delimiters for FIRST STRONG ISOLATEs", which would result in [12->14]
-  // appearing to the left of [11<-10] (because the first strong character in
-  // the range 10-14 is RTL).
-  // Should render as: ‭www.בא.דג/והabc/def?חז=יט‬
-  const char kExpectedRunListURLLayout[] =
-      "[0->2][3][5<-4][6][8<-7][9][11<-10][12->14][15][16->18][19][21<-20][22]"
-      "[24<-23]";
-  EXPECT_EQ(kExpectedRunListURLLayout, GetRunListStructureString());
-}
-
-// More detailed tests of the LeftToRightUrls flag.
-TEST_F(RenderTextTest, HarfBuzz_RunDirection_URLs_LeftToRight) {
-  base::test::ScopedFeatureList scoped_list;
-  scoped_list.InitAndEnableFeature(features::kLeftToRightUrls);
-
-  RenderTextHarfBuzz* render_text = GetRenderText();
-  render_text->SetDirectionalityMode(DIRECTIONALITY_AS_URL);
-
-  // Systematic test of all ASCII punctuation marks, interleaved with the Hebrew
-  // alphabet. Those that count as delimiters (#&./:=?@) should break up the RTL
-  // run, while those that don't should be treated as RTL characters.
-  render_text->SetText(UTF8ToUTF16(
-      "\u05d0!\u05d1\"\u05d2#\u05d3$\u05d4%\u05d5&\u05d6'\u05d7(\u05d8)\u05d9*"
-      "\u05da+\u05db,\u05dc-\u05dd.\u05de/\u05df:\u05e0;\u05e1<\u05e2=\u05e3>"
-      "\u05e4?\u05e5@\u05e6[\u05e7\\\u05e8]\u05e9^\u05ea_\u05d0`\u05d1{\u05d2|"
-      "\u05d3}\u05d4~\u05d5"));
-  test_api()->EnsureLayout();
-
-  // This simplifies as:
-  // "[4<-0][5][10<-6][11][26<-12][27->31][36<-32][37][40<-38][41->43][64<-44]";
-  const char kExpectedRunListAllPunctuation[] =
-      "[4][3][2][1][0][5][10][9][8][7][6][11][26][25][24][23][22][21][20][19]"
-      "[18][17][16][15][14][13][12][27][28][29][30][31][36][35][34][33][32][37]"
-      "[40][39][38][41][42][43][64][63][62][61][60][59][58][57][56][55][54][53]"
-      "[52][51][50][49][48][47][46][45][44]";
-  EXPECT_EQ(kExpectedRunListAllPunctuation, GetRunListStructureString());
-
-  // Test Arabic instead of Hebrew.
-  // This string, unescaped (logical order):
-  // ‭www.ؠء.آأ/ؤإabc/def?ئا=بة‬
-  render_text->SetText(
-      UTF8ToUTF16("www.\u0620\u0621.\u0622\u0623/\u0624\u0625"
-                  "abc/def?\u0626\u0627=\u0628\u0629"));
-  test_api()->EnsureLayout();
-
-  // Should render as: ‭www.ءؠ.أآ/إؤabc/def?ائ=ةب‬
-  // Same expected run list as in HarfBuzz_RunDirection_URLs.
-  const char kExpectedRunListArabic[] =
-      "[0->2][3][5<-4][6][8<-7][9][11<-10][12->14][15][16->18][19][21<-20][22]"
-      "[24<-23]";
-  EXPECT_EQ(kExpectedRunListArabic, GetRunListStructureString());
 }
 
 TEST_F(RenderTextTest, HarfBuzz_BreakRunsByUnicodeBlocks) {
@@ -4460,21 +4408,21 @@ TEST_F(RenderTextTest, StylePropagated) {
 
   DrawVisualText();
   EXPECT_EQ(SkFontStyle::Normal(),
-            GetRendererPaint().getTypeface()->fontStyle());
+            GetRendererFont().getTypeface()->fontStyle());
 
   render_text->SetWeight(Font::Weight::BOLD);
   DrawVisualText();
-  EXPECT_EQ(SkFontStyle::Bold(), GetRendererPaint().getTypeface()->fontStyle());
+  EXPECT_EQ(SkFontStyle::Bold(), GetRendererFont().getTypeface()->fontStyle());
 
-  render_text->SetStyle(TextStyle::ITALIC, true);
+  render_text->SetStyle(TEXT_STYLE_ITALIC, true);
   DrawVisualText();
   EXPECT_EQ(SkFontStyle::BoldItalic(),
-            GetRendererPaint().getTypeface()->fontStyle());
+            GetRendererFont().getTypeface()->fontStyle());
 
   render_text->SetWeight(Font::Weight::NORMAL);
   DrawVisualText();
   EXPECT_EQ(SkFontStyle::Italic(),
-            GetRendererPaint().getTypeface()->fontStyle());
+            GetRendererFont().getTypeface()->fontStyle());
 }
 
 // Ensure the painter adheres to RenderText::subpixel_rendering_suppressed().
@@ -4493,7 +4441,7 @@ TEST_F(RenderTextTest, SubpixelRenderingSuppressed) {
       FontRenderParams::SUBPIXEL_RENDERING_RGB;
   DrawVisualText();
 #endif
-  EXPECT_TRUE(GetRendererPaint().isLCDRenderText());
+  EXPECT_EQ(GetRendererFont().getEdging(), SkFont::Edging::kSubpixelAntiAlias);
 
   render_text->set_subpixel_rendering_suppressed(true);
   DrawVisualText();
@@ -4501,14 +4449,53 @@ TEST_F(RenderTextTest, SubpixelRenderingSuppressed) {
   // For Linux, runs shouldn't be re-calculated, and the suppression of the
   // SUBPIXEL_RENDERING_RGB set above should now take effect. But, after
   // checking, apply the override anyway to be explicit that it is suppressed.
-  EXPECT_FALSE(GetRendererPaint().isLCDRenderText());
+  EXPECT_NE(GetRendererFont().getEdging(), SkFont::Edging::kSubpixelAntiAlias);
   GetHarfBuzzRunList()
       ->runs()[0]
       ->font_params.render_params.subpixel_rendering =
       FontRenderParams::SUBPIXEL_RENDERING_RGB;
   DrawVisualText();
 #endif
-  EXPECT_FALSE(GetRendererPaint().isLCDRenderText());
+  EXPECT_NE(GetRendererFont().getEdging(), SkFont::Edging::kSubpixelAntiAlias);
+}
+
+// Ensure the SkFont Edging is computed accurately.
+TEST_F(RenderTextTest, SkFontEdging) {
+  const auto edging = [this]() { return GetRendererFont().getEdging(); };
+
+  FontRenderParams params;
+  EXPECT_TRUE(params.antialiasing);
+  EXPECT_EQ(params.subpixel_rendering,
+            FontRenderParams::SUBPIXEL_RENDERING_NONE);
+
+  // aa: true, subpixel: false, subpixel_suppressed: false -> kAntiAlias
+  renderer()->SetFontRenderParams(params,
+                                  false /*subpixel_rendering_suppressed*/);
+  EXPECT_EQ(edging(), SkFont::Edging::kAntiAlias);
+
+  // aa: false, subpixel: false, subpixel_suppressed: false -> kAlias
+  params.antialiasing = false;
+  renderer()->SetFontRenderParams(params,
+                                  false /*subpixel_rendering_suppressed*/);
+  EXPECT_EQ(edging(), SkFont::Edging::kAlias);
+
+  // aa: true, subpixel: true, subpixel_suppressed: false -> kSubpixelAntiAlias
+  params.antialiasing = true;
+  params.subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_RGB;
+  renderer()->SetFontRenderParams(params,
+                                  false /*subpixel_rendering_suppressed*/);
+  EXPECT_EQ(edging(), SkFont::Edging::kSubpixelAntiAlias);
+
+  // aa: true, subpixel: true, subpixel_suppressed: true -> kAntiAlias
+  renderer()->SetFontRenderParams(params,
+                                  true /*subpixel_rendering_suppressed*/);
+  EXPECT_EQ(edging(), SkFont::Edging::kAntiAlias);
+
+  // aa: false, subpixel: true, subpixel_suppressed: false -> kAlias
+  params.antialiasing = false;
+  renderer()->SetFontRenderParams(params,
+                                  false /*subpixel_rendering_suppressed*/);
+  EXPECT_EQ(edging(), SkFont::Edging::kAlias);
 }
 
 // Verify GetWordLookupDataAtPoint returns the correct baseline point and
@@ -4522,9 +4509,9 @@ TEST_F(RenderTextTest, GetWordLookupDataAtPoint_LTR) {
   render_text->SetDisplayRect(Rect(100, 30));
   render_text->SetText(ltr);
   render_text->ApplyWeight(Font::Weight::SEMIBOLD, Range(0, 3));
-  render_text->ApplyStyle(UNDERLINE, true, Range(1, 5));
-  render_text->ApplyStyle(ITALIC, true, Range(3, 8));
-  render_text->ApplyStyle(STRIKE, true, Range(1, 7));
+  render_text->ApplyStyle(TEXT_STYLE_UNDERLINE, true, Range(1, 5));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(3, 8));
+  render_text->ApplyStyle(TEXT_STYLE_STRIKE, true, Range(1, 7));
   const int cursor_y = GetCursorYForTesting();
 
   const std::vector<RenderText::FontSpan> font_spans =
@@ -4602,9 +4589,9 @@ TEST_F(RenderTextTest, GetWordLookupDataAtPoint_RTL) {
   render_text->SetDisplayRect(Rect(100, 30));
   render_text->SetText(rtl);
   render_text->ApplyWeight(Font::Weight::SEMIBOLD, Range(2, 3));
-  render_text->ApplyStyle(UNDERLINE, true, Range(3, 6));
-  render_text->ApplyStyle(ITALIC, true, Range(0, 3));
-  render_text->ApplyStyle(STRIKE, true, Range(2, 5));
+  render_text->ApplyStyle(TEXT_STYLE_UNDERLINE, true, Range(3, 6));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(0, 3));
+  render_text->ApplyStyle(TEXT_STYLE_STRIKE, true, Range(2, 5));
   const int cursor_y = GetCursorYForTesting();
 
   const std::vector<RenderText::FontSpan> font_spans =
@@ -4683,9 +4670,9 @@ TEST_F(RenderTextTest, GetWordLookupDataAtPoint_Multiline) {
   render_text->SetDisplayRect(Rect(500, 500));
   render_text->SetText(text);
   render_text->ApplyWeight(Font::Weight::SEMIBOLD, Range(0, 3));
-  render_text->ApplyStyle(UNDERLINE, true, Range(1, 7));
-  render_text->ApplyStyle(STRIKE, true, Range(1, 8));
-  render_text->ApplyStyle(ITALIC, true, Range(5, 9));
+  render_text->ApplyStyle(TEXT_STYLE_UNDERLINE, true, Range(1, 7));
+  render_text->ApplyStyle(TEXT_STYLE_STRIKE, true, Range(1, 8));
+  render_text->ApplyStyle(TEXT_STYLE_ITALIC, true, Range(5, 9));
 
   // Set up test expectations.
   const std::vector<RenderText::FontSpan> font_spans =
@@ -4792,7 +4779,7 @@ TEST_F(RenderTextTest, GetLookupDataAtRange_Multiline) {
   render_text->SetDisplayRect(Rect(500, 500));
   render_text->SetText(text);
   render_text->ApplyWeight(Font::Weight::SEMIBOLD, kWordOneRange);
-  render_text->ApplyStyle(UNDERLINE, true, kWordTwoRange);
+  render_text->ApplyStyle(TEXT_STYLE_UNDERLINE, true, kWordTwoRange);
 
   // Set up test expectations.
   const std::vector<RenderText::FontSpan> font_spans =

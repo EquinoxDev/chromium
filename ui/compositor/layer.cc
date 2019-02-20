@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
@@ -166,6 +167,9 @@ Layer::~Layer() {
   for (auto* child : children_)
     child->parent_ = nullptr;
 
+  if (content_layer_)
+    content_layer_->ClearClient();
+  cc_layer_->SetLayerClient(nullptr);
   cc_layer_->RemoveFromParent();
   if (transfer_release_callback_)
     transfer_release_callback_->Run(gpu::SyncToken(), false);
@@ -219,6 +223,17 @@ std::unique_ptr<Layer> Layer::Clone() const {
 std::unique_ptr<Layer> Layer::Mirror() {
   auto mirror = Clone();
   mirrors_.emplace_back(std::make_unique<LayerMirror>(this, mirror.get()));
+
+  if (!transfer_resource_.mailbox_holder.mailbox.IsZero()) {
+    // Send an empty release callback because we don't want the resource to be
+    // freed up until the original layer releases it.
+    mirror->SetTransferableResource(
+        transfer_resource_,
+        viz::SingleReleaseCallback::Create(base::BindOnce(
+            [](const gpu::SyncToken& sync_token, bool is_lost) {})),
+        frame_size_in_dip_);
+  }
+
   return mirror;
 }
 
@@ -364,7 +379,6 @@ void Layer::SetBounds(const gfx::Rect& bounds) {
 void Layer::SetSubpixelPositionOffset(const gfx::Vector2dF& offset) {
   subpixel_position_offset_ = offset;
   RecomputePosition();
-  RecomputeBackdropBounds();
 }
 
 gfx::Rect Layer::GetTargetBounds() const {
@@ -526,7 +540,6 @@ void Layer::SetLayerBackgroundFilters() {
         background_blur_sigma_, SkBlurImageFilter::kClamp_TileMode));
   }
   cc_layer_->SetBackdropFilters(filters);
-  RecomputeBackdropBounds();
 }
 
 float Layer::GetTargetOpacity() const {
@@ -627,7 +640,10 @@ void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
   new_layer->SetTrilinearFiltering(cc_layer_->trilinear_filtering());
 
   cc_layer_ = new_layer.get();
-  content_layer_ = nullptr;
+  if (content_layer_) {
+    content_layer_->ClearClient();
+    content_layer_ = nullptr;
+  }
   solid_color_layer_ = nullptr;
   texture_layer_ = nullptr;
   surface_layer_ = nullptr;
@@ -756,6 +772,16 @@ void Layer::SetTransferableResource(
   transfer_release_callback_ = std::move(release_callback);
   transfer_resource_ = resource;
   SetTextureSize(texture_size_in_dip);
+
+  for (const auto& mirror : mirrors_) {
+    // The release callbacks should be empty as only the source layer
+    // should be able to release the texture resource.
+    mirror->dest()->SetTransferableResource(
+        transfer_resource_,
+        viz::SingleReleaseCallback::Create(base::BindOnce(
+            [](const gpu::SyncToken& sync_token, bool is_lost) {})),
+        frame_size_in_dip_);
+  }
 }
 
 void Layer::SetTextureSize(gfx::Size texture_size_in_dip) {
@@ -860,6 +886,9 @@ void Layer::SetShowSolidColorContent() {
     transfer_release_callback_.reset();
   }
   RecomputeDrawsContentAndUVRect();
+
+  for (const auto& mirror : mirrors_)
+    mirror->dest()->SetShowSolidColorContent();
 }
 
 void Layer::UpdateNinePatchLayerImage(const gfx::ImageSkia& image) {
@@ -932,6 +961,9 @@ void Layer::ScheduleDraw() {
 }
 
 void Layer::SendDamagedRects() {
+  if (layer_mask_)
+    layer_mask_->SendDamagedRects();
+
   if (damaged_region_.IsEmpty())
     return;
   if (!delegate_ && transfer_resource_.mailbox_holder.mailbox.IsZero())
@@ -941,8 +973,6 @@ void Layer::SendDamagedRects() {
 
   for (gfx::Rect damaged_rect : damaged_region_)
     cc_layer_->SetNeedsDisplayRect(damaged_rect);
-  if (layer_mask_)
-    layer_mask_->SendDamagedRects();
 
   if (content_layer_)
     paint_region_.Union(damaged_region_);
@@ -977,7 +1007,6 @@ void Layer::OnDeviceScaleFactorChanged(float device_scale_factor) {
   device_scale_factor_ = device_scale_factor;
   RecomputeDrawsContentAndUVRect();
   RecomputePosition();
-  RecomputeBackdropBounds();
   if (nine_patch_layer_) {
     if (!nine_patch_layer_image_.isNull())
       UpdateNinePatchLayerImage(nine_patch_layer_image_);
@@ -1145,7 +1174,6 @@ void Layer::SetBoundsFromAnimation(const gfx::Rect& bounds,
 
   RecomputeDrawsContentAndUVRect();
   RecomputePosition();
-  RecomputeBackdropBounds();
 
   if (delegate_)
     delegate_->OnLayerBoundsChanged(old_bounds, reason);
@@ -1184,6 +1212,10 @@ void Layer::SetOpacityFromAnimation(float opacity,
 
 void Layer::SetVisibilityFromAnimation(bool visible,
                                        PropertyChangeReason reason) {
+  // Sync changes with the mirror layers.
+  for (const auto& mirror : mirrors_)
+    mirror->dest()->SetVisible(visible);
+
   if (visible_ == visible)
     return;
 
@@ -1293,7 +1325,6 @@ void Layer::CreateCcLayer() {
   cc_layer_->SetLayerClient(weak_ptr_factory_.GetWeakPtr());
   cc_layer_->SetElementId(cc::ElementId(cc_layer_->id()));
   RecomputePosition();
-  RecomputeBackdropBounds();
 }
 
 void Layer::RecomputeDrawsContentAndUVRect() {
@@ -1315,13 +1346,6 @@ void Layer::RecomputeDrawsContentAndUVRect() {
 void Layer::RecomputePosition() {
   cc_layer_->SetPosition(gfx::PointF(bounds_.origin()) +
                          subpixel_position_offset_);
-}
-
-void Layer::RecomputeBackdropBounds() {
-  gfx::RectF backdrop_filter_bounds =
-      gfx::RectF(bounds().width(), bounds().height());
-  backdrop_filter_bounds.Scale(GetDeviceScaleFactor());
-  cc_layer_->SetBackdropFilterBounds(backdrop_filter_bounds);
 }
 
 void Layer::SetCompositorForAnimatorsInTree(Compositor* compositor) {

@@ -7,6 +7,8 @@
 
 #include "ui/accessibility/platform/ax_platform_node_delegate.h"
 
+#include <set>
+
 namespace ui {
 
 // Base implementation of AXPlatformNodeDelegate where all functions
@@ -73,18 +75,29 @@ class AX_EXPORT AXPlatformNodeDelegateBase : public AXPlatformNodeDelegate {
 
   AXPlatformNode* GetFromNodeID(int32_t id) override;
 
-  // Given a node ID attribute (one where IsNodeIdIntAttribute is true),
-  // and a destination node ID, return a set of all source node IDs that
-  // have that relationship attribute between them and the destination.
-  std::set<int32_t> GetReverseRelations(ax::mojom::IntAttribute attr,
-                                        int32_t dst_id) override;
+  // Given a node ID attribute (one where IsNodeIdIntAttribute is true), return
+  // a target nodes for which this delegate's node has that relationship
+  // attribute or NULL if there is no such relationship.
+  AXPlatformNode* GetTargetNodeForRelation(
+      ax::mojom::IntAttribute attr) override;
 
-  // Given a node ID list attribute (one where
-  // IsNodeIdIntListAttribute is true), and a destination node ID,
-  // return a set of all source node IDs that have that relationship
-  // attribute between them and the destination.
-  std::set<int32_t> GetReverseRelations(ax::mojom::IntListAttribute attr,
-                                        int32_t dst_id) override;
+  // Given a node ID attribute (one where IsNodeIdIntListAttribute is true),
+  // return a set of all target nodes for which this delegate's node has that
+  // relationship attribute.
+  std::set<AXPlatformNode*> GetTargetNodesForRelation(
+      ax::mojom::IntListAttribute attr) override;
+
+  // Given a node ID attribute (one where IsNodeIdIntAttribute is true), return
+  // a set of all source nodes that have that relationship attribute between
+  // them and this delegate's node.
+  std::set<AXPlatformNode*> GetReverseRelations(
+      ax::mojom::IntAttribute attr) override;
+
+  // Given a node ID list attribute (one where IsNodeIdIntListAttribute is
+  // true) return a set of all source nodes that have that relationship
+  // attribute between them and this delegate's node.
+  std::set<AXPlatformNode*> GetReverseRelations(
+      ax::mojom::IntListAttribute attr) override;
 
   const AXUniqueId& GetUniqueId() const override;
 
@@ -121,7 +134,9 @@ class AX_EXPORT AXPlatformNodeDelegateBase : public AXPlatformNodeDelegate {
   int32_t GetCellId(int32_t row_index, int32_t col_index) const override;
   int32_t CellIndexToId(int32_t cell_index) const override;
 
-  // Only called on ordered-set-like elements and item-like elements.
+  // Ordered-set-like and item-like nodes.
+  bool IsOrderedSetItem() const override;
+  bool IsOrderedSet() const override;
   int32_t GetPosInSet() const override;
   int32_t GetSetSize() const override;
 
@@ -142,6 +157,14 @@ class AX_EXPORT AXPlatformNodeDelegateBase : public AXPlatformNodeDelegate {
   bool AccessibilityPerformAction(const AXActionData& data) override;
 
   //
+  // Localized strings.
+  //
+
+  base::string16 GetLocalizedStringForImageAnnotationStatus(
+      ax::mojom::ImageAnnotationStatus status) const override;
+  base::string16 GetLocalizedRoleDescriptionForUnlabeledImage() const override;
+
+  //
   // Testing.
   //
 
@@ -150,6 +173,12 @@ class AX_EXPORT AXPlatformNodeDelegateBase : public AXPlatformNodeDelegate {
   // the test behaves differently when the mouse happens to be over an
   // element. The default value should be falses if not in testing mode.
   bool ShouldIgnoreHoveredStateForTesting() override;
+
+ protected:
+  // Given a list of node ids, return the nodes in this delegate's tree to
+  // which they correspond.
+  std::set<ui::AXPlatformNode*> GetNodesForNodeIds(
+      const std::set<int32_t>& ids);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AXPlatformNodeDelegateBase);

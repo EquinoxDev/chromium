@@ -61,17 +61,11 @@ class LayoutNGMixin : public Base {
   // Returns the last layout result for this block flow with the given
   // constraint space and break token, or null if it is not up-to-date or
   // otherwise unavailable.
-  scoped_refptr<NGLayoutResult> CachedLayoutResult(const NGConstraintSpace&,
-                                                   const NGBreakToken*) final;
+  scoped_refptr<const NGLayoutResult> CachedLayoutResult(
+      const NGConstraintSpace&,
+      const NGBreakToken*) final;
 
-  void SetCachedLayoutResult(const NGConstraintSpace&,
-                             const NGBreakToken*,
-                             const NGLayoutResult&) final;
-  void ClearCachedLayoutResult() final;
   bool AreCachedLinesValidFor(const NGConstraintSpace&) const final;
-
-  // For testing only.
-  scoped_refptr<const NGLayoutResult> CachedLayoutResultForTesting() final;
 
   NGPaintFragment* PaintFragment() const final { return paint_fragment_.get(); }
   void SetPaintFragment(const NGBlockBreakToken*,
@@ -101,8 +95,6 @@ class LayoutNGMixin : public Base {
                                   MarkingBehavior marking_behavior) final;
 
   std::unique_ptr<NGInlineNodeData> ng_inline_node_data_;
-
-  scoped_refptr<const NGLayoutResult> cached_result_;
   scoped_refptr<NGPaintFragment> paint_fragment_;
 
   friend class NGBaseLayoutAlgorithmTest;

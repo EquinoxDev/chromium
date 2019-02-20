@@ -41,27 +41,43 @@ const cryptauthv2::FeatureMetadata& GenerateFeatureMetadata() {
       feature_metadata([] {
         cryptauthv2::BetterTogetherFeatureMetadata inner_metadata;
 
+<<<<<<< HEAD
         // Smart Lock and MultiDevice Setup are supported on all Chromebooks.
+=======
+        // Smart Lock, MultiDevice Setup and Messages are supported on all
+        // Chromebooks.
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
         inner_metadata.add_supported_features(
             cryptauthv2::
                 BetterTogetherFeatureMetadata_FeatureName_EASY_UNLOCK_CLIENT);
         inner_metadata.add_supported_features(
             cryptauthv2::
                 BetterTogetherFeatureMetadata_FeatureName_BETTER_TOGETHER_CLIENT);
+<<<<<<< HEAD
 
         // Instant Tethering and Android Messages are only supported if their
         // associated flags are enabled.
+=======
+        inner_metadata.add_supported_features(
+            cryptauthv2::
+                BetterTogetherFeatureMetadata_FeatureName_SMS_CONNECT_CLIENT);
+
+        // Instant Tethering is only supported if the associated flag enabled.
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
         if (base::FeatureList::IsEnabled(features::kInstantTethering)) {
           inner_metadata.add_supported_features(
               cryptauthv2::
                   BetterTogetherFeatureMetadata_FeatureName_MAGIC_TETHER_CLIENT);
         }
+<<<<<<< HEAD
         if (base::FeatureList::IsEnabled(
                 chromeos::features::kAndroidMessagesIntegration)) {
           inner_metadata.add_supported_features(
               cryptauthv2::
                   BetterTogetherFeatureMetadata_FeatureName_SMS_CONNECT_CLIENT);
         }
+=======
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
         // Note: |inner_metadata|'s enabled_features field is deprecated and
         // left unset here (the server ignores this value when processing the

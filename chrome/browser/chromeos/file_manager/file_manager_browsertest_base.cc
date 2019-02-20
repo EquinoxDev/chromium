@@ -13,6 +13,10 @@
 #include "ash/public/interfaces/shell_test_api.test-mojom-test-utils.h"
 #include "ash/public/interfaces/shell_test_api.test-mojom.h"
 #include "base/bind.h"
+<<<<<<< HEAD
+=======
+#include "base/bind_helpers.h"
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 #include "base/containers/circular_deque.h"
 #include "base/files/file_path.h"
 #include "base/json/json_reader.h"
@@ -1803,7 +1807,7 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
         extensions::AppWindowRegistry::Get(profile())->app_windows();
     ASSERT_FALSE(app_windows.empty());
     app_windows.front()->GetNativeWindow()->GetHost()->DispatchKeyEventPostIME(
-        &key_event, base::BindOnce([](bool) {}));
+        &key_event, base::NullCallback());
     *output = "mediaKeyDispatched";
     return;
   }
@@ -1827,7 +1831,11 @@ void FileManagerBrowserTestBase::OnCommand(const std::string& name,
       host = app_windows.front()->GetNativeWindow()->GetHost();
     }
     ASSERT_TRUE(host);
+<<<<<<< HEAD
     host->DispatchKeyEventPostIME(&key_event, base::BindOnce([](bool) {}));
+=======
+    host->DispatchKeyEventPostIME(&key_event, base::NullCallback());
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     *output = "tabKeyDispatched";
     return;
   }

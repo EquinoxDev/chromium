@@ -129,23 +129,29 @@ ToolbarController.prototype.onSelectionChanged_ = function() {
   if (selection.totalCount === 0) {
     text = '';
   } else if (selection.totalCount === 1) {
-    if (selection.directoryCount == 0)
+    if (selection.directoryCount == 0) {
       text = str('ONE_FILE_SELECTED');
-    else if (selection.fileCount == 0)
+    } else if (selection.fileCount == 0) {
       text = str('ONE_DIRECTORY_SELECTED');
+    }
   } else {
-    if (selection.directoryCount == 0)
+    if (selection.directoryCount == 0) {
       text = strf('MANY_FILES_SELECTED', selection.fileCount);
-    else if (selection.fileCount == 0)
+    } else if (selection.fileCount == 0) {
       text = strf('MANY_DIRECTORIES_SELECTED', selection.directoryCount);
-    else
+    } else {
       text = strf('MANY_ENTRIES_SELECTED', selection.totalCount);
+    }
   }
   this.filesSelectedLabel_.textContent = text;
 
   // Update visibility of the delete button.
   this.deleteButton_.hidden =
-      selection.totalCount === 0 || this.directoryModel_.isReadOnly();
+      (selection.totalCount === 0 || selection.hasReadOnlyEntry() ||
+       (util.isMyFilesVolumeEnabled() &&
+        this.directoryModel_.getCurrentRootType() ==
+            VolumeManagerCommon.RootType.DOWNLOADS &&
+        selection.entries.some(entry => entry.fullPath === '/Downloads')));
 
   // Set .selecting class to containing element to change the view accordingly.
   // TODO(fukino): This code changes the state of body, not the toolbar, to

@@ -12,7 +12,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "ui/accessibility/ax_export.h"
 #include "ui/accessibility/ax_tree_source.h"
@@ -170,6 +169,9 @@ class AXTreeSerializer {
   bool SerializeChangedNodes(
       AXSourceNode node,
       AXTreeUpdateBase<AXNodeData, AXTreeData>* out_update);
+
+  // Visit all of the descendants of |node| once.
+  void WalkAllDescendants(AXSourceNode node);
 
   // Delete the entire client subtree but don't set the did_reset_ flag
   // like when Reset() is called.
@@ -412,6 +414,12 @@ bool AXTreeSerializer<AXSourceNode, AXNodeData, AXTreeData>::SerializeChanges(
   if (!tree_->IsValid(lca))
     lca = tree_->GetRoot();
 
+  // Work around flaky source trees where nodes don't figure out their
+  // correct parent/child relationships until you walk the whole tree once.
+  // Covered by this test in the content_browsertests suite:
+  //     DumpAccessibilityTreeTest.AccessibilityAriaOwns.
+  WalkAllDescendants(lca);
+
   if (!SerializeChangedNodes(lca, out_update))
     return false;
 
@@ -606,6 +614,15 @@ bool AXTreeSerializer<AXSourceNode, AXNodeData, AXTreeData>::
       actual_serialized_node_child_ids);
 
   return true;
+}
+
+template <typename AXSourceNode, typename AXNodeData, typename AXTreeData>
+void AXTreeSerializer<AXSourceNode, AXNodeData, AXTreeData>::WalkAllDescendants(
+    AXSourceNode node) {
+  std::vector<AXSourceNode> children;
+  tree_->GetChildren(node, &children);
+  for (size_t i = 0; i < children.size(); ++i)
+    WalkAllDescendants(children[i]);
 }
 
 }  // namespace ui

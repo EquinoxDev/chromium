@@ -131,7 +131,11 @@ class SharedProtoDatabaseClient : public UniqueProtoDatabase {
     migration_status_ = migration_status;
   }
 
+<<<<<<< HEAD
   void UpdateClientInitMetadata(SharedDBMetadataProto::MigrationStatus);
+=======
+  virtual void UpdateClientInitMetadata(SharedDBMetadataProto::MigrationStatus);
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   SharedDBMetadataProto::MigrationStatus migration_status() const {
     return migration_status_;
@@ -141,6 +145,10 @@ class SharedProtoDatabaseClient : public UniqueProtoDatabase {
   friend class SharedProtoDatabase;
   friend class SharedProtoDatabaseTest;
   friend class SharedProtoDatabaseClientTest;
+<<<<<<< HEAD
+=======
+  friend class TestSharedProtoDatabaseClient;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   // Hide this so clients can only be created by the SharedProtoDatabase.
   SharedProtoDatabaseClient(

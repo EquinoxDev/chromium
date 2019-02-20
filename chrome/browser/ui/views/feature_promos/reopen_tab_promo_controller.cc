@@ -34,7 +34,12 @@ ReopenTabPromoController::ReopenTabPromoController(BrowserView* browser_view)
 
 void ReopenTabPromoController::ShowPromo() {
   // This shouldn't be called more than once. Check that state is fresh.
+<<<<<<< HEAD
   DCHECK_EQ(StepAtDismissal::kBubbleShown, promo_step_);
+=======
+  DCHECK(!is_showing_);
+  is_showing_ = true;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   // Here, we start the promo display. We highlight the app menu button and open
   // the promo bubble.
@@ -52,8 +57,12 @@ void ReopenTabPromoController::ShowPromo() {
 void ReopenTabPromoController::OnTabReopened(int command_id) {
   iph_service_->TabReopened();
 
+<<<<<<< HEAD
   if (command_id == AppMenuModel::kMinRecentTabsCommandId) {
     DCHECK_EQ(StepAtDismissal::kMenuOpened, promo_step_);
+=======
+  if (is_showing_ && command_id == AppMenuModel::kMinRecentTabsCommandId) {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     promo_step_ = StepAtDismissal::kTabReopened;
   }
 }

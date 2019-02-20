@@ -5,14 +5,14 @@
 /**
  * Namespace for common types.
  */
-var VolumeManagerCommon = {};
+const VolumeManagerCommon = {};
 
 /**
  * Paths that can be handled by the dialog opener in native code.
  * @enum {string}
  * @const
  */
-var AllowedPaths = {
+const AllowedPaths = {
   NATIVE_PATH: 'nativePath',
   NATIVE_OR_DRIVE_PATH: 'nativeOrDrivePath',
   ANY_PATH: 'anyPath',
@@ -93,6 +93,9 @@ VolumeManagerCommon.RootType = {
   // Root for media views.
   MEDIA_VIEW: 'media_view',
 
+  // Root for documents providers.
+  DOCUMENTS_PROVIDER: 'documents_provider',
+
   // Fake root for the mixed "Recent" view.
   RECENT: 'recent',
 
@@ -155,6 +158,7 @@ VolumeManagerCommon.RootTypesForUMA = [
   VolumeManagerCommon.RootType.COMPUTERS_GRAND_ROOT,              // 19
   VolumeManagerCommon.RootType.COMPUTER,                          // 20
   VolumeManagerCommon.RootType.EXTERNAL_MEDIA,                    // 21
+  VolumeManagerCommon.RootType.DOCUMENTS_PROVIDER,                // 22
 ];
 console.assert(
     Object.keys(VolumeManagerCommon.RootType).length ===
@@ -235,6 +239,7 @@ VolumeManagerCommon.VolumeType = {
   MTP: 'mtp',
   PROVIDED: 'provided',
   MEDIA_VIEW: 'media_view',
+  DOCUMENTS_PROVIDER: 'documents_provider',
   CROSTINI: 'crostini',
   ANDROID_FILES: 'android_files',
   MY_FILES: 'my_files',
@@ -258,7 +263,7 @@ VolumeManagerCommon.Source = {
  * @param {VolumeManagerCommon.VolumeType} type
  * @return {boolean}
  */
-VolumeManagerCommon.VolumeType.isNative = function(type) {
+VolumeManagerCommon.VolumeType.isNative = type => {
   return type === VolumeManagerCommon.VolumeType.DOWNLOADS ||
       type === VolumeManagerCommon.VolumeType.ANDROID_FILES ||
       type === VolumeManagerCommon.VolumeType.CROSTINI ||
@@ -273,7 +278,7 @@ Object.freeze(VolumeManagerCommon.VolumeType);
  * @param {VolumeManagerCommon.RootType} rootType RootType
  * @return {VolumeManagerCommon.VolumeType}
  */
-VolumeManagerCommon.getVolumeTypeFromRootType = function(rootType) {
+VolumeManagerCommon.getVolumeTypeFromRootType = rootType => {
   switch (rootType) {
     case VolumeManagerCommon.RootType.DOWNLOADS:
       return VolumeManagerCommon.VolumeType.DOWNLOADS;
@@ -299,6 +304,8 @@ VolumeManagerCommon.getVolumeTypeFromRootType = function(rootType) {
       return VolumeManagerCommon.VolumeType.PROVIDED;
     case VolumeManagerCommon.RootType.MEDIA_VIEW:
       return VolumeManagerCommon.VolumeType.MEDIA_VIEW;
+    case VolumeManagerCommon.RootType.DOCUMENTS_PROVIDER:
+      return VolumeManagerCommon.VolumeType.DOCUMENTS_PROVIDER;
     case VolumeManagerCommon.RootType.CROSTINI:
       return VolumeManagerCommon.VolumeType.CROSTINI;
     case VolumeManagerCommon.RootType.ANDROID_FILES:
@@ -313,7 +320,7 @@ VolumeManagerCommon.getVolumeTypeFromRootType = function(rootType) {
  * @param {VolumeManagerCommon.VolumeType} volumeType .
  * @return {VolumeManagerCommon.RootType}
  */
-VolumeManagerCommon.getRootTypeFromVolumeType = function(volumeType) {
+VolumeManagerCommon.getRootTypeFromVolumeType = volumeType => {
   switch (volumeType) {
     case VolumeManagerCommon.VolumeType.ANDROID_FILES:
       return VolumeManagerCommon.RootType.ANDROID_FILES;
@@ -327,6 +334,8 @@ VolumeManagerCommon.getRootTypeFromVolumeType = function(volumeType) {
       return VolumeManagerCommon.RootType.DRIVE;
     case VolumeManagerCommon.VolumeType.MEDIA_VIEW:
       return VolumeManagerCommon.RootType.MEDIA_VIEW;
+    case VolumeManagerCommon.VolumeType.DOCUMENTS_PROVIDER:
+      return VolumeManagerCommon.RootType.DOCUMENTS_PROVIDER;
     case VolumeManagerCommon.VolumeType.MTP:
       return VolumeManagerCommon.RootType.MTP;
     case VolumeManagerCommon.VolumeType.MY_FILES:
@@ -367,7 +376,7 @@ Object.freeze(VolumeManagerCommon.MediaViewRootType);
  * @param {string} volumeId Volume ID.
  * @return {VolumeManagerCommon.MediaViewRootType}
  */
-VolumeManagerCommon.getMediaViewRootTypeFromVolumeId = function(volumeId) {
+VolumeManagerCommon.getMediaViewRootTypeFromVolumeId = volumeId => {
   return /** @type {VolumeManagerCommon.MediaViewRootType} */ (
       volumeId.split(':', 2)[1]);
 };
@@ -402,9 +411,9 @@ VolumeManagerCommon.ARCHIVE_OPENED_EVENT_TYPE = 'archive_opened';
  * file is newly mounted, or when opened a one already mounted.
  * @param {!DirectoryEntry} mountPoint The root directory of the mounted
  *     volume.
- * @return {!CustomEvent}
+ * @return {!CustomEvent<!DirectoryEntry>}
  */
-VolumeManagerCommon.createArchiveOpenedEvent = function(mountPoint) {
+VolumeManagerCommon.createArchiveOpenedEvent = mountPoint => {
   return new CustomEvent(
       VolumeManagerCommon.ARCHIVE_OPENED_EVENT_TYPE,
       {detail: {mountPoint: mountPoint}});

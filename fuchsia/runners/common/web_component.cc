@@ -61,6 +61,7 @@ WebComponent::WebComponent(
   // Create the underlying Frame and get its NavigationController.
   runner_->context()->CreateFrame(frame_.NewRequest());
 
+<<<<<<< HEAD
   // Publish ViewProvider before returning control to the message-loop, to
   // ensure that it is available before the ServiceDirectory starts processing
   // requests.
@@ -70,6 +71,20 @@ WebComponent::WebComponent(
   legacy_view_provider_binding_ = std::make_unique<
       base::fuchsia::ScopedServiceBinding<fuchsia::ui::viewsv1::ViewProvider>>(
       startup_context()->public_services(), this);
+=======
+  if (startup_context()->public_services()) {
+    // Publish ViewProvider before returning control to the message-loop, to
+    // ensure that it is available before the ServiceDirectory starts processing
+    // requests.
+    view_provider_binding_ = std::make_unique<
+        base::fuchsia::ScopedServiceBinding<fuchsia::ui::app::ViewProvider>>(
+        startup_context()->public_services(), this);
+    legacy_view_provider_binding_ =
+        std::make_unique<base::fuchsia::ScopedServiceBinding<
+            fuchsia::ui::viewsv1::ViewProvider>>(
+            startup_context()->public_services(), this);
+  }
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 }
 
 void WebComponent::Kill() {

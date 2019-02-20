@@ -1,4 +1,4 @@
-// Copyright (c) 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,44 +12,38 @@
 
 namespace gfx {
 
-RRectF::RRectF() = default;
-
-RRectF::RRectF(const SkRRect& rect) : skrrect_(rect) {}
-
-RRectF::RRectF(const RRectF& rect) = default;
-
-RRectF::RRectF(const gfx::RectF& rect)
-    : skrrect_(SkRRect::MakeRect(gfx::RectFToSkRect(rect))) {}
-
-RRectF::RRectF(float x, float y, float width, float height, float radius)
-    : skrrect_(SkRRect::MakeRectXY(SkRect::MakeXYWH(x, y, width, height),
-                                   radius,
-                                   radius)) {}
-
+// Directly sets all four corners.
 RRectF::RRectF(float x,
                float y,
                float width,
                float height,
-               float x_rad,
-               float y_rad)
-    : skrrect_(SkRRect::MakeRectXY(SkRect::MakeXYWH(x, y, width, height),
-                                   x_rad,
-                                   y_rad)) {}
-
-RRectF::~RRectF() = default;
+               float upper_left_x,
+               float upper_left_y,
+               float upper_right_x,
+               float upper_right_y,
+               float lower_right_x,
+               float lower_right_y,
+               float lower_left_x,
+               float lower_left_y)
+    : RRectF(x, y, width, height, upper_left_x, upper_left_y) {
+  SetCornerRadii(RRectF::Corner::kUpperRight, upper_right_x, upper_right_y);
+  SetCornerRadii(RRectF::Corner::kLowerRight, lower_right_x, lower_right_y);
+  SetCornerRadii(RRectF::Corner::kLowerLeft, lower_left_x, lower_left_y);
+}
 
 gfx::Vector2dF RRectF::GetSimpleRadii() const {
-  DCHECK(type() <= Type::kOval);
+  DCHECK(GetType() <= Type::kOval);
   SkPoint result = skrrect_.getSimpleRadii();
   return gfx::Vector2dF(result.x(), result.y());
 }
+
 float RRectF::GetSimpleRadius() const {
-  DCHECK(type() <= Type::kSingle);
+  DCHECK(GetType() <= Type::kSingle);
   SkPoint result = skrrect_.getSimpleRadii();
   return result.x();
 }
 
-RRectF::Type RRectF::type() const {
+RRectF::Type RRectF::GetType() const {
   SkPoint rad;
   switch (skrrect_.getType()) {
     case SkRRect::kEmpty_Type:
@@ -68,7 +62,7 @@ RRectF::Type RRectF::type() const {
     case SkRRect::kComplex_Type:
     default:
       return Type::kComplex;
-  };
+  }
 }
 
 gfx::Vector2dF RRectF::GetCornerRadii(Corner corner) const {
@@ -87,11 +81,12 @@ void RRectF::GetAllRadii(SkVector radii[4]) const {
   radii[SkRRect::kLowerLeft_Corner] =
       skrrect_.radii(SkRRect::kLowerLeft_Corner);
 }
-void RRectF::SetCornerRadii(Corner corner, const gfx::Vector2dF& radius) {
+
+void RRectF::SetCornerRadii(Corner corner, float x_rad, float y_rad) {
   // Unfortunately, the only way to set this is to create a new SkRRect.
   SkVector radii[4];
   GetAllRadii(radii);
-  radii[SkRRect::Corner(corner)] = SkPoint::Make(radius.x(), radius.y());
+  radii[SkRRect::Corner(corner)] = SkPoint::Make(x_rad, y_rad);
   skrrect_.setRectRadii(skrrect_.rect(), radii);
 }
 
@@ -103,18 +98,15 @@ void RRectF::Scale(float x_scale, float y_scale) {
   skrrect_ = result;
 }
 
-const RRectF& RRectF::operator=(const RRectF& rect) {
-  skrrect_ = rect.skrrect_;
-  return *this;
-}
-
 void RRectF::Offset(float horizontal, float vertical) {
   skrrect_.offset(horizontal, vertical);
 }
+
 const RRectF& RRectF::operator+=(const gfx::Vector2dF& offset) {
   Offset(offset.x(), offset.y());
   return *this;
 }
+
 const RRectF& RRectF::operator-=(const gfx::Vector2dF& offset) {
   Offset(-offset.x(), -offset.y());
   return *this;
@@ -125,7 +117,7 @@ std::string RRectF::ToString() const {
   ss << std::fixed << std::setprecision(3);
   ss << rect().origin().x() << "," << rect().origin().y() << " "
      << rect().size().width() << "x" << rect().size().height();
-  Type type = this->type();
+  Type type = this->GetType();
   if (type <= Type::kRect) {
     ss << ", rectangular";
   } else if (type <= Type::kSingle) {
@@ -143,6 +135,29 @@ std::string RRectF::ToString() const {
     }
   }
   return ss.str();
+}
+
+namespace {
+inline bool AboveTol(float val1, float val2, float tolerance) {
+  return (std::abs(val1 - val2) > tolerance);
+}
+}  // namespace
+
+bool RRectF::ApproximatelyEqual(const RRectF& rect, float tolerance) const {
+  if (AboveTol(skrrect_.rect().x(), rect.skrrect_.rect().x(), tolerance) ||
+      AboveTol(skrrect_.rect().y(), rect.skrrect_.rect().y(), tolerance) ||
+      AboveTol(skrrect_.width(), rect.skrrect_.width(), tolerance) ||
+      AboveTol(skrrect_.height(), rect.skrrect_.height(), tolerance))
+    return false;
+  for (int i = 0; i < 4; i++) {
+    SkVector r1 = skrrect_.radii(SkRRect::Corner(i));
+    SkVector r2 = rect.skrrect_.radii(SkRRect::Corner(i));
+    if (std::abs(r1.x() - r2.x()) > tolerance ||
+        std::abs(r1.y() - r2.y()) > tolerance) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace gfx

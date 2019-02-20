@@ -18,6 +18,7 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/animation/flood_fill_ink_drop_ripple.h"
 #include "ui/views/animation/ink_drop_highlight.h"
 #include "ui/views/animation/ink_drop_impl.h"
@@ -48,8 +49,6 @@ constexpr int kSearchBoxPreferredWidth = 544;
 constexpr SkColor kSelectedColor = SkColorSetARGB(15, 0, 0, 0);
 
 constexpr SkColor kSearchTextColor = SkColorSetRGB(0x33, 0x33, 0x33);
-
-constexpr int kLightVibrantBlendAlpha = 0xE6;
 
 // Color of placeholder text in zero query state.
 constexpr SkColor kZeroQuerySearchboxColor =
@@ -206,6 +205,15 @@ class SearchBoxTextfield : public views::Textfield {
     // Clear selection and set the caret to the end of the text.
     ClearSelection();
     Textfield::OnBlur();
+
+    // Search box focus announcement overlaps with opening or closing folder
+    // alert, so we ignored the search box in those cases. Now reset the flag
+    // here.
+    auto& accessibility = GetViewAccessibility();
+    if (accessibility.IsIgnored()) {
+      accessibility.OverrideIsIgnored(false);
+      accessibility.NotifyAccessibilityEvent(ax::mojom::Event::kTreeChanged);
+    }
   }
 
   void OnGestureEvent(ui::GestureEvent* event) override {
@@ -430,6 +438,8 @@ void SearchBoxViewBase::OnSearchBoxFocusedChanged() {
   UpdateSearchBoxBorder();
   Layout();
   SchedulePaint();
+
+  delegate_->SearchBoxFocusChanged(this);
 }
 
 bool SearchBoxViewBase::IsSearchBoxTrimmedQueryEmpty() const {
@@ -464,11 +474,10 @@ void SearchBoxViewBase::NotifyActiveChanged() {
 
 // TODO(crbug.com/755219): Unify this with UpdateBackgroundColor.
 void SearchBoxViewBase::SetBackgroundColor(SkColor light_vibrant) {
-  const SkColor light_vibrant_mixed = color_utils::AlphaBlend(
-      SK_ColorWHITE, light_vibrant, kLightVibrantBlendAlpha);
-  background_color_ = SK_ColorTRANSPARENT == light_vibrant
-                          ? kSearchBoxBackgroundDefault
-                          : light_vibrant_mixed;
+  background_color_ =
+      (light_vibrant == SK_ColorTRANSPARENT)
+          ? kSearchBoxBackgroundDefault
+          : color_utils::AlphaBlend(SK_ColorWHITE, light_vibrant, 0.9f);
 }
 
 void SearchBoxViewBase::SetSearchBoxColor(SkColor color) {

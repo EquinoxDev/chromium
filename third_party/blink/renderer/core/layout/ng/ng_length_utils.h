@@ -159,6 +159,7 @@ ComputeReplacedSize(const NGLayoutInputNode&,
                     const NGConstraintSpace&,
                     const base::Optional<MinMaxSize>&);
 
+<<<<<<< HEAD
 // Return true if it's possible (but not necessarily guaranteed) that the new
 // constraint space will give a different size compared to the old one, when
 // computed style and child content remain unchanged.
@@ -167,6 +168,8 @@ bool SizeMayChange(const ComputedStyle&,
                    const NGConstraintSpace& old_space,
                    const NGLayoutResult& layout_result);
 
+=======
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 // Based on available inline size, CSS computed column-width, CSS computed
 // column-count and CSS used column-gap, return CSS used column-count.
 CORE_EXPORT int ResolveUsedColumnCount(int computed_count,

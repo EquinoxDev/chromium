@@ -4,17 +4,16 @@
 
 #include "ui/views/mus/desktop_window_tree_host_mus.h"
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/transient_window_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/mus/focus_synchronizer.h"
-#include "ui/aura/mus/window_port_mus.h"
 #include "ui/aura/mus/window_tree_client.h"
 #include "ui/aura/mus/window_tree_host_mus.h"
 #include "ui/aura/mus/window_tree_host_mus_init_params.h"
@@ -28,14 +27,15 @@
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/corewm/tooltip_aura.h"
+#include "ui/views/mus/cursor_manager_owner.h"
 #include "ui/views/mus/mus_client.h"
 #include "ui/views/mus/mus_property_mirror.h"
+#include "ui/views/mus/screen_position_client_mus.h"
 #include "ui/views/mus/window_manager_frame_values.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
+#include "ui/views/widget/desktop_aura/desktop_screen_position_client.h"
 #include "ui/views/widget/native_widget_aura.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/wm/core/cursor_manager.h"
-#include "ui/wm/core/native_cursor_manager.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
 
@@ -54,14 +54,6 @@ class ClientSideNonClientFrameView : public NonClientFrameView,
     if (MusClient::Get()->use_remote_accessibility_host())
       GetViewAccessibility().OverrideIsIgnored(true);
 
-    // Initialize kTopViewInset to a default value. Further updates will come
-    // from Ash. This is necessary so that during app window creation,
-    // GetWindowBoundsForClientBounds() can calculate correctly.
-    const auto& values = WindowManagerFrameValues::instance();
-    widget->GetNativeWindow()->SetProperty(aura::client::kTopViewInset,
-                                           widget->IsMaximized()
-                                               ? values.maximized_insets.top()
-                                               : values.normal_insets.top());
     observed_.Add(window());
   }
   ~ClientSideNonClientFrameView() override {}
@@ -95,7 +87,7 @@ class ClientSideNonClientFrameView : public NonClientFrameView,
     return outset_bounds;
   }
   int NonClientHitTest(const gfx::Point& point) override { return HTNOWHERE; }
-  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {
+  void GetWindowMask(const gfx::Size& size, SkPath* window_mask) override {
     // The window manager provides the shape; do nothing.
   }
   void ResetWindowControls() override {
@@ -156,125 +148,12 @@ class ClientSideNonClientFrameView : public NonClientFrameView,
   DISALLOW_COPY_AND_ASSIGN(ClientSideNonClientFrameView);
 };
 
-class NativeCursorManagerMus : public wm::NativeCursorManager {
- public:
-  explicit NativeCursorManagerMus(aura::Window* window) : window_(window) {}
-  ~NativeCursorManagerMus() override {}
-
-  // wm::NativeCursorManager:
-  void SetDisplay(const display::Display& display,
-                  wm::NativeCursorManagerDelegate* delegate) override {
-    // We ignore this entirely, as cursor are set on the client.
-  }
-
-  void SetCursor(gfx::NativeCursor cursor,
-                 wm::NativeCursorManagerDelegate* delegate) override {
-    ui::CursorData mojo_cursor;
-    if (cursor.native_type() == ui::CursorType::kCustom) {
-      mojo_cursor =
-          ui::CursorData(cursor.GetHotspot(), {cursor.GetBitmap()},
-                         cursor.device_scale_factor(), base::TimeDelta());
-    } else {
-      mojo_cursor = ui::CursorData(cursor.native_type());
-    }
-
-    aura::WindowPortMus::Get(window_)->SetCursor(mojo_cursor);
-    delegate->CommitCursor(cursor);
-  }
-
-  void SetVisibility(bool visible,
-                     wm::NativeCursorManagerDelegate* delegate) override {
-    delegate->CommitVisibility(visible);
-
-    if (visible) {
-      SetCursor(delegate->GetCursor(), delegate);
-    } else {
-      aura::WindowPortMus::Get(window_)->SetCursor(
-          ui::CursorData(ui::CursorType::kNone));
-    }
-  }
-
-  void SetCursorSize(ui::CursorSize cursor_size,
-                     wm::NativeCursorManagerDelegate* delegate) override {
-    // TODO(erg): For now, ignore the difference between SET_NORMAL and
-    // SET_LARGE here. This feels like a thing that mus should decide instead.
-    //
-    // Also, it's NOTIMPLEMENTED() in the desktop version!? Including not
-    // acknowledging the call in the delegate.
-    NOTIMPLEMENTED();
-  }
-
-  void SetMouseEventsEnabled(
-      bool enabled,
-      wm::NativeCursorManagerDelegate* delegate) override {
-    // TODO(erg): How do we actually implement this?
-    //
-    // Mouse event dispatch is potentially done in a different process,
-    // definitely in a different mojo service. Each app is fairly locked down.
-    delegate->CommitMouseEventsEnabled(enabled);
-    NOTIMPLEMENTED();
-  }
-
- private:
-  aura::Window* window_;
-
-  DISALLOW_COPY_AND_ASSIGN(NativeCursorManagerMus);
-};
-
 void OnMoveLoopEnd(bool* out_success,
                    base::Closure quit_closure,
                    bool in_success) {
   *out_success = in_success;
   quit_closure.Run();
 }
-
-// ScopedTouchTransferController controls the transfer of touch events for
-// window move loop. It transfers touches before the window move starts, and
-// then transfers them back to the original window when the window move ends.
-// However this transferring back to the original shouldn't happen if the client
-// wants to continue the dragging on another window (like attaching the dragged
-// tab to another window).
-class ScopedTouchTransferController : public ui::GestureRecognizerObserver {
- public:
-  ScopedTouchTransferController(aura::Window* source, aura::Window* dest)
-      : tracker_({source, dest}),
-        gesture_recognizer_(source->env()->gesture_recognizer()) {
-    gesture_recognizer_->TransferEventsTo(
-        source, dest, ui::TransferTouchesBehavior::kDontCancel);
-    gesture_recognizer_->AddObserver(this);
-  }
-  ~ScopedTouchTransferController() override {
-    gesture_recognizer_->RemoveObserver(this);
-    if (tracker_.windows().size() == 2) {
-      aura::Window* source = tracker_.Pop();
-      aura::Window* dest = tracker_.Pop();
-      gesture_recognizer_->TransferEventsTo(
-          dest, source, ui::TransferTouchesBehavior::kDontCancel);
-    }
-  }
-
- private:
-  // ui::GestureRecognizerObserver:
-  void OnActiveTouchesCanceledExcept(
-      ui::GestureConsumer* not_cancelled) override {}
-  void OnEventsTransferred(
-      ui::GestureConsumer* current_consumer,
-      ui::GestureConsumer* new_consumer,
-      ui::TransferTouchesBehavior transfer_touches_behavior) override {
-    if (tracker_.windows().size() <= 1)
-      return;
-    aura::Window* dest = tracker_.windows()[1];
-    if (current_consumer == dest)
-      tracker_.Remove(dest);
-  }
-  void OnActiveTouchesCanceled(ui::GestureConsumer* consumer) override {}
-
-  aura::WindowTracker tracker_;
-
-  ui::GestureRecognizer* gesture_recognizer_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedTouchTransferController);
-};
 
 }  // namespace
 
@@ -346,10 +225,6 @@ DesktopWindowTreeHostMus::DesktopWindowTreeHostMus(
 DesktopWindowTreeHostMus::~DesktopWindowTreeHostMus() {
   window_tree_host_window_observer_.reset();
 
-  // The cursor-client can be accessed during WindowTreeHostMus tear-down. So
-  // the cursor-client needs to be unset on the root-window before
-  // |cursor_manager_| is destroyed.
-  aura::client::SetCursorClient(window(), nullptr);
   content_window()->RemoveObserver(this);
   MusClient::Get()->RemoveObserver(this);
   MusClient::Get()->window_tree_client()->focus_synchronizer()->RemoveObserver(
@@ -394,14 +269,6 @@ float DesktopWindowTreeHostMus::GetScaleFactor() const {
       .device_scale_factor();
 }
 
-void DesktopWindowTreeHostMus::SetBoundsInDIP(const gfx::Rect& bounds_in_dip) {
-  // Do not use ConvertRectToPixel, enclosing rects cause problems.
-  const gfx::Rect rect(
-      gfx::ScaleToFlooredPoint(bounds_in_dip.origin(), GetScaleFactor()),
-      gfx::ScaleToCeiledSize(bounds_in_dip.size(), GetScaleFactor()));
-  SetBoundsInPixels(rect, viz::LocalSurfaceIdAllocation());
-}
-
 bool DesktopWindowTreeHostMus::IsWaitingForRestoreToComplete() const {
   return window_tree_host_window_observer_->is_waiting_for_restore();
 }
@@ -436,6 +303,25 @@ void DesktopWindowTreeHostMus::OnWindowTreeHostWindowVisibilityChanged(
     Hide();
 }
 
+void DesktopWindowTreeHostMus::UpdateMinAndMaxSize() {
+  gfx::Size min_size = content_window()->delegate()->GetMinimumSize();
+  gfx::Size max_size = content_window()->delegate()->GetMaximumSize();
+  if (min_size_ == min_size && max_size_ == max_size)
+    return;
+  min_size_ = min_size;
+  max_size_ = max_size;
+  // Setting the property to |window()| to propagate those properties to the
+  // window server.
+  if (min_size_ == gfx::Size())
+    window()->ClearProperty(aura::client::kMinimumSize);
+  else
+    window()->SetProperty(aura::client::kMinimumSize, new gfx::Size(min_size_));
+  if (max_size_ == gfx::Size())
+    window()->ClearProperty(aura::client::kMaximumSize);
+  else
+    window()->SetProperty(aura::client::kMaximumSize, new gfx::Size(max_size_));
+}
+
 void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
   const bool translucent =
       MusClient::ShouldMakeWidgetWindowsTranslucent(params);
@@ -453,9 +339,7 @@ void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
     SetBoundsInDIP(params.bounds);
   }
 
-  cursor_manager_ = std::make_unique<wm::CursorManager>(
-      std::make_unique<NativeCursorManagerMus>(window()));
-  aura::client::SetCursorClient(window(), cursor_manager_.get());
+  cursor_manager_owner_ = std::make_unique<CursorManagerOwner>(window());
   InitHost();
 
   NativeWidgetAura::SetShadowElevationFromInitParams(window(), params);
@@ -501,8 +385,6 @@ void DesktopWindowTreeHostMus::Init(const Widget::InitParams& params) {
 
   if (!params.accept_events)
     window()->SetEventTargetingPolicy(ws::mojom::EventTargetingPolicy::NONE);
-  else
-    aura::WindowPortMus::Get(content_window())->SetCanAcceptDrops(true);
 
   // Sets the has-content info for the occlusion tracker that runs on the Window
   // Service side.
@@ -571,6 +453,11 @@ DesktopWindowTreeHostMus::CreateDragDropClient(
     DesktopNativeCursorManager* cursor_manager) {
   // aura-mus handles installing a DragDropClient.
   return nullptr;
+}
+
+std::unique_ptr<aura::client::ScreenPositionClient>
+DesktopWindowTreeHostMus::CreateScreenPositionClient() {
+  return std::make_unique<ScreenPositionClientMus>(this);
 }
 
 void DesktopWindowTreeHostMus::Close() {
@@ -660,6 +547,9 @@ void DesktopWindowTreeHostMus::Show(ui::WindowShowState show_state,
   // otherwise focus goes to window().
   content_window()->Show();
 
+  if (show_state != ui::SHOW_STATE_MINIMIZED)
+    UpdateMinAndMaxSize();
+
   if (notify_visibility_change)
     native_widget_delegate_->OnNativeWidgetVisibilityChanged(true);
 
@@ -692,9 +582,8 @@ bool DesktopWindowTreeHostMus::IsVisible() const {
 }
 
 void DesktopWindowTreeHostMus::SetSize(const gfx::Size& size) {
-  // Use GetBoundsInPixels(), as the origin of window() is always at (0, 0).
-  gfx::Rect screen_bounds =
-      gfx::ConvertRectToDIP(GetScaleFactor(), GetBoundsInPixels());
+  // Use bounds_in_dip(), as the origin of window() is always at (0, 0).
+  gfx::Rect screen_bounds = bounds_in_dip();
   screen_bounds.set_size(size);
   SetBoundsInDIP(screen_bounds);
 }
@@ -747,7 +636,7 @@ void DesktopWindowTreeHostMus::GetWindowPlacement(
 }
 
 gfx::Rect DesktopWindowTreeHostMus::GetWindowBoundsInScreen() const {
-  return gfx::ConvertRectToDIP(GetScaleFactor(), GetBoundsInPixels());
+  return bounds_in_dip();
 }
 
 gfx::Rect DesktopWindowTreeHostMus::GetClientAreaBoundsInScreen() const {
@@ -903,14 +792,6 @@ Widget::MoveLoopResult DesktopWindowTreeHostMus::RunMoveLoop(
     const gfx::Vector2d& drag_offset,
     Widget::MoveLoopSource source,
     Widget::MoveLoopEscapeBehavior escape_behavior) {
-  // When using WindowService, the touch events for the window move will
-  // happen on the root window, so the events need to be transferred from
-  // widget to its root before starting move loop.
-  ScopedTouchTransferController scoped_controller(content_window(), window());
-
-  static_cast<internal::NativeWidgetPrivate*>(
-      desktop_native_widget_aura_)->ReleaseCapture();
-
   base::RunLoop run_loop(base::RunLoop::Type::kNestableTasksAllowed);
 
   ws::mojom::MoveLoopSource mus_source =
@@ -925,8 +806,8 @@ Widget::MoveLoopResult DesktopWindowTreeHostMus::RunMoveLoop(
   gfx::Point cursor_location = window()->GetBoundsInScreen().origin() +
                                gfx::ToFlooredVector2d(drag_offset);
   WindowTreeHostMus::PerformWindowMove(
-      mus_source, cursor_location,
-      base::Bind(OnMoveLoopEnd, &success, run_loop.QuitClosure()));
+      content_window(), mus_source, cursor_location, HTCAPTION,
+      base::BindOnce(&OnMoveLoopEnd, &success, run_loop.QuitClosure()));
 
   run_loop.Run();
 
@@ -946,6 +827,10 @@ NonClientFrameView* DesktopWindowTreeHostMus::CreateNonClientFrameView() {
   if (!ShouldSendClientAreaToServer())
     return nullptr;
 
+  // Initialize kTopViewInset to a default value. Further updates will come
+  // from Ash. This is necessary so that during app window creation,
+  // GetWindowBoundsForClientBounds() can calculate correctly.
+  SetTopViewInsetToDefault();
   return new ClientSideNonClientFrameView(native_widget_delegate_->AsWidget());
 }
 
@@ -965,7 +850,24 @@ void DesktopWindowTreeHostMus::SetFullscreen(bool fullscreen) {
   if (IsFullscreen() == fullscreen)
     return;  // Nothing to do.
 
+  // Retrieve restore bounds before leaving fullscreen.
+  gfx::Rect restore_bounds;
+  if (!fullscreen)
+    restore_bounds = GetRestoredBounds();
+
+  // Change the fullscreen state.
   wm::SetWindowFullscreen(window(), fullscreen);
+
+  // Preset bounds with heuristic size to provide synchronous bounds change
+  // after the switch to/from fullscreen.
+  if (fullscreen) {
+    window()->SetProperty(aura::client::kRestoreBoundsKey,
+                          new gfx::Rect(GetWindowBoundsInScreen()));
+    SetBoundsInDIP(GetDisplay().bounds());
+  } else {
+    SetTopViewInsetToDefault();
+    SetBoundsInDIP(restore_bounds);
+  }
 }
 
 bool DesktopWindowTreeHostMus::IsFullscreen() const {
@@ -975,6 +877,11 @@ bool DesktopWindowTreeHostMus::IsFullscreen() const {
 
 void DesktopWindowTreeHostMus::SetOpacity(float opacity) {
   WindowTreeHostMus::SetOpacity(opacity);
+}
+
+void DesktopWindowTreeHostMus::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
+  window()->SetProperty(aura::client::kAspectRatio,
+                        new gfx::SizeF(aspect_ratio));
 }
 
 void DesktopWindowTreeHostMus::SetWindowIcons(const gfx::ImageSkia& window_icon,
@@ -1007,6 +914,7 @@ void DesktopWindowTreeHostMus::SizeConstraintsChanged() {
   if (widget->widget_delegate())
     behavior = widget->widget_delegate()->GetResizeBehavior();
   window()->SetProperty(aura::client::kResizeBehaviorKey, behavior);
+  UpdateMinAndMaxSize();
 }
 
 bool DesktopWindowTreeHostMus::ShouldUpdateWindowTransparency() const {
@@ -1022,6 +930,16 @@ bool DesktopWindowTreeHostMus::ShouldUseDesktopNativeCursorManager() const {
 bool DesktopWindowTreeHostMus::ShouldCreateVisibilityController() const {
   // Window manager takes care of all top-level window animations.
   return false;
+}
+
+void DesktopWindowTreeHostMus::SetBoundsInDIP(const gfx::Rect& bounds_in_dip) {
+  // Do not use ConvertRectToPixel, enclosing rects cause problems.
+  SetBounds(bounds_in_dip, viz::LocalSurfaceIdAllocation());
+}
+
+void DesktopWindowTreeHostMus::OnCanActivateChanged() {
+  MusClient::Get()->window_tree_client()->SetCanFocus(
+      window(), native_widget_delegate_->CanActivate());
 }
 
 void DesktopWindowTreeHostMus::OnWindowManagerFrameValuesChanged() {
@@ -1098,9 +1016,27 @@ void DesktopWindowTreeHostMus::HideImpl() {
   }
 }
 
+void DesktopWindowTreeHostMus::SetBounds(
+    const gfx::Rect& bounds,
+    const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
+  gfx::Rect final_bounds = bounds;
+  if (bounds_in_dip().size() != bounds.size()) {
+    gfx::Size size = bounds.size();
+    size.SetToMax(native_widget_delegate_->GetMinimumSize());
+    const gfx::Size max_size = native_widget_delegate_->GetMaximumSize();
+    if (!max_size.IsEmpty())
+      size.SetToMin(max_size);
+    final_bounds.set_size(size);
+    UpdateMinAndMaxSize();
+  }
+  WindowTreeHostMus::SetBounds(final_bounds, local_surface_id_allocation);
+}
+
 void DesktopWindowTreeHostMus::SetBoundsInPixels(
     const gfx::Rect& bounds_in_pixels,
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
+  // NOTE: in typical usage SetBounds() is called and not this, but as
+  // WindowTreeHost exposes SetBoundsInPixels() this function may be called too.
   gfx::Rect final_bounds_in_pixels = bounds_in_pixels;
   if (GetBoundsInPixels().size() != bounds_in_pixels.size()) {
     gfx::Size size = bounds_in_pixels.size();
@@ -1111,6 +1047,7 @@ void DesktopWindowTreeHostMus::SetBoundsInPixels(
     if (!max_size_in_pixels.IsEmpty())
       size.SetToMin(max_size_in_pixels);
     final_bounds_in_pixels.set_size(size);
+    UpdateMinAndMaxSize();
   }
   WindowTreeHostMus::SetBoundsInPixels(final_bounds_in_pixels,
                                        local_surface_id_allocation);
@@ -1126,6 +1063,13 @@ void DesktopWindowTreeHostMus::OnViewBoundsChanged(View* observed_view) {
 
 void DesktopWindowTreeHostMus::OnViewIsDeleting(View* observed_view) {
   observed_client_view_.Remove(observed_view);
+}
+
+void DesktopWindowTreeHostMus::SetTopViewInsetToDefault() {
+  const auto& values = WindowManagerFrameValues::instance();
+  window()->SetProperty(aura::client::kTopViewInset,
+                        IsMaximized() ? values.maximized_insets.top()
+                                      : values.normal_insets.top());
 }
 
 aura::Window* DesktopWindowTreeHostMus::content_window() {

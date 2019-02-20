@@ -13,13 +13,10 @@ WaylandOutputManager::WaylandOutputManager() = default;
 
 WaylandOutputManager::~WaylandOutputManager() = default;
 
-bool WaylandOutputManager::IsPrimaryOutputReady() const {
+bool WaylandOutputManager::IsOutputReady() const {
   if (output_list_.empty())
     return false;
-
-  // The very first output in the list is always treated as a primary output.
-  const auto& primary_output = output_list_.front();
-  return primary_output->is_ready();
+  return output_list_.front()->is_ready();
 }
 
 void WaylandOutputManager::AddWaylandOutput(const uint32_t output_id,
@@ -38,9 +35,9 @@ void WaylandOutputManager::AddWaylandOutput(const uint32_t output_id,
 
   OnWaylandOutputAdded(output_id);
 
-  // If WaylandScreen has already been created, the output can be initialized,
-  // which results in setting up a wl_listener and getting the geometry and the
-  // scaling factor from the Wayland Compositor.
+  // Even if WaylandScreen has not been created, the output still must be
+  // initialized, which results in setting up a wl_listener and getting the
+  // geometry and the scaling factor from the Wayland Compositor.
   wayland_output_ptr->Initialize(this);
 }
 
@@ -54,19 +51,13 @@ void WaylandOutputManager::RemoveWaylandOutput(const uint32_t output_id) {
   if (output_it == output_list_.end())
     return;
 
-  bool was_primary_output = IsPrimaryOutput(output_id);
   output_list_.erase(output_it);
-
-  // If it was a primary output removed, make sure the second output, which
-  // became a primary one, announces that to observers.
-  if (was_primary_output && !output_list_.empty())
-    output_list_.front()->TriggerDelegateNotification();
-
   OnWaylandOutputRemoved(output_id);
 }
 
-std::unique_ptr<WaylandScreen> WaylandOutputManager::CreateWaylandScreen() {
-  auto wayland_screen = std::make_unique<WaylandScreen>();
+std::unique_ptr<WaylandScreen> WaylandOutputManager::CreateWaylandScreen(
+    WaylandConnection* connection) {
+  auto wayland_screen = std::make_unique<WaylandScreen>(connection);
   wayland_screen_ = wayland_screen->GetWeakPtr();
 
   // As long as |wl_output| sends geometry and other events asynchronously (that
@@ -87,9 +78,18 @@ std::unique_ptr<WaylandScreen> WaylandOutputManager::CreateWaylandScreen() {
   return wayland_screen;
 }
 
+uint32_t WaylandOutputManager::GetIdForOutput(wl_output* output) const {
+  auto output_it = std::find_if(
+      output_list_.begin(), output_list_.end(),
+      [output](const auto& item) { return item->has_output(output); });
+  // This is unlikely to happen, but better to be explicit here.
+  DCHECK(output_it != output_list_.end());
+  return output_it->get()->output_id();
+}
+
 void WaylandOutputManager::OnWaylandOutputAdded(uint32_t output_id) {
   if (wayland_screen_)
-    wayland_screen_->OnOutputAdded(output_id, IsPrimaryOutput(output_id));
+    wayland_screen_->OnOutputAdded(output_id);
 }
 
 void WaylandOutputManager::OnWaylandOutputRemoved(uint32_t output_id) {
@@ -97,21 +97,12 @@ void WaylandOutputManager::OnWaylandOutputRemoved(uint32_t output_id) {
     wayland_screen_->OnOutputRemoved(output_id);
 }
 
-bool WaylandOutputManager::IsPrimaryOutput(uint32_t output_id) const {
-  DCHECK(!output_list_.empty());
-  // The very first object in the |output_list_| is always treated as a primary
-  // output.
-  const auto& primary_output = output_list_.front();
-  return primary_output->output_id() == output_id;
-}
-
 void WaylandOutputManager::OnOutputHandleMetrics(uint32_t output_id,
                                                  const gfx::Rect& new_bounds,
                                                  int32_t scale_factor) {
-  if (wayland_screen_) {
-    wayland_screen_->OnOutputMetricsChanged(output_id, new_bounds, scale_factor,
-                                            IsPrimaryOutput(output_id));
-  }
+  if (wayland_screen_)
+    wayland_screen_->OnOutputMetricsChanged(output_id, new_bounds,
+                                            scale_factor);
 }
 
 }  // namespace ui

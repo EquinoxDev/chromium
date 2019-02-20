@@ -10,14 +10,16 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ime/linux/linux_input_method_context.h"
 #include "ui/events/event.h"
-#include "ui/ozone/platform/wayland/fake_server.h"
+#include "ui/ozone/platform/wayland/test/mock_surface.h"
+#include "ui/ozone/platform/wayland/test/mock_zwp_text_input.h"
+#include "ui/ozone/platform/wayland/test/test_wayland_server_thread.h"
 #include "ui/ozone/platform/wayland/wayland_input_method_context.h"
 #include "ui/ozone/platform/wayland/wayland_input_method_context_factory.h"
 #include "ui/ozone/platform/wayland/wayland_test.h"
 #include "ui/ozone/platform/wayland/wayland_window.h"
 
-using ::testing::SaveArg;
 using ::testing::_;
+using ::testing::SaveArg;
 
 namespace ui {
 
@@ -69,7 +71,7 @@ class WaylandInputMethodContextTest : public WaylandTest {
 
     Sync();
 
-    zwp_text_input_ = server_.text_input_manager_v1()->text_input.get();
+    zwp_text_input_ = server_.text_input_manager_v1()->text_input();
     window_->set_keyboard_focus(true);
 
     ASSERT_TRUE(connection_->text_input_manager_v1());
@@ -130,11 +132,11 @@ TEST_P(WaylandInputMethodContextTest, OnCommit) {
   EXPECT_TRUE(input_method_context_delegate_->was_on_commit_called());
 }
 
-INSTANTIATE_TEST_CASE_P(XdgVersionV5Test,
-                        WaylandInputMethodContextTest,
-                        ::testing::Values(kXdgShellV5));
-INSTANTIATE_TEST_CASE_P(XdgVersionV6Test,
-                        WaylandInputMethodContextTest,
-                        ::testing::Values(kXdgShellV6));
+INSTANTIATE_TEST_SUITE_P(XdgVersionV5Test,
+                         WaylandInputMethodContextTest,
+                         ::testing::Values(kXdgShellV5));
+INSTANTIATE_TEST_SUITE_P(XdgVersionV6Test,
+                         WaylandInputMethodContextTest,
+                         ::testing::Values(kXdgShellV6));
 
 }  // namespace ui

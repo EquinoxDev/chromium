@@ -596,6 +596,10 @@ bool ToolbarView::SetPaneFocusAndFocusDefault() {
   if (!location_bar_->HasFocus()) {
     location_bar_->FocusLocation();
     SetPaneFocus(location_bar_);
+<<<<<<< HEAD
+=======
+    location_bar_->FocusLocation();
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     return true;
   }
 

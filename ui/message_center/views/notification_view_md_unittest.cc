@@ -4,6 +4,8 @@
 
 #include "ui/message_center/views/notification_view_md.h"
 
+#include <memory>
+
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -14,6 +16,7 @@
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/canvas.h"
 #include "ui/message_center/message_center.h"
+#include "ui/message_center/message_center_observer.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/views/bounded_label.h"
 #include "ui/message_center/views/notification_control_buttons_view.h"
@@ -93,10 +96,17 @@ class NotificationTestDelegate : public NotificationDelegate {
   DISALLOW_COPY_AND_ASSIGN(NotificationTestDelegate);
 };
 
+class DummyEvent : public ui::Event {
+ public:
+  DummyEvent() : Event(ui::ET_UNKNOWN, base::TimeTicks(), 0) {}
+  ~DummyEvent() override = default;
+};
+
 class NotificationViewMDTest
     : public views::ViewsTestBase,
       public views::ViewObserver,
-      public message_center::MessageView::SlideObserver {
+      public message_center::MessageView::SlideObserver,
+      public message_center::MessageCenterObserver {
  public:
   NotificationViewMDTest();
   ~NotificationViewMDTest() override;
@@ -119,6 +129,19 @@ class NotificationViewMDTest
   // Overridden from message_center::MessageView::Observer:
   void OnSlideChanged(const std::string& notification_id) override {}
 
+  // Overridden from message_center::MessageCenterObserver:
+  void OnNotificationRemoved(const std::string& notification_id,
+                             bool by_user) override;
+
+  void set_delete_on_preferred_size_changed(
+      bool delete_on_preferred_size_changed) {
+    delete_on_preferred_size_changed_ = delete_on_preferred_size_changed;
+  }
+
+  void set_delete_on_notification_removed(bool delete_on_notification_removed) {
+    delete_on_notification_removed_ = delete_on_notification_removed;
+  }
+
  protected:
   const gfx::Image CreateTestImage(int width, int height) const;
   const SkBitmap CreateBitmap(int width, int height) const;
@@ -138,6 +161,8 @@ class NotificationViewMDTest
   void ScrollBy(int dx);
   views::View* GetCloseButton();
 
+  bool delete_on_preferred_size_changed_ = false;
+  bool delete_on_notification_removed_ = false;
   std::set<std::string> removed_ids_;
   scoped_refptr<NotificationTestDelegate> delegate_;
   std::unique_ptr<NotificationViewMD> notification_view_;
@@ -176,13 +201,21 @@ void NotificationViewMDTest::SetUp() {
 
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
   UpdateNotificationViews(*notification);
+
+  MessageCenter::Get()->AddObserver(this);
 }
 
 void NotificationViewMDTest::TearDown() {
-  notification_view_->SetInkDropMode(MessageView::InkDropMode::OFF);
-  notification_view_->RemoveObserver(this);
-  widget()->Close();
-  notification_view_.reset();
+  MessageCenter::Get()->RemoveObserver(this);
+
+  DCHECK(notification_view_ || delete_on_preferred_size_changed_ ||
+         delete_on_notification_removed_);
+  if (notification_view_) {
+    notification_view_->SetInkDropMode(MessageView::InkDropMode::OFF);
+    notification_view_->RemoveObserver(this);
+    widget()->Close();
+    notification_view_.reset();
+  }
   MessageCenter::Shutdown();
   views::ViewsTestBase::TearDown();
 }
@@ -190,7 +223,22 @@ void NotificationViewMDTest::TearDown() {
 void NotificationViewMDTest::OnViewPreferredSizeChanged(
     views::View* observed_view) {
   EXPECT_EQ(observed_view, notification_view());
+  if (delete_on_preferred_size_changed_) {
+    widget()->CloseNow();
+    notification_view_.reset();
+    return;
+  }
   widget()->SetSize(notification_view()->GetPreferredSize());
+}
+
+void NotificationViewMDTest::OnNotificationRemoved(
+    const std::string& notification_id,
+    bool by_user) {
+  if (delete_on_notification_removed_) {
+    widget()->CloseNow();
+    notification_view_.reset();
+    return;
+  }
 }
 
 const gfx::Image NotificationViewMDTest::CreateTestImage(int width,
@@ -208,7 +256,6 @@ const SkBitmap NotificationViewMDTest::CreateBitmap(int width,
 
 std::vector<ButtonInfo> NotificationViewMDTest::CreateButtons(int number) {
   ButtonInfo info(base::ASCIIToUTF16("Test button."));
-  info.icon = CreateTestImage(4, 4);
   return std::vector<ButtonInfo>(number, info);
 }
 
@@ -270,7 +317,7 @@ void NotificationViewMDTest::UpdateNotificationViews(
     widget_->SetContentsView(notification_view_.get());
     widget_->SetSize(notification_view_->GetPreferredSize());
     widget_->Show();
-    widget_->widget_delegate()->set_can_activate(true);
+    widget_->widget_delegate()->SetCanActivate(true);
     widget_->Activate();
   } else {
     notification_view_->UpdateWithNotification(notification);
@@ -414,13 +461,24 @@ TEST_F(NotificationViewMDTest, TestIconSizing) {
 
 TEST_F(NotificationViewMDTest, UpdateButtonsStateTest) {
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
-  notification->set_buttons(CreateButtons(2));
   notification_view()->CreateOrUpdateViews(*notification);
   widget()->Show();
 
-  // Action buttons are hidden by collapsed state.
-  if (!notification_view()->expanded_)
-    notification_view()->ToggleExpanded();
+  // When collapsed, new buttons are not shown.
+  EXPECT_FALSE(notification_view()->expanded_);
+  notification->set_buttons(CreateButtons(2));
+  notification_view()->CreateOrUpdateViews(*notification);
+  EXPECT_FALSE(notification_view()->actions_row_->visible());
+
+  // Adding buttons when expanded makes action buttons visible.
+  // Reset back to zero buttons first.
+  notification->set_buttons(CreateButtons(0));
+  notification_view()->CreateOrUpdateViews(*notification);
+  // Expand, and add buttons.
+  notification_view()->ToggleExpanded();
+  EXPECT_TRUE(notification_view()->expanded_);
+  notification->set_buttons(CreateButtons(2));
+  notification_view()->CreateOrUpdateViews(*notification);
   EXPECT_TRUE(notification_view()->actions_row_->visible());
 
   EXPECT_EQ(views::Button::STATE_NORMAL,
@@ -1077,6 +1135,38 @@ TEST_F(NotificationViewMDTest, TestClickExpanded) {
   generator.ClickLeftButton();
 
   EXPECT_TRUE(delegate_->clicked());
+}
+
+TEST_F(NotificationViewMDTest, TestDeleteOnToggleExpanded) {
+  std::unique_ptr<Notification> notification = CreateSimpleNotification();
+  notification->set_type(NotificationType::NOTIFICATION_TYPE_SIMPLE);
+  notification->set_title(base::string16());
+  notification->set_message(base::ASCIIToUTF16(
+      "consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore "
+      "et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud "
+      "exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."));
+  UpdateNotificationViews(*notification);
+  EXPECT_FALSE(notification_view()->expanded_);
+
+  // The view can be deleted by PreferredSizeChanged(). https://crbug.com/918933
+  set_delete_on_preferred_size_changed(true);
+  notification_view()->ButtonPressed(notification_view()->header_row_,
+                                     DummyEvent());
+}
+
+TEST_F(NotificationViewMDTest, TestDeleteOnDisableNotification) {
+  std::unique_ptr<Notification> notification = CreateSimpleNotification();
+  notification->set_type(NOTIFICATION_TYPE_SIMPLE);
+  UpdateNotificationViews(*notification);
+
+  notification_view()->OnSettingsButtonPressed(DummyEvent());
+  notification_view()->block_all_button_->NotifyClick(DummyEvent());
+
+  // After DisableNotification() is called, |notification_view| can be deleted.
+  // https://crbug.com/924922
+  set_delete_on_notification_removed(true);
+  notification_view()->ButtonPressed(notification_view()->settings_done_button_,
+                                     DummyEvent());
 }
 
 }  // namespace message_center

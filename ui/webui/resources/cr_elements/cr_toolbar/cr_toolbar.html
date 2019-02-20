@@ -14,13 +14,14 @@
         --cr-toolbar-height: 56px;
         --paper-icon-button-ink-color: white;
         align-items: center;
+        /* TODO(dbeam): default background-color instead of external styling. */
         color: #fff;
         display: flex;
         height: var(--cr-toolbar-height);
       }
 
       :host-context([dark]) {
-        border-bottom: 1px solid var(--cr-separator-color);
+        color: var(--cr-secondary-text-color);
       }
 
       h1 {
@@ -31,6 +32,10 @@
         line-height: normal;
         margin-inline-start: 6px;
         padding-inline-end: 12px;
+      }
+
+      :host-context([dark]) :-webkit-any(h1, #menuButtonContainer) {
+        color: var(--cr-primary-text-color);
       }
 
       #leftContent {
@@ -140,7 +145,7 @@
         <!-- Note: showing #menuPromo relies on this dom-if being [restamp]. -->
         <template is="dom-if" if="[[showMenu]]" restamp>
           <paper-icon-button-light id="menuButtonContainer"
-              class="icon-menu-white no-overlap">
+              class="icon-toolbar-menu no-overlap">
             <button id="menuButton"
                 on-tap="onMenuTap_"
                 title="[[titleIfNotShowMenuPromo_(menuLabel, showMenuPromo)]]"

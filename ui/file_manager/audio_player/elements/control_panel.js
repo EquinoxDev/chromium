@@ -64,7 +64,6 @@ var AriaLabels;
       time: {
         type: Number,
         value: 0,
-        notify: true,
       },
 
       /**
@@ -140,7 +139,7 @@ var AriaLabels;
     ready: function() {
       var timeSlider = /** @type {!CrSliderElement} */ (this.$.timeSlider);
       timeSlider.addEventListener('cr-slider-value-changed', () => {
-        this.time = timeSlider.value;
+        this.fire('update-time', timeSlider.value);
       });
 
       var volumeSlider = /** @type {!CrSliderElement} */ (this.$.volumeSlider);
@@ -207,8 +206,11 @@ var AriaLabels;
       var maxSkip = small ? 5000 : 10000;
       var percentOfDuration = (small ? .1 : .2) * this.duration;
       var update = (forward ? 1 : -1) * Math.min(maxSkip, percentOfDuration);
-      if (this.duration > 0)
-        this.time = Math.max(Math.min(this.time + update, this.duration), 0);
+      if (this.duration > 0) {
+        this.fire(
+            'update-time',
+            Math.max(Math.min(this.time + update, this.duration), 0));
+      }
     },
 
     /**
@@ -248,8 +250,9 @@ var AriaLabels;
      * @private
      */
     volumeChanged_: function(volume) {
-      if (!this.$.volumeSlider.dragging)
+      if (!this.$.volumeSlider.dragging) {
         this.$.volumeSlider.value = volume;
+      }
 
       if (this.ariaLabels) {
         this.$.volumeButton.setAttribute('aria-label',
@@ -258,7 +261,7 @@ var AriaLabels;
     },
 
     /**
-     * @param {{detail: {value: boolean}}} e
+     * @param {!CustomEvent<{value: boolean}>} e
      * @private
      */
     onSeekingChanged_: function(e) {

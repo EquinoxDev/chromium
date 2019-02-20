@@ -218,7 +218,14 @@ DocumentLoader::DocumentLoader(
   // The document URL needs to be added to the head of the list as that is
   // where the redirects originated.
   if (is_client_redirect_)
+<<<<<<< HEAD
     AppendRedirect(frame_->GetDocument()->Url());
+=======
+    redirect_chain_.push_back(frame_->GetDocument()->Url());
+
+  if (!GetFrameLoader().StateMachine()->CreatingInitialEmptyDocument())
+    redirect_chain_.push_back(url_);
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   if (!params_->origin_to_commit.IsNull())
     origin_to_commit_ = params_->origin_to_commit.Get()->IsolatedCopy();
@@ -368,8 +375,8 @@ void DocumentLoader::UpdateForSameDocumentNavigation(
   }
   redirect_chain_.clear();
   if (is_client_redirect_)
-    AppendRedirect(old_url);
-  AppendRedirect(new_url);
+    redirect_chain_.push_back(old_url);
+  redirect_chain_.push_back(new_url);
 
   SetHistoryItemStateForCommit(
       history_item_.Get(), type,
@@ -471,6 +478,7 @@ void DocumentLoader::BodyCodeCacheReceived(
                                                           code_cache.size());
   }
 }
+<<<<<<< HEAD
 
 void DocumentLoader::BodyDataReceived(base::span<const char> data) {
   fetcher_->Context().DispatchDidReceiveData(main_resource_identifier_,
@@ -478,6 +486,15 @@ void DocumentLoader::BodyDataReceived(base::span<const char> data) {
   HandleData(data.data(), data.size());
 }
 
+=======
+
+void DocumentLoader::BodyDataReceived(base::span<const char> data) {
+  fetcher_->Context().DispatchDidReceiveData(main_resource_identifier_,
+                                             data.data(), data.size());
+  HandleData(data.data(), data.size());
+}
+
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 void DocumentLoader::BodyLoadingFinished(
     TimeTicks completion_time,
     int64_t total_encoded_data_length,
@@ -620,7 +637,11 @@ void DocumentLoader::HandleRedirect(const KURL& current_request_url) {
   CHECK(SecurityOrigin::Create(current_request_url)->CanDisplay(url_));
 
   DCHECK(!GetTiming().FetchStart().is_null());
+<<<<<<< HEAD
   AppendRedirect(url_);
+=======
+  redirect_chain_.push_back(url_);
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   GetTiming().AddRedirect(current_request_url, url_);
 
   // If a redirection happens during a back/forward navigation, don't restore
@@ -697,7 +718,7 @@ void DocumentLoader::CancelLoadAfterCSPDenied(
   original_url_ = blocked_url;
   url_ = blocked_url;
   redirect_chain_.pop_back();
-  AppendRedirect(blocked_url);
+  redirect_chain_.push_back(blocked_url);
   response_ = ResourceResponse(blocked_url);
   response_.SetMimeType("text/html");
   FinishedLoading(CurrentTimeTicks());
@@ -927,10 +948,13 @@ void DocumentLoader::ProcessDataBuffer() {
   data_buffer_->Clear();
 }
 
+<<<<<<< HEAD
 void DocumentLoader::AppendRedirect(const KURL& url) {
   redirect_chain_.push_back(url);
 }
 
+=======
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 void DocumentLoader::StopLoading() {
   fetcher_->StopFetching();
   body_loader_.reset();
@@ -1116,6 +1140,7 @@ void DocumentLoader::StartLoadingInternal() {
         redirect.redirect_response.ToResourceResponse();
     navigation_timing_info_->AddRedirect(redirect_response, url_);
     HandleRedirect(redirect_response.CurrentRequestUrl());
+<<<<<<< HEAD
   }
 
   ResourceResponse response = params_->response.ToResourceResponse();
@@ -1137,6 +1162,29 @@ void DocumentLoader::StartLoadingInternal() {
     MixedContentChecker::HandleCertificateError(
         GetFrame(), response, mojom::RequestContextType::HYPERLINK);
   }
+=======
+  }
+
+  ResourceResponse response = params_->response.ToResourceResponse();
+  if (!frame_->IsMainFrame() && response.GetCTPolicyCompliance() ==
+                                    ResourceResponse::kCTPolicyDoesNotComply) {
+    // Exclude main-frame navigations; those are tracked elsewhere.
+    GetUseCounter().Count(
+        WebFeature::kCertificateTransparencyNonCompliantResourceInSubframe,
+        GetFrame());
+  }
+  MixedContentChecker::CheckMixedPrivatePublic(GetFrame(),
+                                               response.RemoteIPAddress());
+  ParseAndPersistClientHints(response);
+  PreloadHelper::LoadLinksFromHeader(
+      response.HttpHeaderField(http_names::kLink), response.CurrentRequestUrl(),
+      *GetFrame(), nullptr, NetworkHintsInterfaceImpl(),
+      PreloadHelper::kDoNotLoadResources, PreloadHelper::kLoadAll, nullptr);
+  if (!frame_->IsMainFrame() && response.HasMajorCertificateErrors()) {
+    MixedContentChecker::HandleCertificateError(
+        GetFrame(), response, mojom::RequestContextType::HYPERLINK);
+  }
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   GetFrameLoader().Progress().IncrementProgress(main_resource_identifier_,
                                                 response);
   // TODO(dgozman): remove this client call, it is only used in tests.

@@ -267,12 +267,22 @@ views::View* ShelfWidget::DelegateView::GetDefaultFocusableChild() {
   if (!IsUsingViewsShelf())
     return GetFirstFocusableChild();
 
+<<<<<<< HEAD
   if (shelf_widget_->login_shelf_view_->visible())
     return FindFirstOrLastFocusableChild(shelf_widget_->login_shelf_view_,
                                          default_last_focusable_child_);
   else
     return shelf_widget_->shelf_view_->FindFirstOrLastFocusableChild(
         default_last_focusable_child_);
+=======
+  if (shelf_widget_->login_shelf_view_->visible()) {
+    return FindFirstOrLastFocusableChild(shelf_widget_->login_shelf_view_,
+                                         default_last_focusable_child_);
+  } else {
+    return shelf_widget_->shelf_view_->FindFirstOrLastFocusableChild(
+        default_last_focusable_child_);
+  }
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 }
 
 void ShelfWidget::DelegateView::UpdateShelfBackground(SkColor color) {

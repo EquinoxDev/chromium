@@ -42,7 +42,7 @@ void LayoutNGBlockFlow::UpdateBlockLayout(bool relayout_children) {
   NGConstraintSpace constraint_space =
       NGConstraintSpace::CreateFromLayoutObject(*this);
 
-  scoped_refptr<NGLayoutResult> result =
+  scoped_refptr<const NGLayoutResult> result =
       NGBlockNode(this).Layout(constraint_space);
 
   for (const NGOutOfFlowPositionedDescendant& descendant :
@@ -57,10 +57,18 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
   const ComputedStyle* container_style = container->Style();
   NGConstraintSpace constraint_space =
       NGConstraintSpace::CreateFromLayoutObject(*this);
+
+  // As this is part of the Legacy->NG bridge, the container_builder is used
+  // for indicating the resolved size of the OOF-positioned containing-block
+  // and not used for caching purposes.
+  // When we produce a layout result from it, we access its child fragments
+  // which must contain *at least* this node. We use the child fragments for
+  // copying back position information.
   NGBlockNode container_node(container);
   NGBoxFragmentBuilder container_builder(
       container_node, scoped_refptr<const ComputedStyle>(container_style),
-      container_style->GetWritingMode(), container_style->Direction());
+      /* space */ nullptr, container_style->GetWritingMode(),
+      container_style->Direction());
   container_builder.SetIsNewFormattingContext(
       container_node.CreatesNewFormattingContext());
 
@@ -130,7 +138,8 @@ void LayoutNGBlockFlow::UpdateOutOfFlowBlockLayout() {
       css_container->CanContainFixedPositionObjects(), borders_and_scrollbars,
       constraint_space, *container_style, initial_containing_block_fixed_size)
       .Run(/* only_layout */ this);
-  scoped_refptr<NGLayoutResult> result = container_builder.ToBoxFragment();
+  scoped_refptr<const NGLayoutResult> result =
+      container_builder.ToBoxFragment();
   // These are the unpositioned OOF descendants of the current OOF block.
   for (NGOutOfFlowPositionedDescendant descendant :
        result->OutOfFlowPositionedDescendants())

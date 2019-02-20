@@ -4,9 +4,11 @@
 
 #include "ui/views/mus/desktop_window_tree_host_mus.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind_test_util.h"
+#include "services/ws/test_ws/test_ws.mojom-test-utils.h"
 #include "services/ws/test_ws/test_ws.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -34,6 +36,8 @@
 #include "ui/views/mus/mus_client.h"
 #include "ui/views/mus/mus_client_test_api.h"
 #include "ui/views/mus/screen_mus.h"
+#include "ui/views/mus/window_manager_frame_values.h"
+#include "ui/views/test/native_widget_factory.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -46,9 +50,14 @@ namespace views {
 class DesktopWindowTreeHostMusTest : public ViewsTestBase,
                                      public WidgetObserver {
  public:
-  DesktopWindowTreeHostMusTest()
-      : widget_activated_(nullptr), widget_deactivated_(nullptr) {}
-  ~DesktopWindowTreeHostMusTest() override {}
+  DesktopWindowTreeHostMusTest() = default;
+  ~DesktopWindowTreeHostMusTest() override = default;
+
+  // ViewsTestBase:
+  void SetUp() override {
+    set_native_widget_type(NativeWidgetType::kDesktop);
+    ViewsTestBase::SetUp();
+  }
 
   // Creates a test widget. Takes ownership of |delegate|.
   std::unique_ptr<Widget> CreateWidget(WidgetDelegate* delegate = nullptr,
@@ -78,8 +87,8 @@ class DesktopWindowTreeHostMusTest : public ViewsTestBase,
     }
   }
 
-  Widget* widget_activated_;
-  Widget* widget_deactivated_;
+  Widget* widget_activated_ = nullptr;
+  Widget* widget_deactivated_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostMusTest);
 };
@@ -111,6 +120,11 @@ class ExpectsNullCursorClientDuringTearDown : public aura::WindowObserver {
 // Tests that the window service can set the initial show state for a window.
 // https://crbug.com/899055
 TEST_F(DesktopWindowTreeHostMusTest, ShowStateFromWindowService) {
+  // Wait for the window created by
+  // aura::TestScreen::CreateHostForPrimaryDisplay() lest it be the one that is
+  // impacted by MaximizeNextWindow().
+  aura::test::WaitForAllChangesToComplete();
+
   // Configure the window service to maximize the next top-level window.
   test_ws::mojom::TestWsPtr test_ws_ptr;
   MusClient::Get()->window_tree_client()->connector()->BindInterface(
@@ -407,13 +421,44 @@ TEST_F(DesktopWindowTreeHostMusTest, CreateFullscreenWidget) {
 
   for (auto widget_type : kWidgetTypes) {
     Widget widget;
-    Widget::InitParams params(widget_type);
+    Widget::InitParams params = CreateParams(widget_type);
     params.show_state = ui::SHOW_STATE_FULLSCREEN;
     params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     widget.Init(params);
 
     EXPECT_TRUE(widget.IsFullscreen())
         << "Fullscreen creation failed for type=" << widget_type;
+  }
+}
+
+TEST_F(DesktopWindowTreeHostMusTest, SynchronousBoundsWhenTogglingFullscreen) {
+  const gfx::Rect display_bounds =
+      display::Screen::GetScreen()->GetPrimaryDisplay().bounds();
+
+  const Widget::InitParams::Type kWidgetTypes[] = {
+      Widget::InitParams::TYPE_WINDOW,
+      Widget::InitParams::TYPE_WINDOW_FRAMELESS,
+  };
+
+  for (auto widget_type : kWidgetTypes) {
+    Widget widget;
+    Widget::InitParams params = CreateParams(widget_type);
+    params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+    widget.Init(params);
+
+    const gfx::Rect restore_bounds = widget.GetWindowBoundsInScreen();
+
+    // Entering fullscreen synchronously set show state and bounds.
+    widget.SetFullscreen(true);
+    EXPECT_TRUE(widget.IsFullscreen())
+        << "Enter fullscreen failed for type=" << widget_type;
+    EXPECT_EQ(display_bounds, widget.GetWindowBoundsInScreen());
+
+    // Leaving fullscreen synchronously set show state and bounds.
+    widget.SetFullscreen(false);
+    EXPECT_FALSE(widget.IsFullscreen())
+        << "Leave fullscreen failed for type=" << widget_type;
+    EXPECT_EQ(restore_bounds, widget.GetWindowBoundsInScreen());
   }
 }
 
@@ -499,6 +544,10 @@ TEST_F(DesktopWindowTreeHostMusTestHighDPI, InitializeMenuWithDIPBounds) {
 }
 
 TEST_F(DesktopWindowTreeHostMusTest, GetWindowBoundsInScreen) {
+  // No ScreenMus in single process Mash.
+  if (features::IsSingleProcessMash())
+    return;
+
   ScreenMus* screen = MusClientTestApi::screen();
 
   // Add a second display to the right of the primary.
@@ -720,6 +769,39 @@ TEST_F(DesktopWindowTreeHostMusTest, MaximizeMinimizeRestore) {
   EXPECT_FALSE(widget->IsMaximized());
 }
 
+// Tests that toggling fullscreen synchronously updates kTopViewInset (via its
+// effect on client bounds).
+TEST_F(DesktopWindowTreeHostMusTest, FullscreenTopViewInset) {
+  WindowManagerFrameValues frame_values;
+  frame_values.normal_insets = gfx::Insets(7, 0, 0, 0);
+  WindowManagerFrameValues::SetInstance(frame_values);
+
+  std::unique_ptr<Widget> widget(CreateWidget());
+  widget->Show();
+  EXPECT_TRUE(widget->IsActive());
+
+  gfx::Rect before_fullscreen_client_bounds = widget->client_view()->bounds();
+  gfx::Rect frame_bounds = widget->non_client_view()->bounds();
+  EXPECT_EQ(frame_values.normal_insets,
+            frame_bounds.InsetsFrom(before_fullscreen_client_bounds));
+
+  widget->SetFullscreen(true);
+
+  gfx::Rect fullscreen_client_bounds = widget->client_view()->bounds();
+  frame_bounds = widget->non_client_view()->bounds();
+  EXPECT_EQ(fullscreen_client_bounds, frame_bounds);
+
+  widget->SetFullscreen(false);
+
+  gfx::Rect after_fullscreen_client_bounds = widget->client_view()->bounds();
+  frame_bounds = widget->non_client_view()->bounds();
+  EXPECT_EQ(frame_values.normal_insets,
+            frame_bounds.InsetsFrom(after_fullscreen_client_bounds));
+
+  EXPECT_EQ(before_fullscreen_client_bounds, after_fullscreen_client_bounds);
+  EXPECT_NE(fullscreen_client_bounds, after_fullscreen_client_bounds);
+}
+
 // TransferTouchEventsCounter observes the GestureRecognizer and counts how many
 // times TransferEventsTo() is invoked for testing.
 class TransferTouchEventsCounter : public ui::GestureRecognizerObserver {
@@ -914,6 +996,172 @@ TEST_F(DesktopWindowTreeHostMusTest, TransientChildMatchesParentVisibility) {
   EXPECT_TRUE(transient_child->GetNativeWindow()->GetRootWindow()->IsVisible());
 
   transient_child->RemoveObserver(&observer);
+}
+
+class StaticSizedWidgetDelegate : public WidgetDelegateView {
+ public:
+  StaticSizedWidgetDelegate(const gfx::Size& min_size,
+                            const gfx::Size& max_size)
+      : min_size_(min_size), max_size_(max_size) {}
+  ~StaticSizedWidgetDelegate() override = default;
+
+  void SetMinMaxSize(const gfx::Size& min_size, const gfx::Size& max_size) {
+    min_size_ = min_size;
+    max_size_ = max_size;
+  }
+
+ private:
+  // View:
+  gfx::Size GetMinimumSize() const override { return min_size_; }
+  gfx::Size GetMaximumSize() const override { return max_size_; }
+
+  gfx::Size min_size_;
+  gfx::Size max_size_;
+
+  DISALLOW_COPY_AND_ASSIGN(StaticSizedWidgetDelegate);
+};
+
+TEST_F(DesktopWindowTreeHostMusTest, MinMaxSize) {
+  gfx::Size min_size(100, 100);
+  gfx::Size max_size(200, 200);
+  auto* delegate = new StaticSizedWidgetDelegate(min_size, max_size);
+  std::unique_ptr<Widget> widget = CreateWidget(delegate);
+  aura::Window* window = widget->GetNativeWindow()->GetRootWindow();
+
+  // min/max sizes are not yet set.
+  EXPECT_FALSE(window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_FALSE(window->GetProperty(aura::client::kMaximumSize));
+
+  widget->Show();
+  EXPECT_EQ(min_size, *window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_EQ(max_size, *window->GetProperty(aura::client::kMaximumSize));
+
+  // Changing the min/max size isn't propagated immediately.
+  gfx::Size min_size2(120, 130);
+  gfx::Size max_size2(190, 180);
+  delegate->SetMinMaxSize(min_size2, max_size2);
+  EXPECT_EQ(min_size, *window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_EQ(max_size, *window->GetProperty(aura::client::kMaximumSize));
+
+  // Propagated when the widget gets resized.
+  widget->SetBounds(gfx::Rect(0, 0, 150, 150));
+  EXPECT_EQ(min_size2, *window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_EQ(max_size2, *window->GetProperty(aura::client::kMaximumSize));
+
+  delegate->SetMinMaxSize(min_size, max_size);
+  // SizeConstraintsChanged should cause the update of min/max size.
+  widget->OnSizeConstraintsChanged();
+  EXPECT_EQ(min_size, *window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_EQ(max_size, *window->GetProperty(aura::client::kMaximumSize));
+
+  // Re-show should propagate the information.
+  delegate->SetMinMaxSize(min_size2, max_size2);
+  widget->Hide();
+  widget->Show();
+  EXPECT_EQ(min_size2, *window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_EQ(max_size2, *window->GetProperty(aura::client::kMaximumSize));
+
+  // If not changed, properties shouldn't be updated.
+  gfx::Size* min_ptr = window->GetProperty(aura::client::kMinimumSize);
+  gfx::Size* max_ptr = window->GetProperty(aura::client::kMaximumSize);
+  widget->OnSizeConstraintsChanged();
+  EXPECT_EQ(min_ptr, window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_EQ(max_ptr, window->GetProperty(aura::client::kMaximumSize));
+
+  // If there are no limits, properties should be cleared.
+  delegate->SetMinMaxSize(gfx::Size(), gfx::Size());
+  widget->OnSizeConstraintsChanged();
+  EXPECT_FALSE(window->GetProperty(aura::client::kMinimumSize));
+  EXPECT_FALSE(window->GetProperty(aura::client::kMaximumSize));
+}
+
+TEST_F(DesktopWindowTreeHostMusTest, SetCanFocus) {
+  auto* delegate = new WidgetDelegateView;
+  std::unique_ptr<Widget> widget = CreateWidget(delegate);
+  // Swap the WindowTree implementation to verify SetCanFocus() is called when
+  // the active state changes.
+  aura::TestWindowTree test_window_tree;
+  aura::WindowTreeClientTestApi window_tree_client_private(
+      MusClient::Get()->window_tree_client());
+  ws::mojom::WindowTree* old_tree =
+      window_tree_client_private.SwapTree(&test_window_tree);
+
+  delegate->SetCanActivate(false);
+  EXPECT_FALSE(delegate->CanActivate());
+  EXPECT_FALSE(test_window_tree.last_can_focus());
+  EXPECT_EQ(1u, test_window_tree.get_and_clear_can_focus_count());
+
+  delegate->SetCanActivate(true);
+  EXPECT_TRUE(delegate->CanActivate());
+  EXPECT_TRUE(test_window_tree.last_can_focus());
+  EXPECT_EQ(1u, test_window_tree.get_and_clear_can_focus_count());
+
+  window_tree_client_private.SwapTree(old_tree);
+}
+
+// DesktopWindowTreeHostMusTest with --force-device-scale-factor=1.25.
+class DesktopWindowTreeHostMusTestFractionalDPI
+    : public DesktopWindowTreeHostMusTest {
+ public:
+  DesktopWindowTreeHostMusTestFractionalDPI() = default;
+  ~DesktopWindowTreeHostMusTestFractionalDPI() override = default;
+
+  // DesktopWindowTreeHostMusTest:
+  void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kForceDeviceScaleFactor, "1.25");
+    DesktopWindowTreeHostMusTest::SetUp();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostMusTestFractionalDPI);
+};
+
+TEST_F(DesktopWindowTreeHostMusTestFractionalDPI,
+       SetBoundsInDipWithFractionalScale) {
+  std::unique_ptr<Widget> widget(CreateWidget());
+  // These numbers are carefully chosen such that if enclosing rect is used
+  // the pixel values differ between the two. The WindowServcie assumes ceiling
+  // is used on the size, which is not impacted by the location.
+  const gfx::Rect bounds1(408, 48, 339, 296);
+  const int expected_pixel_height =
+      gfx::ScaleToCeiledSize(bounds1.size(), 1.25f).height();
+  widget->SetBounds(bounds1);
+  EXPECT_EQ(expected_pixel_height,
+            widget->GetNativeWindow()->GetHost()->GetBoundsInPixels().height());
+
+  const gfx::Rect bounds2(gfx::Point(408, 49), bounds1.size());
+  widget->SetBounds(bounds2);
+  EXPECT_EQ(expected_pixel_height,
+            widget->GetNativeWindow()->GetHost()->GetBoundsInPixels().height());
+}
+
+// DesktopWindowTreeHostMusTest with --force-device-scale-factor=1.6.
+class DesktopWindowTreeHostMusTestFractionalDPI2
+    : public DesktopWindowTreeHostMusTest {
+ public:
+  DesktopWindowTreeHostMusTestFractionalDPI2() = default;
+  ~DesktopWindowTreeHostMusTestFractionalDPI2() override = default;
+
+  // DesktopWindowTreeHostMusTest:
+  void SetUp() override {
+    base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+        switches::kForceDeviceScaleFactor, "1.6");
+    DesktopWindowTreeHostMusTest::SetUp();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DesktopWindowTreeHostMusTestFractionalDPI2);
+};
+
+TEST_F(DesktopWindowTreeHostMusTestFractionalDPI2,
+       SetBoundsInDipWithFractionalScale) {
+  std::unique_ptr<Widget> widget(CreateWidget());
+  // These values have proven problematic at this scale.
+  const gfx::Rect bounds(64, 34, 600, 372);
+  widget->SetBounds(bounds);
+  EXPECT_EQ(bounds, widget->GetWindowBoundsInScreen());
+  EXPECT_EQ(bounds, widget->GetNativeWindow()->GetBoundsInScreen());
 }
 
 }  // namespace views

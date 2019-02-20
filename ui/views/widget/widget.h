@@ -647,6 +647,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Tell the window to update its icon from the delegate.
   void UpdateWindowIcon();
 
+  // Shows the platform specific emoji picker for this widget.
+  void ShowEmojiPanel();
+
   // Retrieves the focus traversable for this widget.
   FocusTraversable* GetFocusTraversable();
 
@@ -792,6 +795,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Called when the delegate's CanResize or CanMaximize changes.
   void OnSizeConstraintsChanged();
 
+  // Called when WidgetDelegate::CanActivate() changes.
+  void OnCanActivateChanged();
+
   // Notification that our owner is closing.
   // NOTE: this is not invoked for aura as it's currently not needed there.
   // Under aura menus close by way of activation getting reset when the owner
@@ -834,7 +840,7 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   void OnGestureEvent(ui::GestureEvent* event) override;
   bool ExecuteCommand(int command_id) override;
   bool HasHitTestMask() const override;
-  void GetHitTestMask(gfx::Path* mask) const override;
+  void GetHitTestMask(SkPath* mask) const override;
   Widget* AsWidget() override;
   const Widget* AsWidget() const override;
   bool SetInitialFocus(ui::WindowShowState show_state) override;

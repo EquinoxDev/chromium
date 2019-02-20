@@ -42,6 +42,10 @@ int AXNode::GetUnignoredChildCount() const {
   return count;
 }
 
+AXNodeData&& AXNode::TakeData() {
+  return std::move(data_);
+}
+
 AXNode* AXNode::GetUnignoredChildAtIndex(int index) const {
   int count = 0;
   for (int i = 0; i < child_count(); i++) {
@@ -340,7 +344,7 @@ std::vector<AXNode*>* AXNode::GetExtraMacNodes() const {
 //
 
 bool AXNode::IsTableRow() const {
-  return data().role == ax::mojom::Role::kRow;
+  return ui::IsTableRow(data().role);
 }
 
 int32_t AXNode::GetTableRowRowIndex() const {
@@ -356,6 +360,35 @@ int32_t AXNode::GetTableRowRowIndex() const {
     return iter->second;
   return 0;
 }
+
+#if defined(OS_MACOSX)
+
+//
+// Table column-like nodes. These nodes are only present on macOS.
+//
+
+bool AXNode::IsTableColumn() const {
+  return ui::IsTableColumn(data().role);
+}
+
+int32_t AXNode::GetTableColColIndex() const {
+  if (!IsTableColumn())
+    return 0;
+
+  AXTableInfo* table_info = GetAncestorTableInfo();
+  if (!table_info)
+    return 0;
+
+  int32_t index = 0;
+  for (const AXNode* node : table_info->extra_mac_nodes) {
+    if (node == this)
+      break;
+    index++;
+  }
+  return index;
+}
+
+#endif  // defined(OS_MACOSX)
 
 //
 // Table cell-like nodes.
@@ -434,7 +467,7 @@ int32_t AXNode::GetTableCellRowSpan() const {
 int32_t AXNode::GetTableCellAriaColIndex() const {
   AXTableInfo* table_info = GetAncestorTableInfo();
   if (!table_info)
-    return -0;
+    return 0;
 
   int32_t index = GetTableCellIndex();
   if (index == -1)
@@ -446,11 +479,11 @@ int32_t AXNode::GetTableCellAriaColIndex() const {
 int32_t AXNode::GetTableCellAriaRowIndex() const {
   AXTableInfo* table_info = GetAncestorTableInfo();
   if (!table_info)
-    return -0;
+    return -1;
 
   int32_t index = GetTableCellIndex();
   if (index == -1)
-    return 0;
+    return -1;
 
   return table_info->cell_data_vector[index].aria_row_index;
 }
@@ -519,12 +552,21 @@ void AXNode::IdVectorToNodeVector(std::vector<int32_t>& ids,
   }
 }
 
+// Uses function in ax_role_properties to check if node is item-like.
+bool AXNode::IsOrderedSetItem() const {
+  return ui::IsItemLike(data().role);
+}
+// Uses function in ax_role_properties to check if node is oredered-set-like.
+bool AXNode::IsOrderedSet() const {
+  return ui::IsSetLike(data().role);
+}
+
 // pos_in_set and set_size related functions.
 // Uses AXTree's cache to calculate node's pos_in_set.
 int32_t AXNode::GetPosInSet() {
   // Only allow this to be called on nodes that can hold pos_in_set values,
   // which are defined in the ARIA spec.
-  if (!IsItemLike(data().role)) {
+  if (!IsOrderedSetItem()) {
     return 0;
   }
 
@@ -541,7 +583,7 @@ int32_t AXNode::GetPosInSet() {
 int32_t AXNode::GetSetSize() {
   // Only allow this to be called on nodes that can hold set_size values, which
   // are defined in the ARIA spec.
-  if (!(IsItemLike(data().role) || IsSetLike(data().role)))
+  if (!(IsOrderedSetItem() || IsOrderedSet()))
     return 0;
 
   // If node is item-like, find its outerlying ordered set. Otherwise,

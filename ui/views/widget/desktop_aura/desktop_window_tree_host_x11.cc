@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/flat_set.h"
 #include "base/location.h"
@@ -45,7 +46,6 @@
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
-#include "ui/gfx/path.h"
 #include "ui/gfx/path_x11.h"
 #include "ui/gfx/x/x11.h"
 #include "ui/gfx/x/x11_atom_cache.h"
@@ -64,7 +64,7 @@
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/window_util.h"
 
-DEFINE_UI_CLASS_PROPERTY_TYPE(views::DesktopWindowTreeHostX11*);
+DEFINE_UI_CLASS_PROPERTY_TYPE(views::DesktopWindowTreeHostX11*)
 
 namespace views {
 
@@ -72,11 +72,11 @@ DesktopWindowTreeHostX11* DesktopWindowTreeHostX11::g_current_capture =
     NULL;
 std::list<XID>* DesktopWindowTreeHostX11::open_windows_ = NULL;
 
-DEFINE_UI_CLASS_PROPERTY_KEY(
-    aura::Window*, kViewsWindowForRootWindow, NULL);
+DEFINE_UI_CLASS_PROPERTY_KEY(aura::Window*, kViewsWindowForRootWindow, NULL)
 
-DEFINE_UI_CLASS_PROPERTY_KEY(
-    DesktopWindowTreeHostX11*, kHostForRootWindow, NULL);
+DEFINE_UI_CLASS_PROPERTY_KEY(DesktopWindowTreeHostX11*,
+                             kHostForRootWindow,
+                             NULL)
 
 namespace {
 
@@ -461,8 +461,8 @@ void DesktopWindowTreeHostX11::Close() {
     // may delete ourselves on destroy and the ATL callback would still
     // dereference us when the callback returns).
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&DesktopWindowTreeHostX11::CloseNow,
-                              close_widget_factory_.GetWeakPtr()));
+        FROM_HERE, base::BindOnce(&DesktopWindowTreeHostX11::CloseNow,
+                                  close_widget_factory_.GetWeakPtr()));
   }
 }
 
@@ -518,7 +518,7 @@ void DesktopWindowTreeHostX11::Show(ui::WindowShowState show_state,
   if (compositor())
     SetVisible(true);
 
-  if (!IsVisible())
+  if (!window_mapped_in_client_ || IsMinimized())
     MapWindow(show_state);
 
   switch (show_state) {
@@ -547,7 +547,10 @@ void DesktopWindowTreeHostX11::Show(ui::WindowShowState show_state,
 }
 
 bool DesktopWindowTreeHostX11::IsVisible() const {
-  return window_mapped_in_client_ && !IsMinimized();
+  // On Windows, IsVisible() returns true for minimized windows.  On X11, a
+  // minimized window is not mapped, so an explicit IsMinimized() check is
+  // necessary.
+  return window_mapped_in_client_ || IsMinimized();
 }
 
 void DesktopWindowTreeHostX11::SetSize(const gfx::Size& requested_size) {
@@ -762,7 +765,6 @@ void DesktopWindowTreeHostX11::Activate() {
     // after an Activate(), so just set this state now.
     has_pointer_focus_ = false;
     has_window_focus_ = true;
-    // window_mapped_in_client_ == true based on the IsVisible() check above.
     window_mapped_in_server_ = true;
     XSetErrorHandler(old_error_handler);
   }
@@ -816,7 +818,7 @@ void DesktopWindowTreeHostX11::Maximize() {
 
   // Some WMs do not respect maximization hints on unmapped windows, so we
   // save this one for later too.
-  should_maximize_after_map_ = !IsVisible();
+  should_maximize_after_map_ = !window_mapped_in_client_;
 
   // When we are in the process of requesting to maximize a window, we can
   // accurately keep track of our restored bounds instead of relying on the
@@ -996,9 +998,9 @@ void DesktopWindowTreeHostX11::FrameTypeChanged() {
   // NonClientView::UpdateFrame() to update the frame-view when theme changes,
   // like all other views).
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&DesktopWindowTreeHostX11::DelayedChangeFrameType,
-                            weak_factory_.GetWeakPtr(),
-                            new_type));
+      FROM_HERE,
+      base::BindOnce(&DesktopWindowTreeHostX11::DelayedChangeFrameType,
+                     weak_factory_.GetWeakPtr(), new_type));
 }
 
 void DesktopWindowTreeHostX11::SetFullscreen(bool fullscreen) {
@@ -1877,7 +1879,7 @@ void DesktopWindowTreeHostX11::ResetWindowRegion() {
   window_shape_.reset();
 
   if (!IsMaximized() && !IsFullscreen()) {
-    gfx::Path window_mask;
+    SkPath window_mask;
     Widget* widget = native_widget_delegate_->AsWidget();
     if (widget->non_client_view()) {
       // Some frame views define a custom (non-rectangular) window mask. If

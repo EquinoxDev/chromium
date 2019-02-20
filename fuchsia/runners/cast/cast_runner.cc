@@ -9,8 +9,15 @@
 #include <string>
 #include <utility>
 
+<<<<<<< HEAD
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+=======
+#include "base/fuchsia/fuchsia_logging.h"
+#include "base/logging.h"
+#include "base/memory/ptr_util.h"
+#include "base/process/process.h"
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 #include "fuchsia/runners/cast/cast_component.h"
 #include "url/gurl.h"
 
@@ -22,7 +29,15 @@ CastRunner::CastRunner(
     : WebContentRunner(service_directory,
                        std::move(context),
                        std::move(on_idle_closure)),
+<<<<<<< HEAD
       app_config_manager_(std::move(app_config_manager)) {}
+=======
+      app_config_manager_(std::move(app_config_manager)) {
+  app_config_manager_.set_error_handler([](zx_status_t status) {
+    ZX_LOG(WARNING, status) << "ApplicationConfigManager disconnected";
+  });
+}
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
 CastRunner::~CastRunner() = default;
 
@@ -46,11 +61,30 @@ void CastRunner::StartComponent(
 
   // Fetch the Cast application configuration for the specified Id.
   const std::string cast_app_id(cast_url.GetContent());
+<<<<<<< HEAD
   app_config_manager_->GetConfig(
       cast_app_id,
       [this,
        startup_context = std::make_unique<base::fuchsia::StartupContext>(
            std::move(startup_info)),
+=======
+
+  // TODO(https://crbug.com/933831): Look for ApplicationConfigManager in the
+  // per-component incoming services. This works-around an issue with binding
+  // to that service via the Runner's incoming services. Replace this with a
+  // request for services from a Cast-specific Agent.
+  auto startup_context =
+      std::make_unique<base::fuchsia::StartupContext>(std::move(startup_info));
+  if (!app_config_manager_) {
+    LOG(WARNING) << "Connect to ApplicationConfigManager from component /svc";
+    startup_context->incoming_services()->ConnectToService(
+        app_config_manager_.NewRequest());
+  }
+
+  app_config_manager_->GetConfig(
+      cast_app_id,
+      [this, startup_context = std::move(startup_context),
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
        controller_request = std::move(controller_request)](
           chromium::cast::ApplicationConfigPtr app_config) mutable {
         GetConfigCallback(std::move(startup_context),
@@ -65,11 +99,14 @@ void CastRunner::GetConfigCallback(
     chromium::cast::ApplicationConfigPtr app_config) {
   if (!app_config) {
     DLOG(WARNING) << "No ApplicationConfig was found.";
+<<<<<<< HEAD
 
     // For test purposes, we need to call RegisterComponent even if there is no
     // URL to launch.
     // TODO: Replace this hack, e.g. with an test-specific callback.
     RegisterComponent(std::unique_ptr<WebComponent>(nullptr));
+=======
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     return;
   }
 

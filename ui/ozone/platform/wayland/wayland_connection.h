@@ -13,6 +13,7 @@
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/ozone/platform/wayland/wayland_cursor_position.h"
 #include "ui/ozone/platform/wayland/wayland_data_device.h"
 #include "ui/ozone/platform/wayland/wayland_data_device_manager.h"
 #include "ui/ozone/platform/wayland/wayland_data_source.h"
@@ -81,8 +82,12 @@ class WaylandConnection : public PlatformEventSource,
   zwp_text_input_manager_v1* text_input_manager_v1() {
     return text_input_manager_v1_.get();
   }
+  WaylandBufferManager* buffer_manager_for_tests() {
+    return buffer_manager_.get();
+  }
 
   WaylandWindow* GetWindow(gfx::AcceleratedWidget widget);
+  WaylandWindow* GetWindowWithLargestBounds();
   WaylandWindow* GetCurrentFocusedWindow();
   WaylandWindow* GetCurrentKeyboardFocusedWindow();
   void AddWindow(gfx::AcceleratedWidget widget, WaylandWindow* window);
@@ -105,11 +110,17 @@ class WaylandConnection : public PlatformEventSource,
     return wayland_output_manager_.get();
   }
 
+  // Returns the cursor position, which may be null.
+  WaylandCursorPosition* wayland_cursor_position() {
+    return wayland_cursor_position_.get();
+  }
+
   // Clipboard implementation.
   PlatformClipboard* GetPlatformClipboard();
   void DataSourceCancelled();
   void SetClipboardData(const std::string& contents,
                         const std::string& mime_type);
+  void UpdateClipboardSequenceNumber();
 
   // PlatformClipboard.
   void OfferClipboardData(
@@ -122,6 +133,8 @@ class WaylandConnection : public PlatformEventSource,
   void GetAvailableMimeTypes(
       PlatformClipboard::GetMimeTypesClosure callback) override;
   bool IsSelectionOwner() override;
+  void SetSequenceNumberUpdateCb(
+      PlatformClipboard::SequenceNumberUpdateCb cb) override;
 
   // Returns bound pointer to own mojo interface.
   ozone::mojom::WaylandConnectionPtr BindInterface();
@@ -147,6 +160,9 @@ class WaylandConnection : public PlatformEventSource,
   // be called with the data.
   void RequestDragData(const std::string& mime_type,
                        base::OnceCallback<void(const std::string&)> callback);
+
+  // Returns true when dragging is entered or started.
+  bool IsDragInProgress();
 
   // Resets flags and keyboard modifiers.
   //
@@ -211,6 +227,7 @@ class WaylandConnection : public PlatformEventSource,
   std::unique_ptr<WaylandOutputManager> wayland_output_manager_;
   std::unique_ptr<WaylandPointer> pointer_;
   std::unique_ptr<WaylandTouch> touch_;
+  std::unique_ptr<WaylandCursorPosition> wayland_cursor_position_;
 
   // Objects that are using when GPU runs in own process.
   std::unique_ptr<WaylandBufferManager> buffer_manager_;
@@ -224,6 +241,10 @@ class WaylandConnection : public PlatformEventSource,
   // Holds a temporary instance of the client's clipboard content
   // so that we can asynchronously write to it.
   PlatformClipboard::DataMap* data_map_ = nullptr;
+
+  // Notifies whenever clipboard sequence number is changed. Can be empty if not
+  // set.
+  PlatformClipboard::SequenceNumberUpdateCb update_sequence_cb_;
 
   // Stores the callback to be invoked upon data reading from clipboard.
   RequestDataClosure read_clipboard_closure_;

@@ -24,7 +24,11 @@ class NGLayoutAlgorithmOperations {
   // constraints given by the NGConstraintSpace. Returns a layout result with
   // the resulting layout information.
   // TODO(layout-dev): attempt to make this function const.
+<<<<<<< HEAD
   virtual scoped_refptr<NGLayoutResult> Layout() = 0;
+=======
+  virtual scoped_refptr<const NGLayoutResult> Layout() = 0;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   // Computes the min-content and max-content intrinsic sizes for the given box.
   // The result will not take any min-width, max-width or width properties into
@@ -50,9 +54,12 @@ class CORE_EXPORT NGLayoutAlgorithm : public NGLayoutAlgorithmOperations {
                     TextDirection direction,
                     const NGBreakTokenType* break_token)
       : node_(node),
-        constraint_space_(space),
         break_token_(break_token),
-        container_builder_(node, style, space.GetWritingMode(), direction) {}
+        container_builder_(node,
+                           style,
+                           &space,
+                           space.GetWritingMode(),
+                           direction) {}
 
   NGLayoutAlgorithm(NGInputNodeType node,
                     const NGConstraintSpace& space,
@@ -66,7 +73,10 @@ class CORE_EXPORT NGLayoutAlgorithm : public NGLayoutAlgorithmOperations {
   virtual ~NGLayoutAlgorithm() = default;
 
  protected:
-  const NGConstraintSpace& ConstraintSpace() const { return constraint_space_; }
+  const NGConstraintSpace& ConstraintSpace() const {
+    DCHECK(container_builder_.ConstraintSpace());
+    return *container_builder_.ConstraintSpace();
+  }
 
   const ComputedStyle& Style() const { return node_.Style(); }
 
@@ -81,7 +91,6 @@ class CORE_EXPORT NGLayoutAlgorithm : public NGLayoutAlgorithmOperations {
   const NGBreakTokenType* BreakToken() const { return break_token_.get(); }
 
   NGInputNodeType node_;
-  const NGConstraintSpace& constraint_space_;
 
   // The break token from which we are currently resuming layout.
   scoped_refptr<const NGBreakTokenType> break_token_;

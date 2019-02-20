@@ -356,9 +356,6 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Returns true if the Window can be focused.
   bool CanFocus() const;
 
-  // Returns true if the Window can receive events.
-  bool CanReceiveEvents() const;
-
   // Does a capture on the window. This does nothing if the window isn't showing
   // (VISIBILITY_SHOWN) or isn't contained in a valid window hierarchy.
   void SetCapture();
@@ -582,8 +579,8 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   EventTarget* GetParentTarget() override;
   std::unique_ptr<ui::EventTargetIterator> GetChildIterator() const override;
   ui::EventTargeter* GetEventTargeter() override;
-  void ConvertEventToTarget(ui::EventTarget* target,
-                            ui::LocatedEvent* event) override;
+  void ConvertEventToTarget(const ui::EventTarget* target,
+                            ui::LocatedEvent* event) const override;
   gfx::PointF GetScreenLocationF(const ui::LocatedEvent& event) const override;
 
   // Updates the layer name based on the window's name and id.

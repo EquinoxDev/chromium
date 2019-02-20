@@ -46,6 +46,13 @@ bool OverflowButton::ShouldEnterPushedState(const ui::Event& event) {
 void OverflowButton::NotifyClick(const ui::Event& event) {
   // For this button, do not call the superclass's handler.
   shelf_view()->ButtonPressed(this, event, nullptr);
+<<<<<<< HEAD
+=======
+}
+
+const char* OverflowButton::GetClassName() const {
+  return "ash/OverflowButton";
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 }
 
 }  // namespace ash

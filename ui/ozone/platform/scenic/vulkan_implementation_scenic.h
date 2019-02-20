@@ -23,7 +23,7 @@ class VulkanImplementationScenic : public gpu::VulkanImplementation {
 
   // VulkanImplementation:
   bool InitializeVulkanInstance() override;
-  VkInstance GetVulkanInstance() override;
+  gpu::VulkanInstance* GetVulkanInstance() override;
   std::unique_ptr<gpu::VulkanSurface> CreateViewSurface(
       gfx::AcceleratedWidget window) override;
   bool GetPhysicalDevicePresentationSupport(
@@ -40,8 +40,8 @@ class VulkanImplementationScenic : public gpu::VulkanImplementation {
   ScenicSurfaceFactory* const scenic_surface_factory_;
   gpu::VulkanInstance vulkan_instance_;
 
-  PFN_vkVoidFunction vkCreateMagmaSurfaceKHR_ = nullptr;
-  PFN_vkVoidFunction vkGetPhysicalDeviceMagmaPresentationSupportKHR_ = nullptr;
+  PFN_vkCreateImagePipeSurfaceFUCHSIA vkCreateImagePipeSurfaceFUCHSIA_ =
+      nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(VulkanImplementationScenic);
 };

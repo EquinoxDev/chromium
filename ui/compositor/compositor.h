@@ -11,7 +11,6 @@
 #include <string>
 
 #include "base/callback_forward.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
@@ -24,7 +23,7 @@
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "components/viz/common/surfaces/frame_sink_id.h"
-#include "components/viz/common/surfaces/local_surface_id.h"
+#include "components/viz/common/surfaces/local_surface_id_allocation.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkMatrix44.h"
@@ -206,6 +205,8 @@ class COMPOSITOR_EXPORT Compositor : public cc::LayerTreeHostClient,
   // |trace_environment_name| is passed to trace events so that tracing
   // can identify the environment the trace events are from. Examples are,
   // "ash", and "browser". If no value is supplied, "browser" is used.
+  // See |LayerTreeSettings::automatically_allocate_surface_ids| for details on
+  // |automatically_allocate_surface_ids|.
   Compositor(const viz::FrameSinkId& frame_sink_id,
              ui::ContextFactory* context_factory,
              ui::ContextFactoryPrivate* context_factory_private,
@@ -213,7 +214,8 @@ class COMPOSITOR_EXPORT Compositor : public cc::LayerTreeHostClient,
              bool enable_pixel_canvas,
              ExternalBeginFrameClient* external_begin_frame_client = nullptr,
              bool force_software_compositor = false,
-             const char* trace_environment_name = nullptr);
+             const char* trace_environment_name = nullptr,
+             bool automatically_allocate_surface_ids = true);
   ~Compositor() override;
 
   ui::ContextFactory* context_factory() { return context_factory_; }
@@ -281,6 +283,17 @@ class COMPOSITOR_EXPORT Compositor : public cc::LayerTreeHostClient,
       float scale,
       const gfx::Size& size_in_pixel,
       const viz::LocalSurfaceIdAllocation& local_surface_id_allocation);
+
+  // Updates the LocalSurfaceIdAllocation from the parent.
+  viz::LocalSurfaceIdAllocation UpdateLocalSurfaceIdFromParent(
+      const viz::LocalSurfaceIdAllocation& local_surface_id_allocation);
+
+  // Returns the current LocalSurfaceIdAllocation, which may not be valid.
+  viz::LocalSurfaceIdAllocation GetLocalSurfaceIdAllocation() const;
+
+  // Returns a new LocalSurfaceIdAllocation by incrementing the child sequence
+  // number.
+  viz::LocalSurfaceIdAllocation RequestNewChildLocalSurfaceId();
 
   // Set the output color profile into which this compositor should render.
   void SetDisplayColorSpace(const gfx::ColorSpace& color_space);
@@ -368,14 +381,20 @@ class COMPOSITOR_EXPORT Compositor : public cc::LayerTreeHostClient,
   // LayerTreeHostClient implementation.
   void WillBeginMainFrame() override {}
   void DidBeginMainFrame() override {}
+  void DidUpdateLayers() override;
   void BeginMainFrame(const viz::BeginFrameArgs& args) override;
   void BeginMainFrameNotExpectedSoon() override;
   void BeginMainFrameNotExpectedUntil(base::TimeTicks time) override;
-  void UpdateLayerTreeHost(bool record_main_frame_metrics) override;
+  void UpdateLayerTreeHost() override;
   void ApplyViewportChanges(const cc::ApplyViewportChangesArgs& args) override {
   }
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
                                          bool has_scrolled_by_touch) override {}
+  void SendOverscrollEventFromImplSide(
+      const gfx::Vector2dF& overscroll_delta,
+      cc::ElementId scroll_latched_element_id) override {}
+  void SendScrollEndEventFromImplSide(
+      cc::ElementId scroll_latched_element_id) override {}
   void RequestNewLayerTreeFrameSink() override;
   void DidInitializeLayerTreeFrameSink() override {}
   void DidFailToInitializeLayerTreeFrameSink() override;
@@ -387,7 +406,10 @@ class COMPOSITOR_EXPORT Compositor : public cc::LayerTreeHostClient,
   void DidPresentCompositorFrame(
       uint32_t frame_token,
       const gfx::PresentationFeedback& feedback) override;
+  void RecordStartOfFrameMetrics() override {}
   void RecordEndOfFrameMetrics(base::TimeTicks frame_begin_time) override {}
+  void DidGenerateLocalSurfaceIdAllocation(
+      const viz::LocalSurfaceIdAllocation& allocation) override;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
   void DidSubmitCompositorFrame() override;
@@ -496,6 +518,8 @@ class COMPOSITOR_EXPORT Compositor : public cc::LayerTreeHostClient,
   bool disabled_swap_until_resize_ = false;
 
   const char* trace_environment_name_;
+
+  viz::LocalSurfaceIdAllocation last_local_surface_id_allocation_;
 
   base::WeakPtrFactory<Compositor> context_creation_weak_ptr_factory_;
 

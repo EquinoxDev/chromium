@@ -38,6 +38,14 @@ Polymer({
       type: Boolean,
       value: false,
     },
+
+    /**
+     * If true, cellular technology badge is displayed in the network icon.
+     */
+    showTechnologyBadge: {
+      type: Boolean,
+      value: true,
+    },
   },
 
   /**
@@ -108,6 +116,67 @@ Polymer({
     const zeroBasedIndex =
         Math.trunc((strength - 1) * (this.networkIconCount_ - 1) / 100);
     return zeroBasedIndex + 1;
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  showTechnology_: function() {
+    return this.getTechnology_() != '' && this.showTechnologyBadge;
+  },
+
+  /**
+   * @return {string}
+   * @private
+   */
+  getTechnology_: function() {
+    const networkState = this.networkState;
+    if (!networkState) {
+      return '';
+    }
+    const type = networkState.Type;
+    if (type == CrOnc.Type.WI_MAX) {
+      return 'network:4g';
+    }
+    if (type == CrOnc.Type.CELLULAR && networkState.Cellular) {
+      const technology =
+          this.getTechnologyId_(networkState.Cellular.NetworkTechnology);
+      if (technology != '') {
+        return 'network:' + technology;
+      }
+    }
+    return '';
+  },
+
+  /**
+   * @param {string|undefined} networkTechnology
+   * @return {string}
+   * @private
+   */
+  getTechnologyId_: function(networkTechnology) {
+    switch (networkTechnology) {
+      case CrOnc.NetworkTechnology.CDMA1XRTT:
+        return 'badge-1x';
+      case CrOnc.NetworkTechnology.EDGE:
+        return 'badge-edge';
+      case CrOnc.NetworkTechnology.EVDO:
+        return 'badge-evdo';
+      case CrOnc.NetworkTechnology.GPRS:
+      case CrOnc.NetworkTechnology.GSM:
+        return 'badge-gsm';
+      case CrOnc.NetworkTechnology.HSPA:
+        return 'badge-hspa';
+      case CrOnc.NetworkTechnology.HSPA_PLUS:
+        return 'badge-hspa-plus';
+      case CrOnc.NetworkTechnology.LTE:
+        return 'badge-lte';
+      case CrOnc.NetworkTechnology.LTE_ADVANCED:
+        return 'badge-lte-advanced';
+      case CrOnc.NetworkTechnology.UMTS:
+        return 'badge-3g';
+    }
+    return '';
   },
 
   /**

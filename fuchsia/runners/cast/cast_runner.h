@@ -35,7 +35,11 @@ class CastRunner : public WebContentRunner {
           controller_request,
       chromium::cast::ApplicationConfigPtr app_config);
 
+<<<<<<< HEAD
   const chromium::cast::ApplicationConfigManagerPtr app_config_manager_;
+=======
+  chromium::cast::ApplicationConfigManagerPtr app_config_manager_;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   DISALLOW_COPY_AND_ASSIGN(CastRunner);
 };

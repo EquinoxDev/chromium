@@ -60,6 +60,12 @@ bool IsTabletMode() {
 
 }  // namespace
 
+<<<<<<< HEAD
+=======
+// static
+const char AppListButton::kViewClassName[] = "ash/AppListButton";
+
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 AppListButton::AppListButton(ShelfView* shelf_view, Shelf* shelf)
     : ShelfControlButton(shelf_view), shelf_(shelf) {
   DCHECK(shelf_);
@@ -178,6 +184,13 @@ void AppListButton::OnGestureEvent(ui::GestureEvent* event) {
   }
 }
 
+<<<<<<< HEAD
+=======
+const char* AppListButton::GetClassName() const {
+  return kViewClassName;
+}
+
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 std::unique_ptr<views::InkDropRipple> AppListButton::CreateInkDropRipple()
     const {
   const int app_list_button_radius = ShelfConstants::control_border_radius();

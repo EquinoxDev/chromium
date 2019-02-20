@@ -457,7 +457,7 @@ class InputHandlerProxyEventQueueTest : public testing::Test {
       ui::InputPredictor::InputData* result) {
     return input_handler_proxy_->scroll_predictor_->predictor_
         ->GeneratePrediction(WebInputEvent::GetStaticTimeStampForTests(),
-                             result);
+                             false /* is_resampling */, result);
   }
 
  protected:
@@ -2336,12 +2336,12 @@ TEST_P(InputHandlerProxyMainThreadScrollingReasonTest,
             input_handler_->HandleInputEvent(gesture_scroll_end_));
 }
 
-INSTANTIATE_TEST_CASE_P(AnimateInput,
-                        InputHandlerProxyTest,
-                        testing::ValuesIn(test_types));
+INSTANTIATE_TEST_SUITE_P(AnimateInput,
+                         InputHandlerProxyTest,
+                         testing::ValuesIn(test_types));
 
-INSTANTIATE_TEST_CASE_P(AnimateInput,
-                        InputHandlerProxyMainThreadScrollingReasonTest,
-                        testing::ValuesIn(test_types));
+INSTANTIATE_TEST_SUITE_P(AnimateInput,
+                         InputHandlerProxyMainThreadScrollingReasonTest,
+                         testing::ValuesIn(test_types));
 }  // namespace test
 }  // namespace ui

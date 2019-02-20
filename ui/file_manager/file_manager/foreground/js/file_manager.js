@@ -562,8 +562,9 @@ FileManager.prototype = /** @struct */ {
     this.volumeManager_.addEventListener(
         VolumeManagerCommon.ARCHIVE_OPENED_EVENT_TYPE, function(event) {
           assert(event.detail.mountPoint);
-          if (window.isFocused())
+          if (window.isFocused()) {
             this.directoryModel_.changeDirectoryEntry(event.detail.mountPoint);
+          }
         }.bind(this));
 
     this.directoryModel_.addEventListener(
@@ -595,11 +596,8 @@ FileManager.prototype = /** @struct */ {
         this.ui_.sortButtonToggleRipple,
         assert(this.directoryModel_.getFileList()));
     this.gearMenuController_ = new GearMenuController(
-        this.ui_.gearButton,
-        this.ui_.gearButtonToggleRipple,
-        this.ui_.gearMenu,
-        this.directoryModel_,
-        this.commandHandler_,
+        this.ui_.gearButton, this.ui_.gearButtonToggleRipple, this.ui_.gearMenu,
+        this.ui_.providersMenu, this.directoryModel_, this.commandHandler_,
         assert(this.providersModel_));
     this.selectionMenuController_ = new SelectionMenuController(
         this.ui_.selectionMenuButton,
@@ -694,8 +692,9 @@ FileManager.prototype = /** @struct */ {
   FileManager.prototype.initDataTransferOperations_ = function() {
     // CopyManager are required for 'Delete' operation in
     // Open and Save dialogs. But drag-n-drop and copy-paste are not needed.
-    if (this.dialogType !== DialogType.FULL_PAGE)
+    if (this.dialogType !== DialogType.FULL_PAGE) {
       return;
+    }
 
     this.fileTransferController_ = new FileTransferController(
         assert(this.document_), assert(this.ui_.listContainer),
@@ -721,13 +720,15 @@ FileManager.prototype = /** @struct */ {
 
     // TODO(hirono): Move the following block to the UI part.
     var commandButtons = this.dialogDom_.querySelectorAll('button[command]');
-    for (var j = 0; j < commandButtons.length; j++)
+    for (var j = 0; j < commandButtons.length; j++) {
       CommandButton.decorate(commandButtons[j]);
+    }
 
     var inputs = this.getDomInputs_();
 
-    for (let input of inputs)
+    for (let input of inputs) {
       this.setContextMenuForInput_(input);
+    }
 
     this.setContextMenuForInput_(this.ui_.listContainer.renameInput);
     this.setContextMenuForInput_(
@@ -879,8 +880,9 @@ FileManager.prototype = /** @struct */ {
                     this.backgroundPage_.background);
             this.fileBrowserBackground_.ready(function() {
               loadTimeData.data = this.fileBrowserBackground_.stringData;
-              if (util.runningInBrowser())
+              if (util.runningInBrowser()) {
                 this.backgroundPage_.registerDialog(window);
+              }
               this.fileOperationManager_ =
                   this.fileBrowserBackground_.fileOperationManager;
               this.mediaImportHandler_ =
@@ -996,9 +998,6 @@ FileManager.prototype = /** @struct */ {
         this.ui_.progressCenterPanel);
 
     util.addIsFocusedMethod();
-
-    // Populate the static localized strings.
-    i18nTemplate.process(this.document_, loadTimeData);
 
     // The cwd is not known at this point.  Hide the import status column before
     // redrawing, to avoid ugly flashing in the UI, caused when the first redraw
@@ -1216,8 +1215,7 @@ FileManager.prototype = /** @struct */ {
   FileManager.prototype.setupCrostini_ = function() {
     chrome.fileManagerPrivate.isCrostiniEnabled((crostiniEnabled) => {
       // Check for 'crostini-files' feature.
-      this.crostini_.setEnabled(
-          crostiniEnabled && loadTimeData.getBoolean('CROSTINI_FILES_ENABLED'));
+      this.crostini_.setEnabled(crostiniEnabled);
 
       // Setup Linux files fake root.
       this.directoryTree.dataModel.linuxFilesItem = crostiniEnabled ?
@@ -1231,11 +1229,15 @@ FileManager.prototype = /** @struct */ {
       // Redraw the tree even if not enabled.  This is required for testing.
       this.directoryTree.redraw(false);
 
-      if (!crostiniEnabled)
+      if (!crostiniEnabled) {
         return;
+      }
 
       // Load any existing shared paths.
+      // Only observe firstForSession when using full-page FilesApp.
+      // I.e., don't show toast in a dialog.
       chrome.fileManagerPrivate.getCrostiniSharedPaths(
+          this.dialogType === DialogType.FULL_PAGE,
           (entries, firstForSession) => {
             for (let i = 0; i < entries.length; i++) {
               this.crostini_.registerSharedPath(entries[i]);
@@ -1299,8 +1301,9 @@ FileManager.prototype = /** @struct */ {
             // If the selection is root, then use it as a current directory
             // instead. This is because, selecting a root entry is done as
             // opening it.
-            if (locationInfo.isRootEntry)
+            if (locationInfo.isRootEntry) {
               nextCurrentDirEntry = inEntry;
+            }
 
             // If this dialog attempts to open file(s) and the selection is a
             // directory, the selection should be the current directory.
@@ -1311,8 +1314,9 @@ FileManager.prototype = /** @struct */ {
 
             // By default, the selection should be selected entry and the
             // parent directory of it should be the current directory.
-            if (!nextCurrentDirEntry)
+            if (!nextCurrentDirEntry) {
               selectionEntry = inEntry;
+            }
 
             callback();
           }, callback);
@@ -1438,8 +1442,9 @@ FileManager.prototype = /** @struct */ {
 
     // If there is no target select MyFiles by default.
     queue.run((callback) => {
-      if (!nextCurrentDirEntry && this.directoryTree.dataModel.myFilesModel_)
+      if (!nextCurrentDirEntry && this.directoryTree.dataModel.myFilesModel_) {
         nextCurrentDirEntry = this.directoryTree.dataModel.myFilesModel_.entry;
+      }
 
       callback();
     });
@@ -1473,8 +1478,9 @@ FileManager.prototype = /** @struct */ {
     // Open the directory, and select the selection (if passed).
     if (directoryEntry) {
       this.directoryModel_.changeDirectoryEntry(directoryEntry, function() {
-        if (opt_selectionEntry)
+        if (opt_selectionEntry) {
           this.directoryModel_.selectEntry(opt_selectionEntry);
+        }
 
         this.ui_.addLoadedAttribute();
       }.bind(this));
@@ -1504,12 +1510,15 @@ FileManager.prototype = /** @struct */ {
    * @private
    */
   FileManager.prototype.onUnload_ = function() {
-    if (this.importHistory_)
+    if (this.importHistory_) {
       this.importHistory_.removeObserver(this.onHistoryChangedBound_);
-    if (this.directoryModel_)
+    }
+    if (this.directoryModel_) {
       this.directoryModel_.dispose();
-    if (this.volumeManager_)
+    }
+    if (this.volumeManager_) {
       this.volumeManager_.dispose();
+    }
     if (this.fileTransferController_) {
       for (var i = 0;
            i < this.fileTransferController_.pendingTaskIds.length;
@@ -1560,10 +1569,12 @@ FileManager.prototype = /** @struct */ {
    */
   FileManager.prototype.getSourceRestriction_ = function() {
     var allowedPaths = this.getAllowedPaths_();
-    if (allowedPaths == AllowedPaths.NATIVE_PATH)
+    if (allowedPaths == AllowedPaths.NATIVE_PATH) {
       return chrome.fileManagerPrivate.SourceRestriction.NATIVE_SOURCE;
-    if (allowedPaths == AllowedPaths.NATIVE_OR_DRIVE_PATH)
+    }
+    if (allowedPaths == AllowedPaths.NATIVE_OR_DRIVE_PATH) {
       return chrome.fileManagerPrivate.SourceRestriction.NATIVE_OR_DRIVE_SOURCE;
+    }
     return chrome.fileManagerPrivate.SourceRestriction.ANY_SOURCE;
   };
 

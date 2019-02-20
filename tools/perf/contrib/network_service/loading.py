@@ -15,6 +15,8 @@ from telemetry.internal import story_runner
 from telemetry.value import none_values
 from telemetry.value.list_of_scalar_values import StandardDeviation
 
+from tracing.value import convert_chart_json
+
 def _ListSubtraction(diff_list, control_list):
   """Subtract |control_list|'s elements from the corresponding elements in
   |diff_list|, and store the results in |diff_list|.
@@ -81,7 +83,9 @@ def _RenameChartsAndPointsWithSuffix(charts, suffix):
     if chart_name == 'trace':
       continue
     chart = charts[chart_name]
-    new_chart_name = chart_name + suffix
+    # Before adding the |suffix|, clean up |chart_name| by removing '@@' and
+    # any characters before it.
+    new_chart_name = chart_name.split('@@', 1)[-1] + suffix
     for point_name in chart:
       chart[point_name]['name'] = new_chart_name
     charts[new_chart_name] = chart
@@ -157,10 +161,16 @@ class LoadingDesktopNetworkService(loading.LoadingDesktop):
   def Run(self, finder_options):
     """We shouldn't be overriding this according to
     telemetry.benchmark.Benchmark"""
-    assert 'chartjson' in finder_options.output_formats, (
-      'loading.desktop.network_service requires --output-format=chartjson. '
-      'Please contact owner to rewrite the benchmark if chartjson is going '
-      'away.')
+    assert 'histograms' in finder_options.output_formats, (
+      'loading.desktop.network_service requires --output-format=histograms.')
+
+    # feed the story_runner with 'chartjson' output formats.
+    # TODO(https://crbug.com/929765): Make loading.desktop.network_service
+    # benchmark produce histograms natively.
+    while 'histograms' in finder_options.output_formats:
+      finder_options.output_formats.remove('histograms')
+    finder_options.output_formats.append('chartjson')
+
     assert finder_options.output_dir
     output_dir = finder_options.output_dir
     temp_file_path = os.path.join(output_dir, 'results-chart.json')
@@ -198,6 +208,17 @@ class LoadingDesktopNetworkService(loading.LoadingDesktop):
       with open(temp_file_path, 'w') as f:
         json.dump(enabled_chart_json, f, indent=2, separators=(',', ': '))
         f.write('\n')
+      logging.info('Converting chartjsons to histograms')
+      histogram_result = convert_chart_json.ConvertChartJson(temp_file_path)
+      if histogram_result.returncode != 0:
+        logging.error('Error converting chart json to Histograms:\n' +
+            histogram_result.stdout)
+        return 1
+
+      temp_file_path = os.path.join(output_dir, 'histograms.json')
+      with open(temp_file_path, 'w') as f:
+        f.write(histogram_result.stdout)
+
     return 0
 
   def SetExtraBrowserOptions(self, options):

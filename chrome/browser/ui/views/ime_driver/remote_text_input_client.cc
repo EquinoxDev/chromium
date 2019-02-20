@@ -14,8 +14,10 @@ RemoteTextInputClient::RemoteTextInputClient(
     : remote_client_(std::move(client)), details_(std::move(details)) {}
 
 RemoteTextInputClient::~RemoteTextInputClient() {
-  while (!pending_callbacks_.empty())
-    RunNextPendingCallback(false);
+  while (!pending_callbacks_.empty()) {
+    RunNextPendingCallback(/* handled */ false,
+                           /* stopped_propagation */ false);
+  }
 }
 
 void RemoteTextInputClient::SetTextInputState(
@@ -25,6 +27,14 @@ void RemoteTextInputClient::SetTextInputState(
 
 void RemoteTextInputClient::SetCaretBounds(const gfx::Rect& caret_bounds) {
   details_->caret_bounds = caret_bounds;
+<<<<<<< HEAD
+}
+
+void RemoteTextInputClient::SetTextInputClientData(
+    ws::mojom::TextInputClientDataPtr data) {
+  details_->data = std::move(data);
+=======
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 }
 
 void RemoteTextInputClient::SetTextInputClientData(
@@ -32,8 +42,10 @@ void RemoteTextInputClient::SetTextInputClientData(
   details_->data = std::move(data);
 }
 
-void RemoteTextInputClient::OnDispatchKeyEventPostIMECompleted(bool completed) {
-  RunNextPendingCallback(completed);
+void RemoteTextInputClient::OnDispatchKeyEventPostIMECompleted(
+    bool handled,
+    bool stopped_propagation) {
+  RunNextPendingCallback(handled, stopped_propagation);
 }
 
 void RemoteTextInputClient::SetCompositionText(
@@ -195,8 +207,8 @@ bool RemoteTextInputClient::ShouldDoLearning() {
 
 ui::EventDispatchDetails RemoteTextInputClient::DispatchKeyEventPostIME(
     ui::KeyEvent* event,
-    base::OnceCallback<void(bool)> ack_callback) {
-  pending_callbacks_.push(std::move(ack_callback));
+    DispatchKeyEventPostIMECallback callback) {
+  pending_callbacks_.push(std::move(callback));
   remote_client_->DispatchKeyEventPostIME(
       ui::Event::Clone(*event),
       base::BindOnce(&RemoteTextInputClient::OnDispatchKeyEventPostIMECompleted,
@@ -204,11 +216,12 @@ ui::EventDispatchDetails RemoteTextInputClient::DispatchKeyEventPostIME(
   return ui::EventDispatchDetails();
 }
 
-void RemoteTextInputClient::RunNextPendingCallback(bool completed) {
+void RemoteTextInputClient::RunNextPendingCallback(bool handled,
+                                                   bool stopped_propagation) {
   DCHECK(!pending_callbacks_.empty());
-  base::OnceCallback<void(bool)> callback =
+  DispatchKeyEventPostIMECallback callback =
       std::move(pending_callbacks_.front());
   pending_callbacks_.pop();
   if (callback)
-    std::move(callback).Run(completed);
+    std::move(callback).Run(handled, stopped_propagation);
 }

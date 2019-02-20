@@ -24,7 +24,7 @@
     },
     {
       "name": "LayoutBlockFlow (relative positioned) DIV id='neg-z'",
-      "position": [9, -81],
+      "position": [9, 19],
       "bounds": [100, 410],
       "backfaceVisibility": "hidden"
     },
@@ -56,8 +56,7 @@
       "name": "Overflow Controls Host Layer",
       "position": [8, 8],
       "bounds": [102, 302],
-      "drawsContent": false,
-      "backfaceVisibility": "hidden"
+      "drawsContent": false
     },
     {
       "name": "Horizontal Scrollbar Layer",

@@ -413,10 +413,6 @@ class TestCompositorObserver : public CompositorObserver {
 
   void OnCompositingEnded(Compositor* compositor) override { ended_ = true; }
 
-  void OnCompositingChildResizing(Compositor* compositor) override {}
-
-  void OnCompositingShuttingDown(Compositor* compositor) override {}
-
   bool committed_ = false;
   bool started_ = false;
   bool ended_ = false;
@@ -987,7 +983,8 @@ TEST_F(LayerWithNullDelegateTest, EscapedDebugNames) {
   std::string json;
   debug_info->AppendAsTraceFormat(&json);
   base::JSONReader json_reader;
-  std::unique_ptr<base::Value> debug_info_value(json_reader.ReadToValue(json));
+  std::unique_ptr<base::Value> debug_info_value(
+      json_reader.ReadToValueDeprecated(json));
   EXPECT_TRUE(debug_info_value);
   EXPECT_TRUE(debug_info_value->is_dict());
   base::DictionaryValue* dictionary = 0;
@@ -1119,6 +1116,110 @@ TEST_F(LayerWithNullDelegateTest, Visibility) {
   EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
   EXPECT_FALSE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
   EXPECT_TRUE(l3->cc_layer_for_testing()->hide_layer_and_subtree());
+}
+
+// Various visible/drawn assertions.
+TEST_F(LayerWithNullDelegateTest, MirroringVisibility) {
+  std::unique_ptr<Layer> l1(new Layer(LAYER_TEXTURED));
+  std::unique_ptr<Layer> l2(new Layer(LAYER_TEXTURED));
+  std::unique_ptr<Layer> l2_mirror = l2->Mirror();
+  l1->Add(l2.get());
+  l1->Add(l2_mirror.get());
+
+  NullLayerDelegate delegate;
+  l1->set_delegate(&delegate);
+  l2->set_delegate(&delegate);
+  l2_mirror->set_delegate(&delegate);
+
+  // Layers should initially be drawn.
+  EXPECT_TRUE(l1->IsDrawn());
+  EXPECT_TRUE(l2->IsDrawn());
+  EXPECT_TRUE(l2_mirror->IsDrawn());
+  EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  compositor()->SetRootLayer(l1.get());
+
+  Draw();
+
+  // Hiding the root layer should hide that specific layer and its subtree.
+  l1->SetVisible(false);
+
+  // Since the entire subtree is hidden, no layer should be drawn.
+  EXPECT_FALSE(l1->IsDrawn());
+  EXPECT_FALSE(l2->IsDrawn());
+  EXPECT_FALSE(l2_mirror->IsDrawn());
+
+  // The visibitily property for the subtree is rooted at |l1|.
+  EXPECT_TRUE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  // Hiding |l2| should also set the visibility on its mirror layer. In this
+  // case the visibility of |l2| will be mirrored by |l2_mirror|.
+  l2->SetVisible(false);
+
+  // None of the layers are drawn since the visibility is false at every node.
+  EXPECT_FALSE(l1->IsDrawn());
+  EXPECT_FALSE(l2->IsDrawn());
+  EXPECT_FALSE(l2_mirror->IsDrawn());
+
+  // Visibility property is set on every node and hence their subtree is also
+  // hidden.
+  EXPECT_TRUE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_TRUE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_TRUE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  // Setting visibility on the root layer should make that layer visible and its
+  // subtree ready for visibility.
+  l1->SetVisible(true);
+  EXPECT_TRUE(l1->IsDrawn());
+  EXPECT_FALSE(l2->IsDrawn());
+  EXPECT_FALSE(l2_mirror->IsDrawn());
+  EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_TRUE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_TRUE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  // Setting visibility on the mirrored layer should not effect its source
+  // layer.
+  l2_mirror->SetVisible(true);
+  EXPECT_TRUE(l1->IsDrawn());
+  EXPECT_FALSE(l2->IsDrawn());
+  EXPECT_TRUE(l2_mirror->IsDrawn());
+  EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_TRUE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  // Setting visibility on the source layer should keep the mirror layer in
+  // sync and not cause any invalid state.
+  l2->SetVisible(true);
+  EXPECT_TRUE(l1->IsDrawn());
+  EXPECT_TRUE(l2->IsDrawn());
+  EXPECT_TRUE(l2_mirror->IsDrawn());
+  EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  // Setting visibility on the mirrored layer should not effect its source
+  // layer.
+  l2_mirror->SetVisible(false);
+  EXPECT_TRUE(l1->IsDrawn());
+  EXPECT_TRUE(l2->IsDrawn());
+  EXPECT_FALSE(l2_mirror->IsDrawn());
+  EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_TRUE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
+
+  // Setting source layer's visibility to true should update the mirror layer
+  // even if the source layer did not change in the process.
+  l2->SetVisible(true);
+  EXPECT_TRUE(l1->IsDrawn());
+  EXPECT_TRUE(l2->IsDrawn());
+  EXPECT_TRUE(l2_mirror->IsDrawn());
+  EXPECT_FALSE(l1->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2->cc_layer_for_testing()->hide_layer_and_subtree());
+  EXPECT_FALSE(l2_mirror->cc_layer_for_testing()->hide_layer_and_subtree());
 }
 
 // Checks that stacking-related methods behave as advertised.
@@ -1279,6 +1380,25 @@ TEST_F(LayerWithNullDelegateTest, UpdateDamageInDeferredPaint) {
   root->PaintContentsToDisplayList(
       cc::ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
   EXPECT_EQ(bound_union, LastInvalidation());
+}
+
+// Tests that Layer::SendDamagedRects() always recurses into its mask layer, if
+// present, even if it shouldn't send its damaged regions itself.
+TEST_F(LayerWithNullDelegateTest, AlwaysSendsMaskDamagedRects) {
+  gfx::Rect bound(gfx::Rect(2, 2));
+  std::unique_ptr<Layer> mask(CreateTextureLayer(bound));
+  std::unique_ptr<Layer> root(CreateTextureRootLayer(bound));
+  root->SetMaskLayer(mask.get());
+
+  WaitForCommit();
+  EXPECT_EQ(root->damaged_region_for_testing().bounds(), gfx::Rect());
+  EXPECT_EQ(mask->damaged_region_for_testing().bounds(), gfx::Rect());
+
+  const gfx::Rect invalid_rect(gfx::Size(1, 1));
+  mask->SchedulePaint(invalid_rect);
+  EXPECT_EQ(mask->damaged_region_for_testing().bounds(), invalid_rect);
+  root->SendDamagedRects();
+  EXPECT_EQ(mask->damaged_region_for_testing().bounds(), gfx::Rect());
 }
 
 void ExpectRgba(int x, int y, SkColor expected_color, SkColor actual_color) {
@@ -1654,6 +1774,7 @@ TEST_F(LayerWithRealCompositorTest, BackgroundBlurChangeDeviceScale) {
   // baseline.
   EXPECT_TRUE(MatchesPNGFile(bitmap, ref_img1, cc::ExactPixelComparator(true)));
 
+  allocator.GenerateId();
   // Now change the scale, and make sure the bounds are still correct.
   GetCompositor()->SetScaleAndSize(
       2.0f, gfx::Size(200, 200),
@@ -2050,6 +2171,57 @@ TEST_F(LayerWithDelegateTest, ExternalContentMirroring) {
 
   // Surface updates propagate to the mirror.
   EXPECT_EQ(surface_id, surface->surface_id());
+}
+
+TEST_F(LayerWithDelegateTest, TransferableResourceMirroring) {
+  std::unique_ptr<Layer> layer(CreateLayer(LAYER_SOLID_COLOR));
+
+  auto resource = viz::TransferableResource::MakeGL(
+      gpu::Mailbox::Generate(), GL_LINEAR, GL_TEXTURE_2D, gpu::SyncToken());
+  bool release_callback_run = false;
+
+  layer->SetTransferableResource(
+      resource,
+      viz::SingleReleaseCallback::Create(
+          base::BindOnce(ReturnMailbox, &release_callback_run)),
+      gfx::Size(10, 10));
+  EXPECT_FALSE(release_callback_run);
+  EXPECT_TRUE(layer->has_external_content());
+
+  auto mirror = layer->Mirror();
+  EXPECT_TRUE(mirror->has_external_content());
+
+  // Clearing the resource on a mirror layer should not release the source layer
+  // resource.
+  mirror.reset();
+  EXPECT_FALSE(release_callback_run);
+
+  mirror = layer->Mirror();
+  EXPECT_TRUE(mirror->has_external_content());
+
+  // Clearing the transferable resource on the source layer should clear it from
+  // the mirror layer as well.
+  layer->SetShowSolidColorContent();
+  EXPECT_TRUE(release_callback_run);
+  EXPECT_FALSE(layer->has_external_content());
+  EXPECT_FALSE(mirror->has_external_content());
+
+  resource = viz::TransferableResource::MakeGL(
+      gpu::Mailbox::Generate(), GL_LINEAR, GL_TEXTURE_2D, gpu::SyncToken());
+  release_callback_run = false;
+
+  // Setting a transferable resource on the source layer should set it on the
+  // mirror layers as well.
+  layer->SetTransferableResource(
+      resource,
+      viz::SingleReleaseCallback::Create(
+          base::BindOnce(ReturnMailbox, &release_callback_run)),
+      gfx::Size(10, 10));
+  EXPECT_FALSE(release_callback_run);
+  EXPECT_TRUE(layer->has_external_content());
+  EXPECT_TRUE(mirror->has_external_content());
+
+  layer.reset();
 }
 
 // Verifies that layer filters still attached after changing implementation

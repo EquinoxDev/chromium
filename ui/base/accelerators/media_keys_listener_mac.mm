@@ -42,7 +42,7 @@ class MediaKeysListenerImpl : public MediaKeysListener {
   ~MediaKeysListenerImpl() override;
 
   // MediaKeysListener:
-  void StartWatchingMediaKey(KeyboardCode key_code) override;
+  bool StartWatchingMediaKey(KeyboardCode key_code) override;
   void StopWatchingMediaKey(KeyboardCode key_code) override;
 
  private:
@@ -80,12 +80,10 @@ MediaKeysListenerImpl::~MediaKeysListenerImpl() {
   StopEventTapIfNecessary();
 }
 
-void MediaKeysListenerImpl::StartWatchingMediaKey(KeyboardCode key_code) {
+bool MediaKeysListenerImpl::StartWatchingMediaKey(KeyboardCode key_code) {
   key_codes_.insert(key_code);
   StartEventTapIfNecessary();
-
-  // Notify the delegate that we're ready to receive events for that key.
-  delegate_->OnStartedWatchingMediaKeys();
+  return true;
 }
 
 void MediaKeysListenerImpl::StopWatchingMediaKey(KeyboardCode key_code) {

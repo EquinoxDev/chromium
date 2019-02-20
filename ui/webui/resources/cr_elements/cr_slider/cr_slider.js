@@ -161,6 +161,7 @@ cr_slider.SliderTick;
       'onTicksChanged_(ticks.*)',
       'updateLabelAndAria_(value, min, max)',
       'updateKnobAndBar_(value, min, max)',
+      'updateValue_(value, min, max)',
     ],
 
     listeners: {
@@ -440,7 +441,14 @@ cr_slider.SliderTick;
      * @private
      */
     updateValue_: function(value) {
-      value = this.snaps ? Math.round(value) : value;
+      if (this.snaps) {
+        // Skip update if |value| has not passed the next value .8 units away.
+        // The value will update as the drag approaches the next value.
+        if (Math.abs(this.value - value) < .8) {
+          return false;
+        }
+        value = Math.round(value);
+      }
       value = clamp(this.min, this.max, value);
       if (this.value == value) {
         return false;

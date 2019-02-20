@@ -14,6 +14,7 @@
 #include "base/message_loop/message_loop_current.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
 #include "ui/gfx/swap_result.h"
 #include "ui/ozone/platform/wayland/wayland_buffer_manager.h"
 #include "ui/ozone/platform/wayland/wayland_input_method_context.h"
@@ -35,6 +36,8 @@ constexpr uint32_t kMaxDeviceManagerVersion = 3;
 constexpr uint32_t kMaxWpPresentationVersion = 1;
 constexpr uint32_t kMaxTextInputManagerVersion = 1;
 
+constexpr uint32_t kMinWlOutputVersion = 2;
+
 std::unique_ptr<WaylandDataSource> CreateWaylandDataSource(
     WaylandDataDeviceManager* data_device_manager,
     WaylandConnection* connection) {
@@ -50,7 +53,8 @@ WaylandConnection::~WaylandConnection() = default;
 
 bool WaylandConnection::Initialize() {
   static const wl_registry_listener registry_listener = {
-      &WaylandConnection::Global, &WaylandConnection::GlobalRemove,
+      &WaylandConnection::Global,
+      &WaylandConnection::GlobalRemove,
   };
 
   display_.reset(wl_display_connect(nullptr));
@@ -67,7 +71,7 @@ bool WaylandConnection::Initialize() {
 
   wl_registry_add_listener(registry_.get(), &registry_listener, this);
   while (!wayland_output_manager_ ||
-         !wayland_output_manager_->IsPrimaryOutputReady()) {
+         !wayland_output_manager_->IsOutputReady()) {
     wl_display_roundtrip(display_.get());
   }
 
@@ -121,6 +125,20 @@ void WaylandConnection::ScheduleFlush() {
 WaylandWindow* WaylandConnection::GetWindow(gfx::AcceleratedWidget widget) {
   auto it = window_map_.find(widget);
   return it == window_map_.end() ? nullptr : it->second;
+}
+
+WaylandWindow* WaylandConnection::GetWindowWithLargestBounds() {
+  WaylandWindow* window_with_largest_bounds = nullptr;
+  for (auto entry : window_map_) {
+    if (!window_with_largest_bounds) {
+      window_with_largest_bounds = entry.second;
+      continue;
+    }
+    WaylandWindow* window = entry.second;
+    if (window_with_largest_bounds->GetBounds() < window->GetBounds())
+      window_with_largest_bounds = window;
+  }
+  return window_with_largest_bounds;
 }
 
 WaylandWindow* WaylandConnection::GetCurrentFocusedWindow() {
@@ -214,7 +232,7 @@ void WaylandConnection::OfferClipboardData(
     data_source_ = CreateWaylandDataSource(data_device_manager_.get(), this);
     data_source_->WriteToClipboard(data_map);
   }
-  data_source_->UpdataDataMap(data_map);
+  data_source_->UpdateDataMap(data_map);
   std::move(callback).Run();
 }
 
@@ -231,6 +249,13 @@ void WaylandConnection::RequestClipboardData(
 
 bool WaylandConnection::IsSelectionOwner() {
   return !!data_source_;
+}
+
+void WaylandConnection::SetSequenceNumberUpdateCb(
+    PlatformClipboard::SequenceNumberUpdateCb cb) {
+  CHECK(update_sequence_cb_.is_null())
+      << " The callback can be installed only once.";
+  update_sequence_cb_ = std::move(cb);
 }
 
 ozone::mojom::WaylandConnectionPtr WaylandConnection::BindInterface() {
@@ -283,6 +308,10 @@ void WaylandConnection::RequestDragData(
   data_device_->RequestDragData(mime_type, std::move(callback));
 }
 
+bool WaylandConnection::IsDragInProgress() {
+  return data_device_->IsDragEntered() || drag_data_source();
+}
+
 void WaylandConnection::ResetPointerFlags() {
   if (pointer_)
     pointer_->ResetFlags();
@@ -312,6 +341,11 @@ void WaylandConnection::SetClipboardData(const std::string& contents,
     std::move(read_clipboard_closure_).Run(it->second);
   }
   data_map_ = nullptr;
+}
+
+void WaylandConnection::UpdateClipboardSequenceNumber() {
+  if (!update_sequence_cb_.is_null())
+    update_sequence_cb_.Run();
 }
 
 void WaylandConnection::OnDispatcherListChanged() {
@@ -348,7 +382,8 @@ void WaylandConnection::Global(void* data,
                                const char* interface,
                                uint32_t version) {
   static const wl_seat_listener seat_listener = {
-      &WaylandConnection::Capabilities, &WaylandConnection::Name,
+      &WaylandConnection::Capabilities,
+      &WaylandConnection::Name,
   };
   static const xdg_shell_listener shell_listener = {
       &WaylandConnection::Ping,
@@ -418,7 +453,15 @@ void WaylandConnection::Global(void* data,
     xdg_shell_use_unstable_version(connection->shell_.get(),
                                    XDG_SHELL_VERSION_CURRENT);
   } else if (base::EqualsCaseInsensitiveASCII(interface, "wl_output")) {
-    wl::Object<wl_output> output = wl::Bind<wl_output>(registry, name, 1);
+    if (version < kMinWlOutputVersion) {
+      LOG(ERROR)
+          << "Unable to bind to the unsupported wl_output object with version= "
+          << version << ". Minimum supported version is "
+          << kMinWlOutputVersion;
+      return;
+    }
+
+    wl::Object<wl_output> output = wl::Bind<wl_output>(registry, name, version);
     if (!output) {
       LOG(ERROR) << "Failed to bind to wl_output global";
       return;
@@ -497,9 +540,13 @@ void WaylandConnection::Capabilities(void* data,
           pointer, base::BindRepeating(&WaylandConnection::DispatchUiEvent,
                                        base::Unretained(connection)));
       connection->pointer_->set_connection(connection);
+
+      connection->wayland_cursor_position_ =
+          std::make_unique<WaylandCursorPosition>();
     }
   } else if (connection->pointer_) {
     connection->pointer_.reset();
+    connection->wayland_cursor_position_.reset();
   }
   if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD) {
     if (!connection->keyboard_) {
@@ -509,8 +556,9 @@ void WaylandConnection::Capabilities(void* data,
         return;
       }
       connection->keyboard_ = std::make_unique<WaylandKeyboard>(
-          keyboard, base::BindRepeating(&WaylandConnection::DispatchUiEvent,
-                                        base::Unretained(connection)));
+          keyboard, KeyboardLayoutEngineManager::GetKeyboardLayoutEngine(),
+          base::BindRepeating(&WaylandConnection::DispatchUiEvent,
+                              base::Unretained(connection)));
       connection->keyboard_->set_connection(connection);
     }
   } else if (connection->keyboard_) {

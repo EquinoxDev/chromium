@@ -6,6 +6,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/bind.h"
 #import "base/mac/foundation_util.h"
 #include "base/mac/mac_util.h"
 #import "base/mac/scoped_nsautorelease_pool.h"
@@ -701,6 +702,11 @@ TEST_F(NativeWidgetMacTest, SetCursor) {
   widget->CloseNow();
 }
 
+// This test uses the deprecated NSObject accessibility API - see
+// https://crbug.com/921109.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 // Tests that an accessibility request from the system makes its way through to
 // a views::Label filling the window.
 TEST_F(NativeWidgetMacTest, AccessibilityIntegration) {
@@ -725,6 +731,8 @@ TEST_F(NativeWidgetMacTest, AccessibilityIntegration) {
 
   widget->CloseNow();
 }
+
+#pragma clang diagnostic pop
 
 namespace {
 
@@ -1566,7 +1574,7 @@ TEST_F(NativeWidgetMacTest, NoopReparentNativeView) {
 
   [parent close];
 
-  Widget* parent_widget = CreateNativeDesktopWidget();
+  Widget* parent_widget = CreateTopLevelNativeWidget();
   parent = parent_widget->GetNativeWindow().GetNativeNSWindow();
   dialog = views::DialogDelegate::CreateDialogWidget(
       new DialogDelegateView, nullptr, [parent contentView]);
@@ -1684,14 +1692,14 @@ TEST_F(NativeWidgetMacTest, NoParentDelegateDuringTeardown) {
 // Tests Cocoa properties that should be given to particular widget types.
 TEST_F(NativeWidgetMacTest, NativeProperties) {
   // Create a regular widget (TYPE_WINDOW).
-  Widget* regular_widget = CreateNativeDesktopWidget();
+  Widget* regular_widget = CreateTopLevelNativeWidget();
   EXPECT_TRUE([regular_widget->GetNativeWindow().GetNativeNSWindow()
                    canBecomeKeyWindow]);
   EXPECT_TRUE([regular_widget->GetNativeWindow().GetNativeNSWindow()
                    canBecomeMainWindow]);
 
   // Disabling activation should prevent key and main status.
-  regular_widget->widget_delegate()->set_can_activate(false);
+  regular_widget->widget_delegate()->SetCanActivate(false);
   EXPECT_FALSE([regular_widget->GetNativeWindow().GetNativeNSWindow()
                     canBecomeKeyWindow]);
   EXPECT_FALSE([regular_widget->GetNativeWindow().GetNativeNSWindow()
@@ -2407,6 +2415,33 @@ TEST_F(NativeWidgetMacTest, TouchBar) {
   }
 
   delegate->GetWidget()->CloseNow();
+}
+
+TEST_F(NativeWidgetMacTest, InitCallback) {
+  NativeWidget* observed_native_widget = nullptr;
+  const auto callback = base::BindRepeating(
+      [](NativeWidget** observed, NativeWidgetMac* native_widget) {
+        *observed = native_widget;
+      },
+      &observed_native_widget);
+  NativeWidgetMac::SetInitNativeWidgetCallback(callback);
+
+  Widget* widget_a = CreateTopLevelPlatformWidget();
+  EXPECT_EQ(observed_native_widget, widget_a->native_widget());
+  Widget* widget_b = CreateTopLevelPlatformWidget();
+  EXPECT_EQ(observed_native_widget, widget_b->native_widget());
+
+  auto empty = base::RepeatingCallback<void(NativeWidgetMac*)>();
+  DCHECK(empty.is_null());
+  NativeWidgetMac::SetInitNativeWidgetCallback(empty);
+  observed_native_widget = nullptr;
+  Widget* widget_c = CreateTopLevelPlatformWidget();
+  // The original callback from above should no longer be firing.
+  EXPECT_EQ(observed_native_widget, nullptr);
+
+  widget_a->CloseNow();
+  widget_b->CloseNow();
+  widget_c->CloseNow();
 }
 
 }  // namespace test

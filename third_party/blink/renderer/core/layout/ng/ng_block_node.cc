@@ -98,9 +98,15 @@ inline void DetermineAlgorithmAndRun(
   }
 }
 
+<<<<<<< HEAD
 inline scoped_refptr<NGLayoutResult> LayoutWithAlgorithm(
     const NGLayoutAlgorithmParams& params) {
   scoped_refptr<NGLayoutResult> result;
+=======
+inline scoped_refptr<const NGLayoutResult> LayoutWithAlgorithm(
+    const NGLayoutAlgorithmParams& params) {
+  scoped_refptr<const NGLayoutResult> result;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   DetermineAlgorithmAndRun(params,
                            [&result](NGLayoutAlgorithmOperations* algorithm) {
                              result = algorithm->Layout();
@@ -234,13 +240,12 @@ LayoutUnit CalculateAvailableBlockSizeForLegacy(
 
 }  // namespace
 
-scoped_refptr<NGLayoutResult> NGBlockNode::Layout(
+scoped_refptr<const NGLayoutResult> NGBlockNode::Layout(
     const NGConstraintSpace& constraint_space,
     const NGBreakToken* break_token) {
   // Use the old layout code and synthesize a fragment.
-  if (!CanUseNewLayout()) {
+  if (!CanUseNewLayout())
     return RunOldLayout(constraint_space);
-  }
 
   LayoutBlockFlow* block_flow =
       box_->IsLayoutNGMixin() ? ToLayoutBlockFlow(box_) : nullptr;
@@ -251,7 +256,7 @@ scoped_refptr<NGLayoutResult> NGBlockNode::Layout(
   if (block_flow && !first_child)
     block_flow->ClearNGInlineNodeData();
 
-  scoped_refptr<NGLayoutResult> layout_result;
+  scoped_refptr<const NGLayoutResult> layout_result;
   if (block_flow) {
     layout_result =
         block_flow->CachedLayoutResult(constraint_space, break_token);
@@ -343,18 +348,18 @@ void NGBlockNode::PrepareForLayout() {
     ToLayoutNGListItem(box_)->UpdateMarkerTextIfNeeded();
 }
 
-void NGBlockNode::FinishLayout(LayoutBlockFlow* block_flow,
-                               const NGConstraintSpace& constraint_space,
-                               const NGBreakToken* break_token,
-                               scoped_refptr<NGLayoutResult> layout_result) {
+void NGBlockNode::FinishLayout(
+    LayoutBlockFlow* block_flow,
+    const NGConstraintSpace& constraint_space,
+    const NGBreakToken* break_token,
+    scoped_refptr<const NGLayoutResult> layout_result) {
   if (!IsBlockLayoutComplete(constraint_space, *layout_result))
     return;
 
   DCHECK(layout_result->PhysicalFragment());
 
   if (block_flow) {
-    block_flow->SetCachedLayoutResult(constraint_space, break_token,
-                                      *layout_result);
+    block_flow->SetCachedLayoutResult(*layout_result, break_token);
     NGLayoutInputNode first_child = FirstChild();
     bool has_inline_children = first_child && first_child.IsInline();
     if (has_inline_children || box_->IsLayoutNGFieldset()) {
@@ -411,7 +416,8 @@ MinMaxSize NGBlockNode::ComputeMinMaxSize(
   }
 
   if (is_orthogonal_flow_root || !CanUseNewLayout()) {
-    scoped_refptr<NGLayoutResult> layout_result = Layout(*constraint_space);
+    scoped_refptr<const NGLayoutResult> layout_result =
+        Layout(*constraint_space);
     DCHECK_EQ(layout_result->Status(), NGLayoutResult::kSuccess);
     NGBoxFragment fragment(
         container_writing_mode,
@@ -444,7 +450,8 @@ MinMaxSize NGBlockNode::ComputeMinMaxSize(
   }
 
   // Have to synthesize this value.
-  scoped_refptr<NGLayoutResult> layout_result = Layout(zero_constraint_space);
+  scoped_refptr<const NGLayoutResult> layout_result =
+      Layout(zero_constraint_space);
   NGBoxFragment min_fragment(
       container_writing_mode,
       TextDirection::kLtr,  // irrelevant here
@@ -849,7 +856,7 @@ bool NGBlockNode::UseLogicalBottomMarginEdgeForInlineBlockBaseline() const {
              ->UseLogicalBottomMarginEdgeForInlineBlockBaseline();
 }
 
-scoped_refptr<NGLayoutResult> NGBlockNode::LayoutAtomicInline(
+scoped_refptr<const NGLayoutResult> NGBlockNode::LayoutAtomicInline(
     const NGConstraintSpace& parent_constraint_space,
     const ComputedStyle& parent_style,
     FontBaseline baseline_type,
@@ -877,7 +884,7 @@ scoped_refptr<NGLayoutResult> NGBlockNode::LayoutAtomicInline(
               parent_constraint_space.ReplacedPercentageResolutionSize())
           .SetTextDirection(Style().Direction())
           .ToConstraintSpace();
-  scoped_refptr<NGLayoutResult> result = Layout(constraint_space);
+  scoped_refptr<const NGLayoutResult> result = Layout(constraint_space);
   // TODO(kojii): Investigate why ClearNeedsLayout() isn't called automatically
   // when it's being laid out.
   if (!constraint_space.IsIntermediateLayout())
@@ -885,7 +892,7 @@ scoped_refptr<NGLayoutResult> NGBlockNode::LayoutAtomicInline(
   return result;
 }
 
-scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
+scoped_refptr<const NGLayoutResult> NGBlockNode::RunOldLayout(
     const NGConstraintSpace& constraint_space) {
   // This is an exit-point from LayoutNG to the legacy engine. This means that
   // we need to be at a formatting context boundary, since NG and legacy don't
@@ -893,17 +900,33 @@ scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
   DCHECK(!box_->IsLayoutBlock() ||
          ToLayoutBlock(box_)->CreatesNewFormattingContext());
 
+<<<<<<< HEAD
   WritingMode writing_mode = Style().GetWritingMode();
   LayoutBlock* block = box_->IsLayoutBlock() ? ToLayoutBlock(box_) : nullptr;
   const NGConstraintSpace* old_space =
       block ? block->CachedConstraintSpace() : nullptr;
   if (!old_space || box_->NeedsLayout() || *old_space != constraint_space) {
+=======
+  scoped_refptr<const NGLayoutResult> layout_result =
+      box_->GetCachedLayoutResult();
+
+  // We need to force a layout on the child if the constraint space given will
+  // change the layout.
+  bool needs_force_relayout =
+      layout_result && !MaySkipLayout(*this, *layout_result, constraint_space);
+
+  if (box_->NeedsLayout() || !layout_result || needs_force_relayout) {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     BoxLayoutExtraInput input(*box_);
     input.containing_block_content_inline_size =
         CalculateAvailableInlineSizeForLegacy(*box_, constraint_space);
     input.containing_block_content_block_size =
         CalculateAvailableBlockSizeForLegacy(*box_, constraint_space);
 
+<<<<<<< HEAD
+=======
+    WritingMode writing_mode = Style().GetWritingMode();
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     if (LayoutObject* containing_block = box_->ContainingBlock()) {
       if (!IsParallelWritingMode(containing_block->StyleRef().GetWritingMode(),
                                  writing_mode)) {
@@ -923,32 +946,43 @@ scoped_refptr<NGLayoutResult> NGBlockNode::RunOldLayout(
     // Using |LayoutObject::LayoutIfNeeded| save us a little bit of overhead,
     // compared to |LayoutObject::ForceChildLayout|.
     DCHECK(!box_->IsLayoutNGMixin());
+<<<<<<< HEAD
     if (box_->NeedsLayout())
+=======
+    if (box_->NeedsLayout() && !needs_force_relayout)
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       box_->LayoutIfNeeded();
     else
       box_->ForceChildLayout();
 
+<<<<<<< HEAD
     if (block)
       block->SetCachedConstraintSpace(constraint_space);
+=======
+    // Synthesize a new layout result.
+    NGLogicalSize box_size(box_->LogicalWidth(), box_->LogicalHeight());
+    // TODO(kojii): Implement use_first_line_style.
+    NGBoxFragmentBuilder builder(*this, box_->Style(), &constraint_space,
+                                 writing_mode, box_->StyleRef().Direction());
+    builder.SetIsNewFormattingContext(
+        constraint_space.IsNewFormattingContext());
+    builder.SetIsOldLayoutRoot();
+    builder.SetInlineSize(box_size.inline_size);
+    builder.SetBlockSize(box_size.block_size);
+    NGBoxStrut borders(box_->BorderStart(), box_->BorderEnd(),
+                       box_->BorderBefore(), box_->BorderAfter());
+    builder.SetBorders(borders);
+    NGBoxStrut padding(box_->PaddingStart(), box_->PaddingEnd(),
+                       box_->PaddingBefore(), box_->PaddingAfter());
+    builder.SetPadding(padding);
+
+    CopyBaselinesFromOldLayout(constraint_space, &builder);
+    layout_result = builder.ToBoxFragment();
+
+    box_->SetCachedLayoutResult(*layout_result, /* break_token */ nullptr);
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
   }
-  NGLogicalSize box_size(box_->LogicalWidth(), box_->LogicalHeight());
-  // TODO(kojii): Implement use_first_line_style.
-  NGBoxFragmentBuilder builder(*this, box_->Style(), writing_mode,
-                               box_->StyleRef().Direction());
-  builder.SetIsNewFormattingContext(constraint_space.IsNewFormattingContext());
-  builder.SetIsOldLayoutRoot();
-  builder.SetInlineSize(box_size.inline_size);
-  builder.SetBlockSize(box_size.block_size);
-  NGBoxStrut borders(box_->BorderStart(), box_->BorderEnd(),
-                     box_->BorderBefore(), box_->BorderAfter());
-  builder.SetBorders(borders);
-  NGBoxStrut padding(box_->PaddingStart(), box_->PaddingEnd(),
-                     box_->PaddingBefore(), box_->PaddingAfter());
-  builder.SetPadding(padding);
 
-  CopyBaselinesFromOldLayout(constraint_space, &builder);
-
-  scoped_refptr<NGLayoutResult> layout_result = builder.ToBoxFragment();
   UpdateShapeOutsideInfoIfNeeded(
       *layout_result, constraint_space.PercentageResolutionInlineSize());
 

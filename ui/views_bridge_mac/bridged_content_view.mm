@@ -9,6 +9,7 @@
 #import "base/mac/mac_util.h"
 #import "base/mac/scoped_nsobject.h"
 #import "base/mac/sdk_forward_declarations.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "ui/base/cocoa/appkit_utils.h"
@@ -28,7 +29,6 @@
 #import "ui/gfx/decorated_text_mac.h"
 #include "ui/gfx/geometry/rect.h"
 #import "ui/gfx/mac/coordinate_conversion.h"
-#include "ui/gfx/path.h"
 #import "ui/gfx/path_mac.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/views_bridge_mac/bridged_native_widget_host_helper.h"
@@ -640,7 +640,11 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
   views_bridge_mac::DragDropClient* client = [self dragDropClient];
-  return client ? client->DragUpdate(sender) : ui::DragDropTypes::DRAG_NONE;
+  const auto drag_operation =
+      client ? client->DragUpdate(sender) : ui::DragDropTypes::DRAG_NONE;
+  UMA_HISTOGRAM_BOOLEAN("Event.DragDrop.AcceptDragUpdate",
+                        drag_operation != ui::DragDropTypes::DRAG_NONE);
+  return drag_operation;
 }
 
 - (void)draggingExited:(id<NSDraggingInfo>)sender {

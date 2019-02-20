@@ -431,12 +431,13 @@ FileType.PLACEHOLDER = {
  * @return {string} The extension including a leading '.', or empty string if
  *     not found.
  */
-FileType.getExtension = function(entry) {
+FileType.getExtension = entry => {
   // No extension for a directory.
-  if (entry.isDirectory)
+  if (entry.isDirectory) {
     return '';
+  }
 
-  var extensionStartIndex = entry.name.lastIndexOf('.');
+  const extensionStartIndex = entry.name.lastIndexOf('.');
   if (extensionStartIndex === -1 ||
       extensionStartIndex === entry.name.length - 1) {
     return '';
@@ -452,18 +453,20 @@ FileType.getExtension = function(entry) {
  * @param {string} name Name of the file.
  * @return {!FileType.Descriptor} The matching descriptor or a placeholder.
  */
-FileType.getTypeForName = function(name) {
-  var types = FileType.types;
-  for (var i = 0; i < types.length; i++) {
-    if (types[i].pattern.test(name))
+FileType.getTypeForName = name => {
+  const types = FileType.types;
+  for (let i = 0; i < types.length; i++) {
+    if (types[i].pattern.test(name)) {
       return types[i];
+    }
   }
 
   // Unknown file type.
-  var match = /\.[^\/\.]+$/.exec(name);
-  var extension = match ? match[0] : '';
-  if (extension === '')
+  const match = /\.[^\/\.]+$/.exec(name);
+  const extension = match ? match[0] : '';
+  if (extension === '') {
     return FileType.PLACEHOLDER;
+  }
 
   // subtype is the extension excluding the first dot.
   return {
@@ -480,12 +483,13 @@ FileType.getTypeForName = function(name) {
  * @param {string=} opt_mimeType Optional mime type for the entry.
  * @return {!FileType.Descriptor} The matching descriptor or a placeholder.
  */
-FileType.getType = function(entry, opt_mimeType) {
-  if (entry.isDirectory)
+FileType.getType = (entry, opt_mimeType) => {
+  if (entry.isDirectory) {
     return FileType.DIRECTORY;
+  }
 
   if (opt_mimeType) {
-    for (var i = 0; i < FileType.types.length; i++) {
+    for (let i = 0; i < FileType.types.length; i++) {
       if (FileType.types[i].mimePattern &&
           FileType.types[i].mimePattern.test(opt_mimeType)) {
         return FileType.types[i];
@@ -493,15 +497,17 @@ FileType.getType = function(entry, opt_mimeType) {
     }
   }
 
-  for (var i = 0; i < FileType.types.length; i++) {
-    if (FileType.types[i].pattern.test(entry.name))
+  for (let i = 0; i < FileType.types.length; i++) {
+    if (FileType.types[i].pattern.test(entry.name)) {
       return FileType.types[i];
+    }
   }
 
   // Unknown file type.
-  var extension = FileType.getExtension(entry);
-  if (extension === '')
+  const extension = FileType.getExtension(entry);
+  if (extension === '') {
     return FileType.PLACEHOLDER;
+  }
 
   // subtype is the extension excluding the first dot.
   return {
@@ -518,7 +524,7 @@ FileType.getType = function(entry, opt_mimeType) {
  * @return {string} The value of 'type' property from one of the elements in
  *     FileType.types or undefined.
  */
-FileType.getMediaType = function(entry, opt_mimeType) {
+FileType.getMediaType = (entry, opt_mimeType) => {
   return FileType.getType(entry, opt_mimeType).type;
 };
 
@@ -527,7 +533,7 @@ FileType.getMediaType = function(entry, opt_mimeType) {
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} True if audio file.
  */
-FileType.isAudio = function(entry, opt_mimeType) {
+FileType.isAudio = (entry, opt_mimeType) => {
   return FileType.getMediaType(entry, opt_mimeType) === 'audio';
 };
 
@@ -538,7 +544,7 @@ FileType.isAudio = function(entry, opt_mimeType) {
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} True if image file.
  */
-FileType.isImage = function(entry, opt_mimeType) {
+FileType.isImage = (entry, opt_mimeType) => {
   return FileType.getMediaType(entry, opt_mimeType) === 'image';
 };
 
@@ -547,7 +553,7 @@ FileType.isImage = function(entry, opt_mimeType) {
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} True if video file.
  */
-FileType.isVideo = function(entry, opt_mimeType) {
+FileType.isVideo = (entry, opt_mimeType) => {
   return FileType.getMediaType(entry, opt_mimeType) === 'video';
 };
 
@@ -556,7 +562,7 @@ FileType.isVideo = function(entry, opt_mimeType) {
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} True if raw file.
  */
-FileType.isRaw = function(entry, opt_mimeType) {
+FileType.isRaw = (entry, opt_mimeType) => {
   return FileType.getMediaType(entry, opt_mimeType) === 'raw';
 };
 
@@ -567,8 +573,8 @@ FileType.isRaw = function(entry, opt_mimeType) {
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} True if type is in specified set
  */
-FileType.isType = function(types, entry, opt_mimeType) {
-  var type = FileType.getMediaType(entry, opt_mimeType);
+FileType.isType = (types, entry, opt_mimeType) => {
+  const type = FileType.getMediaType(entry, opt_mimeType);
   return !!type && types.indexOf(type) !== -1;
 };
 
@@ -577,7 +583,7 @@ FileType.isType = function(types, entry, opt_mimeType) {
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} Returns true if the file is hosted.
  */
-FileType.isHosted = function(entry, opt_mimeType) {
+FileType.isHosted = (entry, opt_mimeType) => {
   return FileType.getType(entry, opt_mimeType).type === 'hosted';
 };
 
@@ -589,7 +595,7 @@ FileType.isHosted = function(entry, opt_mimeType) {
  * @return {string} Returns string that represents the file icon.
  *     It refers to a file 'images/filetype_' + icon + '.png'.
  */
-FileType.getIcon = function(entry, opt_mimeType, opt_rootType) {
+FileType.getIcon = (entry, opt_mimeType, opt_rootType) => {
   const fileType = FileType.getType(entry, opt_mimeType);
   const overridenIcon = FileType.getIconOverrides(entry, opt_rootType);
   return entry.iconName || overridenIcon || fileType.icon || fileType.type ||
@@ -605,7 +611,7 @@ FileType.getIcon = function(entry, opt_mimeType, opt_rootType) {
  *     entry.
  * @return {string}
  */
-FileType.getIconOverrides = function(entry, opt_rootType) {
+FileType.getIconOverrides = (entry, opt_rootType) => {
   // Overrides per RootType and defined by fullPath.
   const overrides = {
     [VolumeManagerCommon.RootType.DOWNLOADS]: {

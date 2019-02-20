@@ -4,11 +4,19 @@
 
 package org.chromium.components.module_installer;
 
+<<<<<<< HEAD
+=======
+import android.content.Context;
+
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 import org.chromium.base.VisibleForTesting;
 
 /** Dummy fallback of ModuleInstaller for APK builds. */
 public class ModuleInstaller {
     public static void init() {}
+
+    public static void initActivity(Context context) {}
+
     public static void updateCrashKeys(){};
 
     public static void install(

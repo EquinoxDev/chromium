@@ -57,11 +57,13 @@ class ParticlesPage(ToughWebglPage):
   BASE_NAME = 'particles'
   # pylint: disable=line-too-long
   URL = 'http://www.khronos.org/registry/webgl/sdk/demos/google/particles/index.html'
+  TAGS = ToughWebglPage.TAGS + [story_tags.REPRESENTATIVE_WIN_DESKTOP]
 
 
 class EarthPage(ToughWebglPage):
   BASE_NAME = 'earth'
   URL = 'http://www.khronos.org/registry/webgl/sdk/demos/webkit/Earth.html'
+  TAGS = ToughWebglPage.TAGS + [story_tags.REPRESENTATIVE_MAC_DESKTOP]
 
 
 class ManyPlanetsDeepPage(ToughWebglPage):
@@ -73,6 +75,7 @@ class ManyPlanetsDeepPage(ToughWebglPage):
 class AquariumPage(ToughWebglPage):
   BASE_NAME = 'aquarium'
   URL = 'http://webglsamples.org/aquarium/aquarium.html'
+  TAGS = ToughWebglPage.TAGS + [story_tags.REPRESENTATIVE_WIN_DESKTOP]
 
 
 class Aquarium20KFishPage(ToughWebglPage):
@@ -99,6 +102,11 @@ class AnimometerWebGLMultiDrawPage(ToughWebglPage):
   BASE_NAME = 'animometer_webgl_multi_draw'
   # pylint: disable=line-too-long
   URL = 'http://kenrussell.github.io/webgl-animometer/Animometer/tests/3d/webgl.html?webgl_version=2&use_ubos=1&use_multi_draw=1'
+
+class AnimometerWebGLAttribArraysPage(ToughWebglPage):
+  BASE_NAME = 'animometer_webgl_attrib_arrays'
+  # pylint: disable=line-too-long
+  URL = 'http://kenrussell.github.io/webgl-animometer/Animometer/tests/3d/webgl.html?use_attributes=1'
 
 class CameraToWebGLPage(ToughWebglPage):
   TAGS = ToughWebglPage.TAGS + [story_tags.USE_FAKE_CAMERA_DEVICE]

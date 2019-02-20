@@ -32,9 +32,7 @@ class VIEWS_EXPORT WidgetDelegate {
   WidgetDelegate();
 
   // Sets the return value of CanActivate(). Default is true.
-  void set_can_activate(bool can_activate) {
-    can_activate_ = can_activate;
-  }
+  void SetCanActivate(bool can_activate);
 
   // Called whenever the widget's position changes.
   virtual void OnWidgetMove();
@@ -175,7 +173,7 @@ class VIEWS_EXPORT WidgetDelegate {
   virtual bool WidgetHasHitTestMask() const;
 
   // Provides the hit-test mask if HasHitTestMask above returns true.
-  virtual void GetWidgetHitTestMask(gfx::Path* mask) const;
+  virtual void GetWidgetHitTestMask(SkPath* mask) const;
 
   // Returns true if focus should advance to the top level widget when
   // tab/shift-tab is hit and on the last/first focusable view. Default returns

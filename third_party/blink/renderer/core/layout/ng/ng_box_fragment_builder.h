@@ -27,10 +27,15 @@ class CORE_EXPORT NGBoxFragmentBuilder final
  public:
   NGBoxFragmentBuilder(NGLayoutInputNode node,
                        scoped_refptr<const ComputedStyle> style,
+                       const NGConstraintSpace* space,
                        WritingMode writing_mode,
                        TextDirection direction)
       : NGContainerFragmentBuilder(node,
                                    std::move(style),
+<<<<<<< HEAD
+=======
+                                   space,
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
                                    writing_mode,
                                    direction),
         box_type_(NGPhysicalFragment::NGBoxType::kNormalBox),
@@ -44,8 +49,14 @@ class CORE_EXPORT NGBoxFragmentBuilder final
                        scoped_refptr<const ComputedStyle> style,
                        WritingMode writing_mode,
                        TextDirection direction)
+<<<<<<< HEAD
       : NGContainerFragmentBuilder(nullptr,
                                    std::move(style),
+=======
+      : NGContainerFragmentBuilder(/* node */ nullptr,
+                                   std::move(style),
+                                   /* space */ nullptr,
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
                                    writing_mode,
                                    direction),
         box_type_(NGPhysicalFragment::NGBoxType::kNormalBox),
@@ -148,11 +159,11 @@ class CORE_EXPORT NGBoxFragmentBuilder final
   // do not provide a setter here.
 
   // Creates the fragment. Can only be called once.
-  scoped_refptr<NGLayoutResult> ToBoxFragment() {
+  scoped_refptr<const NGLayoutResult> ToBoxFragment() {
     DCHECK_NE(BoxType(), NGPhysicalFragment::kInlineBox);
     return ToBoxFragment(GetWritingMode());
   }
-  scoped_refptr<NGLayoutResult> ToInlineBoxFragment() {
+  scoped_refptr<const NGLayoutResult> ToInlineBoxFragment() {
     // The logical coordinate for inline box uses line-relative writing-mode,
     // not
     // flow-relative.
@@ -160,7 +171,8 @@ class CORE_EXPORT NGBoxFragmentBuilder final
     return ToBoxFragment(ToLineWritingMode(GetWritingMode()));
   }
 
-  scoped_refptr<NGLayoutResult> Abort(NGLayoutResult::NGLayoutResultStatus);
+  scoped_refptr<const NGLayoutResult> Abort(
+      NGLayoutResult::NGLayoutResultStatus);
 
   // A vector of child offsets. Initially set by AddChild().
   const OffsetVector& Offsets() const { return offsets_; }
@@ -219,7 +231,11 @@ class CORE_EXPORT NGBoxFragmentBuilder final
       InlineContainingBlockMap* inline_container_fragments);
 
  private:
+<<<<<<< HEAD
   scoped_refptr<NGLayoutResult> ToBoxFragment(WritingMode);
+=======
+  scoped_refptr<const NGLayoutResult> ToBoxFragment(WritingMode);
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
   LayoutUnit intrinsic_block_size_;
   NGBoxStrut borders_;

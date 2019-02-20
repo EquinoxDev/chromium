@@ -208,6 +208,10 @@ void AXEventGenerator::OnStringAttributeChanged(AXTree* tree,
           node->data().role != ax::mojom::Role::kAlert)
         AddEvent(node, Event::LIVE_REGION_CREATED);
       break;
+    case ax::mojom::StringAttribute::kAutoComplete:
+      LOG(ERROR) << "auto!";
+      AddEvent(node, Event::AUTO_COMPLETE_CHANGED);
+      break;
     default:
       AddEvent(node, Event::OTHER_ATTRIBUTE_CHANGED);
       break;
@@ -437,8 +441,16 @@ void AXEventGenerator::FireRelationSourceEvents(AXTree* tree,
 
   std::for_each(tree->int_reverse_relations().begin(),
                 tree->int_reverse_relations().end(), callback);
-  std::for_each(tree->intlist_reverse_relations().begin(),
-                tree->intlist_reverse_relations().end(), callback);
+  std::for_each(
+      tree->intlist_reverse_relations().begin(),
+      tree->intlist_reverse_relations().end(), [&](auto& entry) {
+        // Explicitly exclude relationships for which an additional event on the
+        // source node would cause extra noise. For example, kRadioGroupIds
+        // forms relations among all radio buttons and serves little value for
+        // AT to get events on the previous radio button in the group.
+        if (entry.first != ax::mojom::IntListAttribute::kRadioGroupIds)
+          callback(entry);
+      });
 }
 
 // Attempts to suppress load-related events that we presume no AT will be

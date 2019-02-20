@@ -87,6 +87,7 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   static bool HasInstance();
 
   // Enables the virtual keyboard with a specified |ui| and |delegate|.
+  // Immediately starts pre-loading the keyboard window in the background.
   // Disables and re-enables the keyboard if it is already enabled.
   void EnableKeyboard(std::unique_ptr<KeyboardUI> ui,
                       KeyboardLayoutDelegate* delegate);
@@ -96,16 +97,6 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // Does nothing if the keyboard is already disabled.
   void DisableKeyboard();
 
-  // Attach the keyboard window as a child of the given parent window.
-  // Can only be called when the keyboard is not activated. |parent| must not
-  // have any children.
-  void ActivateKeyboardInContainer(aura::Window* parent);
-
-  // Detach the keyboard window from its parent container window.
-  // Can only be called when the keyboard is activated. Explicitly hides the
-  // keyboard if it is currently visible.
-  void DeactivateKeyboard();
-
   // Returns the keyboard window, or null if the keyboard window has not been
   // created yet.
   aura::Window* GetKeyboardWindow() const;
@@ -113,6 +104,10 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // Returns the root window that this keyboard controller is attached to, or
   // null if the keyboard has not been attached to any root window.
   aura::Window* GetRootWindow();
+
+  // Move the keyboard window to a different parent container. |parent| must not
+  // be null.
+  void MoveToParentContainer(aura::Window* parent);
 
   // Sets the bounds of the keyboard window.
   void SetKeyboardWindowBounds(const gfx::Rect& new_bounds);
@@ -182,10 +177,6 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   // Force the keyboard to show up in the specific display if not showing and
   // lock the keyboard
   void ShowKeyboardInDisplay(const display::Display& display);
-
-  // Loads the keyboard window in the background, but does not display
-  // the keyboard.
-  void LoadKeyboardWindowInBackground();
 
   // Returns the bounds in screen for the visible portion of the keyboard. An
   // empty rectangle will get returned when the keyboard is hidden.
@@ -318,9 +309,23 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   void OnTextInputStateChanged(const ui::TextInputClient* client) override;
   void OnShowVirtualKeyboardIfEnabled() override;
 
+  // Attach the keyboard window as a child of the given parent window.
+  // Can only be called when the keyboard is not activated. |parent| must not
+  // have any children.
+  void ActivateKeyboardInContainer(aura::Window* parent);
+
+  // Detach the keyboard window from its parent container window.
+  // Can only be called when the keyboard is activated. Explicitly hides the
+  // keyboard if it is currently visible.
+  void DeactivateKeyboard();
+
+  // Loads the keyboard window in the background, but does not display
+  // the keyboard.
+  void LoadKeyboardWindowInBackground();
+
   // Show virtual keyboard immediately with animation.
-  void ShowKeyboardInternal(const display::Display& display);
-  void PopulateKeyboardContent(const display::Display& display,
+  void ShowKeyboardInternal(aura::Window* target_container);
+  void PopulateKeyboardContent(aura::Window* target_container,
                                bool show_keyboard);
 
   // Returns true if keyboard is scheduled to hide.

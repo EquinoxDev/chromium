@@ -324,7 +324,11 @@ void NGOutOfFlowLayoutPart::LayoutDescendantCandidates(
     if (IsContainingBlockForDescendant(candidate) &&
         (!only_layout || candidate.node.GetLayoutBox() == only_layout)) {
       NGLogicalOffset offset;
+<<<<<<< HEAD
       scoped_refptr<NGLayoutResult> result =
+=======
+      scoped_refptr<const NGLayoutResult> result =
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
           LayoutDescendant(candidate, only_layout, &offset);
       container_builder_->AddChild(*result, offset);
       placed_objects->insert(candidate.node.GetLayoutBox());
@@ -336,7 +340,11 @@ void NGOutOfFlowLayoutPart::LayoutDescendantCandidates(
   }
 }
 
+<<<<<<< HEAD
 scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
+=======
+scoped_refptr<const NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     const NGOutOfFlowPositionedDescendant& descendant,
     const LayoutBox* only_layout,
     NGLogicalOffset* offset) {
@@ -371,7 +379,7 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::LayoutDescendant(
   base::Optional<LayoutUnit> block_estimate;
   base::Optional<MinMaxSize> min_max_size;
 
-  scoped_refptr<NGLayoutResult> layout_result = nullptr;
+  scoped_refptr<const NGLayoutResult> layout_result = nullptr;
 
   NGBlockNode node = descendant.node;
   if (AbsoluteNeedsChildInlineSize(descendant_style) ||
@@ -521,7 +529,7 @@ bool NGOutOfFlowLayoutPart::IsContainingBlockForDescendant(
 //    container's available size.
 // 2. To compute final fragment, when block size is known from the absolute
 //    position calculation.
-scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::GenerateFragment(
+scoped_refptr<const NGLayoutResult> NGOutOfFlowLayoutPart::GenerateFragment(
     NGBlockNode descendant,
     const ContainingBlockInfo& container_info,
     const base::Optional<LayoutUnit>& block_estimate,
@@ -553,7 +561,7 @@ scoped_refptr<NGLayoutResult> NGOutOfFlowLayoutPart::GenerateFragment(
     builder.SetIsFixedSizeBlock(true);
   NGConstraintSpace space = builder.ToConstraintSpace();
 
-  scoped_refptr<NGLayoutResult> result = descendant.Layout(space);
+  scoped_refptr<const NGLayoutResult> result = descendant.Layout(space);
 
   // Legacy Grid and Flexbox seem to handle oof margins correctly
   // on their own, and break if we set them here.

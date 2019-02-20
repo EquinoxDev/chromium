@@ -5,6 +5,7 @@
 #include "ui/accessibility/accessibility_switches.h"
 
 #include "base/command_line.h"
+#include "build/build_config.h"
 
 namespace switches {
 
@@ -21,13 +22,42 @@ const char kEnableExperimentalAccessibilityAutoclick[] =
 const char kEnableExperimentalAccessibilityLabels[] =
     "enable-experimental-accessibility-labels";
 
+// Enables language detection on in-page text content which is then exposed to
+// accessibility technology such as screen readers.
+const char kEnableExperimentalAccessibilityLanguageDetection[] =
+    "enable-experimental-accessibility-language-detection";
+
 // Shows setting to enable Switch Access before it has launched.
 const char kEnableExperimentalAccessibilitySwitchAccess[] =
     "enable-experimental-accessibility-switch-access";
 
+// Enables language switching feature that hasn't launched yet.
+const char kEnableExperimentalAccessibilityChromeVoxLanguageSwitching[] =
+    "enable-experimental-accessibility-chromevox-language-switching";
+
 bool AreExperimentalAccessibilityFeaturesEnabled() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       ::switches::kEnableExperimentalAccessibilityFeatures);
+}
+
+bool AreExperimentalAccessibilityLanguageDetectionEnabled() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kEnableExperimentalAccessibilityLanguageDetection);
+}
+
+#if defined(OS_WIN)
+// Toggles between IAccessible and UI Automation platform API.
+const char kEnableExperimentalUIAutomation[] =
+    "enable-experimental-ui-automation";
+#endif
+
+bool IsExperimentalAccessibilityPlatformUIAEnabled() {
+#if defined(OS_WIN)
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      ::switches::kEnableExperimentalUIAutomation);
+#else
+  return false;
+#endif
 }
 
 }  // namespace switches

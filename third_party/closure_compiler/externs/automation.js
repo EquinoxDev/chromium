@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -309,9 +309,9 @@ chrome.automation.ActionType = {
   SCROLL_FORWARD: 'scrollForward',
   SCROLL_LEFT: 'scrollLeft',
   SCROLL_RIGHT: 'scrollRight',
+  SCROLL_UP: 'scrollUp',
   SCROLL_TO_MAKE_VISIBLE: 'scrollToMakeVisible',
   SCROLL_TO_POINT: 'scrollToPoint',
-  SCROLL_UP: 'scrollUp',
   SET_ACCESSIBILITY_FOCUS: 'setAccessibilityFocus',
   SET_SCROLL_OFFSET: 'setScrollOffset',
   SET_SELECTION: 'setSelection',
@@ -1182,11 +1182,18 @@ chrome.automation.AutomationNode.prototype.display;
 chrome.automation.AutomationNode.prototype.imageDataUrl;
 
 /**
- * The language code for this subtree.
+ * The author-provided language code for this subtree.
  * @type {(string|undefined)}
  * @see https://developer.chrome.com/extensions/automation#type-language
  */
 chrome.automation.AutomationNode.prototype.language;
+
+/**
+ * The detected language code for this subtree.
+ * @type {(string|undefined)}
+ * @see https://developer.chrome.com/extensions/automation#type-detectedLanguage
+ */
+chrome.automation.AutomationNode.prototype.detectedLanguage;
 
 /**
  * Indicates the availability and type of interactive popup element true - the popup is a menu menu - the popup is a menu listbox - the popup is a listbox tree - the popup is a tree grid - the popup is a grid dialog - the popup is a dialog

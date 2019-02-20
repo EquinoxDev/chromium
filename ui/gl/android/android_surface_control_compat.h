@@ -11,14 +11,15 @@
 #include <android/native_window.h>
 
 #include "base/files/scoped_file.h"
+#include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/overlay_transform.h"
 #include "ui/gl/gl_export.h"
 
 extern "C" {
-typedef struct ASurface ASurface;
+typedef struct ASurfaceControl ASurfaceControl;
 typedef struct ASurfaceTransaction ASurfaceTransaction;
-typedef void (*TransactionCompletedFunc)(void* context,
-                                         int64_t present_time_ns);
 }
 
 namespace gl {
@@ -27,20 +28,52 @@ class GL_EXPORT SurfaceControl {
  public:
   static bool IsSupported();
 
-  class GL_EXPORT Surface {
+  class GL_EXPORT Surface : public base::RefCounted<Surface> {
    public:
     Surface();
     Surface(const Surface& parent, const char* name);
     Surface(ANativeWindow* parent, const char* name);
-    ~Surface();
 
-    Surface(Surface&& other);
-    Surface& operator=(Surface&& other);
-
-    ASurface* surface() const { return surface_; }
+    ASurfaceControl* surface() const { return surface_; }
 
    private:
-    ASurface* surface_ = nullptr;
+    friend class base::RefCounted<Surface>;
+    ~Surface();
+
+    ASurfaceControl* surface_ = nullptr;
+
+    DISALLOW_COPY_AND_ASSIGN(Surface);
+  };
+
+  struct GL_EXPORT SurfaceStats {
+    SurfaceStats();
+    ~SurfaceStats();
+
+    SurfaceStats(SurfaceStats&& other);
+    SurfaceStats& operator=(SurfaceStats&& other);
+
+    ASurfaceControl* surface = nullptr;
+
+    // The fence which is signaled when the reads for the previous buffer for
+    // the given |surface| are finished.
+    base::ScopedFD fence;
+  };
+
+  struct GL_EXPORT TransactionStats {
+   public:
+    TransactionStats();
+    ~TransactionStats();
+
+    TransactionStats(TransactionStats&& other);
+    TransactionStats& operator=(TransactionStats&& other);
+
+    // The fence which is signaled when this transaction is presented by the
+    // display.
+    base::ScopedFD present_fence;
+    std::vector<SurfaceStats> surface_stats;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(TransactionStats);
   };
 
   class GL_EXPORT Transaction {
@@ -53,11 +86,22 @@ class GL_EXPORT SurfaceControl {
     void SetBuffer(const Surface& surface,
                    AHardwareBuffer* buffer,
                    base::ScopedFD fence_fd);
-    void SetCropRect(const Surface& surface, const gfx::Rect& rect);
-    void SetDisplayFrame(const Surface& surface, const gfx::Rect& rect);
+    void SetGeometry(const Surface& surface,
+                     const gfx::Rect& src,
+                     const gfx::Rect& dst,
+                     gfx::OverlayTransform transform);
     void SetOpaque(const Surface& surface, bool opaque);
     void SetDamageRect(const Surface& surface, const gfx::Rect& rect);
-    void SetCompletedFunc(TransactionCompletedFunc func, void* ctx);
+
+    // Sets the callback which will be dispatched when the transaction is acked
+    // by the framework.
+    // |task_runner| provides an optional task runner on which the callback
+    // should be run.
+    using OnCompleteCb = base::OnceCallback<void(TransactionStats stats)>;
+    void SetOnCompleteCb(
+        OnCompleteCb cb,
+        scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
     void Apply();
 
    private:

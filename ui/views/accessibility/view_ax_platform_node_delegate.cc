@@ -7,12 +7,14 @@
 #include <map>
 #include <memory>
 
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_tree_data.h"
 #include "ui/accessibility/platform/ax_platform_node.h"
+#include "ui/accessibility/platform/ax_platform_node_base.h"
 #include "ui/accessibility/platform/ax_unique_id.h"
 #include "ui/events/event_utils.h"
 #include "ui/views/accessibility/view_accessibility_utils.h"
@@ -24,9 +26,6 @@
 namespace views {
 
 namespace {
-
-base::LazyInstance<std::map<int32_t, ui::AXPlatformNode*>>::Leaky
-    g_unique_id_to_ax_platform_node = LAZY_INSTANCE_INITIALIZER;
 
 // Information required to fire a delayed accessibility event.
 struct QueuedEvent {
@@ -82,12 +81,7 @@ ui::AXPlatformNode* FromNativeWindow(gfx::NativeWindow native_window) {
 ui::AXPlatformNode* PlatformNodeFromNodeID(int32_t id) {
   // Note: For Views, node IDs and unique IDs are the same - but that isn't
   // necessarily true for all AXPlatformNodes.
-  auto it = g_unique_id_to_ax_platform_node.Get().find(id);
-
-  if (it == g_unique_id_to_ax_platform_node.Get().end())
-    return nullptr;
-
-  return it->second;
+  return ui::AXPlatformNodeBase::GetFromUniqueId(id);
 }
 
 void FireEvent(QueuedEvent event) {
@@ -120,16 +114,11 @@ ViewAXPlatformNodeDelegate::ViewAXPlatformNodeDelegate(View* view)
         base::BindRepeating(&FromNativeWindow));
     first_time = false;
   }
-
-  g_unique_id_to_ax_platform_node.Get()[GetUniqueId().Get()] =
-      ax_platform_node_;
 }
 
 ViewAXPlatformNodeDelegate::~ViewAXPlatformNodeDelegate() {
   if (ui::AXPlatformNode::GetPopupFocusOverride() == GetNativeObject())
     ui::AXPlatformNode::SetPopupFocusOverride(nullptr);
-
-  g_unique_id_to_ax_platform_node.Get().erase(GetUniqueId().Get());
   ax_platform_node_->Destroy();
 }
 

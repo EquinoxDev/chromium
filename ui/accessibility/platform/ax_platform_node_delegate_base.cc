@@ -4,6 +4,8 @@
 
 #include "ui/accessibility/platform/ax_platform_node_delegate_base.h"
 
+#include <vector>
+
 #include "base/no_destructor.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree_data.h"
@@ -168,6 +170,18 @@ bool AXPlatformNodeDelegateBase::AccessibilityPerformAction(
   return false;
 }
 
+base::string16
+AXPlatformNodeDelegateBase::GetLocalizedStringForImageAnnotationStatus(
+    ax::mojom::ImageAnnotationStatus status) const {
+  return base::string16();
+}
+
+base::string16
+AXPlatformNodeDelegateBase::GetLocalizedRoleDescriptionForUnlabeledImage()
+    const {
+  return base::string16();
+}
+
 bool AXPlatformNodeDelegateBase::ShouldIgnoreHoveredStateForTesting() {
   return true;
 }
@@ -176,21 +190,60 @@ bool AXPlatformNodeDelegateBase::IsOffscreen() const {
   return false;
 }
 
-std::set<int32_t> AXPlatformNodeDelegateBase::GetReverseRelations(
-    ax::mojom::IntAttribute attr,
-    int32_t dst_id) {
-  return std::set<int32_t>();
+AXPlatformNode* AXPlatformNodeDelegateBase::GetTargetNodeForRelation(
+    ax::mojom::IntAttribute attr) {
+  DCHECK(IsNodeIdIntAttribute(attr));
+
+  int target_id;
+  if (!GetData().GetIntAttribute(attr, &target_id))
+    return nullptr;
+
+  return GetFromNodeID(target_id);
 }
 
-std::set<int32_t> AXPlatformNodeDelegateBase::GetReverseRelations(
-    ax::mojom::IntListAttribute attr,
-    int32_t dst_id) {
-  return std::set<int32_t>();
+std::set<AXPlatformNode*> AXPlatformNodeDelegateBase::GetNodesForNodeIds(
+    const std::set<int32_t>& ids) {
+  std::set<AXPlatformNode*> nodes;
+  for (int32_t node_id : ids) {
+    if (AXPlatformNode* node = GetFromNodeID(node_id)) {
+      nodes.insert(node);
+    }
+  }
+  return nodes;
+}
+
+std::set<AXPlatformNode*> AXPlatformNodeDelegateBase::GetTargetNodesForRelation(
+    ax::mojom::IntListAttribute attr) {
+  DCHECK(IsNodeIdIntListAttribute(attr));
+  std::vector<int32_t> target_ids;
+  if (!GetData().GetIntListAttribute(attr, &target_ids))
+    return std::set<AXPlatformNode*>();
+
+  std::set<int32_t> target_id_set(target_ids.begin(), target_ids.end());
+  return GetNodesForNodeIds(target_id_set);
+}
+
+std::set<AXPlatformNode*> AXPlatformNodeDelegateBase::GetReverseRelations(
+    ax::mojom::IntAttribute attr) {
+  return std::set<AXPlatformNode*>();
+}
+
+std::set<AXPlatformNode*> AXPlatformNodeDelegateBase::GetReverseRelations(
+    ax::mojom::IntListAttribute attr) {
+  return std::set<AXPlatformNode*>();
 }
 
 const AXUniqueId& AXPlatformNodeDelegateBase::GetUniqueId() const {
   static base::NoDestructor<AXUniqueId> dummy_unique_id;
   return *dummy_unique_id;
+}
+
+bool AXPlatformNodeDelegateBase::IsOrderedSetItem() const {
+  return false;
+}
+
+bool AXPlatformNodeDelegateBase::IsOrderedSet() const {
+  return false;
 }
 
 int32_t AXPlatformNodeDelegateBase::GetPosInSet() const {

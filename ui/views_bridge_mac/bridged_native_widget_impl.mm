@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #import "base/mac/foundation_util.h"
@@ -21,6 +22,7 @@
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #include "ui/base/cocoa/remote_accessibility_api.h"
 #import "ui/base/cocoa/window_size_constants.h"
+#include "ui/base/emoji/emoji_panel_helper.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/layout.h"
 #include "ui/base/ui_base_switches.h"
@@ -382,6 +384,10 @@ void BridgedNativeWidgetImpl::SetParent(uint64_t new_parent_id) {
   // As in OnVisibilityChanged, do not set a parent for sheets.
   if (window_visible_ && ![window_ isSheet])
     [parent_->ns_window() addChildWindow:window_ ordered:NSWindowAbove];
+}
+
+void BridgedNativeWidgetImpl::ShowEmojiPanel() {
+  ui::ShowEmojiPanel();
 }
 
 void BridgedNativeWidgetImpl::CreateWindow(
@@ -1333,11 +1339,16 @@ void BridgedNativeWidgetImpl::ShowAsModalSheet() {
   // Since |this| may destroy [window_ delegate], use |window_| itself as the
   // delegate, which will forward to ViewsNSWindowDelegate if |this| is still
   // alive (i.e. it has not set the window delegate to nil).
+  // TODO(crbug.com/841631): Migrate to `[NSWindow
+  // beginSheet:completionHandler:]` instead of this method.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   [NSApp beginSheet:window_
       modalForWindow:parent_window
        modalDelegate:window_
       didEndSelector:@selector(sheetDidEnd:returnCode:contextInfo:)
          contextInfo:nullptr];
+#pragma clang diagnostic pop
 }
 
 }  // namespace views

@@ -32,7 +32,10 @@ source_set("scenic") {
     "scenic_window_manager.h",
   ]
 
-  defines = [ "OZONE_IMPLEMENTATION" ]
+  defines = [
+    "OZONE_IMPLEMENTATION",
+    "VK_USE_PLATFORM_FUCHSIA",
+  ]
 
   deps = [
     "//base",
@@ -44,8 +47,6 @@ source_set("scenic") {
     "//third_party/fuchsia-sdk/sdk:scenic_cpp",
     "//third_party/fuchsia-sdk/sdk:ui_gfx",
     "//third_party/fuchsia-sdk/sdk:ui_scenic",
-    "//third_party/fuchsia-sdk/sdk:ui_viewsv1",
-    "//third_party/fuchsia-sdk/sdk:ui_viewsv1token",
     "//ui/base",
     "//ui/display/manager",
     "//ui/events:dom_keycode_converter",
@@ -61,7 +62,6 @@ source_set("scenic") {
     sources += [
       "vulkan_implementation_scenic.cc",
       "vulkan_implementation_scenic.h",
-      "vulkan_magma.h",
     ]
     defines += [ "VK_USE_PLATFORM_MAGMA_KHR" ]
   }

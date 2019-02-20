@@ -55,12 +55,28 @@ function currentTimeElement(videoElement) {
   return element;
 }
 
+function timeRemainingElement(videoElement) {
+  var controlID = '-webkit-media-controls-time-remaining-display';
+  var element = mediaControlsElement(internals.shadowRoot(videoElement).firstChild, controlID);
+  if (!element)
+    throw 'Failed to find time remaining element';
+  return element;
+}
+
 function downloadButton(videoElement) {
     var controlID = '-internal-media-controls-download-button';
     var button = mediaControlsElement(internals.shadowRoot(videoElement).firstChild, controlID);
     if (!button)
         throw 'Failed to find download button';
     return button;
+}
+
+function pictureInPictureButton(videoElement) {
+  var controlID = '-internal-media-controls-picture-in-picture-button';
+  var button = mediaControlsElement(internals.shadowRoot(videoElement).firstChild, controlID);
+  if (!button)
+    throw 'Failed to find picture-in-picture button';
+  return button;
 }
 
 function fullscreenButton(videoElement) {
@@ -168,6 +184,10 @@ function mediaControlsElement(first, id)
     }
 
     return null;
+}
+
+function getFocusedElement(video) {
+  return internals.shadowRoot(video).activeElement;
 }
 
 function mediaControlsButton(element, id)

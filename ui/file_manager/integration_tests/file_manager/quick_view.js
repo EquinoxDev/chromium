@@ -15,8 +15,9 @@ async function openQuickView(appId, name) {
 
   function checkQuickViewElementsDisplayBlock(elements) {
     const haveElements = Array.isArray(elements) && elements.length !== 0;
-    if (!haveElements || elements[0].styles.display !== 'block')
+    if (!haveElements || elements[0].styles.display !== 'block') {
       return pending(caller, 'Waiting for Quick View to open.');
+    }
     return;
   }
 
@@ -51,8 +52,9 @@ async function closeQuickView(appId) {
 
   function checkQuickViewElementsDisplayNone(elements) {
     chrome.test.assertTrue(Array.isArray(elements));
-    if (elements.length > 0 && elements[0].styles.display !== 'none')
+    if (elements.length > 0 && elements[0].styles.display !== 'none') {
       return pending(caller, 'Waiting for Quick View to close.');
+    }
     return;
   }
 
@@ -114,9 +116,7 @@ testcase.openQuickViewDrive = async function() {
   const mimeTypeSelector = [
     '#quick-view',
     '#metadata-box',
-    // TODO(crbug.com/677338): Replace the attribute selector with key="Type"
-    // once the key is populated with polymer2 enabled.
-    'files-metadata-entry[i18n-values="key:METADATA_BOX_MEDIA_MIME_TYPE"]',
+    'files-metadata-entry[key="Type"]',
     '#value div',
   ];
   chrome.test.assertEq(
@@ -151,6 +151,47 @@ testcase.openQuickViewUsb = async function() {
   await remoteCall.waitForFiles(appId, files, {ignoreLastModifiedTime: true});
 
   // Open a USB file in Quick View.
+  await openQuickView(appId, ENTRIES.hello.nameText);
+};
+
+/**
+ * Tests opening Quick View on a removable partition.
+ */
+testcase.openQuickViewRemovablePartitions = async function() {
+  const PARTITION_QUERY =
+      '#directory-tree .tree-children [volume-type-icon="removable"]';
+  const caller = getCaller();
+
+  // Open Files app on Downloads containing ENTRIES.photos.
+  const appId =
+      await setupAndWaitUntilReady(RootPath.DOWNLOADS, [ENTRIES.photos], []);
+
+  // Mount USB device containing partitions.
+  await sendTestMessage({name: 'mountUsbWithPartitions'});
+
+  // Wait for 2 removable partitions to appear in the directory tree.
+  await repeatUntil(async () => {
+    const partitions = await remoteCall.callRemoteTestUtil(
+        'queryAllElements', appId, [PARTITION_QUERY]);
+
+    if (partitions.length == 2) {
+      return true;
+    }
+    return pending(
+        caller, 'Found %d partitions, waiting for 2.', partitions.length);
+  });
+
+  // Click to open the first partition.
+  chrome.test.assertTrue(
+      !!await remoteCall.callRemoteTestUtil(
+          'fakeMouseClick', appId, [PARTITION_QUERY]),
+      'fakeMouseClick failed');
+
+  // Check: the 'hello.txt' file should appear in the file list.
+  const files = [ENTRIES.hello.getExpectedRow()];
+  await remoteCall.waitForFiles(appId, files, {ignoreLastModifiedTime: true});
+
+  // Open the file in Quick View.
   await openQuickView(appId, ENTRIES.hello.nameText);
 };
 
@@ -286,10 +327,12 @@ testcase.openQuickViewScrollText = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewTextLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || !elements[0].attributes.src)
+    }
+    if (!haveElements || !elements[0].attributes.src) {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -336,10 +379,12 @@ testcase.openQuickViewBackgroundColorText = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewTextLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || !elements[0].attributes.src)
+    }
+    if (!haveElements || !elements[0].attributes.src) {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -379,10 +424,12 @@ testcase.openQuickViewPdf = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewPdfLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || !elements[0].attributes.src)
+    }
+    if (!haveElements || !elements[0].attributes.src) {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -393,8 +440,9 @@ testcase.openQuickViewPdf = async function() {
   // Get the <webview> embed type attribute.
   function checkPdfEmbedType(type) {
     let haveElements = Array.isArray(type) && type.length === 1;
-    if (!haveElements || !type[0].toString().includes('pdf'))
+    if (!haveElements || !type[0].toString().includes('pdf')) {
       return pending(caller, 'Waiting for plugin <embed> type.');
+    }
     return type[0];
   }
   const type = await repeatUntil(async () => {
@@ -444,10 +492,12 @@ testcase.openQuickViewScrollHtml = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewHtmlLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || elements[0].attributes.loaded !== '')
+    }
+    if (!haveElements || elements[0].attributes.loaded !== '') {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -496,10 +546,12 @@ testcase.openQuickViewBackgroundColorHtml = async function() {
   // Get the <files-safe-media type='html'> backgroundColor style.
   function getFileSafeMediaBackgroundColor(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || !elements[0].styles.backgroundColor)
+    }
+    if (!haveElements || !elements[0].styles.backgroundColor) {
       return pending(caller, 'Waiting for <file-safe-media> element.');
+    }
     return elements[0].styles.backgroundColor;
   }
   const backgroundColor = await repeatUntil(async () => {
@@ -534,10 +586,12 @@ testcase.openQuickViewAudio = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewAudioLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || elements[0].attributes.loaded !== '')
+    }
+    if (!haveElements || elements[0].attributes.loaded !== '') {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -577,10 +631,12 @@ testcase.openQuickViewImage = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewImageLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || elements[0].attributes.loaded !== '')
+    }
+    if (!haveElements || elements[0].attributes.loaded !== '') {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -620,10 +676,12 @@ testcase.openQuickViewVideo = async function() {
   // Wait for the Quick View <webview> to load and display its content.
   function checkWebViewVideoLoaded(elements) {
     let haveElements = Array.isArray(elements) && elements.length === 1;
-    if (haveElements)
+    if (haveElements) {
       haveElements = elements[0].styles.display.includes('block');
-    if (!haveElements || elements[0].attributes.loaded !== '')
+    }
+    if (!haveElements || elements[0].attributes.loaded !== '') {
       return pending(caller, 'Waiting for <webview> to load.');
+    }
     return;
   }
   await repeatUntil(async () => {
@@ -639,6 +697,140 @@ testcase.openQuickViewVideo = async function() {
 
   // Check: the <webview> body backgroundColor should be transparent black.
   chrome.test.assertEq('rgba(0, 0, 0, 0)', backgroundColor[0]);
+};
+
+/**
+ * Tests opening Quick View with multiple files and using the up/down arrow
+ * keys to select and view their content.
+ */
+testcase.openQuickViewKeyboardUpDownChangesView = async function() {
+  const caller = getCaller();
+
+  /**
+   * The text <webview> resides in the #quick-view shadow DOM, as a child of
+   * the #dialog element.
+   */
+  const webView = ['#quick-view', '#dialog[open] webview.text-content'];
+
+  // Open Files app on Downloads containing two text files.
+  const files = [ENTRIES.hello, ENTRIES.tallText];
+  const appId = await setupAndWaitUntilReady(RootPath.DOWNLOADS, files, []);
+
+  // Open the last file in Quick View.
+  await openQuickView(appId, ENTRIES.tallText.nameText);
+
+  // Wait for the Quick View <webview> to load and display its content.
+  function checkWebViewTextLoaded(elements) {
+    let haveElements = Array.isArray(elements) && elements.length === 1;
+    if (haveElements) {
+      haveElements = elements[0].styles.display.includes('block');
+    }
+    if (!haveElements || !elements[0].attributes.src) {
+      return pending(caller, 'Waiting for <webview> to load.');
+    }
+    return;
+  }
+  await repeatUntil(async () => {
+    return checkWebViewTextLoaded(await remoteCall.callRemoteTestUtil(
+        'deepQueryAllElements', appId, [webView, ['display']]));
+  });
+
+  // Press the down arrow key to select the next file.
+  const downArrow = ['#quick-view', 'ArrowDown', false, false, false];
+  chrome.test.assertTrue(
+      await remoteCall.callRemoteTestUtil('fakeKeyDown', appId, downArrow));
+
+  // Wait until the <webview> displays that file's content.
+  await repeatUntil(async () => {
+    const getTextContent = 'window.document.body.textContent';
+    const text = await remoteCall.callRemoteTestUtil(
+        'deepExecuteScriptInWebView', appId, [webView, getTextContent]);
+    if (!text || !text[0].includes('This is a sample file')) {
+      return pending(caller, 'Waiting for <webview> content.');
+    }
+  });
+
+  // Press the up arrow key to select the previous file.
+  const upArrow = ['#quick-view', 'ArrowUp', false, false, false];
+  chrome.test.assertTrue(
+      await remoteCall.callRemoteTestUtil('fakeKeyDown', appId, upArrow));
+
+  // Wait until the <webview> displays that file's content.
+  await repeatUntil(async () => {
+    const getTextContent = 'window.document.body.textContent';
+    const text = await remoteCall.callRemoteTestUtil(
+        'deepExecuteScriptInWebView', appId, [webView, getTextContent]);
+    if (!text || !text[0].includes('42 tall text')) {
+      return pending(caller, 'Waiting for <webview> content.');
+    }
+  });
+};
+
+/**
+ * Tests opening Quick View with multiple files and using the left/right arrow
+ * keys to select and view their content.
+ */
+testcase.openQuickViewKeyboardLeftRightChangesView = async function() {
+  const caller = getCaller();
+
+  /**
+   * The text <webview> resides in the #quick-view shadow DOM, as a child of
+   * the #dialog element.
+   */
+  const webView = ['#quick-view', '#dialog[open] webview.text-content'];
+
+  // Open Files app on Downloads containing two text files.
+  const files = [ENTRIES.hello, ENTRIES.tallText];
+  const appId = await setupAndWaitUntilReady(RootPath.DOWNLOADS, files, []);
+
+  // Open the last file in Quick View.
+  await openQuickView(appId, ENTRIES.tallText.nameText);
+
+  // Wait for the Quick View <webview> to load and display its content.
+  function checkWebViewTextLoaded(elements) {
+    let haveElements = Array.isArray(elements) && elements.length === 1;
+    if (haveElements) {
+      haveElements = elements[0].styles.display.includes('block');
+    }
+    if (!haveElements || !elements[0].attributes.src) {
+      return pending(caller, 'Waiting for <webview> to load.');
+    }
+    return;
+  }
+  await repeatUntil(async () => {
+    return checkWebViewTextLoaded(await remoteCall.callRemoteTestUtil(
+        'deepQueryAllElements', appId, [webView, ['display']]));
+  });
+
+  // Press the right arrow key to select the next file item.
+  const rightArrow = ['#quick-view', 'ArrowRight', false, false, false];
+  chrome.test.assertTrue(
+      await remoteCall.callRemoteTestUtil('fakeKeyDown', appId, rightArrow));
+
+  // Wait until the <webview> displays that file's content.
+  await repeatUntil(async () => {
+    const getTextContent = 'window.document.body.textContent';
+    const text = await remoteCall.callRemoteTestUtil(
+        'deepExecuteScriptInWebView', appId, [webView, getTextContent]);
+    if (!text || !text[0].includes('This is a sample file')) {
+      return pending(caller, 'Waiting for <webview> content.');
+    }
+  });
+
+  // Press the left arrow key to select the previous file item.
+  const leftArrow = ['#quick-view', 'ArrowLeft', false, false, false];
+  chrome.test.assertTrue(
+      await remoteCall.callRemoteTestUtil('fakeKeyDown', appId, leftArrow));
+
+  // Wait until the <webview> displays that file's content.
+  await repeatUntil(async () => {
+    const getTextContent = 'window.document.body.textContent';
+    const text = await remoteCall.callRemoteTestUtil(
+        'deepExecuteScriptInWebView', appId, [webView, getTextContent]);
+    if (!text || !text[0].includes('42 tall text')) {
+      return pending(caller, 'Waiting for <webview> content.');
+    }
+  });
 };
 
 /**

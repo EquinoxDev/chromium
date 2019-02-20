@@ -154,7 +154,7 @@ IoThreadClientThrottle::GetIoThreadClient() const {
     return AwContentsIoThreadClient::GetServiceWorkerIoThreadClient();
 
   if (render_process_id_ == -1 || render_frame_id_ == -1) {
-    const content::ResourceRequestInfo* resourceRequestInfo =
+    content::ResourceRequestInfo* resourceRequestInfo =
         content::ResourceRequestInfo::ForRequest(request_);
     if (resourceRequestInfo == nullptr) {
       return nullptr;
@@ -245,7 +245,11 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
     content::AppCacheService* appcache_service,
     ResourceType resource_type,
     std::vector<std::unique_ptr<content::ResourceThrottle>>* throttles) {
+<<<<<<< HEAD
   const content::ResourceRequestInfo* request_info =
+=======
+  content::ResourceRequestInfo* request_info =
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       content::ResourceRequestInfo::ForRequest(request);
 
   std::unique_ptr<IoThreadClientThrottle> ioThreadThrottle =
@@ -290,7 +294,7 @@ void AwResourceDispatcherHostDelegate::RequestBeginning(
 void AwResourceDispatcherHostDelegate::RequestComplete(
     net::URLRequest* request) {
   if (request && !request->status().is_success()) {
-    const content::ResourceRequestInfo* request_info =
+    content::ResourceRequestInfo* request_info =
         content::ResourceRequestInfo::ForRequest(request);
 
     bool safebrowsing_hit = false;
@@ -336,7 +340,7 @@ void AwResourceDispatcherHostDelegate::DownloadStarting(
   if ("GET" != request->method())
     return;
 
-  const content::ResourceRequestInfo* request_info =
+  content::ResourceRequestInfo* request_info =
       content::ResourceRequestInfo::ForRequest(request);
 
   base::PostTaskWithTraits(
@@ -351,7 +355,7 @@ void AwResourceDispatcherHostDelegate::OnResponseStarted(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
     network::ResourceResponse* response) {
-  const content::ResourceRequestInfo* request_info =
+  content::ResourceRequestInfo* request_info =
       content::ResourceRequestInfo::ForRequest(request);
   if (!request_info) {
     DLOG(FATAL) << "Started request without associated info: " <<

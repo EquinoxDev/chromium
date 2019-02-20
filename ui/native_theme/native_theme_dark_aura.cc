@@ -78,6 +78,9 @@ SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
     case kColorId_TextOnProminentButtonColor:
     case kColorId_ButtonPressedShade:
     case kColorId_ResultsTableHoveredBackground:
+    case kColorId_ProminentButtonDisabledColor:
+    case kColorId_ButtonBorderColor:
+    case kColorId_DefaultIconColor:
       return NativeThemeAura::GetSystemColor(color_id);
 
     // Any other color is not defined and shouldn't be used in a dark theme.
@@ -97,6 +100,8 @@ SkColor NativeThemeDarkAura::GetSystemColor(ColorId color_id) const {
     case kColorId_HighlightedMenuItemBackgroundColor:
     case kColorId_HighlightedMenuItemForegroundColor:
     case kColorId_FocusedHighlightedMenuItemBackgroundColor:
+    case kColorId_MenuItemAlertBackgroundColorMax:
+    case kColorId_MenuItemAlertBackgroundColorMin:
     case kColorId_LinkDisabled:
     case kColorId_TabBottomBorder:
     case kColorId_TabTitleColorActive:

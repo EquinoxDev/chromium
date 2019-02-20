@@ -47,6 +47,14 @@ from pylib import constants
 constants.SetBuildType('Release')
 
 
+# Architecture specific GN args. Trying to build an orderfile for an
+# architecture not listed here will eventually throw.
+_ARCH_GN_ARGS = {
+    'arm': [ 'target_cpu = "arm"' ],
+    'arm64': [ 'target_cpu = "arm64"',
+               'android_64bit_browser = true'],
+}
+
 class CommandError(Exception):
   """Indicates that a dispatched shell command exited with a non-zero status."""
 
@@ -269,11 +277,11 @@ class ClankCompiler(object):
         'is_chrome_branded=true',
         'is_debug=false',
         'is_official_build=true',
-        'target_cpu="' + self._arch + '"',
         'target_os="android"',
         'use_goma=' + str(self._use_goma).lower(),
         'use_order_profiling=' + str(instrumented).lower(),
     ]
+    args += _ARCH_GN_ARGS[self._arch]
     if self._goma_dir:
       args += ['goma_dir="%s"' % self._goma_dir]
     if self._system_health_profiling:
@@ -458,6 +466,9 @@ class OrderfileGenerator(object):
       assert not options.profile_save_dir, (
           '--profile-save-dir cannot be used with --skip-profile')
 
+    # Outlined function handling enabled by default for all architectures.
+    self._order_outlined_functions = not options.noorder_outlined_functions
+
     self._output_data = {}
     self._step_recorder = StepRecorder(options.buildbot)
     self._compiler = None
@@ -576,7 +587,7 @@ class OrderfileGenerator(object):
     self._step_recorder.BeginStep('Patch Orderfile')
     patch_orderfile.GeneratePatchedOrderfile(
         self._GetUnpatchedOrderfileFilename(), self._compiler.lib_chrome_so,
-        self._GetPathToOrderfile())
+        self._GetPathToOrderfile(), self._order_outlined_functions)
 
   def _VerifySymbolOrder(self):
     self._step_recorder.BeginStep('Verify Symbol Order')
@@ -779,8 +790,8 @@ def CreateArgumentParser():
       help='If true, the script only verifies the current orderfile')
   parser.add_argument('--target-arch', action='store', dest='arch',
                       default='arm',
-                      choices=['arm', 'arm64', 'x86', 'x86_64', 'x64', 'mips'],
-                      help='The target architecture for which to build')
+                      choices=['arm', 'arm64'],
+                      help='The target architecture for which to build.')
   parser.add_argument('--output-json', action='store', dest='json_file',
                       help='Location to save stats in json format')
   parser.add_argument(
@@ -827,6 +838,8 @@ def CreateArgumentParser():
   parser.add_argument('--manual-objdir', default=None, type=str,
                       help=('Root of object file directory corresponding to '
                             '--manual-symbol-offsets.'))
+  parser.add_argument('--noorder-outlined-functions', action='store_true',
+                      help='Disable outlined functions in the orderfile.')
   parser.add_argument('--pregenerated-profiles', default=None, type=str,
                       help=('Pregenerated profiles to use instead of running '
                             'profile step. Cannot be used with '

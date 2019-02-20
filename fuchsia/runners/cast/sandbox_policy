@@ -1,6 +1,10 @@
 {
   "features": [],
   "services": [
+<<<<<<< HEAD
+=======
+      "chromium.cast.ApplicationConfigManager",
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       "chromium.web.ContextProvider",
       "fuchsia.fonts.Provider",
       "fuchsia.media.Audio",

@@ -151,6 +151,7 @@ bool IsNodeIdIntAttribute(ax::mojom::IntAttribute attr) {
     case ax::mojom::IntAttribute::kAriaCellColumnIndex:
     case ax::mojom::IntAttribute::kAriaRowCount:
     case ax::mojom::IntAttribute::kAriaCellRowIndex:
+    case ax::mojom::IntAttribute::kImageAnnotationStatus:
       return false;
   }
 
@@ -206,6 +207,22 @@ AXNodeData::AXNodeData(const AXNodeData& other) {
   stringlist_attributes = other.stringlist_attributes;
   html_attributes = other.html_attributes;
   child_ids = other.child_ids;
+  relative_bounds = other.relative_bounds;
+}
+
+AXNodeData::AXNodeData(AXNodeData&& other) {
+  id = other.id;
+  role = other.role;
+  state = other.state;
+  actions = other.actions;
+  string_attributes.swap(other.string_attributes);
+  int_attributes.swap(other.int_attributes);
+  float_attributes.swap(other.float_attributes);
+  bool_attributes.swap(other.bool_attributes);
+  intlist_attributes.swap(other.intlist_attributes);
+  stringlist_attributes.swap(other.stringlist_attributes);
+  html_attributes.swap(other.html_attributes);
+  child_ids.swap(other.child_ids);
   relative_bounds = other.relative_bounds;
 }
 
@@ -736,6 +753,21 @@ void AXNodeData::SetTextPosition(ax::mojom::TextPosition text_position) {
   }
 }
 
+ax::mojom::ImageAnnotationStatus AXNodeData::GetImageAnnotationStatus() const {
+  return static_cast<ax::mojom::ImageAnnotationStatus>(
+      GetIntAttribute(ax::mojom::IntAttribute::kImageAnnotationStatus));
+}
+
+void AXNodeData::SetImageAnnotationStatus(
+    ax::mojom::ImageAnnotationStatus status) {
+  if (HasIntAttribute(ax::mojom::IntAttribute::kImageAnnotationStatus))
+    RemoveIntAttribute(ax::mojom::IntAttribute::kImageAnnotationStatus);
+  if (status != ax::mojom::ImageAnnotationStatus::kNone) {
+    AddIntAttribute(ax::mojom::IntAttribute::kImageAnnotationStatus,
+                    static_cast<int32_t>(status));
+  }
+}
+
 ax::mojom::Restriction AXNodeData::GetRestriction() const {
   return static_cast<ax::mojom::Restriction>(
       GetIntAttribute(ax::mojom::IntAttribute::kRestriction));
@@ -1084,6 +1116,11 @@ std::string AXNodeData::ToString() const {
       case ax::mojom::IntAttribute::kPreviousFocusId:
         result += " previous_focus_id=" + value;
         break;
+      case ax::mojom::IntAttribute::kImageAnnotationStatus:
+        result += std::string(" image_annotation_status=") +
+                  ui::ToString(static_cast<ax::mojom::ImageAnnotationStatus>(
+                      int_attribute.second));
+        break;
       case ax::mojom::IntAttribute::kNone:
         break;
     }
@@ -1103,7 +1140,7 @@ std::string AXNodeData::ToString() const {
         result += " autocomplete=" + value;
         break;
       case ax::mojom::StringAttribute::kChildTreeId:
-        result += " child_tree_id=" + value;
+        result += " child_tree_id=" + value.substr(0, 8);
         break;
       case ax::mojom::StringAttribute::kClassName:
         result += " class_name=" + value;
@@ -1119,6 +1156,9 @@ std::string AXNodeData::ToString() const {
         break;
       case ax::mojom::StringAttribute::kHtmlTag:
         result += " html_tag=" + value;
+        break;
+      case ax::mojom::StringAttribute::kImageAnnotation:
+        result += " image_annotation=" + value;
         break;
       case ax::mojom::StringAttribute::kImageDataUrl:
         result += " image_data_url=(" +

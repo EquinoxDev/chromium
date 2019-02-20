@@ -17,12 +17,12 @@ let fakeDeviceInitParams = { supportsImmersive:true };
 
 let requestSessionOptions = [
   { outputContext: getOutputContext() },
-  { immersive: true },
+  { mode: 'immersive-vr' },
 ];
 
 let testFunction = function(session, t, fakeDeviceController) {
   // Session must have a baseLayer or else frame requests will be ignored.
-  session.baseLayer = new XRWebGLLayer(session, gl);
+  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
 
   fakeDeviceController.setStageTransform(null);
   fakeDeviceController.setXRPresentationFrameData(ORIGIN_POSE, [{
@@ -44,7 +44,7 @@ let testFunction = function(session, t, fakeDeviceController) {
         t.step( () => {
           let pose = xrFrame.getViewerPose(referenceSpace);
 
-          let poseMatrix = pose.poseModelMatrix;
+          let poseMatrix = pose.transform.matrix;
           assert_approx_equals(poseMatrix[12], 0.0, FLOAT_EPSILON);
           assert_greater_than(poseMatrix[13], 1.0);
           assert_approx_equals(poseMatrix[14], 0.0, FLOAT_EPSILON);
@@ -62,7 +62,7 @@ let testFunction = function(session, t, fakeDeviceController) {
           let pose = xrFrame.getViewerPose(referenceSpace);
           assert_not_equals(pose, null);
 
-          let poseMatrix = pose.poseModelMatrix;
+          let poseMatrix = pose.transform.matrix;
           assert_matrices_approx_equal(poseMatrix, VALID_STAGE_TRANSFORM);
         });
 

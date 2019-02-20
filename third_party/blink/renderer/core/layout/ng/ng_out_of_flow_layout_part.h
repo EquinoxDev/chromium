@@ -100,7 +100,11 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
       const LayoutBox* only_layout,
       HashSet<const LayoutObject*>* placed_objects);
 
+<<<<<<< HEAD
   scoped_refptr<NGLayoutResult> LayoutDescendant(
+=======
+  scoped_refptr<const NGLayoutResult> LayoutDescendant(
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
       const NGOutOfFlowPositionedDescendant&,
       const LayoutBox* only_layout,
       NGLogicalOffset* offset);
@@ -108,7 +112,7 @@ class CORE_EXPORT NGOutOfFlowLayoutPart {
   bool IsContainingBlockForDescendant(
       const NGOutOfFlowPositionedDescendant& descendant);
 
-  scoped_refptr<NGLayoutResult> GenerateFragment(
+  scoped_refptr<const NGLayoutResult> GenerateFragment(
       NGBlockNode node,
       const ContainingBlockInfo&,
       const base::Optional<LayoutUnit>& block_estimate,

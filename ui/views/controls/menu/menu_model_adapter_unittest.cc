@@ -82,8 +82,6 @@ class MenuModelBase : public ui::MenuModel {
     return items_[index].submenu;
   }
 
-  void HighlightChangedTo(int index) override {}
-
   void ActivatedAt(int index) override { set_last_activation(index); }
 
   void ActivatedAt(int index, int event_flags) override { ActivatedAt(index); }
@@ -91,10 +89,6 @@ class MenuModelBase : public ui::MenuModel {
   void MenuWillShow() override {}
 
   void MenuWillClose() override {}
-
-  void SetMenuModelDelegate(ui::MenuModelDelegate* delegate) override {}
-
-  ui::MenuModelDelegate* GetMenuModelDelegate() const override { return NULL; }
 
   // Item definition.
   struct Item {
@@ -341,11 +335,6 @@ TEST_F(MenuModelAdapterTest, BasicTest) {
   const int actionable_submenu_index = 5;
   CheckSubmenu(model, menu, &delegate, kRootIdBase + actionable_submenu_index,
                2, actionable_submenu_index, kActionableSubmenuIdBase);
-
-  // Check that selecting the root item is safe.  The MenuModel does
-  // not care about the root so MenuModelAdapter should do nothing
-  // (not hit the NOTREACHED check) when the root is selected.
-  static_cast<views::MenuDelegate*>(&delegate)->SelectionChanged(menu);
 }
 
 }  // namespace views

@@ -325,6 +325,9 @@ void Env::Init(service_manager::Connector* connector) {
   if (mode_ == Mode::MUS) {
     EnableMusOSExchangeDataProvider();
     EnableMusOverrideInputInjector();
+    // Remote clients should not throttle, only the window-service should
+    // throttle (which corresponds to Mode::LOCAL).
+    throttle_input_on_resize_ = false;
     return;
   }
 
@@ -343,8 +346,8 @@ void Env::Init(service_manager::Connector* connector) {
   if (connector) {
     // Supplying a connector implies this process is hosting Viz.
     params.connector = connector;
-    // Hosting viz is currently single-process only.
-    params.single_process = true;
+    if (!features::IsMashOopVizEnabled())
+      params.single_process = true;
     params.using_mojo = true;
   }
 

@@ -4,6 +4,8 @@
 
 #include "ui/ozone/platform/wayland/wayland_window.h"
 
+#include <memory>
+
 #include <wayland-client.h>
 
 #include "base/bind.h"
@@ -16,11 +18,14 @@
 #include "ui/events/ozone/events_ozone.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/ozone/platform/wayland/wayland_connection.h"
+#include "ui/ozone/platform/wayland/wayland_cursor_position.h"
+#include "ui/ozone/platform/wayland/wayland_output_manager.h"
 #include "ui/ozone/platform/wayland/wayland_pointer.h"
 #include "ui/ozone/platform/wayland/xdg_popup_wrapper_v5.h"
 #include "ui/ozone/platform/wayland/xdg_popup_wrapper_v6.h"
 #include "ui/ozone/platform/wayland/xdg_surface_wrapper_v5.h"
 #include "ui/ozone/platform/wayland/xdg_surface_wrapper_v6.h"
+#include "ui/platform_window/platform_window_handler/wm_drop_handler.h"
 #include "ui/platform_window/platform_window_init_properties.h"
 
 namespace ui {
@@ -92,7 +97,7 @@ WaylandWindow::~WaylandWindow() {
   }
 
   PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
-  connection_->RemoveWindow(surface_.id());
+  connection_->RemoveWindow(GetWidget());
 
   if (parent_window_)
     parent_window_->set_child_window(nullptr);
@@ -111,7 +116,6 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
   DCHECK(xdg_shell_objects_factory_);
 
   bounds_ = properties.bounds;
-  parent_window_ = GetParentWindow(properties.parent_widget);
 
   surface_.reset(wl_compositor_create_surface(connection_->compositor()));
   if (!surface_) {
@@ -119,11 +123,14 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
     return false;
   }
   wl_surface_set_user_data(surface_.get(), this);
+  AddSurfaceListener();
 
   ui::PlatformWindowType ui_window_type = properties.type;
   switch (ui_window_type) {
     case ui::PlatformWindowType::kMenu:
     case ui::PlatformWindowType::kPopup:
+      parent_window_ = GetParentWindow(properties.parent_widget);
+
       // TODO(msisov, jkim): Handle notification windows, which are marked
       // as popup windows as well. Those are the windows that do not have
       // parents and pop up when the browser receives a notification.
@@ -140,16 +147,39 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
 
   connection_->ScheduleFlush();
 
-  connection_->AddWindow(surface_.id(), this);
+  connection_->AddWindow(GetWidget(), this);
   PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
-  delegate_->OnAcceleratedWidgetAvailable(surface_.id());
+  delegate_->OnAcceleratedWidgetAvailable(GetWidget());
 
   return true;
+}
+
+gfx::AcceleratedWidget WaylandWindow::GetWidget() const {
+  if (!surface_)
+    return gfx::kNullAcceleratedWidget;
+  return surface_.id();
+}
+
+std::set<uint32_t> WaylandWindow::GetEnteredOutputsIds() const {
+  return entered_outputs_ids_;
 }
 
 void WaylandWindow::CreateXdgPopup() {
   if (bounds_.IsEmpty())
     return;
+
+  // TODO(jkim): Consider how to support DropArrow window on tabstrip.
+  // When it starts dragging, as described the protocol, https://goo.gl/1Mskq3,
+  // the client must have an active implicit grab. If we try to create a popup
+  // window while dragging is executed, it gets 'popup_done' directly from
+  // Wayland compositor and it's destroyed through 'popup_done'. It causes
+  // a crash when aura::Window is destroyed.
+  // https://crbug.com/875164
+  if (connection_->IsDragInProgress()) {
+    surface_.reset();
+    LOG(ERROR) << "Wayland can't create a popup window during dragging.";
+    return;
+  }
 
   DCHECK(parent_window_ && !xdg_popup_);
 
@@ -173,7 +203,7 @@ void WaylandWindow::CreateXdgSurface() {
   }
 }
 
-void WaylandWindow::CreateTooltipSubSurface() {
+void WaylandWindow::CreateAndShowTooltipSubSurface() {
   // Since Aura does not not provide a reference parent window, needed by
   // Wayland, we get the current focused window to place and show the tooltips.
   parent_window_ = connection_->GetCurrentFocusedWindow();
@@ -187,11 +217,14 @@ void WaylandWindow::CreateTooltipSubSurface() {
     return;
   }
 
-  wl_subcompositor* subcompositor = connection_->subcompositor();
-  DCHECK(subcompositor);
-  tooltip_subsurface_.reset(wl_subcompositor_get_subsurface(
-      subcompositor, surface_.get(), parent_window_->surface()));
+  if (!tooltip_subsurface_) {
+    wl_subcompositor* subcompositor = connection_->subcompositor();
+    DCHECK(subcompositor);
+    tooltip_subsurface_.reset(wl_subcompositor_get_subsurface(
+        subcompositor, surface_.get(), parent_window_->surface()));
+  }
 
+  DCHECK(tooltip_subsurface_);
   wl_subsurface_set_position(tooltip_subsurface_.get(), bounds_.x(),
                              bounds_.y());
   wl_subsurface_set_desync(tooltip_subsurface_.get());
@@ -240,11 +273,12 @@ void WaylandWindow::Show() {
 
   if (xdg_surface_)
     return;
+
   if (is_tooltip_) {
-    if (!tooltip_subsurface_)
-      CreateTooltipSubSurface();
+    CreateAndShowTooltipSubSurface();
     return;
   }
+
   if (!xdg_popup_) {
     CreateXdgPopup();
     connection_->ScheduleFlush();
@@ -256,14 +290,12 @@ void WaylandWindow::Hide() {
     parent_window_ = nullptr;
     wl_surface_attach(surface_.get(), NULL, 0, 0);
     wl_surface_commit(surface_.get());
-    // Tooltip subsurface must be reset only after the buffer is detached.
-    // Otherwise, gnome shell, for example, can end up with a broken event
-    // pipe.
-    tooltip_subsurface_.reset();
     return;
   }
+
   if (child_window_)
     child_window_->Hide();
+
   if (xdg_popup_) {
     parent_window_->set_child_window(nullptr);
     xdg_popup_.reset();
@@ -466,6 +498,12 @@ bool WaylandWindow::CanDispatchEvent(const PlatformEvent& event) {
 
 uint32_t WaylandWindow::DispatchEvent(const PlatformEvent& native_event) {
   Event* event = static_cast<Event*>(native_event);
+
+  if (event->IsLocatedEvent()) {
+    auto copied_event = Event::Clone(*event);
+    UpdateCursorPositionFromEvent(std::move(copied_event));
+  }
+
   // If the window does not have a pointer focus, but received this event, it
   // means the window is a popup window with a child popup window. In this case,
   // the location of the event must be converted from the nested popup to the
@@ -569,26 +607,39 @@ void WaylandWindow::OnCloseRequest() {
 void WaylandWindow::OnDragEnter(const gfx::PointF& point,
                                 std::unique_ptr<OSExchangeData> data,
                                 int operation) {
-  NOTIMPLEMENTED_LOG_ONCE();
+  WmDropHandler* drop_handler = GetWmDropHandler(*this);
+  if (!drop_handler)
+    return;
+  drop_handler->OnDragEnter(point, std::move(data), operation);
 }
 
 int WaylandWindow::OnDragMotion(const gfx::PointF& point,
                                 uint32_t time,
                                 int operation) {
-  NOTIMPLEMENTED_LOG_ONCE();
-  return 0;
+  WmDropHandler* drop_handler = GetWmDropHandler(*this);
+  if (!drop_handler)
+    return 0;
+
+  return drop_handler->OnDragMotion(point, operation);
 }
 
 void WaylandWindow::OnDragDrop(std::unique_ptr<OSExchangeData> data) {
-  NOTIMPLEMENTED_LOG_ONCE();
+  WmDropHandler* drop_handler = GetWmDropHandler(*this);
+  if (!drop_handler)
+    return;
+  drop_handler->OnDragDrop(std::move(data));
 }
 
 void WaylandWindow::OnDragLeave() {
-  NOTIMPLEMENTED_LOG_ONCE();
+  WmDropHandler* drop_handler = GetWmDropHandler(*this);
+  if (!drop_handler)
+    return;
+  drop_handler->OnDragLeave();
 }
 
 void WaylandWindow::OnDragSessionClose(uint32_t dnd_action) {
   std::move(drag_closed_callback_).Run(dnd_action);
+  connection_->ResetPointerFlags();
 }
 
 bool WaylandWindow::IsMinimized() const {
@@ -635,6 +686,99 @@ WaylandWindow* WaylandWindow::GetParentWindow(
 
 WmMoveResizeHandler* WaylandWindow::AsWmMoveResizeHandler() {
   return static_cast<WmMoveResizeHandler*>(this);
+}
+
+void WaylandWindow::AddSurfaceListener() {
+  static struct wl_surface_listener surface_listener = {
+      &WaylandWindow::Enter,
+      &WaylandWindow::Leave,
+  };
+  wl_surface_add_listener(surface_.get(), &surface_listener, this);
+}
+
+void WaylandWindow::AddEnteredOutputId(struct wl_output* output) {
+  const uint32_t entered_output_id =
+      connection_->wayland_output_manager()->GetIdForOutput(output);
+  DCHECK_NE(entered_output_id, 0u);
+  auto result = entered_outputs_ids_.insert(entered_output_id);
+  DCHECK(result.first != entered_outputs_ids_.end());
+}
+
+void WaylandWindow::RemoveEnteredOutputId(struct wl_output* output) {
+  const uint32_t left_output_id =
+      connection_->wayland_output_manager()->GetIdForOutput(output);
+  auto entered_output_id_it = entered_outputs_ids_.find(left_output_id);
+  // Workaround: when a user switches physical output between two displays,
+  // a window does not necessarily receive enter events immediately or until
+  // a user resizes/moves the window. It means that switching output between
+  // displays in a single output mode results in leave events, but the surface
+  // might not have received enter event before. Thus, remove the id of left
+  // output only if it was stored before.
+  if (entered_output_id_it != entered_outputs_ids_.end())
+    entered_outputs_ids_.erase(entered_output_id_it);
+}
+
+void WaylandWindow::UpdateCursorPositionFromEvent(
+    std::unique_ptr<Event> event) {
+  DCHECK(event->IsLocatedEvent());
+  auto* window = connection_->GetCurrentFocusedWindow();
+  // This is a tricky part. Initially, Wayland sends events to surfaces the
+  // events are targeted for. But, in order to fulfill Chromium's assumptions
+  // about event targets, some of the events are rerouted and their locations
+  // are converted.
+  //
+  // The event we got here is rerouted, but it hasn't had its location fixed
+  // yet. Passing an event with fixed location won't help as well - its location
+  // is converted in a different way: if mouse is moved outside a menu window
+  // to the left, the location of such event includes negative values.
+  //
+  // In contrast, this method must translate coordinates of all events
+  // in regards to top-level windows' coordinates as it's always located at
+  // origin (0,0) from Chromium point of view (remember that Wayland doesn't
+  // provide global coordinates to its clients). And it's totally fine to use it
+  // as the target. Thus, the location of the |event| is always converted using
+  // the top-level window's bounds as the target excluding cases, when the
+  // mouse/touch is over a top-level window.
+  if (parent_window_ && parent_window_ != window) {
+    const gfx::Rect target_bounds = parent_window_->GetBounds();
+    gfx::Rect own_bounds = GetBounds();
+    // This is a bit trickier, and concerns nested menu windows. Whenever an
+    // event is sent to the nested menu window, it's rerouted to a parent menu
+    // window. Thus, in order to correctly translate its location, we must
+    // choose correct values for the |own_bounds|. In this case, it must the
+    // nested menu window, because |this| is the parent of that window.
+    if (window == child_window_)
+      own_bounds = child_window_->GetBounds();
+    ConvertEventLocationToTargetWindowLocation(
+        target_bounds.origin(), own_bounds.origin(), event->AsLocatedEvent());
+  }
+  auto* cursor_position = connection_->wayland_cursor_position();
+  if (cursor_position) {
+    cursor_position->OnCursorPositionChanged(
+        event->AsLocatedEvent()->location());
+  }
+}
+
+// static
+void WaylandWindow::Enter(void* data,
+                          struct wl_surface* wl_surface,
+                          struct wl_output* output) {
+  auto* window = static_cast<WaylandWindow*>(data);
+  if (window) {
+    DCHECK(window->surface_.get() == wl_surface);
+    window->AddEnteredOutputId(output);
+  }
+}
+
+// static
+void WaylandWindow::Leave(void* data,
+                          struct wl_surface* wl_surface,
+                          struct wl_output* output) {
+  auto* window = static_cast<WaylandWindow*>(data);
+  if (window) {
+    DCHECK(window->surface_.get() == wl_surface);
+    window->RemoveEnteredOutputId(output);
+  }
 }
 
 }  // namespace ui

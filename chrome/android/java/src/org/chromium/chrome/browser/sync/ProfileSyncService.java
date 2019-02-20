@@ -13,7 +13,7 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.components.sync.ModelType;
-import org.chromium.components.sync.PassphraseType;
+import org.chromium.components.sync.Passphrase;
 
 import java.util.HashSet;
 import java.util.List;
@@ -170,10 +170,13 @@ public class ProfileSyncService {
      * This method should only be used if you want to know the raw value. For checking whether
      * we should ask the user for a passphrase, use isPassphraseRequiredForDecryption().
      */
-    public PassphraseType getPassphraseType() {
+    public @Passphrase.Type int getPassphraseType() {
         assert isEngineInitialized();
         int passphraseType = nativeGetPassphraseType(mNativeProfileSyncServiceAndroid);
-        return PassphraseType.fromInternalValue(passphraseType);
+        if (passphraseType < 0 || passphraseType >= Passphrase.Type.NUM_ENTRIES) {
+            throw new IllegalArgumentException();
+        }
+        return passphraseType;
     }
 
     /**
@@ -420,6 +423,7 @@ public class ProfileSyncService {
      * Instances of this class keep sync paused until {@link #close} is called. Use
      * {@link ProfileSyncService#getSetupInProgressHandle} to create. Please note that
      * {@link #close} should be called on every instance of this class.
+<<<<<<< HEAD
      */
     public final class SyncSetupInProgressHandle {
         private boolean mClosed;
@@ -454,6 +458,42 @@ public class ProfileSyncService {
      * the equivalent C++ object, as Java instances don't commit sync settings as soon as any
      * instance of SyncSetupInProgressHandle is closed.
      */
+=======
+     */
+    public final class SyncSetupInProgressHandle {
+        private boolean mClosed;
+
+        private SyncSetupInProgressHandle() {
+            ThreadUtils.assertOnUiThread();
+            if (++mSetupInProgressCounter == 1) {
+                setSetupInProgress(true);
+            }
+        }
+
+        public void close() {
+            ThreadUtils.assertOnUiThread();
+            if (mClosed) return;
+            mClosed = true;
+
+            assert mSetupInProgressCounter > 0;
+            if (--mSetupInProgressCounter == 0) {
+                setSetupInProgress(false);
+                // The user has finished setting up sync at least once.
+                setFirstSetupComplete();
+            }
+        }
+    }
+
+    /**
+     * Called by the UI to prevent changes in sync settings from taking effect while these settings
+     * are being modified by the user. When sync settings UI is no longer visible,
+     * {@link SyncSetupInProgressHandle#close} has to be invoked for sync settings to be applied.
+     * Sync settings will remain paused as long as there are unclosed objects returned by this
+     * method. Please note that the behavior of SyncSetupInProgressHandle is slightly different from
+     * the equivalent C++ object, as Java instances don't commit sync settings as soon as any
+     * instance of SyncSetupInProgressHandle is closed.
+     */
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
     public SyncSetupInProgressHandle getSetupInProgressHandle() {
         return new SyncSetupInProgressHandle();
     }

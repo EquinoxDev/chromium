@@ -17,6 +17,7 @@
 #include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_palette.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/paint_vector_icon.h"
@@ -37,6 +38,7 @@
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/animation/flood_fill_ink_drop_ripple.h"
 #include "ui/views/animation/ink_drop_highlight.h"
+#include "ui/views/animation/ink_drop_mask.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
@@ -134,7 +136,7 @@ constexpr int kTextFontSizeDelta = 1;
 constexpr double kProgressNotificationMessageRatio = 0.7;
 
 // This key/property allows tagging the textfield with its index.
-DEFINE_LOCAL_UI_CLASS_PROPERTY_KEY(int, kTextfieldIndexKey, 0U);
+DEFINE_UI_CLASS_PROPERTY_KEY(int, kTextfieldIndexKey, 0U)
 
 // FontList for the texts except for the header.
 gfx::FontList GetTextFontList() {
@@ -584,7 +586,7 @@ void NotificationViewMD::Layout() {
 
     // Use vertically larger clip path, so that actions row's top coners will
     // not be rounded.
-    gfx::Path path;
+    SkPath path;
     gfx::Rect bounds = actions_row_->GetLocalBounds();
     bounds.set_y(bounds.y() - bounds.height());
     bounds.set_height(bounds.height() * 2);
@@ -603,6 +605,13 @@ void NotificationViewMD::Layout() {
   } else {
     ink_drop_container_->SetBoundsRect(GetLocalBounds());
   }
+}
+
+void NotificationViewMD::OnBoundsChanged(const gfx::Rect& previous_bounds) {
+  if (ink_drop_layer_)
+    ink_drop_layer_->SetBounds(gfx::Rect(size()));
+  if (ink_drop_mask_)
+    ink_drop_mask_->layer()->SetBounds(gfx::Rect(size()));
 }
 
 void NotificationViewMD::OnFocus() {
@@ -694,17 +703,17 @@ void NotificationViewMD::UpdateControlButtonsVisibilityWithNotification(
 
 void NotificationViewMD::ButtonPressed(views::Button* sender,
                                        const ui::Event& event) {
-  // Certain operations can cause |this| to be destructed, so copy the members
-  // we send to other parts of the code.
-  // TODO(dewittj): Remove this hack.
-  std::string id(notification_id());
-
   // Tapping anywhere on |header_row_| can expand the notification, though only
   // |expand_button| can be focused by TAB.
   if (sender == header_row_) {
     if (IsExpandable() && content_row_->visible()) {
       SetManuallyExpandedOrCollapsed(true);
+      auto weak_ptr = weak_ptr_factory_.GetWeakPtr();
       ToggleExpanded();
+      // Check |this| is valid before continuing, because ToggleExpanded() might
+      // cause |this| to be deleted.
+      if (!weak_ptr)
+        return;
       Layout();
       SchedulePaint();
     }
@@ -734,7 +743,7 @@ void NotificationViewMD::ButtonPressed(views::Button* sender,
       Layout();
       SchedulePaint();
     } else {
-      MessageCenter::Get()->ClickOnNotificationButton(id, i);
+      MessageCenter::Get()->ClickOnNotificationButton(notification_id(), i);
     }
     return;
   }
@@ -1012,8 +1021,7 @@ void NotificationViewMD::CreateOrUpdateActionButtonViews(
     for (auto* item : action_buttons_)
       delete item;
     action_buttons_.clear();
-    if (buttons.empty())
-      actions_row_->SetVisible(false);
+    actions_row_->SetVisible(expanded_ && !buttons.empty());
   }
 
   DCHECK_EQ(this, actions_row_->parent());
@@ -1208,9 +1216,8 @@ void NotificationViewMD::ToggleInlineSettings(const ui::Event& event) {
     return;
 
   bool inline_settings_visible = !settings_row_->visible();
-
-  if (!inline_settings_visible && block_all_button_->checked())
-    MessageCenter::Get()->DisableNotification(notification_id());
+  bool disable_notification =
+      settings_row_->visible() && block_all_button_->checked();
 
   settings_row_->SetVisible(inline_settings_visible);
   content_row_->SetVisible(!inline_settings_visible);
@@ -1232,6 +1239,11 @@ void NotificationViewMD::ToggleInlineSettings(const ui::Event& event) {
 
   Layout();
   SchedulePaint();
+
+  // Call DisableNotification() at the end, because |this| can be deleted at any
+  // point after it's called.
+  if (disable_notification)
+    MessageCenter::Get()->DisableNotification(notification_id());
 }
 
 void NotificationViewMD::UpdateCornerRadius(int top_radius, int bottom_radius) {
@@ -1239,6 +1251,8 @@ void NotificationViewMD::UpdateCornerRadius(int top_radius, int bottom_radius) {
   action_buttons_row_->SetBackground(views::CreateBackgroundFromPainter(
       std::make_unique<NotificationBackgroundPainter>(
           0, bottom_radius, kActionsRowBackgroundColor)));
+  top_radius_ = top_radius;
+  bottom_radius_ = bottom_radius;
 }
 
 NotificationControlButtonsView* NotificationViewMD::GetControlButtonsView()
@@ -1276,7 +1290,7 @@ void NotificationViewMD::OnSettingsButtonPressed(const ui::Event& event) {
 }
 
 void NotificationViewMD::Activate() {
-  GetWidget()->widget_delegate()->set_can_activate(true);
+  GetWidget()->widget_delegate()->SetCanActivate(true);
   GetWidget()->Activate();
 }
 
@@ -1306,6 +1320,7 @@ void NotificationViewMD::AddBackgroundAnimation(const ui::Event& event) {
 }
 
 void NotificationViewMD::RemoveBackgroundAnimation() {
+  SetInkDropMode(InkDropMode::OFF);
   AnimateInkDrop(views::InkDropState::HIDDEN, nullptr);
 }
 
@@ -1320,7 +1335,8 @@ void NotificationViewMD::AddInkDropLayer(ui::Layer* ink_drop_layer) {
   settings_done_button_->SetPaintToLayer();
   settings_done_button_->layer()->SetFillsBoundsOpaquely(false);
   ink_drop_container_->AddInkDropLayer(ink_drop_layer);
-  InstallInkDropMask(ink_drop_layer);
+  ink_drop_layer_ = ink_drop_layer;
+  InstallNotificationInkDropMask();
 }
 
 void NotificationViewMD::RemoveInkDropLayer(ui::Layer* ink_drop_layer) {
@@ -1328,16 +1344,36 @@ void NotificationViewMD::RemoveInkDropLayer(ui::Layer* ink_drop_layer) {
   block_all_button_->DestroyLayer();
   dont_block_button_->DestroyLayer();
   settings_done_button_->DestroyLayer();
-  ResetInkDropMask();
+  ink_drop_mask_.reset();
   ink_drop_container_->RemoveInkDropLayer(ink_drop_layer);
   GetInkDrop()->RemoveObserver(this);
+  ink_drop_layer_ = nullptr;
 }
 
 std::unique_ptr<views::InkDropRipple> NotificationViewMD::CreateInkDropRipple()
     const {
   return std::make_unique<views::FloodFillInkDropRipple>(
-      ink_drop_container_->size(), GetInkDropCenterBasedOnLastEvent(),
+      GetPreferredSize(), GetInkDropCenterBasedOnLastEvent(),
       GetInkDropBaseColor(), ink_drop_visible_opacity());
+}
+
+void NotificationViewMD::InstallNotificationInkDropMask() {
+  SkPath path;
+  SkScalar radii[8] = {top_radius_,    top_radius_,    top_radius_,
+                       top_radius_,    bottom_radius_, bottom_radius_,
+                       bottom_radius_, bottom_radius_};
+  gfx::Rect rect(GetPreferredSize());
+  path.addRoundRect(gfx::RectToSkRect(rect), radii);
+  ink_drop_mask_ = std::make_unique<views::PathInkDropMask>(size(), path);
+  ink_drop_layer_->SetMaskLayer(ink_drop_mask_->layer());
+}
+
+std::unique_ptr<views::InkDropMask> NotificationViewMD::CreateInkDropMask()
+    const {
+  // We don't use this as we need access to the |ink_drop_mask_|.
+  // See crbug.com/915222.
+  NOTREACHED();
+  return nullptr;
 }
 
 SkColor NotificationViewMD::GetInkDropBaseColor() const {

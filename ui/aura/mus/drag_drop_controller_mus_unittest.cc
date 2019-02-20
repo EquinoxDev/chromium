@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
@@ -64,9 +65,10 @@ class DragDropControllerMusTest : public test::AuraMusClientTestBase {
  private:
   void DragMoveAndDrop() {
     WindowMus* const window_mus = WindowMus::Get(window_.get());
-    controller_->OnDragEnter(window_mus, 0, gfx::Point(5, 20), 0);
-    controller_->OnDragOver(window_mus, 0, gfx::Point(5, 20), 0);
-    controller_->OnCompleteDrop(window_mus, 0, gfx::Point(5, 20), 0);
+    const gfx::PointF point(5, 20);
+    controller_->OnDragEnter(window_mus, 0, point, point, 0);
+    controller_->OnDragOver(window_mus, 0, point, point, 0);
+    controller_->OnCompleteDrop(window_mus, 0, point, point, 0);
     controller_->OnPerformDragDropCompleted(0);
   }
 

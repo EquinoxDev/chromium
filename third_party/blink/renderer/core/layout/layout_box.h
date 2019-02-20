@@ -40,6 +40,11 @@ class EventHandler;
 class LayoutBlockFlow;
 class LayoutMultiColumnSpannerPlaceholder;
 struct BoxLayoutExtraInput;
+<<<<<<< HEAD
+=======
+class NGBreakToken;
+class NGLayoutResult;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 struct NGPhysicalBoxStrut;
 class ShapeOutsideInfo;
 
@@ -903,6 +908,11 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   NGPaintFragment* FirstInlineFragment() const final;
   void SetFirstInlineFragment(NGPaintFragment*) final;
+
+  void SetCachedLayoutResult(const NGLayoutResult&, const NGBreakToken*);
+  const NGLayoutResult* GetCachedLayoutResult() const {
+    return cached_layout_result_.get();
+  }
 
   void SetSpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder&);
   void ClearSpannerPlaceholder();
@@ -1836,6 +1846,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   };
 
   std::unique_ptr<LayoutBoxRareData> rare_data_;
+  scoped_refptr<const NGLayoutResult> cached_layout_result_;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutBox, IsBox());

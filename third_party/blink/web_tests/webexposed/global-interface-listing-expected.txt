@@ -420,10 +420,6 @@ interface AuthenticatorResponse
     attribute @@toStringTag
     getter clientDataJSON
     method constructor
-interface BackgroundFetchFetch
-    attribute @@toStringTag
-    getter request
-    method constructor
 interface BackgroundFetchManager
     attribute @@toStringTag
     method constructor
@@ -451,11 +447,6 @@ interface BackgroundFetchRegistration : EventTarget
     method match
     method matchAll
     setter onprogress
-interface Badge
-    static method clear
-    static method set
-    attribute @@toStringTag
-    method constructor
 interface BarProp
     attribute @@toStringTag
     getter visible
@@ -1136,12 +1127,6 @@ interface ConstantSourceNode : AudioScheduledSourceNode
     attribute @@toStringTag
     getter offset
     method constructor
-interface ContactInfo
-    attribute @@toStringTag
-    getter email
-    getter name
-    getter tel
-    method constructor
 interface ContactsManager
     attribute @@toStringTag
     method constructor
@@ -1511,6 +1496,18 @@ interface DeviceMotionEvent : Event
     getter accelerationIncludingGravity
     getter interval
     getter rotationRate
+    method constructor
+interface DeviceMotionEventAcceleration
+    attribute @@toStringTag
+    getter x
+    getter y
+    getter z
+    method constructor
+interface DeviceMotionEventRotationRate
+    attribute @@toStringTag
+    getter alpha
+    getter beta
+    getter gamma
     method constructor
 interface DeviceOrientationEvent : Event
     attribute @@toStringTag
@@ -1911,9 +1908,12 @@ interface Element : Node
     getter ariaDescribedBy
     getter ariaDetails
     getter ariaDisabled
+    getter ariaErrorMessage
     getter ariaExpanded
+    getter ariaFlowTo
     getter ariaHasPopup
     getter ariaHidden
+    getter ariaKeyShortcuts
     getter ariaLabel
     getter ariaLabelledBy
     getter ariaLevel
@@ -2047,9 +2047,12 @@ interface Element : Node
     setter ariaDescribedBy
     setter ariaDetails
     setter ariaDisabled
+    setter ariaErrorMessage
     setter ariaExpanded
+    setter ariaFlowTo
     setter ariaHasPopup
     setter ariaHidden
+    setter ariaKeyShortcuts
     setter ariaLabel
     setter ariaLabelledBy
     setter ariaLevel
@@ -2167,6 +2170,16 @@ interface EventTarget
     method constructor
     method dispatchEvent
     method removeEventListener
+interface ExperimentalBadge
+    static method clear
+    static method set
+    attribute @@toStringTag
+    method constructor
+interface External
+    attribute @@toStringTag
+    method AddSearchProvider
+    method IsSearchProviderInstalled
+    method constructor
 interface FaceDetector
     attribute @@toStringTag
     method constructor
@@ -2483,6 +2496,7 @@ interface HTMLBodyElement : HTMLElement
     getter onpagehide
     getter onpageshow
     getter onpopstate
+    getter onportalactivate
     getter onrejectionhandled
     getter onresize
     getter onscroll
@@ -2512,6 +2526,7 @@ interface HTMLBodyElement : HTMLElement
     setter onpagehide
     setter onpageshow
     setter onpopstate
+    setter onportalactivate
     setter onrejectionhandled
     setter onresize
     setter onscroll
@@ -2944,6 +2959,7 @@ interface HTMLFrameSetElement : HTMLElement
     getter onpagehide
     getter onpageshow
     getter onpopstate
+    getter onportalactivate
     getter onrejectionhandled
     getter onresize
     getter onscroll
@@ -2969,6 +2985,7 @@ interface HTMLFrameSetElement : HTMLElement
     setter onpagehide
     setter onpageshow
     setter onpopstate
+    setter onportalactivate
     setter onrejectionhandled
     setter onresize
     setter onscroll
@@ -3563,6 +3580,7 @@ interface HTMLScriptElement : HTMLElement
     getter defer
     getter event
     getter htmlFor
+    getter importance
     getter integrity
     getter noModule
     getter referrerPolicy
@@ -3576,6 +3594,7 @@ interface HTMLScriptElement : HTMLElement
     setter defer
     setter event
     setter htmlFor
+    setter importance
     setter integrity
     setter noModule
     setter referrerPolicy
@@ -3878,12 +3897,12 @@ interface HTMLUnknownElement : HTMLElement
     method constructor
 interface HTMLVideoElement : HTMLMediaElement
     attribute @@toStringTag
+    getter autoPictureInPicture
     getter disablePictureInPicture
     getter height
     getter intrinsicSize
     getter onenterpictureinpicture
     getter onleavepictureinpicture
-    getter onpictureinpicturecontrolclick
     getter poster
     getter videoHeight
     getter videoWidth
@@ -3895,17 +3914,16 @@ interface HTMLVideoElement : HTMLMediaElement
     method constructor
     method getVideoPlaybackQuality
     method requestPictureInPicture
-    method setPictureInPictureControls
     method webkitEnterFullScreen
     method webkitEnterFullscreen
     method webkitExitFullScreen
     method webkitExitFullscreen
+    setter autoPictureInPicture
     setter disablePictureInPicture
     setter height
     setter intrinsicSize
     setter onenterpictureinpicture
     setter onleavepictureinpicture
-    setter onpictureinpicturecontrolclick
     setter poster
     setter width
 interface HashChangeEvent : Event
@@ -4098,6 +4116,16 @@ interface IdleDeadline
     getter didTimeout
     method constructor
     method timeRemaining
+interface IdleManager
+    attribute @@toStringTag
+    method constructor
+    method query
+interface IdleStatus : EventTarget
+    attribute @@toStringTag
+    getter onchange
+    getter state
+    method constructor
+    setter onchange
 interface Image
     attribute @@toStringTag
     getter align
@@ -4193,9 +4221,11 @@ interface InputEvent : UIEvent
     method getTargetRanges
 interface IntersectionObserver
     attribute @@toStringTag
+    getter delay
     getter root
     getter rootMargin
     getter thresholds
+    getter trackVisibility
     method constructor
     method disconnect
     method observe
@@ -4207,6 +4237,7 @@ interface IntersectionObserverEntry
     getter intersectionRatio
     getter intersectionRect
     getter isIntersecting
+    getter isVisible
     getter rootBounds
     getter target
     getter time
@@ -4771,6 +4802,7 @@ interface Navigator
     getter doNotTrack
     getter geolocation
     getter hardwareConcurrency
+    getter idle
     getter keyboard
     getter language
     getter languages
@@ -4788,6 +4820,7 @@ interface Navigator
     getter presentation
     getter product
     getter productSub
+    getter scheduling
     getter serial
     getter serviceWorker
     getter storage
@@ -4799,10 +4832,12 @@ interface Navigator
     getter webkitPersistentStorage
     getter webkitTemporaryStorage
     getter xr
+    method canShare
     method constructor
     method getBattery
     method getGamepads
     method getInstalledRelatedApps
+    method getUserAgent
     method getUserMedia
     method getVRDisplays
     method getWakeLock
@@ -5128,7 +5163,6 @@ interface PaymentAddress
     getter city
     getter country
     getter dependentLocality
-    getter languageCode
     getter organization
     getter phone
     getter postalCode
@@ -5197,11 +5231,12 @@ interface Performance : EventTarget
     attribute @@toStringTag
     getter memory
     getter navigation
+    getter onelementtimingbufferfull
     getter oneventtimingbufferfull
     getter onresourcetimingbufferfull
-    getter shouldYield
     getter timeOrigin
     getter timing
+    method clearElementTimings
     method clearEventTimings
     method clearMarks
     method clearMeasures
@@ -5213,9 +5248,11 @@ interface Performance : EventTarget
     method mark
     method measure
     method now
+    method setElementTimingBufferMaxSize
     method setEventTimingBufferMaxSize
     method setResourceTimingBufferSize
     method toJSON
+    setter onelementtimingbufferfull
     setter oneventtimingbufferfull
     setter onresourcetimingbufferfull
 interface PerformanceElementTiming : PerformanceEntry
@@ -5371,11 +5408,6 @@ interface PhotoCapabilities
     getter imageWidth
     getter redEyeReduction
     method constructor
-interface PictureInPictureControlEvent : Event
-    attribute @@toStringTag
-    getter id
-    method constructor
-    setter id
 interface PictureInPictureWindow : EventTarget
     attribute @@toStringTag
     getter height
@@ -5419,6 +5451,9 @@ interface PointerEvent : MouseEvent
 interface PopStateEvent : Event
     attribute @@toStringTag
     getter state
+    method constructor
+interface PortalActivateEvent : Event
+    attribute @@toStringTag
     method constructor
 interface PortalHost : EventTarget
     attribute @@toStringTag
@@ -5585,16 +5620,37 @@ interface RTCDtlsTransport : EventTarget
     method getRemoteCertificates
     setter onerror
     setter onstatechange
+interface RTCError : DOMException
+    attribute @@toStringTag
+    getter errorDetail
+    getter httpRequestStatusCode
+    getter receivedAlert
+    getter sctpCauseCode
+    getter sdpLineNumber
+    getter sentAlert
+    method constructor
+interface RTCErrorEvent : Event
+    attribute @@toStringTag
+    getter error
+    method constructor
 interface RTCIceCandidate
     attribute @@toStringTag
+    getter address
     getter candidate
+    getter component
+    getter foundation
+    getter port
+    getter priority
+    getter protocol
+    getter relatedAddress
+    getter relatedPort
     getter sdpMLineIndex
     getter sdpMid
+    getter tcpType
+    getter type
+    getter usernameFragment
     method constructor
     method toJSON
-    setter candidate
-    setter sdpMLineIndex
-    setter sdpMid
 interface RTCIceTransport : EventTarget
     attribute @@toStringTag
     getter gatheringState
@@ -5705,22 +5761,16 @@ interface RTCQuicTransport : EventTarget
     getter onstatechange
     getter state
     getter transport
+    method connect
     method constructor
     method createStream
-    method getCertificates
-    method getLocalParameters
-    method getRemoteCertificates
-    method getRemoteParameters
-    method start
+    method getKey
+    method getStats
+    method listen
     method stop
     setter onerror
     setter onquicstream
     setter onstatechange
-interface RTCRtpContributingSource
-    attribute @@toStringTag
-    getter source
-    getter timestamp
-    method constructor
 interface RTCRtpReceiver
     static method getCapabilities
     attribute @@toStringTag
@@ -5731,6 +5781,7 @@ interface RTCRtpReceiver
     method getContributingSources
     method getParameters
     method getStats
+    method getSynchronizationSources
 interface RTCRtpSender
     static method getCapabilities
     attribute @@toStringTag
@@ -7019,6 +7070,10 @@ interface SVGViewElement : SVGElement
     getter zoomAndPan
     method constructor
     setter zoomAndPan
+interface Scheduling
+    attribute @@toStringTag
+    method constructor
+    method isInputPending
 interface Screen
     attribute @@toStringTag
     getter availHeight
@@ -7163,6 +7218,7 @@ interface ServiceWorkerContainer : EventTarget
     method getRegistration
     method getRegistrations
     method register
+    method startMessages
     setter oncontrollerchange
     setter onmessage
 interface ServiceWorkerRegistration : EventTarget
@@ -7433,6 +7489,7 @@ interface TextEncoder
     getter encoding
     method constructor
     method encode
+    method encodeInto
 interface TextEncoderStream
     attribute @@toStringTag
     getter encoding
@@ -7954,9 +8011,11 @@ interface WebGL2ComputeRenderingContext
     attribute @@toStringTag
     attribute ACTIVE_ATOMIC_COUNTER_BUFFERS
     attribute ACTIVE_ATTRIBUTES
+    attribute ACTIVE_RESOURCES
     attribute ACTIVE_TEXTURE
     attribute ACTIVE_UNIFORMS
     attribute ACTIVE_UNIFORM_BLOCKS
+    attribute ACTIVE_VARIABLES
     attribute ALIASED_LINE_WIDTH_RANGE
     attribute ALIASED_POINT_SIZE_RANGE
     attribute ALPHA
@@ -7967,6 +8026,8 @@ interface WebGL2ComputeRenderingContext
     attribute ANY_SAMPLES_PASSED_CONSERVATIVE
     attribute ARRAY_BUFFER
     attribute ARRAY_BUFFER_BINDING
+    attribute ARRAY_SIZE
+    attribute ARRAY_STRIDE
     attribute ATOMIC_COUNTER_BARRIER_BIT
     attribute ATOMIC_COUNTER_BUFFER
     attribute ATOMIC_COUNTER_BUFFER_BINDING
@@ -7984,12 +8045,15 @@ interface WebGL2ComputeRenderingContext
     attribute BLEND_EQUATION_RGB
     attribute BLEND_SRC_ALPHA
     attribute BLEND_SRC_RGB
+    attribute BLOCK_INDEX
     attribute BLUE_BITS
     attribute BOOL
     attribute BOOL_VEC2
     attribute BOOL_VEC3
     attribute BOOL_VEC4
     attribute BROWSER_DEFAULT_WEBGL
+    attribute BUFFER_BINDING
+    attribute BUFFER_DATA_SIZE
     attribute BUFFER_SIZE
     attribute BUFFER_UPDATE_BARRIER_BIT
     attribute BUFFER_USAGE
@@ -8159,6 +8223,7 @@ interface WebGL2ComputeRenderingContext
     attribute INVALID_OPERATION
     attribute INVALID_VALUE
     attribute INVERT
+    attribute IS_ROW_MAJOR
     attribute KEEP
     attribute LEQUAL
     attribute LESS
@@ -8170,10 +8235,12 @@ interface WebGL2ComputeRenderingContext
     attribute LINE_STRIP
     attribute LINE_WIDTH
     attribute LINK_STATUS
+    attribute LOCATION
     attribute LOW_FLOAT
     attribute LOW_INT
     attribute LUMINANCE
     attribute LUMINANCE_ALPHA
+    attribute MATRIX_STRIDE
     attribute MAX
     attribute MAX_3D_TEXTURE_SIZE
     attribute MAX_ARRAY_TEXTURE_LAYERS
@@ -8190,7 +8257,15 @@ interface WebGL2ComputeRenderingContext
     attribute MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS
     attribute MAX_COMPUTE_ATOMIC_COUNTERS
     attribute MAX_COMPUTE_ATOMIC_COUNTER_BUFFERS
+    attribute MAX_COMPUTE_IMAGE_UNIFORMS
     attribute MAX_COMPUTE_SHADER_STORAGE_BLOCKS
+    attribute MAX_COMPUTE_SHARED_MEMORY_SIZE
+    attribute MAX_COMPUTE_TEXTURE_IMAGE_UNITS
+    attribute MAX_COMPUTE_UNIFORM_BLOCKS
+    attribute MAX_COMPUTE_UNIFORM_COMPONENTS
+    attribute MAX_COMPUTE_WORK_GROUP_COUNT
+    attribute MAX_COMPUTE_WORK_GROUP_INVOCATIONS
+    attribute MAX_COMPUTE_WORK_GROUP_SIZE
     attribute MAX_CUBE_MAP_TEXTURE_SIZE
     attribute MAX_DRAW_BUFFERS
     attribute MAX_ELEMENTS_INDICES
@@ -8203,6 +8278,8 @@ interface WebGL2ComputeRenderingContext
     attribute MAX_FRAGMENT_UNIFORM_BLOCKS
     attribute MAX_FRAGMENT_UNIFORM_COMPONENTS
     attribute MAX_FRAGMENT_UNIFORM_VECTORS
+    attribute MAX_NAME_LENGTH
+    attribute MAX_NUM_ACTIVE_VARIABLES
     attribute MAX_PROGRAM_TEXEL_OFFSET
     attribute MAX_RENDERBUFFER_SIZE
     attribute MAX_SAMPLES
@@ -8234,6 +8311,7 @@ interface WebGL2ComputeRenderingContext
     attribute MIN
     attribute MIN_PROGRAM_TEXEL_OFFSET
     attribute MIRRORED_REPEAT
+    attribute NAME_LENGTH
     attribute NEAREST
     attribute NEAREST_MIPMAP_LINEAR
     attribute NEAREST_MIPMAP_NEAREST
@@ -8242,7 +8320,9 @@ interface WebGL2ComputeRenderingContext
     attribute NONE
     attribute NOTEQUAL
     attribute NO_ERROR
+    attribute NUM_ACTIVE_VARIABLES
     attribute OBJECT_TYPE
+    attribute OFFSET
     attribute ONE
     attribute ONE_MINUS_CONSTANT_ALPHA
     attribute ONE_MINUS_CONSTANT_COLOR
@@ -8264,6 +8344,8 @@ interface WebGL2ComputeRenderingContext
     attribute POLYGON_OFFSET_FACTOR
     attribute POLYGON_OFFSET_FILL
     attribute POLYGON_OFFSET_UNITS
+    attribute PROGRAM_INPUT
+    attribute PROGRAM_OUTPUT
     attribute QUERY_RESULT
     attribute QUERY_RESULT_AVAILABLE
     attribute R11F_G11F_B10F
@@ -8286,6 +8368,9 @@ interface WebGL2ComputeRenderingContext
     attribute RED
     attribute RED_BITS
     attribute RED_INTEGER
+    attribute REFERENCED_BY_COMPUTE_SHADER
+    attribute REFERENCED_BY_FRAGMENT_SHADER
+    attribute REFERENCED_BY_VERTEX_SHADER
     attribute RENDERBUFFER
     attribute RENDERBUFFER_ALPHA_SIZE
     attribute RENDERBUFFER_BINDING
@@ -8477,6 +8562,8 @@ interface WebGL2ComputeRenderingContext
     attribute TEXTURE_WRAP_T
     attribute TIMEOUT_EXPIRED
     attribute TIMEOUT_IGNORED
+    attribute TOP_LEVEL_ARRAY_SIZE
+    attribute TOP_LEVEL_ARRAY_STRIDE
     attribute TRANSFORM_FEEDBACK
     attribute TRANSFORM_FEEDBACK_ACTIVE
     attribute TRANSFORM_FEEDBACK_BARRIER_BIT
@@ -8488,13 +8575,17 @@ interface WebGL2ComputeRenderingContext
     attribute TRANSFORM_FEEDBACK_BUFFER_START
     attribute TRANSFORM_FEEDBACK_PAUSED
     attribute TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN
+    attribute TRANSFORM_FEEDBACK_VARYING
     attribute TRANSFORM_FEEDBACK_VARYINGS
     attribute TRIANGLES
     attribute TRIANGLE_FAN
     attribute TRIANGLE_STRIP
     attribute TRUE
+    attribute TYPE
+    attribute UNIFORM
     attribute UNIFORM_ARRAY_STRIDE
     attribute UNIFORM_BARRIER_BIT
+    attribute UNIFORM_BLOCK
     attribute UNIFORM_BLOCK_ACTIVE_UNIFORMS
     attribute UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES
     attribute UNIFORM_BLOCK_BINDING
@@ -8673,7 +8764,12 @@ interface WebGL2ComputeRenderingContext
     method getInternalformatParameter
     method getParameter
     method getProgramInfoLog
+    method getProgramInterfaceParameter
     method getProgramParameter
+    method getProgramResource
+    method getProgramResourceIndex
+    method getProgramResourceLocation
+    method getProgramResourceName
     method getQuery
     method getQueryParameter
     method getRenderbufferParameter
@@ -10218,11 +10314,16 @@ interface Worklet
     method constructor
 interface WorkletAnimation
     attribute @@toStringTag
+    getter currentTime
     getter playState
+    getter playbackRate
+    getter startTime
     getter timeline
     method cancel
     method constructor
+    method pause
     method play
+    setter playbackRate
 interface WritableStream
     attribute @@toStringTag
     getter locked
@@ -10323,21 +10424,16 @@ interface XR : EventTarget
     attribute @@toStringTag
     getter ondevicechange
     method constructor
-    method requestDevice
+    method requestSession
+    method supportsSessionMode
     setter ondevicechange
 interface XRBoundedReferenceSpace : XRReferenceSpace
     attribute @@toStringTag
     getter boundsGeometry
     method constructor
-interface XRDevice
-    attribute @@toStringTag
-    method constructor
-    method requestSession
-    method supportsSession
 interface XRFrame
     attribute @@toStringTag
     getter session
-    getter views
     method constructor
     method getInputPose
     method getViewerPose
@@ -10348,7 +10444,7 @@ interface XRHitResult
 interface XRInputPose
     attribute @@toStringTag
     getter emulatedPosition
-    getter gripMatrix
+    getter gripTransform
     getter targetRay
     method constructor
 interface XRInputSource
@@ -10364,6 +10460,11 @@ interface XRInputSourceEvent : Event
 interface XRLayer
     attribute @@toStringTag
     method constructor
+interface XRPose
+    attribute @@toStringTag
+    getter emulatedPosition
+    getter transform
+    method constructor
 interface XRPresentationContext
     attribute @@toStringTag
     getter canvas
@@ -10371,27 +10472,38 @@ interface XRPresentationContext
 interface XRRay
     attribute @@toStringTag
     getter direction
+    getter matrix
     getter origin
-    getter transformMatrix
     method constructor
 interface XRReferenceSpace : XRSpace
     attribute @@toStringTag
     getter onreset
+    getter originOffset
     method constructor
     setter onreset
-interface XRSession : EventTarget
+    setter originOffset
+interface XRRenderState
     attribute @@toStringTag
     getter baseLayer
     getter depthFar
     getter depthNear
-    getter device
+    method constructor
+interface XRRigidTransform
+    attribute @@toStringTag
+    getter matrix
+    getter orientation
+    getter position
+    method constructor
+interface XRSession : EventTarget
+    attribute @@toStringTag
     getter environmentBlendMode
-    getter immersive
+    getter mode
     getter onblur
     getter onend
     getter onfocus
     getter onresetpose
     getter outputContext
+    getter renderState
     method cancelAnimationFrame
     method constructor
     method end
@@ -10399,9 +10511,7 @@ interface XRSession : EventTarget
     method requestAnimationFrame
     method requestHitTest
     method requestReferenceSpace
-    setter baseLayer
-    setter depthFar
-    setter depthNear
+    method updateRenderState
     setter onblur
     setter onend
     setter onfocus
@@ -10429,12 +10539,13 @@ interface XRView
     attribute @@toStringTag
     getter eye
     getter projectionMatrix
+    getter transform
+    getter viewMatrix
     method constructor
-interface XRViewerPose
+interface XRViewerPose : XRPose
     attribute @@toStringTag
-    getter poseModelMatrix
+    getter views
     method constructor
-    method getViewMatrix
 interface XRViewport
     attribute @@toStringTag
     getter height
@@ -10452,7 +10563,6 @@ interface XRWebGLLayer : XRLayer
     getter framebuffer
     getter framebufferHeight
     getter framebufferWidth
-    getter multiview
     getter stencil
     method constructor
     method getViewport
@@ -10762,6 +10872,7 @@ interface webkitURL
     getter onpointerrawmove
     getter onpointerup
     getter onpopstate
+    getter onportalactivate
     getter onprogress
     getter onratechange
     getter onrejectionhandled
@@ -10956,6 +11067,7 @@ interface webkitURL
     setter onpointerrawmove
     setter onpointerup
     setter onpopstate
+    setter onportalactivate
     setter onprogress
     setter onratechange
     setter onrejectionhandled

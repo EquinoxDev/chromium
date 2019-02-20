@@ -971,7 +971,12 @@ class SymbolGroup(BaseSymbol):
         name = re.sub(r'\s+\d+( \(.*\))?$', 's', name)
       # Never cluster symbols that span multiple paths so that all groups return
       # non-None path information.
-      return (symbol.object_path, name)
+      diff_status = None
+      if symbol.IsDelta():
+        diff_status = symbol.diff_status
+      if symbol.object_path or symbol.full_name.startswith('**'):
+        return (symbol.object_path, name, diff_status)
+      return (symbol.address, name, diff_status)
 
     # Use a custom factory to fill in name & template_name.
     def group_factory(token, symbols):

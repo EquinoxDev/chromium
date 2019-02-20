@@ -5,10 +5,20 @@
 #ifndef UI_ACCESSIBILITY_PLATFORM_TEST_AX_NODE_WRAPPER_H_
 #define UI_ACCESSIBILITY_PLATFORM_TEST_AX_NODE_WRAPPER_H_
 
+#include <set>
+#include <vector>
+
+#include "build/build_config.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate_base.h"
+
+#if defined(OS_WIN)
+namespace gfx {
+const AcceleratedWidget kMockAcceleratedWidget = reinterpret_cast<HWND>(-1);
+}
+#endif
 
 namespace ui {
 
@@ -24,7 +34,7 @@ class TestAXNodeWrapper : public AXPlatformNodeDelegateBase {
 
   ~TestAXNodeWrapper() override;
 
-  AXPlatformNode* ax_platform_node() { return platform_node_; }
+  AXPlatformNode* ax_platform_node() const { return platform_node_; }
 
   void BuildAllWrappers(AXTree* tree, AXNode* node);
 
@@ -37,27 +47,46 @@ class TestAXNodeWrapper : public AXPlatformNodeDelegateBase {
   gfx::Rect GetClippedScreenBoundsRect() const override;
   gfx::Rect GetUnclippedScreenBoundsRect() const override;
   gfx::NativeViewAccessible HitTestSync(int x, int y) override;
+  gfx::NativeViewAccessible GetFocus() override;
   AXPlatformNode* GetFromNodeID(int32_t id) override;
   int GetIndexInParent() const override;
+  bool IsTable() const override;
   int GetTableRowCount() const override;
   int GetTableColCount() const override;
+  int GetTableAriaColCount() const override;
+  int GetTableAriaRowCount() const override;
+  int GetTableCellCount() const override;
   const std::vector<int32_t> GetColHeaderNodeIds() const override;
   const std::vector<int32_t> GetColHeaderNodeIds(
       int32_t col_index) const override;
   const std::vector<int32_t> GetRowHeaderNodeIds() const override;
   const std::vector<int32_t> GetRowHeaderNodeIds(
       int32_t row_index) const override;
+  bool IsTableRow() const override;
+  int GetTableRowRowIndex() const override;
+  bool IsTableCellOrHeader() const override;
+  int GetTableCellIndex() const override;
+  int GetTableCellColIndex() const override;
+  int GetTableCellRowIndex() const override;
+  int GetTableCellColSpan() const override;
+  int GetTableCellRowSpan() const override;
+  int GetTableCellAriaColIndex() const override;
+  int GetTableCellAriaRowIndex() const override;
   int32_t GetCellId(int32_t row_index, int32_t col_index) const override;
-  int32_t GetTableCellIndex() const override;
   int32_t CellIndexToId(int32_t cell_index) const override;
+  gfx::AcceleratedWidget GetTargetForNativeAccessibilityEvent() override;
   bool AccessibilityPerformAction(const AXActionData& data) override;
+  base::string16 GetLocalizedRoleDescriptionForUnlabeledImage() const override;
+  base::string16 GetLocalizedStringForImageAnnotationStatus(
+      ax::mojom::ImageAnnotationStatus status) const override;
   bool ShouldIgnoreHoveredStateForTesting() override;
   const ui::AXUniqueId& GetUniqueId() const override;
-  std::set<int32_t> GetReverseRelations(ax::mojom::IntAttribute attr,
-                                        int32_t dst_id) override;
-  std::set<int32_t> GetReverseRelations(ax::mojom::IntListAttribute attr,
-                                        int32_t dst_id) override;
-
+  std::set<AXPlatformNode*> GetReverseRelations(
+      ax::mojom::IntAttribute attr) override;
+  std::set<AXPlatformNode*> GetReverseRelations(
+      ax::mojom::IntListAttribute attr) override;
+  bool IsOrderedSetItem() const override;
+  bool IsOrderedSet() const override;
   int32_t GetPosInSet() const override;
   int32_t GetSetSize() const override;
 

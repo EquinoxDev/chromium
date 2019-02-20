@@ -4,6 +4,7 @@
 
 #include "ui/views/controls/menu/menu_item_view.h"
 
+#include <math.h>
 #include <stddef.h>
 
 #include "base/i18n/case_conversion.h"
@@ -13,6 +14,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/gfx/animation/animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect.h"
@@ -31,6 +33,7 @@
 #include "ui/views/controls/menu/menu_separator.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/controls/separator.h"
+#include "ui/views/view_properties.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
@@ -495,6 +498,7 @@ int MenuItemView::GetHeightForWidth(int width) const {
   int height = child_at(0)->GetHeightForWidth(width);
   if (!icon_view_ && GetRootMenuItem()->has_icons())
     height = std::max(height, MenuConfig::instance().check_height);
+
   height += GetBottomMargin() + GetTopMargin();
 
   return height;
@@ -616,13 +620,22 @@ void MenuItemView::Layout() {
     return;
 
   if (IsContainer()) {
-    View* child = child_at(0);
-    gfx::Size size = child->GetPreferredSize();
-    child->SetBounds(0, GetTopMargin(), size.width(), size.height());
-    // TODO(crbug/913998): this is a hack. We should change
-    // ExtensionToolbarMenuView so that it does not move itself when laid out,
-    // and accomplish the same thing via insets or similar.
-    child->Layout();
+    View* const child = child_at(0);
+    const gfx::Size child_size = child->GetPreferredSize();
+
+    // Get child's margins or use default empty margins.
+    const gfx::Insets* margins_prop = child->GetProperty(views::kMarginsKey);
+    const gfx::Insets child_margins =
+        margins_prop ? *margins_prop
+                     : gfx::Insets(GetTopMargin(), 0, GetBottomMargin(), 0);
+
+    gfx::Rect max_bounds = GetContentsBounds();
+    max_bounds.Inset(child_margins);
+
+    gfx::Rect bounds = gfx::Rect(child_margins.left(), child_margins.top(),
+                                 child_size.width(), child_size.height());
+    bounds.Intersect(max_bounds);
+    child->SetBoundsRect(bounds);
   } else {
     // Child views are laid out right aligned and given the full height. To
     // right align start with the last view and progress to the first.
@@ -706,6 +719,11 @@ void MenuItemView::SetCornerRadius(int radius) {
   DCHECK_EQ(GetType(), HIGHLIGHTED);
   corner_radius_ = radius;
   invalidate_dimensions();  // Triggers preferred size recalculation.
+}
+
+void MenuItemView::SetAlerted() {
+  is_alerted_ = true;
+  SchedulePaint();
 }
 
 MenuItemView::MenuItemView(MenuItemView* parent,
@@ -1000,18 +1018,35 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
 void MenuItemView::PaintBackground(gfx::Canvas* canvas,
                                    PaintButtonMode mode,
                                    bool render_selection) {
-  if (GetType() == HIGHLIGHTED) {
+  if (GetType() == HIGHLIGHTED || is_alerted_) {
+    SkColor color = gfx::kPlaceholderColor;
+
     // Highligted items always have a different-colored background, and ignore
     // system theme.
-    ui::NativeTheme::ColorId color_id =
-        render_selection
-            ? ui::NativeTheme::
-                  kColorId_FocusedHighlightedMenuItemBackgroundColor
-            : ui::NativeTheme::kColorId_HighlightedMenuItemBackgroundColor;
+    if (GetType() == HIGHLIGHTED) {
+      const ui::NativeTheme::ColorId color_id =
+          render_selection
+              ? ui::NativeTheme::
+                    kColorId_FocusedHighlightedMenuItemBackgroundColor
+              : ui::NativeTheme::kColorId_HighlightedMenuItemBackgroundColor;
+      color = GetNativeTheme()->GetSystemColor(color_id);
+    } else {
+      const SkColor color_max = GetNativeTheme()->GetSystemColor(
+          ui::NativeTheme::kColorId_MenuItemAlertBackgroundColorMax);
+      const SkColor color_min = GetNativeTheme()->GetSystemColor(
+          ui::NativeTheme::kColorId_MenuItemAlertBackgroundColorMin);
+      color = color_utils::AlphaBlend(
+          color_max, color_min,
+          static_cast<float>(
+              GetMenuController()->GetAlertAnimation()->GetCurrentValue()));
+    }
+
+    DCHECK_NE(color, gfx::kPlaceholderColor);
+
     cc::PaintFlags flags;
     flags.setAntiAlias(true);
     flags.setStyle(cc::PaintFlags::kFill_Style);
-    flags.setColor(GetNativeTheme()->GetSystemColor(color_id));
+    flags.setColor(color);
     // Draw a rounded rect that spills outside of the clipping area, so that the
     // rounded corners only show in the bottom 2 corners. Note that
     // |corner_radius_| should only be set when the highlighted item is at the
@@ -1124,6 +1159,13 @@ int MenuItemView::GetTopMargin() const {
                  ? MenuConfig::instance().item_top_margin
                  : MenuConfig::instance().item_no_icon_top_margin;
   }
+
+  if (IsContainer()) {
+    const gfx::Insets* child_margins = child_at(0)->GetProperty(kMarginsKey);
+    if (child_margins)
+      margin += child_margins->top();
+  }
+
   return margin;
 }
 
@@ -1135,6 +1177,13 @@ int MenuItemView::GetBottomMargin() const {
                  ? MenuConfig::instance().item_bottom_margin
                  : MenuConfig::instance().item_no_icon_bottom_margin;
   }
+
+  if (IsContainer()) {
+    const gfx::Insets* child_margins = child_at(0)->GetProperty(kMarginsKey);
+    if (child_margins)
+      margin += child_margins->bottom();
+  }
+
   return margin;
 }
 
@@ -1142,8 +1191,18 @@ gfx::Size MenuItemView::GetChildPreferredSize() const {
   if (!has_children())
     return gfx::Size();
 
-  if (IsContainer())
-    return child_at(0)->GetPreferredSize();
+  if (IsContainer()) {
+    // Take into account both the child's preferred size and their left and
+    // right margins. The top and bottom margins are already accounted for in
+    // GetTopMargin() and GetBottomMargin().
+    const gfx::Insets* child_margins_prop =
+        child_at(0)->GetProperty(kMarginsKey);
+    const gfx::Insets child_margins =
+        child_margins_prop ? *child_margins_prop : gfx::Insets();
+    gfx::Size child_size = child_at(0)->GetPreferredSize();
+    child_size.Enlarge(child_margins.width(), 0);
+    return child_size;
+  }
 
   int width = 0;
   for (int i = 0; i < child_count(); ++i) {

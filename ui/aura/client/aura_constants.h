@@ -82,9 +82,18 @@ AURA_EXPORT extern const WindowProperty<bool>* const kDrawAttentionKey;
 // A property key to store the focus client on the window.
 AURA_EXPORT extern const WindowProperty<FocusClient*>* const kFocusClientKey;
 
+// Should be set to true for fullscreen/maximized windows that want to be
+// drag-moved in response to gesture events in the top of the client
+// area/screen.
+AURA_EXPORT extern const WindowProperty<bool>* const
+    kGestureDragFromClientAreaTopMovesWindow;
+
 // A property key to store the host window of a window. This lets
 // WebContentsViews find the windows that should constrain NPAPI plugins.
 AURA_EXPORT extern const WindowProperty<Window*>* const kHostWindowKey;
+
+// A property key to store the maximum size of the window.
+AURA_EXPORT extern const WindowProperty<gfx::Size*>* const kMaximumSize;
 
 // A property key to store the minimum size of the window.
 AURA_EXPORT extern const WindowProperty<gfx::Size*>* const kMinimumSize;
@@ -102,6 +111,12 @@ AURA_EXPORT extern const WindowProperty<ui::ModalType>* const kModalKey;
 
 // A property key to store the name of the window; mostly used for debugging.
 AURA_EXPORT extern const WindowProperty<std::string*>* const kNameKey;
+
+// A property key to store the accessible parent of a native view. This is
+// used to allow WebContents to access their accessible parents for use in
+// walking up the accessibility tree via platform APIs.
+AURA_EXPORT extern const aura::WindowProperty<gfx::NativeViewAccessible>* const
+    kParentNativeViewAccessibleKey;
 
 // A property key to store the preferred size of the window.
 AURA_EXPORT extern const WindowProperty<gfx::Size*>* const kPreferredSize;

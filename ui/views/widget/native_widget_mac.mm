@@ -42,6 +42,9 @@ namespace {
 base::LazyInstance<ui::GestureRecognizerImplMac>::Leaky
     g_gesture_recognizer_instance = LAZY_INSTANCE_INITIALIZER;
 
+static base::RepeatingCallback<void(NativeWidgetMac*)>*
+    g_init_native_widget_callback = nullptr;
+
 NSInteger StyleMaskForParams(const Widget::InitParams& params) {
   // If the Widget is modal, it will be displayed as a sheet. This works best if
   // it has NSTitledWindowMask. For example, with NSBorderlessWindowMask, the
@@ -168,6 +171,9 @@ void NativeWidgetMac::InitNativeWidget(const Widget::InitParams& params) {
   }
 
   bridge_host_->CreateCompositor(params);
+
+  if (g_init_native_widget_callback)
+    g_init_native_widget_callback->Run(this);
 }
 
 void NativeWidgetMac::OnWidgetInitDone() {
@@ -544,6 +550,13 @@ void NativeWidgetMac::SetCursor(gfx::NativeCursor cursor) {
     bridge_impl()->SetCursor(cursor);
 }
 
+void NativeWidgetMac::ShowEmojiPanel() {
+  // We must plumb the call to ui::ShowEmojiPanel() over the bridge so that it
+  // is called from the correct process.
+  if (bridge())
+    bridge()->ShowEmojiPanel();
+}
+
 bool NativeWidgetMac::IsMouseEventsEnabled() const {
   // On platforms with touch, mouse events get disabled and calls to this method
   // can affect hover states. Since there is no touch on desktop Mac, this is
@@ -634,12 +647,23 @@ void NativeWidgetMac::OnSizeConstraintsChanged() {
                                widget->widget_delegate()->CanMaximize());
 }
 
-void NativeWidgetMac::RepostNativeEvent(gfx::NativeEvent native_event) {
-  NOTIMPLEMENTED();
-}
-
 std::string NativeWidgetMac::GetName() const {
   return name_;
+}
+
+// static
+void NativeWidgetMac::SetInitNativeWidgetCallback(
+    const base::RepeatingCallback<void(NativeWidgetMac*)>& callback) {
+  DCHECK(!g_init_native_widget_callback || callback.is_null());
+  if (callback.is_null()) {
+    if (g_init_native_widget_callback) {
+      delete g_init_native_widget_callback;
+      g_init_native_widget_callback = nullptr;
+    }
+    return;
+  }
+  g_init_native_widget_callback =
+      new base::RepeatingCallback<void(NativeWidgetMac*)>(callback);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

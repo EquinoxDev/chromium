@@ -67483,6 +67483,7 @@
     { "name": "account.bbc.com", "policy": "custom", "mode": "force-https", "include_subdomains": true },
     { "name": "session.bbc.com", "policy": "custom", "mode": "force-https", "include_subdomains": true },
     { "name": "session.bbc.co.uk", "policy": "custom", "mode": "force-https", "include_subdomains": true },
+    { "name": "bank.barclays.co.uk", "policy": "custom", "mode": "force-https", "include_subdomains": true },
     // IP Address
     { "name": "1.0.0.1", "policy": "custom", "mode": "force-https", "include_subdomains": false },
     // No subdomains

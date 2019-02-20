@@ -329,7 +329,7 @@ void Widget::Init(const InitParams& in_params) {
 
   widget_delegate_ = params.delegate ?
       params.delegate : new DefaultWidgetDelegate(this);
-  widget_delegate_->set_can_activate(can_activate);
+  widget_delegate_->SetCanActivate(can_activate);
 
   // Henceforth, ensure the delegate outlives the Widget.
   widget_delegate_->can_delete_this_ = false;
@@ -382,6 +382,10 @@ void Widget::Init(const InitParams& in_params) {
   observer_manager_.Add(GetNativeTheme());
   native_widget_initialized_ = true;
   native_widget_->OnWidgetInitDone();
+}
+
+void Widget::ShowEmojiPanel() {
+  native_widget_->ShowEmojiPanel();
 }
 
 // Unconverted methods (see header) --------------------------------------------
@@ -1023,6 +1027,11 @@ void Widget::OnSizeConstraintsChanged() {
 
 void Widget::OnOwnerClosing() {}
 
+void Widget::OnCanActivateChanged() {
+  if (native_widget_)
+    native_widget_->OnCanActivateChanged();
+}
+
 std::string Widget::GetName() const {
   return native_widget_->GetName();
 }
@@ -1325,7 +1334,7 @@ bool Widget::HasHitTestMask() const {
   return widget_delegate_->WidgetHasHitTestMask();
 }
 
-void Widget::GetHitTestMask(gfx::Path* mask) const {
+void Widget::GetHitTestMask(SkPath* mask) const {
   DCHECK(mask);
   widget_delegate_->GetWidgetHitTestMask(mask);
 }

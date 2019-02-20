@@ -10,7 +10,9 @@
 #include <vsstyle.h>
 #include <vssym32.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/win/scoped_gdi_object.h"
@@ -28,6 +30,7 @@
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/gfx/color_palette.h"
@@ -253,6 +256,19 @@ NativeThemeWin::NativeThemeWin()
     close_theme_ = reinterpret_cast<CloseThemeDataPtr>(
         GetProcAddress(theme_dll_, "CloseThemeData"));
   }
+  if (base::FeatureList::IsEnabled(features::kDarkMode)) {
+    // Dark Mode currently targets UWP apps, which means Win32 apps need to use
+    // alternate, less reliable means of detecting the state. The following
+    // can break in future Windows versions.
+    bool key_open_succeeded =
+        hkcu_themes_regkey_.Open(
+            HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\"
+            L"Themes\\Personalize",
+            KEY_READ | KEY_NOTIFY) == ERROR_SUCCESS;
+    if (key_open_succeeded)
+      RegisterThemeRegkeyObserver();
+  }
   memset(theme_handles_, 0, sizeof(theme_handles_));
 
   // Initialize the cached system colors.
@@ -416,6 +432,14 @@ void NativeThemeWin::PaintDirect(SkCanvas* destination_canvas,
 }
 
 SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
+  // Win32 system colors currently don't support Dark Mode. As a result,
+  // fallback on the Aura colors. Inverted color schemes can be ignored here
+  // as it's only true when Chrome is running on a high-contrast AND when the
+  // relative luminance of COLOR_WINDOWTEXT is greater than COLOR_WINDOW (e.g.
+  // white on black), which is basically like dark mode.
+  if (SystemDarkModeEnabled())
+    return GetAuraColor(color_id, this);
+
   // TODO: Obtain the correct colors for these using GetSysColor.
   // Button:
   constexpr SkColor kButtonHoverColor = SkColorSetRGB(6, 45, 117);
@@ -516,12 +540,12 @@ SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
       return system_colors_[COLOR_WINDOW];
     case kColorId_ResultsTableHoveredBackground:
       return color_utils::AlphaBlend(system_colors_[COLOR_HIGHLIGHT],
-                                     system_colors_[COLOR_WINDOW], 0x40);
+                                     system_colors_[COLOR_WINDOW], 0.25f);
     case kColorId_ResultsTableNormalText:
       return system_colors_[COLOR_WINDOWTEXT];
     case kColorId_ResultsTableDimmedText:
       return color_utils::AlphaBlend(system_colors_[COLOR_WINDOWTEXT],
-                                     system_colors_[COLOR_WINDOW], 0x80);
+                                     system_colors_[COLOR_WINDOW], 0.5f);
     default:
       break;
   }
@@ -560,6 +584,17 @@ bool NativeThemeWin::UsesHighContrastColors() const {
   bool force_enabled = base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kForceHighContrast);
   return force_enabled || IsUsingHighContrastThemeInternal();
+}
+
+bool NativeThemeWin::SystemDarkModeEnabled() const {
+  bool fDarkModeEnabled = false;
+  if (hkcu_themes_regkey_.Valid()) {
+    DWORD apps_use_light_theme = 1;
+    hkcu_themes_regkey_.ReadValueDW(L"AppsUseLightTheme",
+                                    &apps_use_light_theme);
+    fDarkModeEnabled = (apps_use_light_theme == 0);
+  }
+  return fDarkModeEnabled || NativeTheme::SystemDarkModeEnabled();
 }
 
 void NativeThemeWin::PaintIndirect(cc::PaintCanvas* destination_canvas,
@@ -1888,6 +1923,18 @@ HANDLE NativeThemeWin::GetThemeHandle(ThemeName theme_name) const {
   }
   theme_handles_[theme_name] = handle;
   return handle;
+}
+
+void NativeThemeWin::RegisterThemeRegkeyObserver() {
+  DCHECK(hkcu_themes_regkey_.Valid());
+  hkcu_themes_regkey_.StartWatching(base::BindOnce(
+      [](NativeThemeWin* native_theme) {
+        native_theme->NotifyObservers();
+        // RegKey::StartWatching only provides one notification. Reregistration
+        // is required to get future notifications.
+        native_theme->RegisterThemeRegkeyObserver();
+      },
+      base::Unretained(this)));
 }
 
 }  // namespace ui

@@ -38,7 +38,11 @@ import org.chromium.chrome.browser.sync.ui.PassphraseDialogFragment;
 import org.chromium.chrome.browser.sync.ui.PassphraseTypeDialogFragment;
 import org.chromium.components.signin.ChromeSigninController;
 import org.chromium.components.sync.ModelType;
+<<<<<<< HEAD
 import org.chromium.components.sync.PassphraseType;
+=======
+import org.chromium.components.sync.Passphrase;
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 import org.chromium.content_public.browser.UiThreadTaskTraits;
 
 import java.util.HashSet;
@@ -365,7 +369,11 @@ public class ManageSyncPreferences extends PreferenceFragment
 
     /** Callback for PassphraseTypeDialogFragment.Listener */
     @Override
+<<<<<<< HEAD
     public void onPassphraseTypeSelected(PassphraseType type) {
+=======
+    public void onPassphraseTypeSelected(@Passphrase.Type int type) {
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
         if (!mProfileSyncService.isEngineInitialized()) {
             // If the engine was shut down since the dialog was opened, do nothing.
             return;

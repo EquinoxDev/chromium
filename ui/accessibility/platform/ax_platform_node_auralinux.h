@@ -48,7 +48,7 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
 
   AtkRole GetAtkRole();
   void GetAtkState(AtkStateSet* state_set);
-  void GetAtkRelations(AtkRelationSet* atk_relation_set);
+  AtkRelationSet* GetAtkRelations();
   void GetExtents(gint* x, gint* y, gint* width, gint* height,
                   AtkCoordType coord_type);
   void GetPosition(gint* x, gint* y, AtkCoordType coord_type);
@@ -64,8 +64,6 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   void SetExtentsRelativeToAtkCoordinateType(
       gint* x, gint* y, gint* width, gint* height,
       AtkCoordType coord_type);
-
-  static AXPlatformNodeAuraLinux* GetFromUniqueId(int32_t unique_id);
 
   // AtkDocument helpers
   const gchar* GetDocumentAttributeValue(const gchar* attribute) const;
@@ -87,6 +85,7 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   void OnMenuPopupHide();
   void OnMenuPopupEnd();
   void OnSelected();
+  void OnSelectedChildrenChanged();
   void OnValueChanged();
 
   bool SupportsSelectionWithAtkSelection();
@@ -104,6 +103,9 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
 
   void UpdateHypertext();
   const AXHypertext& GetHypertext();
+
+  void SetEmbeddedDocument(AtkObject* new_document);
+  void SetEmbeddingWindow(AtkObject* new_embedding_window);
 
  protected:
   AXHypertext hypertext_;
@@ -132,6 +134,9 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   GType GetAccessibilityGType();
   AtkObject* CreateAtkObject();
   void DestroyAtkObjects();
+  void AddRelationToSet(AtkRelationSet*,
+                        AtkRelationType,
+                        AXPlatformNode* target);
 
   // The AtkStateType for a checkable node can vary depending on the role.
   AtkStateType GetAtkStateTypeForCheckableNode();
@@ -143,6 +148,10 @@ class AX_EXPORT AXPlatformNodeAuraLinux : public AXPlatformNodeBase {
   // We own a reference to these ref-counted objects.
   AtkObject* atk_object_ = nullptr;
   AtkHyperlink* atk_hyperlink_ = nullptr;
+
+  // Some weak pointers which help us track ATK embeds / embedded by relations.
+  AtkObject* embedded_document_ = nullptr;
+  AtkObject* embedding_window_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(AXPlatformNodeAuraLinux);
 };

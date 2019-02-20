@@ -61,6 +61,11 @@
 #define EGL_GL_COLORSPACE_DISPLAY_P3_EXT 0x3363
 #endif /* EGL_EXT_gl_colorspace_display_p3 */
 
+#ifndef EGL_EXT_gl_colorspace_display_p3_passthrough
+#define EGL_EXT_gl_colorspace_display_p3_passthrough 1
+#define EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT 0x3490
+#endif /* EGL_EXT_gl_colorspace_display_p3_passthrough */
+
 // From ANGLE's egl/eglext.h.
 
 #ifndef EGL_ANGLE_platform_angle
@@ -150,6 +155,7 @@ bool g_egl_surface_orientation_supported = false;
 bool g_egl_context_priority_supported = false;
 bool g_egl_khr_colorspace = false;
 bool g_egl_ext_colorspace_display_p3 = false;
+bool g_egl_ext_colorspace_display_p3_passthrough = false;
 bool g_egl_flexible_surface_compatibility_supported = false;
 bool g_egl_robust_resource_init_supported = false;
 bool g_egl_display_texture_share_group_supported = false;
@@ -694,6 +700,8 @@ bool GLSurfaceEGL::InitializeOneOffCommon() {
   g_egl_khr_colorspace = HasEGLExtension("EGL_KHR_gl_colorspace");
   g_egl_ext_colorspace_display_p3 =
       HasEGLExtension("EGL_EXT_gl_colorspace_display_p3");
+  g_egl_ext_colorspace_display_p3_passthrough =
+      HasEGLExtension("EGL_EXT_gl_colorspace_display_p3_passthrough");
   // According to https://source.android.com/compatibility/android-cdd.html the
   // EGL_IMG_context_priority extension is mandatory for Virtual Reality High
   // Performance support, but due to a bug in Android Nougat the extension
@@ -1041,9 +1049,20 @@ bool NativeViewGLSurfaceEGL::Initialize(GLSurfaceFormat format) {
       // with the P3 gamut instead of the the sRGB gamut.
       // COLORSPACE_DISPLAY_P3_LINEAR has a linear transfer function, and is
       // intended for use with 16-bit formats.
-      if (g_egl_khr_colorspace && g_egl_ext_colorspace_display_p3) {
+      bool p3_supported = g_egl_ext_colorspace_display_p3 ||
+                          g_egl_ext_colorspace_display_p3_passthrough;
+      if (g_egl_khr_colorspace && p3_supported) {
         egl_window_attributes.push_back(EGL_GL_COLORSPACE_KHR);
-        egl_window_attributes.push_back(EGL_GL_COLORSPACE_DISPLAY_P3_EXT);
+        // Chrome relied on incorrect Android behavior when dealing with P3 /
+        // framebuffer_srgb interactions. This behavior was fixed in Q, which
+        // causes invalid Chrome rendering. To achieve Android-P behavior in Q+,
+        // use EGL_GL_COLORSPACE_P3_PASSTHROUGH_EXT where possible.
+        if (g_egl_ext_colorspace_display_p3_passthrough) {
+          egl_window_attributes.push_back(
+              EGL_GL_COLORSPACE_DISPLAY_P3_PASSTHROUGH_EXT);
+        } else {
+          egl_window_attributes.push_back(EGL_GL_COLORSPACE_DISPLAY_P3_EXT);
+        }
       }
       break;
   }
@@ -1180,7 +1199,7 @@ bool NativeViewGLSurfaceEGL::IsOffscreen() {
 }
 
 gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers(
-    const PresentationCallback& callback) {
+    PresentationCallback callback) {
   TRACE_EVENT2("gpu", "NativeViewGLSurfaceEGL:RealSwapBuffers",
       "width", GetSize().width(),
       "height", GetSize().height());
@@ -1200,7 +1219,7 @@ gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffers(
     new_frame_id = -1;
 
   GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
-      presentation_helper_.get(), callback, new_frame_id);
+      presentation_helper_.get(), std::move(callback), new_frame_id);
 
   if (!eglSwapBuffers(GetDisplay(), surface_)) {
     DVLOG(1) << "eglSwapBuffers failed with error "
@@ -1481,7 +1500,7 @@ bool NativeViewGLSurfaceEGL::GetFrameTimestampInfoIfAvailable(
 
 gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffersWithDamage(
     const std::vector<int>& rects,
-    const PresentationCallback& callback) {
+    PresentationCallback callback) {
   DCHECK(supports_swap_buffer_with_damage_);
   if (!CommitAndClearPendingOverlays()) {
     DVLOG(1) << "Failed to commit pending overlay planes.";
@@ -1489,7 +1508,7 @@ gfx::SwapResult NativeViewGLSurfaceEGL::SwapBuffersWithDamage(
   }
 
   GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
-      presentation_helper_.get(), callback);
+      presentation_helper_.get(), std::move(callback));
   if (!eglSwapBuffersWithDamageKHR(GetDisplay(), surface_,
                                    const_cast<EGLint*>(rects.data()),
                                    static_cast<EGLint>(rects.size() / 4))) {
@@ -1505,7 +1524,7 @@ gfx::SwapResult NativeViewGLSurfaceEGL::PostSubBuffer(
     int y,
     int width,
     int height,
-    const PresentationCallback& callback) {
+    PresentationCallback callback) {
   DCHECK(supports_post_sub_buffer_);
   if (!CommitAndClearPendingOverlays()) {
     DVLOG(1) << "Failed to commit pending overlay planes.";
@@ -1519,7 +1538,7 @@ gfx::SwapResult NativeViewGLSurfaceEGL::PostSubBuffer(
   }
 
   GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
-      presentation_helper_.get(), callback);
+      presentation_helper_.get(), std::move(callback));
   if (!eglPostSubBufferNV(GetDisplay(), surface_, x, y, width, height)) {
     DVLOG(1) << "eglPostSubBufferNV failed with error "
              << GetLastEGLErrorString();
@@ -1537,13 +1556,13 @@ bool NativeViewGLSurfaceEGL::SupportsCommitOverlayPlanes() {
 }
 
 gfx::SwapResult NativeViewGLSurfaceEGL::CommitOverlayPlanes(
-    const PresentationCallback& callback) {
+    PresentationCallback callback) {
   DCHECK(SupportsCommitOverlayPlanes());
   // Here we assume that the overlays scheduled on this surface will display
   // themselves to the screen right away in |CommitAndClearPendingOverlays|,
   // rather than being queued and waiting for a "swap" signal.
   GLSurfacePresentationHelper::ScopedSwapBuffers scoped_swap_buffers(
-      presentation_helper_.get(), callback);
+      presentation_helper_.get(), std::move(callback));
   if (!CommitAndClearPendingOverlays())
     scoped_swap_buffers.set_result(gfx::SwapResult::SWAP_FAILED);
   return scoped_swap_buffers.result();
@@ -1678,7 +1697,7 @@ bool PbufferGLSurfaceEGL::IsOffscreen() {
 }
 
 gfx::SwapResult PbufferGLSurfaceEGL::SwapBuffers(
-    const PresentationCallback& callback) {
+    PresentationCallback callback) {
   NOTREACHED() << "Attempted to call SwapBuffers on a PbufferGLSurfaceEGL.";
   return gfx::SwapResult::SWAP_FAILED;
 }
@@ -1754,8 +1773,7 @@ bool SurfacelessEGL::IsSurfaceless() const {
   return true;
 }
 
-gfx::SwapResult SurfacelessEGL::SwapBuffers(
-    const PresentationCallback& callback) {
+gfx::SwapResult SurfacelessEGL::SwapBuffers(PresentationCallback callback) {
   LOG(ERROR) << "Attempted to call SwapBuffers with SurfacelessEGL.";
   return gfx::SwapResult::SWAP_FAILED;
 }

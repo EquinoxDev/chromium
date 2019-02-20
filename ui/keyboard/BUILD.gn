@@ -61,7 +61,6 @@ jumbo_component("keyboard") {
     ":mojom",
     ":resources",
     "//base",
-    "//chromeos",
     "//services/metrics/public/cpp:ukm_builders",
     "//ui/aura",
     "//ui/base",
@@ -89,6 +88,8 @@ static_library("test_support") {
   sources = [
     "test/keyboard_test_util.cc",
     "test/keyboard_test_util.h",
+    "test/test_keyboard_layout_delegate.cc",
+    "test/test_keyboard_layout_delegate.h",
     "test/test_keyboard_ui.cc",
     "test/test_keyboard_ui.h",
   ]

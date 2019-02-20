@@ -12,9 +12,6 @@
  * @struct
  */
 function FileManagerUI(providersModel, element, launchParam) {
-  // Pre-populate the static localized strings.
-  i18nTemplate.process(element.ownerDocument, loadTimeData);
-
   // Initialize the dialog label. This should be done before constructing dialog
   // instances.
   cr.ui.dialogs.BaseDialog.OK_LABEL = str('OK_LABEL');
@@ -206,19 +203,11 @@ function FileManagerUI(providersModel, element, launchParam) {
 
   /**
    * The button to open gear menu.
-   * @type {!cr.ui.MenuButton}
+   * @type {!cr.ui.MultiMenuButton}
    * @const
    */
-  this.gearButton = util.queryDecoratedElement(
-      '#gear-button', cr.ui.MenuButton);
-
-  /**
-   * The button to add new service (file system providers).
-   * @type {!cr.ui.MenuButton}
-   * @const
-   */
-  this.newServiceButton =
-      util.queryDecoratedElement('#new-service-button', cr.ui.MenuButton);
+  this.gearButton =
+      util.queryDecoratedElement('#gear-button', cr.ui.MultiMenuButton);
 
   /**
    * Ripple effect of gear button.
@@ -299,8 +288,9 @@ function FileManagerUI(providersModel, element, launchParam) {
       '#tasks', cr.ui.ComboButton);
   this.taskMenuButton.showMenu = function(shouldSetFocus) {
     // Prevent the empty menu from opening.
-    if (!this.menu.length)
+    if (!this.menu.length) {
       return;
+    }
     cr.ui.ComboButton.prototype.showMenu.call(this, shouldSetFocus);
   };
 
@@ -391,8 +381,9 @@ function FileManagerUI(providersModel, element, launchParam) {
     // Make menuitems focusable. The value can be any non-negative value,
     // because pressing 'Tab' key on menu is handled and we don't need to mind
     // the taborder and the destination of tabfocus.
-    if (!menuitems[i].hasAttribute('tabindex'))
+    if (!menuitems[i].hasAttribute('tabindex')) {
       menuitems[i].setAttribute('tabindex', '0');
+    }
   }
 
   // Modify UI default behavior.
@@ -452,8 +443,9 @@ FileManagerUI.prototype.initUIFocus = function() {
     targetElement = this.listContainer.currentList;
   }
 
-  if (targetElement)
+  if (targetElement) {
     targetElement.focus();
+  }
 };
 
 /**
@@ -523,8 +515,9 @@ FileManagerUI.prototype.relayout = function() {
       ListContainer.ListType.UNINITIALIZED) {
     this.listContainer.currentView.relayout();
   }
-  if (this.directoryTree)
+  if (this.directoryTree) {
     this.directoryTree.relayout();
+  }
 };
 
 /**
@@ -552,11 +545,13 @@ FileManagerUI.prototype.setCurrentListType = function(listType) {
  * @private
  */
 FileManagerUI.prototype.onExternalLinkClick_ = function(event) {
-  if (event.target.tagName != 'A' || !event.target.href)
+  if (event.target.tagName != 'A' || !event.target.href) {
     return;
+  }
 
-  if (this.dialogType_ != DialogType.FULL_PAGE)
+  if (this.dialogType_ != DialogType.FULL_PAGE) {
     this.dialogFooter.cancelButton.click();
+  }
 };
 
 /**
@@ -609,8 +604,9 @@ FileManagerUI.prototype.addLoadedAttribute = function() {
  * @param {Array<Entry>} entries List of opened entries.
  */
 FileManagerUI.prototype.showOpenInOtherDesktopAlert = function(entries) {
-  if (!entries.length)
+  if (!entries.length) {
     return;
+  }
   chrome.fileManagerPrivate.getProfiles(
     function(profiles, currentId, displayedId) {
       // Find strings.
@@ -675,6 +671,7 @@ FileManagerUI.prototype.speakA11yMessage = function(text) {
   // first.
   this.a11yMessage_.textContent = '';
   this.a11yMessage_.textContent = text;
-  if (window.IN_TEST)
+  if (window.IN_TEST) {
     this.a11yAnnounces.push(text);
+  }
 };

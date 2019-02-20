@@ -39,7 +39,6 @@
 #include "ui/events/scoped_target_handler.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/path.h"
 #include "ui/gfx/transform.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/native_theme/test_native_theme.h"
@@ -2144,7 +2143,7 @@ TEST_F(ViewTest, HandleAccelerator) {
 
   // TYPE_POPUP widgets default to non-activatable, so the Show() above wouldn't
   // have activated the Widget. First, allow activation.
-  widget->widget_delegate()->set_can_activate(true);
+  widget->widget_delegate()->SetCanActivate(true);
 
   // When a non-child view is active, it should handle accelerators.
   view->accelerator_count_map_[return_accelerator] = 0;

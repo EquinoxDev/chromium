@@ -37,8 +37,9 @@ function extractElementInfo(element, contentWindow, opt_styleNames) {
 
   const styleNames = opt_styleNames || [];
   assert(Array.isArray(styleNames));
-  if (!styleNames.length)
+  if (!styleNames.length) {
     return result;
+  }
 
   const styles = {};
   const size = element.getBoundingClientRect();
@@ -68,10 +69,10 @@ function extractElementInfo(element, contentWindow, opt_styleNames) {
  * @return {Object<{innerWidth:number, innerHeight:number}>} Map window
  *     ID and window information.
  */
-test.util.sync.getWindows = function() {
-  var windows = {};
+test.util.sync.getWindows = () => {
+  const windows = {};
   for (var id in window.appWindows) {
-    var windowWrapper = window.appWindows[id];
+    const windowWrapper = window.appWindows[id];
     windows[id] = {
       outerWidth: windowWrapper.contentWindow.outerWidth,
       outerHeight: windowWrapper.contentWindow.outerHeight
@@ -92,7 +93,7 @@ test.util.sync.getWindows = function() {
  * @param {string} appId AppId of window to be closed.
  * @return {boolean} Result: True if success, false otherwise.
  */
-test.util.sync.closeWindow = function(appId) {
+test.util.sync.closeWindow = appId => {
   if (appId in window.appWindows && window.appWindows[appId].contentWindow) {
     window.appWindows[appId].close();
     return true;
@@ -104,12 +105,13 @@ test.util.sync.closeWindow = function(appId) {
  * Gets total Javascript error count from background page and each app window.
  * @return {number} Error count.
  */
-test.util.sync.getErrorCount = function() {
-  var totalCount = window.JSErrorCount;
-  for (var appId in window.appWindows) {
-    var contentWindow = window.appWindows[appId].contentWindow;
-    if (contentWindow.JSErrorCount)
+test.util.sync.getErrorCount = () => {
+  let totalCount = window.JSErrorCount;
+  for (const appId in window.appWindows) {
+    const contentWindow = window.appWindows[appId].contentWindow;
+    if (contentWindow.JSErrorCount) {
       totalCount += contentWindow.JSErrorCount;
+    }
   }
   return totalCount;
 };
@@ -122,7 +124,7 @@ test.util.sync.getErrorCount = function() {
  * @param {number} height Window height.
  * @return {boolean} True for success.
  */
-test.util.sync.resizeWindow = function(contentWindow, width, height) {
+test.util.sync.resizeWindow = (contentWindow, width, height) => {
   window.appWindows[contentWindow.appID].resizeTo(width, height);
   return true;
 };
@@ -132,7 +134,7 @@ test.util.sync.resizeWindow = function(contentWindow, width, height) {
  * @param {Window} contentWindow Window to be tested.
  * @return {boolean} True for success.
  */
-test.util.sync.maximizeWindow = function(contentWindow) {
+test.util.sync.maximizeWindow = contentWindow => {
   window.appWindows[contentWindow.appID].maximize();
   return true;
 };
@@ -142,7 +144,7 @@ test.util.sync.maximizeWindow = function(contentWindow) {
  * @param {Window} contentWindow Window to be tested.
  * @return {boolean} True for success.
  */
-test.util.sync.restoreWindow = function(contentWindow) {
+test.util.sync.restoreWindow = contentWindow => {
   window.appWindows[contentWindow.appID].restore();
   return true;
 };
@@ -152,7 +154,7 @@ test.util.sync.restoreWindow = function(contentWindow) {
  * @param {Window} contentWindow Window to be tested.
  * @return {boolean} True if the window is maximized now.
  */
-test.util.sync.isWindowMaximized = function(contentWindow) {
+test.util.sync.isWindowMaximized = contentWindow => {
   return window.appWindows[contentWindow.appID].isMaximized();
 };
 
@@ -168,8 +170,7 @@ test.util.sync.isWindowMaximized = function(contentWindow) {
  *     information that contains contentText, attribute names and
  *     values, hidden attribute, and style names and values.
  */
-test.util.sync.queryAllElements = function(
-    contentWindow, targetQuery, opt_styleNames) {
+test.util.sync.queryAllElements = (contentWindow, targetQuery, opt_styleNames) => {
   return test.util.sync.deepQueryAllElements(
       contentWindow, targetQuery, opt_styleNames);
 };
@@ -188,16 +189,17 @@ test.util.sync.queryAllElements = function(
  *     information that contains contentText, attribute names and
  *     values, hidden attribute, and style names and values.
  */
-test.util.sync.deepQueryAllElements = function(
-    contentWindow, targetQuery, opt_styleNames) {
-  if (!contentWindow.document)
+test.util.sync.deepQueryAllElements = (contentWindow, targetQuery, opt_styleNames) => {
+  if (!contentWindow.document) {
     return [];
-  if (typeof targetQuery === 'string')
+  }
+  if (typeof targetQuery === 'string') {
     targetQuery = [targetQuery];
+  }
 
-  var elems =
+  const elems =
       test.util.sync.deepQuerySelectorAll_(contentWindow.document, targetQuery);
-  return elems.map(function(element) {
+  return elems.map(element => {
     return extractElementInfo(element, contentWindow, opt_styleNames);
   });
 };
@@ -213,14 +215,15 @@ test.util.sync.deepQueryAllElements = function(
  *
  * @private
  */
-test.util.sync.deepQuerySelectorAll_ = function(root, targetQuery) {
-  var elems = Array.prototype.slice.call(root.querySelectorAll(targetQuery[0]));
-  var remaining = targetQuery.slice(1);
-  if (remaining.length === 0)
+test.util.sync.deepQuerySelectorAll_ = (root, targetQuery) => {
+  const elems = Array.prototype.slice.call(root.querySelectorAll(targetQuery[0]));
+  const remaining = targetQuery.slice(1);
+  if (remaining.length === 0) {
     return elems;
+  }
 
-  var res = [];
-  for (var i = 0; i < elems.length; i++) {
+  let res = [];
+  for (let i = 0; i < elems.length; i++) {
     if (elems[i].shadowRoot) {
       res = res.concat(
           test.util.sync.deepQuerySelectorAll_(elems[i].shadowRoot, remaining));
@@ -243,12 +246,12 @@ test.util.sync.deepQuerySelectorAll_ = function(root, targetQuery) {
  * @param {function(*)} callback Callback function to be called with the
  *   result of the |script|.
  */
-test.util.async.deepExecuteScriptInWebView = function(
-    contentWindow, targetQuery, script, callback) {
+test.util.async.deepExecuteScriptInWebView = (contentWindow, targetQuery, script, callback) => {
   const webviews =
       test.util.sync.deepQuerySelectorAll_(contentWindow.document, targetQuery);
-  if (!webviews || webviews.length !== 1)
+  if (!webviews || webviews.length !== 1) {
     throw new Error('<webview> not found: [' + targetQuery.join(',') + ']');
+  }
   const webview = /** @type {WebView} */ (webviews[0]);
   webview.executeScript({code: script}, callback);
 };
@@ -265,9 +268,10 @@ test.util.async.deepExecuteScriptInWebView = function(
  *     values, hidden attribute, and style names and values. If there is no
  *     active element, returns null.
  */
-test.util.sync.getActiveElement = function(contentWindow, opt_styleNames) {
-  if (!contentWindow.document || !contentWindow.document.activeElement)
+test.util.sync.getActiveElement = (contentWindow, opt_styleNames) => {
+  if (!contentWindow.document || !contentWindow.document.activeElement) {
     return null;
+  }
 
   return extractElementInfo(
       contentWindow.document.activeElement, contentWindow, opt_styleNames);
@@ -279,8 +283,8 @@ test.util.sync.getActiveElement = function(contentWindow, opt_styleNames) {
  * @param {string} query Query for the input element.
  * @param {string} text Text to be assigned.
  */
-test.util.sync.inputText = function(contentWindow, query, text) {
-  var input = contentWindow.document.querySelector(query);
+test.util.sync.inputText = (contentWindow, query, text) => {
+  const input = contentWindow.document.querySelector(query);
   input.value = text;
 };
 
@@ -297,9 +301,10 @@ test.util.sync.inputText = function(contentWindow, query, text) {
  * @param {!Event} event Event to be sent.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.sendEvent = function(contentWindow, targetQuery, event) {
-  if (!contentWindow.document)
+test.util.sync.sendEvent = (contentWindow, targetQuery, event) => {
+  if (!contentWindow.document) {
     return false;
+  }
 
   let target;
   if (targetQuery === null) {
@@ -309,12 +314,14 @@ test.util.sync.sendEvent = function(contentWindow, targetQuery, event) {
   } else if (Array.isArray(targetQuery)) {
     let elems = test.util.sync.deepQuerySelectorAll_(
         contentWindow.document, targetQuery);
-    if (elems.length > 0)
+    if (elems.length > 0) {
       target = elems[0];
+    }
   }
 
-  if (!target)
+  if (!target) {
     return false;
+  }
 
   target.dispatchEvent(event);
   return true;
@@ -330,13 +337,12 @@ test.util.sync.sendEvent = function(contentWindow, targetQuery, event) {
  *     properties.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.fakeEvent = function(
-    contentWindow, targetQuery, eventType, opt_additionalProperties) {
-  var event = new Event(
+test.util.sync.fakeEvent = (contentWindow, targetQuery, eventType, opt_additionalProperties) => {
+  const event = new Event(
       eventType,
       /** @type {!EventInit} */ (opt_additionalProperties || {}));
   if (opt_additionalProperties) {
-    for (var name in opt_additionalProperties) {
+    for (const name in opt_additionalProperties) {
       event[name] = opt_additionalProperties[name];
     }
   }
@@ -356,8 +362,7 @@ test.util.sync.fakeEvent = function(
  * @param {boolean} alt whether ALT should be pressed, or not.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.fakeKeyDown = function(
-    contentWindow, targetQuery, key, ctrl, shift, alt) {
+test.util.sync.fakeKeyDown = (contentWindow, targetQuery, key, ctrl, shift, alt) => {
   const event = new KeyboardEvent('keydown', {
     bubbles: true,
     composed: true,  // Allow the event to bubble past shadow DOM root.
@@ -385,8 +390,7 @@ test.util.sync.fakeKeyDown = function(
  * @return {boolean} True if the all events are sent to the target, false
  *     otherwise.
  */
-test.util.sync.fakeMouseClick = function(
-    contentWindow, targetQuery, opt_keyModifiers) {
+test.util.sync.fakeMouseClick = (contentWindow, targetQuery, opt_keyModifiers) => {
   const modifiers = opt_keyModifiers || {};
   const props = {
     bubbles: true,
@@ -420,7 +424,7 @@ test.util.sync.fakeMouseClick = function(
  * @return {boolean} True if the event is sent to the target, false
  *     otherwise.
  */
-test.util.sync.fakeMouseRightClick = function(contentWindow, targetQuery) {
+test.util.sync.fakeMouseRightClick = (contentWindow, targetQuery) => {
   const mouseDownEvent =
       new MouseEvent('mousedown', {bubbles: true, button: 2, composed: true});
   if (!test.util.sync.sendEvent(contentWindow, targetQuery, mouseDownEvent)) {
@@ -441,7 +445,7 @@ test.util.sync.fakeMouseRightClick = function(contentWindow, targetQuery) {
  * @return {boolean} True if the event is sent to the target, false
  *     otherwise.
  */
-test.util.sync.fakeTouchClick = function(contentWindow, targetQuery) {
+test.util.sync.fakeTouchClick = (contentWindow, targetQuery) => {
   const touchStartEvent = new TouchEvent('touchstart');
   if (!test.util.sync.sendEvent(contentWindow, targetQuery, touchStartEvent)) {
     return false;
@@ -471,7 +475,7 @@ test.util.sync.fakeTouchClick = function(contentWindow, targetQuery) {
  * @param {string} targetQuery Query to specify the element.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.fakeMouseDoubleClick = function(contentWindow, targetQuery) {
+test.util.sync.fakeMouseDoubleClick = (contentWindow, targetQuery) => {
   // Double click is always preceded with a single click.
   if (!test.util.sync.fakeMouseClick(contentWindow, targetQuery)) {
     return false;
@@ -501,7 +505,7 @@ test.util.sync.fakeMouseDoubleClick = function(contentWindow, targetQuery) {
  * @param {string} targetQuery Query to specify the element.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.fakeMouseDown = function(contentWindow, targetQuery) {
+test.util.sync.fakeMouseDown = (contentWindow, targetQuery) => {
   const event = new MouseEvent('mousedown', {bubbles: true, composed: true});
   return test.util.sync.sendEvent(contentWindow, targetQuery, event);
 };
@@ -513,7 +517,7 @@ test.util.sync.fakeMouseDown = function(contentWindow, targetQuery) {
  * @param {string} targetQuery Query to specify the element.
  * @return {boolean} True if the event is sent to the target, false otherwise.
  */
-test.util.sync.fakeMouseUp = function(contentWindow, targetQuery) {
+test.util.sync.fakeMouseUp = (contentWindow, targetQuery) => {
   const event = new MouseEvent('mouseup', {bubbles: true, composed: true});
   return test.util.sync.sendEvent(contentWindow, targetQuery, event);
 };
@@ -527,12 +531,13 @@ test.util.sync.fakeMouseUp = function(contentWindow, targetQuery) {
  * @return {boolean} True if focus method of the element has been called, false
  *     otherwise.
  */
-test.util.sync.focus = function(contentWindow, targetQuery) {
-  var target = contentWindow.document &&
+test.util.sync.focus = (contentWindow, targetQuery) => {
+  const target = contentWindow.document &&
       contentWindow.document.querySelector(targetQuery);
 
-  if (!target)
+  if (!target) {
     return false;
+  }
 
   target.focus();
   return true;
@@ -543,7 +548,7 @@ test.util.sync.focus = function(contentWindow, targetQuery) {
  * @param {function(Object<boolean>)} callback Callback function with
  *     results returned by the script.
  */
-test.util.async.getNotificationIDs = function(callback) {
+test.util.async.getNotificationIDs = callback => {
   chrome.notifications.getAll(callback);
 };
 
@@ -559,7 +564,7 @@ test.util.async.getNotificationIDs = function(callback) {
  * "FileBrowserBackground" doesn't define the attributes "launcherSearch_" so we
  * need to suppress missingProperties.
  */
-test.util.sync.launcherSearchOpenResult = function(fileURL) {
+test.util.sync.launcherSearchOpenResult = fileURL => {
   window.background.launcherSearch_.onOpenResult_(fileURL);
 };
 
@@ -571,22 +576,27 @@ test.util.sync.launcherSearchOpenResult = function(fileURL) {
  * @param {function(*)} callback Callback function with results returned by the
  *     script.
  */
-test.util.async.getFilesUnderVolume = function(volumeType, names, callback) {
-  var displayRootPromise =
-      volumeManagerFactory.getInstance().then(function(volumeManager) {
-        var volumeInfo = volumeManager.getCurrentProfileVolumeInfo(volumeType);
+test.util.async.getFilesUnderVolume = (volumeType, names, callback) => {
+  const displayRootPromise =
+      volumeManagerFactory.getInstance().then(volumeManager => {
+        const volumeInfo = volumeManager.getCurrentProfileVolumeInfo(volumeType);
         return volumeInfo.resolveDisplayRoot();
       });
 
-  var retrievePromise = displayRootPromise.then(function(displayRoot) {
-    var filesPromise = names.map(function(name) {
+  const retrievePromise = displayRootPromise.then(displayRoot => {
+    const filesPromise = names.map(name => {
+      // TODO(crbug.com/880130): Remove this conditional.
+      if (volumeType === VolumeManagerCommon.VolumeType.DOWNLOADS &&
+          util.isMyFilesVolumeEnabled()) {
+        name = 'Downloads/' + name;
+      }
       return new Promise(displayRoot.getFile.bind(displayRoot, name, {}));
     });
     return Promise.all(filesPromise)
-        .then(function(aa) {
+        .then(aa => {
           return util.entriesToURLs(aa);
         })
-        .catch(function() {
+        .catch(() => {
           return [];
         });
   });
@@ -600,7 +610,7 @@ test.util.async.getFilesUnderVolume = function(volumeType, names, callback) {
  * @param {VolumeManagerCommon.VolumeType} volumeType Volume type.
  * @param {function(boolean)} callback Function receives true on success.
  */
-test.util.async.unmount = function(volumeType, callback) {
+test.util.async.unmount = (volumeType, callback) => {
   volumeManagerFactory.getInstance().then((volumeManager) => {
     const volumeInfo = volumeManager.getCurrentProfileVolumeInfo(volumeType);
     if (volumeInfo) {
@@ -616,17 +626,18 @@ test.util.async.unmount = function(volumeType, callback) {
  * @param {*} request
  * @param {function(*):void} sendResponse
  */
-test.util.executeTestMessage = function(request, sendResponse) {
+test.util.executeTestMessage = (request, sendResponse) => {
   window.IN_TEST = true;
   // Check the function name.
   if (!request.func || request.func[request.func.length - 1] == '_') {
     request.func = '';
   }
   // Prepare arguments.
-  if (!('args' in request))
+  if (!('args' in request)) {
     throw new Error('Invalid request.');
+  }
 
-  var args = request.args.slice();  // shallow copy
+  const args = request.args.slice();  // shallow copy
   if (request.appId) {
     if (window.appWindows[request.appId]) {
       args.unshift(window.appWindows[request.appId].contentWindow);
@@ -639,9 +650,9 @@ test.util.executeTestMessage = function(request, sendResponse) {
   }
   // Call the test utility function and respond the result.
   if (test.util.async[request.func]) {
-    args[test.util.async[request.func].length - 1] = function() {
+    args[test.util.async[request.func].length - 1] = function(...innerArgs) {
       console.debug('Received the result of ' + request.func);
-      sendResponse.apply(null, arguments);
+      sendResponse.apply(null, innerArgs);
     };
     console.debug('Waiting for the result of ' + request.func);
     test.util.async[request.func].apply(null, args);
@@ -663,7 +674,7 @@ test.util.executeTestMessage = function(request, sendResponse) {
  *   Window so it isn't visible in the background. Here it will return as JSON
  *   object to test extension.
  */
-test.util.sync.getMetadataStats = function(contentWindow) {
+test.util.sync.getMetadataStats = contentWindow => {
   return contentWindow.fileManager.metadataModel.getStats();
 };
 
@@ -671,10 +682,11 @@ test.util.sync.getMetadataStats = function(contentWindow) {
  * Returns true when FileManager has finished loading, by checking the attribute
  * "loaded" on its root element.
  */
-test.util.sync.isFileManagerLoaded = function(contentWindow) {
+test.util.sync.isFileManagerLoaded = contentWindow => {
   if (contentWindow && contentWindow.fileManager &&
-      contentWindow.fileManager.ui)
+      contentWindow.fileManager.ui) {
     return contentWindow.fileManager.ui.element.hasAttribute('loaded');
+  }
 
   return false;
 };
@@ -684,10 +696,11 @@ test.util.sync.isFileManagerLoaded = function(contentWindow) {
  *
  * @return {Array<string>}
  */
-test.util.sync.getA11yAnnounces = function(contentWindow) {
+test.util.sync.getA11yAnnounces = contentWindow => {
   if (contentWindow && contentWindow.fileManager &&
-      contentWindow.fileManager.ui)
+      contentWindow.fileManager.ui) {
     return contentWindow.fileManager.ui.a11yAnnounces;
+  }
 
   return null;
 };
@@ -699,7 +712,7 @@ test.util.sync.getA11yAnnounces = function(contentWindow) {
  * @param {function(number)} callback Callback function to be called with the
  *   number of volumes.
  */
-test.util.async.getVolumesCount = function(callback) {
+test.util.async.getVolumesCount = callback => {
   return volumeManagerFactory.getInstance().then((volumeManager) => {
     callback(volumeManager.volumeInfoList.length);
   });

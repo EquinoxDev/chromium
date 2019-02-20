@@ -47,6 +47,13 @@ std::unique_ptr<views::InkDropMask> ShelfControlButton::CreateInkDropMask()
       size(), GetCenterPoint(), ShelfConstants::control_border_radius());
 }
 
+<<<<<<< HEAD
+=======
+const char* ShelfControlButton::GetClassName() const {
+  return "ash/ShelfControlButton";
+}
+
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 gfx::Rect ShelfControlButton::CalculateButtonBounds() const {
   ShelfAlignment alignment = shelf_->alignment();
   gfx::Rect content_bounds = GetContentsBounds();

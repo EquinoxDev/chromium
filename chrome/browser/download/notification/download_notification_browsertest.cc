@@ -286,7 +286,15 @@ class DownloadNotificationTestBase : public InProcessBrowserTest {
     }
   }
 
+<<<<<<< HEAD
   void TearDownOnMainThread() override { interceptor_.reset(); }
+=======
+  void TearDownOnMainThread() override {
+    // Make sure any pending requests have finished.
+    base::RunLoop().RunUntilIdle();
+    interceptor_.reset();
+  }
+>>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
 
  protected:
   content::DownloadManager* GetDownloadManager(Browser* browser) {

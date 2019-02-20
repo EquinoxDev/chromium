@@ -71,6 +71,9 @@ class UI_BASE_IME_EXPORT InputMethodBase
   InputMethodKeyboardController* GetInputMethodKeyboardController() override;
 
  protected:
+  // See InputMethodDelegate for details on this.
+  using ResultCallback = base::OnceCallback<void(bool, bool)>;
+
   explicit InputMethodBase(internal::InputMethodDelegate* delegate = nullptr);
   InputMethodBase(internal::InputMethodDelegate* delegate,
                   std::unique_ptr<InputMethodKeyboardController> controller);
@@ -106,9 +109,11 @@ class UI_BASE_IME_EXPORT InputMethodBase
   // input type is not TEXT_INPUT_TYPE_NONE.
   void OnInputMethodChanged() const;
 
+  // See InputMethodDelegate::DispatchKeyEventPostIME(() for details on
+  // callback.
   virtual ui::EventDispatchDetails DispatchKeyEventPostIME(
       ui::KeyEvent* event,
-      base::OnceCallback<void(bool)> ack_callback) const WARN_UNUSED_RESULT;
+      ResultCallback result_callback) const WARN_UNUSED_RESULT;
 
   // Convenience method to notify all observers of TextInputClient changes.
   void NotifyTextInputStateChanged(const TextInputClient* client);
@@ -120,8 +125,8 @@ class UI_BASE_IME_EXPORT InputMethodBase
   // Gets the bounds of the composition text or cursor in |client|.
   std::vector<gfx::Rect> GetCompositionBounds(const TextInputClient* client);
 
-  bool sending_key_event() const { return sending_key_event_; };
-  internal::InputMethodDelegate* delegate() const { return delegate_; };
+  bool sending_key_event() const { return sending_key_event_; }
+  internal::InputMethodDelegate* delegate() const { return delegate_; }
 
   static IMEEngineHandlerInterface* GetEngine();
 

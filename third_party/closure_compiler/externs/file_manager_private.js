@@ -20,6 +20,7 @@ chrome.fileManagerPrivate.VolumeType = {
   MEDIA_VIEW: 'media_view',
   CROSTINI: 'crostini',
   ANDROID_FILES: 'android_files',
+  DOCUMENTS_PROVIDER: 'documents_provider',
   TESTING: 'testing',
 };
 
@@ -322,7 +323,8 @@ chrome.fileManagerPrivate.IconSet;
  *   mountCondition: (!chrome.fileManagerPrivate.MountCondition|undefined),
  *   mountContext: (!chrome.fileManagerPrivate.MountContext|undefined),
  *   diskFileSystemType: (string|undefined),
- *   iconSet: !chrome.fileManagerPrivate.IconSet
+ *   iconSet: !chrome.fileManagerPrivate.IconSet,
+ *   driveLabel: (string|undefined)
  * }}
  */
 chrome.fileManagerPrivate.VolumeMetadata;
@@ -391,7 +393,6 @@ chrome.fileManagerPrivate.FileWatchEvent;
  *   cellularDisabled: boolean,
  *   searchSuggestEnabled: boolean,
  *   use24hourClock: boolean,
- *   allowRedeemOffers: boolean,
  *   timezone: string
  * }}
  */
@@ -634,7 +635,7 @@ chrome.fileManagerPrivate.ensureFileDownloaded = function(entry, callback) {};
  * backend. If resolving entry fails, the entry will be just ignored and the
  * corresponding entry does not appear in the result.
  * @param {!Array<!Entry>} entries
- * @param {function((!Array<!Entry>|undefined))} callback Completion callback
+ * @param {function(!Array<!Entry>):void} callback Completion callback
  *     with resolved entries.
  */
 chrome.fileManagerPrivate.resolveIsolatedEntries = function(entries,
@@ -644,7 +645,7 @@ chrome.fileManagerPrivate.resolveIsolatedEntries = function(entries,
  * Mount a resource or a file. |source| Mount point source. For compressed
  * files it is relative file path     within external file system |callback|
  * @param {string} source
- * @param {function((string|undefined))} callback Callback with source path of
+ * @param {function(string):void} callback callback Callback with source path of
  *     the mount.
  */
 chrome.fileManagerPrivate.addMount = function(source, callback) {};
@@ -784,7 +785,8 @@ chrome.fileManagerPrivate.zipSelection = function(entries, parentEntry,
 
 /**
  * Retrieves the state of the current drive connection. |callback|
- * @param {function((!chrome.fileManagerPrivate.DriveConnectionState|undefined))} callback
+ * @param {function(!chrome.fileManagerPrivate.DriveConnectionState):void}
+ *     callback
  */
 chrome.fileManagerPrivate.getDriveConnectionState = function(callback) {};
 
@@ -982,9 +984,13 @@ chrome.fileManagerPrivate.unsharePathWithCrostini = function(
 /**
  * Returns list of paths shared with the crostini container, and whether this is
  * the first time this function is called for this session.
+ * @param {boolean} observeFirstForSession If true, callback provides whether
+ *     this is the first time this function has been called with
+ *     observeFirstForSession true.
  * @param {function(!Array<!Entry>, boolean)} callback
  */
-chrome.fileManagerPrivate.getCrostiniSharedPaths = function(callback) {};
+chrome.fileManagerPrivate.getCrostiniSharedPaths = function(
+    observeFirstForSession, callback) {};
 
 /**
  * Requests information about a Linux package.

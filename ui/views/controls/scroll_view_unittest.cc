@@ -10,6 +10,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ui_base_features.h"
@@ -318,11 +319,6 @@ class WidgetScrollViewTest : public test::WidgetTest,
     quit_closure_.Run();
     quit_closure_.Reset();
   }
-  void OnCompositingStarted(ui::Compositor* compositor,
-                            base::TimeTicks start_time) override {}
-  void OnCompositingEnded(ui::Compositor* compositor) override {}
-  void OnCompositingChildResizing(ui::Compositor* compositor) override {}
-  void OnCompositingShuttingDown(ui::Compositor* compositor) override {}
 
   Widget* widget_ = nullptr;
 
@@ -1729,12 +1725,12 @@ TEST_F(WidgetScrollViewTest, CompositedScrollEvents) {
   EXPECT_EQ(gfx::ScrollOffset(0, 10), test_api.CurrentOffset());
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        WidgetScrollViewTestRTLAndLayers,
-                        ::testing::Values(UiConfig::kLtr,
-                                          UiConfig::kRtl,
-                                          UiConfig::kLtrWithLayers,
-                                          UiConfig::kRtlWithLayers),
-                        &UiConfigToString);
+INSTANTIATE_TEST_SUITE_P(,
+                         WidgetScrollViewTestRTLAndLayers,
+                         ::testing::Values(UiConfig::kLtr,
+                                           UiConfig::kRtl,
+                                           UiConfig::kLtrWithLayers,
+                                           UiConfig::kRtlWithLayers),
+                         &UiConfigToString);
 
 }  // namespace views

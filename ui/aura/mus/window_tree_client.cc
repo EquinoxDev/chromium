@@ -23,6 +23,7 @@
 #include "components/discardable_memory/client/client_discardable_shared_memory_manager.h"
 #include "mojo/public/cpp/bindings/map.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
 #include "services/ws/common/util.h"
 #include "services/ws/public/cpp/gpu/gpu.h"
 #include "services/ws/public/cpp/property_type_converters.h"
@@ -34,6 +35,7 @@
 #include "ui/aura/env.h"
 #include "ui/aura/env_input_state_controller.h"
 #include "ui/aura/mus/capture_synchronizer.h"
+#include "ui/aura/mus/client_side_window_move_handler.h"
 #include "ui/aura/mus/drag_drop_controller_mus.h"
 #include "ui/aura/mus/embed_root.h"
 #include "ui/aura/mus/embed_root_delegate.h"
@@ -58,7 +60,6 @@
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_port_for_shutdown.h"
 #include "ui/aura/window_tracker.h"
-#include "ui/base/layout.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/base/ui_base_types.h"
@@ -68,7 +69,6 @@
 #include "ui/events/event.h"
 #include "ui/events/event_observer.h"
 #include "ui/events/mojo/event_struct_traits.h"
-#include "ui/gfx/geometry/dip_util.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -234,8 +234,8 @@ void WindowTreeClient::SetCanFocus(Window* window, bool can_focus) {
 }
 
 void WindowTreeClient::SetCursor(WindowMus* window,
-                                 const ui::CursorData& old_cursor,
-                                 const ui::CursorData& new_cursor) {
+                                 const ui::Cursor& old_cursor,
+                                 const ui::Cursor& new_cursor) {
   DCHECK(tree_);
 
   const uint32_t change_id = ScheduleInFlightChange(
@@ -283,11 +283,6 @@ void WindowTreeClient::RegisterFrameSinkId(
     WindowMus* window,
     const viz::FrameSinkId& frame_sink_id) {
   tree_->AttachFrameSinkId(window->server_id(), frame_sink_id);
-
-  // Call OnWindowMusBoundsChanged() to force allocation of a LocalSurfaceId as
-  // well as notifying the server of the LocalSurfaceId.
-  const gfx::Rect bounds = window->GetWindow()->bounds();
-  OnWindowMusBoundsChanged(window, bounds, bounds);
 }
 
 void WindowTreeClient::UnregisterFrameSinkId(WindowMus* window) {
@@ -485,7 +480,8 @@ std::unique_ptr<WindowTreeHostMus> WindowTreeClient::CreateWindowTreeHost(
     WindowMusType window_mus_type,
     const ws::mojom::WindowData& window_data,
     int64_t display_id,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   std::unique_ptr<WindowPortMus> window_port =
       CreateWindowPortMus(window_data, window_mus_type);
   roots_.insert(window_port.get());
@@ -498,13 +494,12 @@ std::unique_ptr<WindowTreeHostMus> WindowTreeClient::CreateWindowTreeHost(
   window_tree_host->InitHost();
   SetLocalPropertiesFromServerProperties(
       WindowMus::Get(window_tree_host->window()), window_data);
-  if (window_data.visible) {
-    SetWindowVisibleFromServer(WindowMus::Get(window_tree_host->window()),
-                               true);
-  }
+  SetWindowVisibleFromServer(WindowMus::Get(window_tree_host->window()),
+                             window_data.visible);
   WindowMus* window = WindowMus::Get(window_tree_host->window());
 
-  SetWindowBoundsFromServer(window, window_data.bounds, local_surface_id);
+  SetWindowBoundsFromServer(window, window_data.bounds, /* from_server */ true,
+                            local_surface_id_allocation);
   return window_tree_host;
 }
 
@@ -527,7 +522,7 @@ WindowMus* WindowTreeClient::NewWindowFromWindowData(
   SetWindowType(window, GetWindowTypeFromProperties(properties));
   window->Init(ui::LAYER_NOT_DRAWN);
   SetLocalPropertiesFromServerProperties(window_mus, window_data);
-  window_mus->SetBoundsFromServer(window_data.bounds, base::nullopt);
+  window_mus->SetBoundsFromServer(window_data.bounds);
   if (parent)
     parent->AddChildFromServer(window_port_mus_ptr);
   if (window_data.visible)
@@ -557,6 +552,8 @@ void WindowTreeClient::WindowTreeConnectionEstablished(
   Env::GetInstance()->SetGestureRecognizer(
       std::make_unique<GestureRecognizerImplMus>(this));
   gesture_synchronizer_ = std::make_unique<GestureSynchronizer>(tree_);
+  client_side_window_move_handler_ =
+      std::make_unique<ClientSideWindowMoveHandler>(Env::GetInstance(), this);
 }
 
 void WindowTreeClient::OnConnectionLost() {
@@ -583,12 +580,14 @@ void WindowTreeClient::OnEmbedImpl(
     int64_t display_id,
     ws::Id focused_window_id,
     bool drawn,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   WindowTreeConnectionEstablished(window_tree);
 
   DCHECK(roots_.empty());
-  std::unique_ptr<WindowTreeHostMus> window_tree_host = CreateWindowTreeHost(
-      WindowMusType::EMBED, *root_data, display_id, local_surface_id);
+  std::unique_ptr<WindowTreeHostMus> window_tree_host =
+      CreateWindowTreeHost(WindowMusType::EMBED, *root_data, display_id,
+                           local_surface_id_allocation);
 
   focus_synchronizer_->SetFocusFromServer(
       GetWindowByServerId(focused_window_id));
@@ -623,24 +622,57 @@ void WindowTreeClient::OnReceivedCursorLocationMemory(
 void WindowTreeClient::SetWindowBoundsFromServer(
     WindowMus* window,
     const gfx::Rect& revert_bounds,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
-  if (IsRoot(window)) {
-    // This uses GetScaleFactorForNativeView() as it's called at a time when the
-    // scale factor may not have been applied to the Compositor yet. In
-    // particular, when the scale-factor changes this is called in terms of the
-    // scale factor set on the display. It's the call to
-    // SetBoundsFromServerInPixels() that is responsible for updating the scale
-    // factor in the Compositor.
-    // Do not use ConvertRectToPixel, enclosing rects cause problems.
-    const float dsf = ui::GetScaleFactorForNativeView(window->GetWindow());
-    const gfx::Rect rect(gfx::ScaleToFlooredPoint(revert_bounds.origin(), dsf),
-                         gfx::ScaleToCeiledSize(revert_bounds.size(), dsf));
-    GetWindowTreeHostMus(window)->SetBoundsFromServerInPixels(
-        rect, local_surface_id ? *local_surface_id : viz::LocalSurfaceId());
+    bool from_server,
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
+  if (!IsRoot(window)) {
+    window->SetBoundsFromServer(revert_bounds);
     return;
   }
+  // If |from_server| is false, it means this requested a bounds change *and*
+  // the bounds change failed. Two reasons that might happen:
+  // . bad value (should never happen)
+  // . the server changed the bounds to a different value. In this case the
+  //   server will have responded with the real bounds, which makes
+  //   |from_server| true.
+  DCHECK(from_server);
 
-  window->SetBoundsFromServer(revert_bounds, local_surface_id);
+  // Server should always supply a LocalSurfaceIdAllocation for roots.
+  DCHECK(local_surface_id_allocation);
+
+  window->UpdateLocalSurfaceIdFromParent(*local_surface_id_allocation);
+
+  GetWindowTreeHostMus(window)->SetBoundsFromServer(
+      revert_bounds, window->GetLocalSurfaceIdAllocation());
+
+  window->DidSetWindowTreeHostBoundsFromServer();
+}
+
+void WindowTreeClient::ApplyPendingSurfaceIdFromServer(WindowMus* window) {
+  WindowTreeHostMus* window_tree_host = GetWindowTreeHostMus(window);
+  DCHECK(window_tree_host->has_pending_local_surface_id_from_server());
+  const bool is_first_lsia = !window->GetLocalSurfaceIdAllocation().IsValid();
+  window->UpdateLocalSurfaceIdFromParent(
+      *window_tree_host->TakePendingLocalSurfaceIdFromServer());
+  if (is_first_lsia) {
+    // This corresponds to when a top-level was created *and* there was an
+    // inflight bounds change that succeeded. Generate a new id (as the size
+    // likely differs from the size the window was created at).
+    window->GetWindow()->AllocateLocalSurfaceId();
+    const viz::LocalSurfaceIdAllocation lsia =
+        window->GetWindow()->GetLocalSurfaceIdAllocation();
+    window_tree_host->SetBoundsFromServer(window_tree_host->bounds_in_dip(),
+                                          lsia);
+    // This does *not* use SetWindowBoundsFromServer() as it leads to race
+    // conditions. In particular, it might incorrectly lead to the client
+    // changing the bounds when the server is also trying to change the bounds.
+    tree_->UpdateLocalSurfaceIdFromChild(window->server_id(), lsia);
+  } else {
+    window_tree_host->SetBoundsFromServer(
+        window_tree_host->bounds_in_dip(),
+        window->GetLocalSurfaceIdAllocation());
+  }
+  DCHECK(!window_tree_host->has_pending_local_surface_id_from_server());
 }
 
 void WindowTreeClient::SetWindowTransformFromServer(
@@ -676,17 +708,15 @@ void WindowTreeClient::ScheduleInFlightBoundsChange(
     WindowMus* window,
     const gfx::Rect& old_bounds,
     const gfx::Rect& new_bounds) {
-  const uint32_t change_id =
-      ScheduleInFlightChange(std::make_unique<InFlightBoundsChange>(
-          this, window, old_bounds,
-          window->GetLocalSurfaceIdAllocation().local_surface_id()));
-  base::Optional<viz::LocalSurfaceId> local_surface_id;
-  if (window->GetWindow()->IsEmbeddingClient() ||
-      window->HasLocalLayerTreeFrameSink()) {
-    // Do not use ConvertRectToPixel, enclosing rects cause problems.
-    const gfx::Size size = gfx::ScaleToCeiledSize(
-        new_bounds.size(), window->GetDeviceScaleFactor());
-    local_surface_id = window->GetOrAllocateLocalSurfaceId(size);
+  base::Optional<viz::LocalSurfaceIdAllocation> local_surface_id_allocation =
+      window->GetLocalSurfaceIdAllocation();
+  if (!local_surface_id_allocation->IsValid()) {
+    // Not all windows have or need a LocalSurfaceIdAllocation. Additionally,
+    // some windows, such as top-levels, have LocalSurfaceIdAllocations, but
+    // only after the initial value from the server is received. The server
+    // expects that if a LocalSurfaceIdAllocation is supplied, it must be valid.
+    local_surface_id_allocation.reset();
+  } else if (window->window_mus_type() != WindowMusType::TOP_LEVEL) {
     // |window_tree_host| may be null if this is called during creation of
     // the window associated with the WindowTreeHostMus, or if there is an
     // embedding.
@@ -694,8 +724,12 @@ void WindowTreeClient::ScheduleInFlightBoundsChange(
     if (window_tree_host && window_tree_host->window() == window->GetWindow())
       window_tree_host->compositor()->OnChildResizing();
   }
+  const uint32_t change_id =
+      ScheduleInFlightChange(std::make_unique<InFlightBoundsChange>(
+          this, window, old_bounds, /* from_server */ false,
+          local_surface_id_allocation));
   tree_->SetWindowBounds(change_id, window->server_id(), new_bounds,
-                         local_surface_id);
+                         local_surface_id_allocation);
 }
 
 void WindowTreeClient::OnWindowMusCreated(WindowMus* window) {
@@ -882,6 +916,10 @@ void WindowTreeClient::OnWindowMusPropertyChanged(
                            transport_value_mojo);
 }
 
+void WindowTreeClient::RequestNewLocalSurfaceId(WindowMus* window) {
+  tree_->AllocateLocalSurfaceId(window->server_id());
+}
+
 std::set<Window*> WindowTreeClient::GetRoots() {
   std::set<Window*> roots;
   for (WindowMus* window : roots_)
@@ -978,7 +1016,8 @@ void WindowTreeClient::OnEmbed(
     int64_t display_id,
     ws::Id focused_window_id,
     bool drawn,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   DCHECK(!tree_ptr_);
   tree_ptr_ = std::move(tree);
 
@@ -986,18 +1025,20 @@ void WindowTreeClient::OnEmbed(
   got_initial_displays_ = true;
 
   OnEmbedImpl(tree_ptr_.get(), std::move(root_data), display_id,
-              focused_window_id, drawn, local_surface_id);
+              focused_window_id, drawn, local_surface_id_allocation);
 }
 
 void WindowTreeClient::OnEmbedFromToken(
     const base::UnguessableToken& token,
     ws::mojom::WindowDataPtr root,
     int64_t display_id,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   for (EmbedRoot* embed_root : embed_roots_) {
     if (embed_root->token() == token) {
       embed_root->OnEmbed(CreateWindowTreeHost(WindowMusType::EMBED, *root,
-                                               display_id, local_surface_id));
+                                               display_id,
+                                               local_surface_id_allocation));
       break;
     }
   }
@@ -1055,7 +1096,7 @@ void WindowTreeClient::OnTopLevelCreated(
     ws::mojom::WindowDataPtr data,
     int64_t display_id,
     bool drawn,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
   // The server ack'd the top level window we created and supplied the state
   // of the window at the time the server created it. For properties we do not
   // have changes in flight for we can update them immediately. For properties
@@ -1072,6 +1113,13 @@ void WindowTreeClient::OnTopLevelCreated(
 
   WindowMus* window = change->window();
   WindowTreeHostMus* window_tree_host = GetWindowTreeHostMus(window);
+
+  // The server must supply a valid LocalSurfaceIdAllocation.
+  DCHECK(local_surface_id_allocation.IsValid());
+
+  // The window will not have allocated a LocalSurfaceId yet (because it was
+  // waiting for the value from the server).
+  DCHECK(!window->GetLocalSurfaceIdAllocation().IsValid());
 
   // Drawn state and display-id always come from the server (they can't be
   // modified locally).
@@ -1091,13 +1139,27 @@ void WindowTreeClient::OnTopLevelCreated(
 
   const gfx::Rect bounds(data->bounds);
   {
-    InFlightBoundsChange bounds_change(this, window, bounds, local_surface_id);
+    InFlightBoundsChange bounds_change(this, window, bounds,
+                                       /* from_server */ true,
+                                       local_surface_id_allocation);
     InFlightChange* current_change =
         GetOldestInFlightChangeMatching(bounds_change);
-    if (current_change)
+    if (current_change) {
       current_change->SetRevertValueFrom(bounds_change);
-    else if (window->GetWindow()->GetBoundsInScreen() != bounds)
-      SetWindowBoundsFromServer(window, bounds, local_surface_id);
+      // Store the LocalSurfaceId so that it can applied when the bounds change
+      // is done.
+      window_tree_host->SetPendingLocalSurfaceIdFromServer(
+          local_surface_id_allocation);
+    } else if (window->GetWindow()->GetBoundsInScreen() != bounds) {
+      window->UpdateLocalSurfaceIdFromParent(local_surface_id_allocation);
+      SetWindowBoundsFromServer(window, bounds, /* from_server */ true,
+                                window->GetLocalSurfaceIdAllocation());
+    } else {
+      // No pending changes and the bounds match that of the server. Call
+      // SetWindowBoundsFromServer() to apply |local_surface_id_allocation|.
+      SetWindowBoundsFromServer(window, bounds, /* from_server */ true,
+                                local_surface_id_allocation);
+    }
   }
 
   // There is currently no API to bulk set properties, so we iterate over each
@@ -1122,23 +1184,49 @@ void WindowTreeClient::OnTopLevelCreated(
 
 void WindowTreeClient::OnWindowBoundsChanged(
     ws::Id window_id,
-    const gfx::Rect& old_bounds,
     const gfx::Rect& new_bounds,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (!window)
     return;
 
-  InFlightBoundsChange new_change(this, window, new_bounds, local_surface_id);
-  if (ApplyServerChangeToExistingInFlightChange(new_change))
-    return;
+  InFlightBoundsChange new_change(this, window, new_bounds,
+                                  /* from_server */ true,
+                                  local_surface_id_allocation);
 
-  SetWindowBoundsFromServer(window, new_bounds, local_surface_id);
+  const bool applied = ApplyServerChangeToExistingInFlightChange(new_change);
+  if (applied) {
+    // There is an inflight change, but the server sent a bounds (and
+    // LocalSurfaceId). Store the LocalSurfaceId so that it can be applied
+    // later. The id is either applied when there are no more inflight bounds
+    // changes, or the window is resized locally. The id can *not* be applied
+    // now as to do so would result in generating an id that corresponds to
+    // the wrong size. For example, consider the following sequence:
+    // 1. window has ID 1,1 @ size A.
+    // 2. client changes to ID 1,2 @ size B.
+    // 3. server rejects change, which results in generating
+    //    OnWindowBoundsChanged() to ID 2,2 @ size C.
+    // 4. client gets OnWindowBoundsChanged() with ID 2,2 @ size C.
+    // 5. client gets response indicating bounds change failed.
+    // Step (4) corresponds to this particular branch. If this branch applied
+    // the LocalSurfaceId now, the window would end up at 2,2 size B, which
+    // is not the size id 2,2 was generated for. To deal with that, the code
+    // stores the ID and applies it later.
+    DCHECK(local_surface_id_allocation);
+    if (window->window_mus_type() == WindowMusType::TOP_LEVEL) {
+      GetWindowTreeHostMus(window)->SetPendingLocalSurfaceIdFromServer(
+          *local_surface_id_allocation);
+    }
+    return;
+  }
+
+  SetWindowBoundsFromServer(window, new_bounds, /* from_server */ true,
+                            local_surface_id_allocation);
 }
 
 void WindowTreeClient::OnWindowTransformChanged(
     ws::Id window_id,
-    const gfx::Transform& old_transform,
     const gfx::Transform& new_transform) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (!window)
@@ -1242,7 +1330,6 @@ void WindowTreeClient::OnWindowVisibilityChanged(ws::Id window_id,
 }
 
 void WindowTreeClient::OnWindowOpacityChanged(ws::Id window_id,
-                                              float old_opacity,
                                               float new_opacity) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (!window)
@@ -1368,7 +1455,7 @@ void WindowTreeClient::OnWindowFocused(ws::Id focused_window_id) {
 }
 
 void WindowTreeClient::OnWindowCursorChanged(ws::Id window_id,
-                                             ui::CursorData cursor) {
+                                             ui::Cursor cursor) {
   WindowMus* window = GetWindowByServerId(window_id);
   if (!window)
     return;
@@ -1387,20 +1474,24 @@ void WindowTreeClient::OnDragDropStart(
 
 void WindowTreeClient::OnDragEnter(ws::Id window_id,
                                    uint32_t key_state,
-                                   const gfx::Point& position,
+                                   const gfx::PointF& location_in_root,
+                                   const gfx::PointF& location,
                                    uint32_t effect_bitmask,
                                    OnDragEnterCallback callback) {
   std::move(callback).Run(drag_drop_controller_->OnDragEnter(
-      GetWindowByServerId(window_id), key_state, position, effect_bitmask));
+      GetWindowByServerId(window_id), key_state, location_in_root, location,
+      effect_bitmask));
 }
 
 void WindowTreeClient::OnDragOver(ws::Id window_id,
                                   uint32_t key_state,
-                                  const gfx::Point& position,
+                                  const gfx::PointF& location_in_root,
+                                  const gfx::PointF& location,
                                   uint32_t effect_bitmask,
                                   OnDragOverCallback callback) {
   std::move(callback).Run(drag_drop_controller_->OnDragOver(
-      GetWindowByServerId(window_id), key_state, position, effect_bitmask));
+      GetWindowByServerId(window_id), key_state, location_in_root, location,
+      effect_bitmask));
 }
 
 void WindowTreeClient::OnDragLeave(ws::Id window_id) {
@@ -1413,11 +1504,13 @@ void WindowTreeClient::OnDragDropDone() {
 
 void WindowTreeClient::OnCompleteDrop(ws::Id window_id,
                                       uint32_t key_state,
-                                      const gfx::Point& position,
+                                      const gfx::PointF& location_in_root,
+                                      const gfx::PointF& location,
                                       uint32_t effect_bitmask,
                                       OnCompleteDropCallback callback) {
   std::move(callback).Run(drag_drop_controller_->OnCompleteDrop(
-      GetWindowByServerId(window_id), key_state, position, effect_bitmask));
+      GetWindowByServerId(window_id), key_state, location_in_root, location,
+      effect_bitmask));
 }
 
 void WindowTreeClient::OnPerformDragDropCompleted(uint32_t change_id,
@@ -1439,6 +1532,11 @@ WindowTreeClient::StartObservingTopmostWindow(ws::mojom::MoveLoopSource source,
   auto topmost_window_tracker = std::make_unique<TopmostWindowTracker>(this);
   topmost_window_tracker_ = topmost_window_tracker.get();
   return topmost_window_tracker;
+}
+
+void WindowTreeClient::SetWindowResizeShadow(Window* window, int hit_test) {
+  WindowMus* window_mus = WindowMus::Get(window);
+  tree_->SetWindowResizeShadow(window_mus->server_id(), hit_test);
 }
 
 void WindowTreeClient::StopObservingTopmostWindow() {
@@ -1468,8 +1566,7 @@ void WindowTreeClient::OnChangeCompleted(uint32_t change_id, bool success) {
   // is deleted, but still we want to invoke the finished callback.
   if (change_id == current_move_loop_change_) {
     current_move_loop_change_ = 0;
-    on_current_move_finished_.Run(success);
-    on_current_move_finished_.Reset();
+    std::move(on_current_move_finished_).Run(success);
     for (auto& observer : observers_)
       observer.OnWindowMoveEnded(success);
   }
@@ -1492,6 +1589,8 @@ void WindowTreeClient::OnChangeCompleted(uint32_t change_id, bool success) {
       next_change->SetRevertValueFrom(*change);
   } else if (!success) {
     change->Revert();
+  } else {
+    change->OnLastChangeOfTypeSucceeded();
   }
 }
 
@@ -1511,6 +1610,13 @@ void WindowTreeClient::OnOcclusionStatesChanged(
     WindowPortMus::Get(window->GetWindow())
         ->SetOcclusionStateFromServer(change.second);
   }
+}
+
+void WindowTreeClient::CleanupGestureState(ws::Id window_id) {
+  WindowMus* window = GetWindowByServerId(window_id);
+  if (!window)
+    return;
+  window->GetWindow()->CleanupGestureState();
 }
 
 void WindowTreeClient::OnDisplaysChanged(
@@ -1535,14 +1641,14 @@ void WindowTreeClient::RequestClose(ws::Id window_id) {
 
 void WindowTreeClient::OnWindowTreeHostBoundsWillChange(
     WindowTreeHostMus* window_tree_host,
-    const gfx::Rect& bounds_in_pixels) {
-  gfx::Rect old_bounds = window_tree_host->GetBoundsInPixels();
-  gfx::Rect new_bounds = bounds_in_pixels;
-  const float device_scale_factor = window_tree_host->device_scale_factor();
-  old_bounds = gfx::ConvertRectToDIP(device_scale_factor, old_bounds);
-  new_bounds = gfx::ConvertRectToDIP(device_scale_factor, new_bounds);
+    const gfx::Rect& bounds) {
+  // The only other type of window that may hit this code path is EMBED. Clients
+  // are not allowed to change the bounds of EMBED windows (only the server).
+  // LOCAL and OTHER types don't have a WindowTreeHost.
+  DCHECK_EQ(WindowMusType::TOP_LEVEL,
+            WindowMus::Get(window_tree_host->window())->window_mus_type());
   ScheduleInFlightBoundsChange(WindowMus::Get(window_tree_host->window()),
-                               old_bounds, new_bounds);
+                               window_tree_host->bounds_in_dip(), bounds);
 }
 
 void WindowTreeClient::OnWindowTreeHostClientAreaWillChange(
@@ -1592,16 +1698,17 @@ void WindowTreeClient::OnWindowTreeHostPerformWindowMove(
     WindowTreeHostMus* window_tree_host,
     ws::mojom::MoveLoopSource source,
     const gfx::Point& cursor_location,
-    const base::Callback<void(bool)>& callback) {
+    int hit_test,
+    base::OnceCallback<void(bool)> callback) {
   DCHECK(on_current_move_finished_.is_null());
-  on_current_move_finished_ = callback;
+  on_current_move_finished_ = std::move(callback);
 
   WindowMus* window_mus = WindowMus::Get(window_tree_host->window());
   current_move_loop_change_ = ScheduleInFlightChange(
       std::make_unique<InFlightDragChange>(window_mus, ChangeType::MOVE_LOOP));
   // Tell the window manager to take over moving us.
   tree_->PerformWindowMove(current_move_loop_change_, window_mus->server_id(),
-                           source, cursor_location);
+                           source, cursor_location, hit_test);
   for (auto& observer : observers_) {
     observer.OnWindowMoveStarted(window_tree_host->window(), cursor_location,
                                  source);

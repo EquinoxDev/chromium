@@ -5,31 +5,34 @@
 // require: event_target.js
 
 cr.define('cr.ui', function() {
-  /** @const */ var EventTarget = cr.EventTarget;
-  /** @const */ var Menu = cr.ui.Menu;
+  /** @const */ const Menu = cr.ui.Menu;
 
   /**
    * Handles context menus.
-   * @constructor
-   * @extends {cr.EventTarget}
    * @implements {EventListener}
    */
-  function ContextMenuHandler() {
-    /** @private {!EventTracker} */
-    this.showingEvents_ = new EventTracker();
-  }
+  class ContextMenuHandler extends cr.EventTarget {
+    constructor() {
+      super();
+      /** @private {!EventTracker} */
+      this.showingEvents_ = new EventTracker();
 
-  ContextMenuHandler.prototype = {
-    __proto__: EventTarget.prototype,
+      /**
+       * The menu that we are currently showing.
+       * @private {?cr.ui.Menu}
+       */
+      this.menu_ = null;
 
-    /**
-     * The menu that we are currently showing.
-     * @type {cr.ui.Menu}
-     */
-    menu_: null,
+      /** @private {?number} */
+      this.hideTimestamp_ = null;
+
+      /** @private {boolean} */
+      this.keyIsDown_ = false;
+    }
+
     get menu() {
       return this.menu_;
-    },
+    }
 
     /**
      * Shows a menu as a context menu.
@@ -37,7 +40,7 @@ cr.define('cr.ui', function() {
      *     event).
      * @param {!cr.ui.Menu} menu The menu to show.
      */
-    showMenu: function(e, menu) {
+    showMenu(e, menu) {
       menu.updateCommands(assertInstanceof(e.currentTarget, Node));
       if (!menu.hasVisibleItems()) {
         return;
@@ -49,8 +52,8 @@ cr.define('cr.ui', function() {
       menu.contextElement = e.currentTarget;
 
       // When the menu is shown we steal a lot of events.
-      var doc = menu.ownerDocument;
-      var win = /** @type {!Window} */ (doc.defaultView);
+      const doc = menu.ownerDocument;
+      const win = /** @type {!Window} */ (doc.defaultView);
       this.showingEvents_.add(doc, 'keydown', this, true);
       this.showingEvents_.add(doc, 'mousedown', this, true);
       this.showingEvents_.add(doc, 'touchstart', this, true);
@@ -62,19 +65,19 @@ cr.define('cr.ui', function() {
       this.showingEvents_.add(menu, 'activate', this);
       this.positionMenu_(e, menu);
 
-      var ev = new Event('show');
+      const ev = new Event('show');
       ev.element = menu.contextElement;
       ev.menu = menu;
       this.dispatchEvent(ev);
-    },
+    }
 
     /**
      * Hide the currently shown menu.
      * @param {cr.ui.HideType=} opt_hideType Type of hide.
      *     default: cr.ui.HideType.INSTANT.
      */
-    hideMenu: function(opt_hideType) {
-      var menu = this.menu;
+    hideMenu(opt_hideType) {
+      const menu = this.menu;
       if (!menu) {
         return;
       }
@@ -85,7 +88,7 @@ cr.define('cr.ui', function() {
         menu.classList.remove('hide-delayed');
       }
       menu.hide();
-      var originalContextElement = menu.contextElement;
+      const originalContextElement = menu.contextElement;
       menu.contextElement = null;
       this.showingEvents_.removeAll();
       menu.selectedIndex = -1;
@@ -96,11 +99,11 @@ cr.define('cr.ui', function() {
       // to be shown again.
       this.hideTimestamp_ = cr.isWindows ? Date.now() : 0;
 
-      var ev = new Event('hide');
+      const ev = new Event('hide');
       ev.element = originalContextElement;
       ev.menu = menu;
       this.dispatchEvent(ev);
-    },
+    }
 
     /**
      * Positions the menu
@@ -108,18 +111,18 @@ cr.define('cr.ui', function() {
      * @param {!cr.ui.Menu} menu The menu to position.
      * @private
      */
-    positionMenu_: function(e, menu) {
+    positionMenu_(e, menu) {
       // TODO(arv): Handle scrolled documents when needed.
 
-      var element = e.currentTarget;
-      var x, y;
+      const element = e.currentTarget;
+      let x, y;
       // When the user presses the context menu key (on the keyboard) we need
       // to detect this.
       if (this.keyIsDown_) {
-        var rect = element.getRectForContextMenu ?
+        const rect = element.getRectForContextMenu ?
             element.getRectForContextMenu() :
             element.getBoundingClientRect();
-        var offset = Math.min(rect.width, rect.height) / 2;
+        const offset = Math.min(rect.width, rect.height) / 2;
         x = rect.left + offset;
         y = rect.top + offset;
       } else {
@@ -128,13 +131,13 @@ cr.define('cr.ui', function() {
       }
 
       cr.ui.positionPopupAtPoint(x, y, menu);
-    },
+    }
 
     /**
      * Handles event callbacks.
      * @param {!Event} e The event object.
      */
-    handleEvent: function(e) {
+    handleEvent(e) {
       // Keep track of keydown state so that we can use that to determine the
       // reason for the contextmenu event.
       switch (e.type) {
@@ -190,7 +193,7 @@ cr.define('cr.ui', function() {
           break;
 
         case 'activate':
-          var hideDelayed =
+          const hideDelayed =
               e.target instanceof cr.ui.MenuItem && e.target.checkable;
           this.hideMenu(
               hideDelayed ? cr.ui.HideType.DELAYED : cr.ui.HideType.INSTANT);
@@ -221,15 +224,15 @@ cr.define('cr.ui', function() {
           e.stopPropagation();
           break;
       }
-    },
+    }
 
     /**
      * Adds a contextMenu property to an element or element class.
      * @param {!Element|!Function} elementOrClass The element or class to add
      *     the contextMenu property to.
      */
-    addContextMenuProperty: function(elementOrClass) {
-      var target = typeof elementOrClass == 'function' ?
+    addContextMenuProperty(elementOrClass) {
+      const target = typeof elementOrClass == 'function' ?
           elementOrClass.prototype :
           elementOrClass;
 
@@ -237,7 +240,7 @@ cr.define('cr.ui', function() {
         return this.contextMenu_;
       });
       target.__defineSetter__('contextMenu', function(menu) {
-        var oldContextMenu = this.contextMenu;
+        const oldContextMenu = this.contextMenu;
 
         if (typeof menu == 'string' && menu[0] == '#') {
           menu = this.ownerDocument.getElementById(menu.slice(1));
@@ -277,7 +280,7 @@ cr.define('cr.ui', function() {
           return this.getBoundingClientRect();
         };
       }
-    },
+    }
 
     /**
      * Sets the given contextMenu to the given element. A contextMenu property
@@ -285,19 +288,19 @@ cr.define('cr.ui', function() {
      * @param {!Element} element The element or class to set the contextMenu to.
      * @param {!cr.ui.Menu} contextMenu The contextMenu property to be set.
      */
-    setContextMenu: function(element, contextMenu) {
+    setContextMenu(element, contextMenu) {
       if (!element.contextMenu) {
         this.addContextMenuProperty(element);
       }
       element.contextMenu = contextMenu;
     }
-  };
+  }
 
   /**
    * The singleton context menu handler.
    * @type {!ContextMenuHandler}
    */
-  var contextMenuHandler = new ContextMenuHandler;
+  const contextMenuHandler = new ContextMenuHandler;
 
   // Export
   return {

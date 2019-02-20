@@ -32,7 +32,6 @@ chrome.fileManagerPrivate = {
   currentId_: 'test@example.com',
   displayedId_: 'test@example.com',
   preferences_: {
-    allowRedeemOffers: true,
     cellularDisabled: true,
     driveEnabled: true,
     searchSuggestEnabled: true,
@@ -88,9 +87,9 @@ chrome.fileManagerPrivate = {
     }
     setTimeout(callback, 0, results);
   },
-  getCrostiniSharedPaths: (callback) => {
+  getCrostiniSharedPaths: (observeFirstForSession, callback) => {
     // Returns Entry[], firstForSession.
-    setTimeout(callback, 0, true, []);
+    setTimeout(callback, 0, [], observeFirstForSession);
   },
   getLinuxPackageInfo: (entry, callback) => {
     // Returns chrome.fileManagerPrivate.LinuxPackageInfo.

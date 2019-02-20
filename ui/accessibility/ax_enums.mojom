@@ -340,6 +340,9 @@ enum Action {
    // Return the content of this image object in the image_data attribute.
   kGetImageData,
 
+  // Gets the bounding rect for a range of text.
+  kGetTextLocation,
+
    // Given a point, find the object it corresponds to and fire a
    // |AXActionData.hit_test_event_to_fire| event on it in response.
   kHitTest,
@@ -390,9 +393,7 @@ enum Action {
    // Replace the value of the control with AXActionData::value and
    // reset the selection, if applicable.
   kSetValue,
-
   kShowContextMenu,
-  kGetTextLocation,
 };
 
 enum ActionFlags {
@@ -450,6 +451,9 @@ enum StringAttribute {
    // Only present when different from parent.
   kFontFamily,
   kHtmlTag,
+  // Stores an automatic image annotation if one is available. Only valid on
+  // ax::mojom::Role::kImage. See kImageAnnotationStatus, too.
+  kImageAnnotation,
   kImageDataUrl,
   kInnerHtml,
   kKeyShortcuts,
@@ -569,6 +573,9 @@ enum IntAttribute {
    // Focus traversal in views and Android.
   kPreviousFocusId,
   kNextFocusId,
+
+   // Image annotation status, of type ImageAnnotationStatus.
+  kImageAnnotationStatus,
 };
 
 enum FloatAttribute {
@@ -749,6 +756,7 @@ enum TextStyle {
   kItalic,
   kUnderline,
   kLineThrough,
+  kNone,
 };
 
 enum AriaCurrentState {
@@ -771,7 +779,7 @@ enum HasPopup {
   kTree,
   kGrid,
   kDialog,
-  kLast = kDialog,
+  kNone = kFalse
 };
 
 enum InvalidState {
@@ -890,3 +898,33 @@ enum AXTreeIDType {
   kToken,    // Every other tree ID must have a valid unguessable token.
 };
 
+enum ImageAnnotationStatus {
+   // Not an image, or image annotation feature not enabled.
+  kNone,
+
+   // Not loaded yet, already labeled by the author, or not eligible
+   // due to size, type, etc.
+  kIneligibleForAnnotation,
+
+   // Eligible to be automatically annotated if the user requests it.
+  kEligibleForAnnotation,
+
+   // An annotation has been requested but has not been received yet.
+  kAnnotationPending,
+
+   // An annotation has been provided and kImageAnnotation contains the
+   // annotation text.
+  kAnnotationSucceeded,
+
+   // The annotation request was processed successfully, but it was not
+   // possible to come up with an annotation for this image.
+  kAnnotationEmpty,
+
+   // The image is classified as adult content and no annotation will
+   // be generated.
+  kAnnotationAdult,
+
+   // The annotation process failed, e.g. unable to contact the server,
+   // request timed out, etc.
+  kAnnotationProcessFailed,
+};

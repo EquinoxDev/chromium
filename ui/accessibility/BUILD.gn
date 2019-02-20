@@ -7,7 +7,6 @@ import("//build/config/jumbo.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/ui.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
-import("//services/service_manager/public/service_manifest.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 import("//tools/json_schema_compiler/json_schema_api.gni")
@@ -17,16 +16,13 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-mojom("ax_enums_mojo") {
+mojom_component("ax_enums_mojo") {
   sources = [
     "ax_enums.mojom",
   ]
 
-  public_deps = [
-    "//mojo/public/mojom/base",
-    "//ui/gfx/geometry/mojo",
-    "//ui/gfx/mojo",
-  ]
+  macro_prefix = "UI_ACCESSIBILITY_AX_MOJOM"
+  output_prefix = "ui_accessibility_ax_mojom"
 }
 
 jumbo_component("accessibility") {
@@ -81,6 +77,7 @@ jumbo_component("accessibility") {
     "ax_tree_serializer.cc",
     "ax_tree_serializer.h",
     "ax_tree_source.h",
+    "ax_tree_source_checker.h",
     "ax_tree_update.h",
     "platform/ax_android_constants.cc",
     "platform/ax_android_constants.h",
@@ -101,6 +98,8 @@ jumbo_component("accessibility") {
 
   if (has_native_accessibility) {
     sources += [
+      "platform/ax_fragment_root_win.cc",
+      "platform/ax_fragment_root_win.h",
       "platform/ax_platform_node_mac.h",
       "platform/ax_platform_node_mac.mm",
       "platform/ax_platform_node_win.cc",
@@ -127,7 +126,10 @@ jumbo_component("accessibility") {
 
   if (is_win) {
     public_deps += [ "//third_party/iaccessible2" ]
-    libs = [ "oleacc.lib" ]
+    libs = [
+      "oleacc.lib",
+      "uiautomationcore.lib",
+    ]
   }
 
   if (is_mac) {
@@ -185,15 +187,9 @@ source_set("ax_assistant") {
   ]
 }
 
-service_manifest("manifest") {
-  name = "ax_host_service"
-  source = "ax_host_service_manifest.json"
-}
-
 static_library("test_support") {
   testonly = true
   sources = [
-    "ax_tree_source_checker.h",
     "tree_generator.cc",
     "tree_generator.h",
   ]
@@ -213,6 +209,7 @@ static_library("test_support") {
 test("accessibility_unittests") {
   testonly = true
   sources = [
+    "ax_enum_util_unittest.cc",
     "ax_event_generator_unittest.cc",
     "ax_generated_tree_unittest.cc",
     "ax_language_info_unittest.cc",
@@ -230,9 +227,11 @@ test("accessibility_unittests") {
     "mojom/ax_tree_data_mojom_traits_unittest.cc",
     "mojom/ax_tree_id_mojom_traits_unittest.cc",
     "mojom/ax_tree_update_mojom_traits_unittest.cc",
+    "platform/ax_fragment_root_win_unittest.cc",
     "platform/ax_platform_node_unittest.cc",
     "platform/ax_platform_node_unittest.h",
     "platform/ax_platform_node_win_unittest.cc",
+    "platform/ax_platform_node_win_unittest.h",
     "platform/ax_unique_id_unittest.cc",
     "run_all_unittests.cc",
   ]
@@ -288,4 +287,17 @@ fuzzer_test("ax_table_fuzzer") {
   ]
 
   seed_corpus = "fuzz_corpus"
+}
+
+source_set("ax_host_manifest") {
+  sources = [
+    "ax_host_manifest.cc",
+    "ax_host_manifest.h",
+  ]
+
+  deps = [
+    "//base",
+    "//services/service_manager/public/cpp",
+    "//ui/accessibility/mojom",
+  ]
 }

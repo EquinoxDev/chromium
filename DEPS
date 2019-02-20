@@ -154,7 +154,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling PDFium
   # and whatever else without interference from each other.
-  'pdfium_revision': 'e19ff219c47881212dff8be4a168dce2f60fdb13',
+  'pdfium_revision': '5f79016feed97837d94f98460fc90896641ba530',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling openmax_dl
   # and whatever else without interference from each other.
@@ -354,7 +354,7 @@ deps = {
     'packages': [
       {
         'package': 'chromium/chrome/test/data/autofill/captured_sites',
-        'version': 'iTTirmwddgzWZrhbBLyYSUn-PFZNRIm5NjY9eYBgk0cC',
+        'version': 'jYvTM_KjFi4v_BTqCfkAxM1XJ4PkMDSi31FgEDf0z9sC',
       }
     ],
     'condition': 'checkout_chromium_autofill_test_dependencies',
@@ -758,10 +758,14 @@ deps = {
   # Build tools for Chrome OS. Note: This depends on third_party/pyelftools.
   'src/third_party/chromite': {
 <<<<<<< HEAD
+<<<<<<< HEAD
       'url': Var('chromium_git') + '/chromiumos/chromite.git' + '@' + 'fd080e04f1e41186d0fe25463cf7371764d460d6',
 =======
       'url': Var('chromium_git') + '/chromiumos/chromite.git' + '@' + 'ad6d56748d98a9c9d927564d330e92eb79bc15cf',
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
+=======
+      'url': Var('chromium_git') + '/chromiumos/chromite.git' + '@' + '6c62e954121418eb208f6ee5f9db005bd8161bfe',
+>>>>>>> 38c39e88a5b2a96f627d55817fbd9ff75ca10ee3
       'condition': 'checkout_linux',
   },
 
@@ -787,10 +791,14 @@ deps = {
 
   'src/third_party/depot_tools':
 <<<<<<< HEAD
+<<<<<<< HEAD
     Var('chromium_git') + '/chromium/tools/depot_tools.git' + '@' + '177cd13347a9137c42e882b9eac2eab404c587f8',
 =======
     Var('chromium_git') + '/chromium/tools/depot_tools.git' + '@' + '4534fdbeafdc6837a8e54eb858fa8f9e7f91953a',
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
+=======
+    Var('chromium_git') + '/chromium/tools/depot_tools.git' + '@' + '29a3e0c4334b6ccfbd8788d28434ed1336cd95ec',
+>>>>>>> 38c39e88a5b2a96f627d55817fbd9ff75ca10ee3
 
   'src/third_party/devtools-node-modules':
     Var('chromium_git') + '/external/github.com/ChromeDevTools/devtools-node-modules' + '@' + Var('devtools_node_modules_revision'),
@@ -1130,10 +1138,14 @@ deps = {
 
   'src/third_party/perfetto':
 <<<<<<< HEAD
+<<<<<<< HEAD
     Var('android_git') + '/platform/external/perfetto.git' + '@' +  '74142cf4ffe76f8ed19ce734efc3a8f0a1c4e384',
 =======
     Var('android_git') + '/platform/external/perfetto.git' + '@' +  'c3f2ec7ab3ee8e57b14066af6070bd8ac7a73fb9',
 >>>>>>> 1edcc2f128d290860af09401391ae79df290b5f3
+=======
+    Var('android_git') + '/platform/external/perfetto.git' + '@' +  '8ecd6eea833595872a4a63cd34274fd2e5266f7b',
+>>>>>>> 38c39e88a5b2a96f627d55817fbd9ff75ca10ee3
 
   'src/third_party/perl': {
       'url': Var('chromium_git') + '/chromium/deps/perl.git' + '@' + 'ac0d98b5cee6c024b0cffeb4f8f45b6fc5ccdb78',

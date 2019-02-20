@@ -119,6 +119,9 @@ extern const char kAutofillProfileClientValidationDescription[];
 extern const char kAutofillProfileServerValidationName[];
 extern const char kAutofillProfileServerValidationDescription[];
 
+extern const char kAutofillShowFullDisclosureLabelName[];
+extern const char kAutofillShowFullDisclosureLabelDescription[];
+
 extern const char kAutofillPreviewStyleExperimentName[];
 extern const char kAutofillPreviewStyleExperimentDescription[];
 
@@ -1587,6 +1590,9 @@ extern const char kUpdateMenuTypeInlineUpdateDialogFailed[];
 extern const char kUpdateMenuTypeInlineUpdateDownloadFailed[];
 extern const char kUpdateMenuTypeInlineUpdateDownloadCanceled[];
 extern const char kUpdateMenuTypeInlineUpdateInstallFailed[];
+
+extern const char kInlineUpdateFlowName[];
+extern const char kInlineUpdateFlowDescription[];
 
 extern const char kThirdPartyDoodlesName[];
 extern const char kThirdPartyDoodlesDescription[];

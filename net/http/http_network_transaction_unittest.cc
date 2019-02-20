@@ -39,6 +39,7 @@
 #include "net/base/completion_once_callback.h"
 #include "net/base/elements_upload_data_stream.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
@@ -51,7 +52,6 @@
 #include "net/base/upload_file_element_reader.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/mock_cert_verifier.h"
-#include "net/dns/host_cache.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_auth_challenge_tokenizer.h"
 #include "net/http/http_auth_handler_digest.h"
@@ -470,8 +470,8 @@ class HttpNetworkTransactionTest : public PlatformTest,
     }
     out.status_line = response->headers->GetStatusLine();
 
-    EXPECT_EQ("127.0.0.1", response->socket_address.host());
-    EXPECT_EQ(80, response->socket_address.port());
+    EXPECT_EQ("127.0.0.1", response->remote_endpoint.ToStringWithoutPort());
+    EXPECT_EQ(80, response->remote_endpoint.port());
 
     bool got_endpoint =
         trans.GetRemoteEndpoint(&out.remote_endpoint_after_start);
@@ -15744,30 +15744,11 @@ TEST_F(HttpNetworkTransactionTest, ReturnHTTP421OnRetry) {
   EXPECT_EQ("hello!", response_data);
 }
 
-class OneTimeCachingHostResolver : public MockHostResolverBase {
- public:
-  explicit OneTimeCachingHostResolver(const HostPortPair& host_port)
-      : MockHostResolverBase(/* use_caching = */ true), host_port_(host_port) {}
-  ~OneTimeCachingHostResolver() override = default;
-
-  int ResolveFromCache(const RequestInfo& info,
-                       AddressList* addresses,
-                       const NetLogWithSource& net_log) override {
-    int rv = MockHostResolverBase::ResolveFromCache(info, addresses, net_log);
-    if (rv == OK && info.host_port_pair().Equals(host_port_))
-      GetHostCache()->clear();
-    return rv;
-  }
-
- private:
-  const HostPortPair host_port_;
-};
-
 TEST_F(HttpNetworkTransactionTest,
        UseIPConnectionPoolingWithHostCacheExpiration) {
-  // Set up a special HttpNetworkSession with a OneTimeCachingHostResolver.
-  session_deps_.host_resolver = std::make_unique<OneTimeCachingHostResolver>(
-      HostPortPair("mail.example.com", 443));
+  // Set up HostResolver to invalidate cached entries after 1 cached resolve.
+  session_deps_.host_resolver =
+      std::make_unique<MockCachingHostResolver>(1 /* cache_invalidation_num */);
   std::unique_ptr<HttpNetworkSession> session(CreateSession(&session_deps_));
 
   AddSSLSocketData();

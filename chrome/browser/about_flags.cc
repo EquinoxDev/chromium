@@ -2264,6 +2264,9 @@ const FeatureEntry kFeatureEntries[] = {
     {"force-update-menu-type", flag_descriptions::kUpdateMenuTypeName,
      flag_descriptions::kUpdateMenuTypeDescription, kOsAndroid,
      MULTI_VALUE_TYPE(kForceUpdateMenuTypeChoices)},
+    {"enable-inline-update-flow", flag_descriptions::kInlineUpdateFlowName,
+     flag_descriptions::kInlineUpdateFlowDescription, kOsAndroid,
+     FEATURE_VALUE_TYPE(chrome::android::kInlineUpdateFlow)},
     {"update-menu-item-custom-summary",
      flag_descriptions::kUpdateMenuItemCustomSummaryName,
      flag_descriptions::kUpdateMenuItemCustomSummaryDescription, kOsAndroid,
@@ -4206,6 +4209,11 @@ const FeatureEntry kFeatureEntries[] = {
      FEATURE_VALUE_TYPE(
          password_manager::features::kManualPasswordGenerationAndroid)},
 #endif  // defined(OS_ANDROID)
+
+    {"autofill-show-full-disclosure-label",
+     flag_descriptions::kAutofillShowFullDisclosureLabelName,
+     flag_descriptions::kAutofillShowFullDisclosureLabelDescription, kOsAll,
+     FEATURE_VALUE_TYPE(autofill::features::kAutofillShowFullDisclosureLabel)},
 
     // NOTE: Adding a new flag requires adding a corresponding entry to enum
     // "LoginCustomFlags" in tools/metrics/histograms/enums.xml. See "Flag

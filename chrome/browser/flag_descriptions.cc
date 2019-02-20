@@ -134,6 +134,12 @@ const char kAutofillProfileServerValidationName[] =
 const char kAutofillProfileServerValidationDescription[] =
     "Allows autofill to use server side validation";
 
+const char kAutofillShowFullDisclosureLabelName[] =
+    "Autofill Show Full Disclosure Label";
+const char kAutofillShowFullDisclosureLabelDescription[] =
+    "When enabled, the Autofill dropdown's labels are displayed in the full "
+    "disclosure format.";
+
 const char kAutofillPreviewStyleExperimentName[] =
     "Autofill Preview Style Experiment";
 const char kAutofillPreviewStyleExperimentDescription[] =
@@ -2698,6 +2704,13 @@ const char kUpdateMenuTypeInlineUpdateDownloadCanceled[] =
     "Inline Update Error: Download Canceled";
 const char kUpdateMenuTypeInlineUpdateInstallFailed[] =
     "Inline Update Error: Install Failed";
+
+const char kInlineUpdateFlowName[] = "Enable Google Play inline update flow";
+const char kInlineUpdateFlowDescription[] =
+    "When this flag is set, instead of taking the user to the Google Play "
+    "Store when an update is available, the user is presented with an inline "
+    "flow where they do not have to leave Chrome until the update is ready "
+    "to install.";
 
 const char kThirdPartyDoodlesName[] =
     "Enable Doodles for third-party search engines";

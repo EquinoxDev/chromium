@@ -2049,6 +2049,7 @@ uploading your change for review.  These are checked by presubmit scripts.
   <int value="6" label="kSetup"/>
   <int value="7" label="kStylus"/>
   <int value="8" label="kLauncherSearchResult"/>
+  <int value="9" label="kLauncherSearchBoxMic"/>
 </enum>
 
 <enum name="AssistantExitPoint">
@@ -31227,8 +31228,10 @@ from previous Chrome versions.
   <int value="-1349826793" label="ArcInputMethod:disabled"/>
   <int value="-1349532167" label="enable-wifi-credential-sync"/>
   <int value="-1346722635" label="gesture-selection"/>
+  <int value="-1346288427" label="AutofillShowFullDisclosureLabel:disabled"/>
   <int value="-1344375439" label="ServiceWorkerPaymentApps:disabled"/>
   <int value="-1343259222" label="RegionalLocalesAsDisplayUI:disabled"/>
+  <int value="-1342961844" label="InlineUpdateFlow:disabled"/>
   <int value="-1342039126" label="AshNewSystemMenu:enabled"/>
   <int value="-1341092934" label="enable-accelerated-overflow-scroll"/>
   <int value="-1340055960" label="enable-streamlined-hosted-apps"/>
@@ -31946,6 +31949,7 @@ from previous Chrome versions.
   <int value="-102227288" label="PasswordExport:disabled"/>
   <int value="-99781021" label="disable-roboto-font-ui"/>
   <int value="-97145978" label="DesktopPWAsStayInWindow:enabled"/>
+  <int value="-92116820" label="InlineUpdateFlow:enabled"/>
   <int value="-89690053" label="MaterialDesignUserManager:enabled"/>
   <int value="-88822940" label="ssl-version-min"/>
   <int value="-88273414" label="ContentSuggestionsShowSummary:enabled"/>
@@ -32245,6 +32249,7 @@ from previous Chrome versions.
   <int value="417709910"
       label="AutofillSendExperimentIdsInPaymentsRPCs:disabled"/>
   <int value="422307097" label="PhysicalWeb:disabled"/>
+  <int value="422426657" label="AutofillShowFullDisclosureLabel:enabled"/>
   <int value="423615350" label="enable-tab-audio-muting"/>
   <int value="423855924" label="enable-tab-switcher-theme-colors"/>
   <int value="430959979" label="SyncStandaloneTransport:disabled"/>

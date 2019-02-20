@@ -13,20 +13,6 @@
 
 using base::android::JavaParamRef;
 
-static jboolean JNI_UnifiedConsentServiceBridge_IsUnifiedConsentGiven(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& profileAndroid) {
-  // TODO(crbug.com/907856): Remove.
-  return false;
-}
-
-static void JNI_UnifiedConsentServiceBridge_SetUnifiedConsentGiven(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& profileAndroid,
-    jboolean unifiedConsentGiven) {
-  // TODO(crbug.com/907856): Remove.
-}
-
 static jboolean
 JNI_UnifiedConsentServiceBridge_IsUrlKeyedAnonymizedDataCollectionEnabled(
     JNIEnv* env,
@@ -36,17 +22,6 @@ JNI_UnifiedConsentServiceBridge_IsUrlKeyedAnonymizedDataCollectionEnabled(
       unified_consent::prefs::kUrlKeyedAnonymizedDataCollectionEnabled);
 }
 
-static void
-JNI_UnifiedConsentServiceBridge_SetUrlKeyedAnonymizedDataCollectionEnabled(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& profileAndroid,
-    const jboolean enabled) {
-  Profile* profile = ProfileAndroid::FromProfileAndroid(profileAndroid);
-  profile->GetPrefs()->SetBoolean(
-      unified_consent::prefs::kUrlKeyedAnonymizedDataCollectionEnabled,
-      enabled);
-}
-
 static jboolean
 JNI_UnifiedConsentServiceBridge_IsUrlKeyedAnonymizedDataCollectionManaged(
     JNIEnv* env,
@@ -54,4 +29,15 @@ JNI_UnifiedConsentServiceBridge_IsUrlKeyedAnonymizedDataCollectionManaged(
   Profile* profile = ProfileAndroid::FromProfileAndroid(profileAndroid);
   return profile->GetPrefs()->IsManagedPreference(
       unified_consent::prefs::kUrlKeyedAnonymizedDataCollectionEnabled);
+}
+
+static void
+JNI_UnifiedConsentServiceBridge_SetUrlKeyedAnonymizedDataCollectionEnabled(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& profileAndroid,
+    const jboolean enabled) {
+  Profile* profile = ProfileAndroid::FromProfileAndroid(profileAndroid);
+  auto* unifiedConsentService =
+      UnifiedConsentServiceFactory::GetForProfile(profile);
+  unifiedConsentService->SetUrlKeyedAnonymizedDataCollectionEnabled(true);
 }

@@ -18,13 +18,14 @@ void FakeNavigationManagerDelegate::OnGoToIndexSameDocumentNavigation(
     NavigationInitiationType type,
     bool has_user_gesture) {}
 void FakeNavigationManagerDelegate::WillChangeUserAgentType() {}
-void FakeNavigationManagerDelegate::LoadCurrentItem() {}
+void FakeNavigationManagerDelegate::LoadCurrentItem(
+    NavigationInitiationType type) {}
 void FakeNavigationManagerDelegate::LoadIfNecessary() {}
 void FakeNavigationManagerDelegate::Reload() {}
 void FakeNavigationManagerDelegate::OnNavigationItemsPruned(
     size_t pruned_item_count) {}
 void FakeNavigationManagerDelegate::OnNavigationItemCommitted(
-    const LoadCommittedDetails& load_details) {}
+    NavigationItem* item) {}
 WebState* FakeNavigationManagerDelegate::GetWebState() {
   return nullptr;
 }

@@ -113,17 +113,17 @@ class CORE_EXPORT WorkerThread : public Thread::TaskObserver {
                              const v8_inspector::V8StackTraceId& stack_id);
 
   // Posts a task to import a top-level classic script on the worker thread.
-  // Called on the main thread after start().
+  // Called on the main thread after Start().
   void ImportClassicScript(
       const KURL& script_url,
-      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object,
       const v8_inspector::V8StackTraceId& stack_id);
 
   // Posts a task to import a top-level module script on the worker thread.
-  // Called on the main thread after start().
+  // Called on the main thread after Start().
   void ImportModuleScript(
       const KURL& script_url,
-      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object,
       network::mojom::FetchCredentialsMode);
 
   // Posts a task to the worker thread to close the global scope and terminate
@@ -184,11 +184,12 @@ class CORE_EXPORT WorkerThread : public Thread::TaskObserver {
   // adds the current WorkerThread* as the first parameter |function|.
   template <typename FunctionType, typename... Parameters>
   static void CallOnAllWorkerThreads(FunctionType function,
+                                     TaskType task_type,
                                      Parameters&&... parameters) {
     MutexLocker lock(ThreadSetMutex());
     for (WorkerThread* thread : WorkerThreads()) {
       PostCrossThreadTask(
-          *thread->GetTaskRunner(TaskType::kInternalWorker), FROM_HERE,
+          *thread->GetTaskRunner(task_type), FROM_HERE,
           CrossThreadBind(function, WTF::CrossThreadUnretained(thread),
                           parameters...));
     }

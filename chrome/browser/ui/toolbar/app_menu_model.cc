@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/debugging_buildflags.h"
 #include "base/debug/profiler.h"
@@ -27,6 +28,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/send_tab_to_self/send_tab_to_self_util.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -54,7 +56,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/strings/grit/components_strings.h"
-#include "components/sync/driver/sync_driver_switches.h"
 #include "components/vector_icons/vector_icons.h"
 #include "components/zoom/zoom_controller.h"
 #include "components/zoom/zoom_event_manager.h"
@@ -74,6 +75,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/gfx/text_elider.h"
+#include "ui/native_theme/native_theme.h"
 
 #if defined(GOOGLE_CHROME_BUILD)
 #include "base/feature_list.h"
@@ -116,8 +118,6 @@ base::string16 GetUpgradeDialogMenuItemName() {
 // Returns the appropriate menu label for the IDC_INSTALL_PWA command if
 // available.
 base::Optional<base::string16> GetInstallPWAAppMenuItemName(Browser* browser) {
-  if (!browser->tab_strip_model())
-    return base::nullopt;
   WebContents* web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   if (!web_contents)
@@ -230,6 +230,11 @@ void ToolsMenuModel::Build(Browser* browser) {
 ////////////////////////////////////////////////////////////////////////////////
 // AppMenuModel
 
+// static
+const int AppMenuModel::kMinRecentTabsCommandId;
+// static
+const int AppMenuModel::kMaxRecentTabsCommandId;
+
 AppMenuModel::AppMenuModel(ui::AcceleratorProvider* provider,
                            Browser* browser,
                            AppMenuIconController* app_menu_icon_controller)
@@ -237,11 +242,12 @@ AppMenuModel::AppMenuModel(ui::AcceleratorProvider* provider,
       uma_action_recorded_(false),
       provider_(provider),
       browser_(browser),
-      app_menu_icon_controller_(app_menu_icon_controller) {}
+      app_menu_icon_controller_(app_menu_icon_controller) {
+  DCHECK(browser_);
+}
 
 AppMenuModel::~AppMenuModel() {
-  if (browser_)  // Null in Cocoa tests.
-    browser_->tab_strip_model()->RemoveObserver(this);
+  browser_->tab_strip_model()->RemoveObserver(this);
 }
 
 void AppMenuModel::Init() {
@@ -759,7 +765,7 @@ void AppMenuModel::Build() {
 
   AddItemWithStringId(IDC_FIND, IDS_FIND);
 
-  if (base::FeatureList::IsEnabled(switches::kSyncSendTabToSelf)) {
+  if (send_tab_to_self::ShouldOfferFeature(browser_)) {
     AddItemWithStringId(IDC_SEND_TO_MY_DEVICES, IDS_SEND_TO_MY_DEVICES);
   }
 
@@ -823,9 +829,10 @@ void AppMenuModel::Build() {
   if (chrome::ShouldDisplayManagedUi(browser_->profile())) {
     AddSeparator(ui::LOWER_SEPARATOR);
     const int kIconSize = 18;
-    const auto icon = gfx::CreateVectorIcon(gfx::IconDescription(
-        vector_icons::kBusinessIcon, kIconSize, gfx::kChromeIconGrey,
-        base::TimeDelta(), gfx::kNoneIcon));
+    SkColor color = ui::NativeTheme::GetInstanceForNativeUi()->GetSystemColor(
+        ui::NativeTheme::kColorId_HighlightedMenuItemForegroundColor);
+    const auto icon =
+        gfx::CreateVectorIcon(vector_icons::kBusinessIcon, kIconSize, color);
     AddHighlightedItemWithStringIdAndIcon(IDC_MANAGED_UI_HELP,
                                           IDS_MANAGED_BY_ORG, icon);
   }
@@ -882,14 +889,11 @@ void AppMenuModel::CreateZoomMenu() {
 }
 
 void AppMenuModel::UpdateZoomControls() {
-  int zoom_percent = 100;
-  if (browser_->tab_strip_model() &&
-      browser_->tab_strip_model()->GetActiveWebContents()) {
-    zoom_percent = zoom::ZoomController::FromWebContents(
-                       browser_->tab_strip_model()->GetActiveWebContents())
-                       ->GetZoomPercent();
-  }
-  zoom_label_ = base::FormatPercent(zoom_percent);
+  WebContents* contents = browser_->tab_strip_model()->GetActiveWebContents();
+  zoom_label_ = base::FormatPercent(
+      contents
+          ? zoom::ZoomController::FromWebContents(contents)->GetZoomPercent()
+          : 100);
 }
 
 bool AppMenuModel::ShouldShowNewIncognitoWindowMenuItem() {

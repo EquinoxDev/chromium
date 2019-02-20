@@ -93,6 +93,17 @@ void CSSStyleSheetResource::Trace(blink::Visitor* visitor) {
   TextResource::Trace(visitor);
 }
 
+void CSSStyleSheetResource::OnMemoryDump(
+    WebMemoryDumpLevelOfDetail level_of_detail,
+    WebProcessMemoryDump* memory_dump) const {
+  Resource::OnMemoryDump(level_of_detail, memory_dump);
+  const String name = GetMemoryDumpName() + "/style_sheets";
+  auto* dump = memory_dump->CreateMemoryAllocatorDump(name);
+  dump->AddScalar("size", "bytes", decoded_sheet_text_.CharactersSizeInBytes());
+  memory_dump->AddSuballocation(
+      dump->Guid(), String(WTF::Partitions::kAllocatedObjectPoolName));
+}
+
 network::mojom::ReferrerPolicy CSSStyleSheetResource::GetReferrerPolicy()
     const {
   network::mojom::ReferrerPolicy referrer_policy =
@@ -222,10 +233,8 @@ StyleSheetContents* CSSStyleSheetResource::CreateParsedStyleSheetFromCache(
 
   // If the stylesheet has a media query, we need to clone the cached sheet
   // due to potential differences in the rule set.
-  if (RuntimeEnabledFeatures::CacheStyleSheetWithMediaQueriesEnabled() &&
-      parsed_style_sheet_cache_->HasMediaQueries()) {
+  if (parsed_style_sheet_cache_->HasMediaQueries())
     return parsed_style_sheet_cache_->Copy();
-  }
 
   return parsed_style_sheet_cache_;
 }

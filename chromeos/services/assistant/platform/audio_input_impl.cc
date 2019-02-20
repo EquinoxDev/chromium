@@ -4,8 +4,10 @@
 
 #include "chromeos/services/assistant/platform/audio_input_impl.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
+#include "base/timer/timer.h"
 #include "chromeos/services/assistant/public/features.h"
 #include "libassistant/shared/public/platform_audio_buffer.h"
 #include "media/audio/audio_device_description.h"
@@ -180,7 +182,7 @@ void AudioInputImpl::Capture(const media::AudioBus* audio_source,
   {
     base::AutoLock lock(lock_);
     for (auto* observer : observers_)
-      observer->OnBufferAvailable(input_buffer, time);
+      observer->OnAudioBufferAvailable(input_buffer, time);
   }
 
   captured_frames_count_ += audio_source->frames();
@@ -199,7 +201,7 @@ void AudioInputImpl::OnCaptureError(const std::string& message) {
   LOG(ERROR) << "Capture error " << message;
   base::AutoLock lock(lock_);
   for (auto* observer : observers_)
-    observer->OnError(AudioInput::Error::FATAL_ERROR);
+    observer->OnAudioError(AudioInput::Error::FATAL_ERROR);
 }
 
 // Runs on audio service thread.

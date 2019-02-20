@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/display_lock/display_lock_budget.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/compiler.h"
 
 namespace blink {
@@ -51,6 +52,8 @@ class CORE_EXPORT DisplayLockContext final
 
   // See GetScopedPendingFrameRect() for description.
   class ScopedPendingFrameRect {
+    STACK_ALLOCATED();
+
    public:
     ScopedPendingFrameRect(ScopedPendingFrameRect&&);
     ~ScopedPendingFrameRect();
@@ -65,6 +68,8 @@ class CORE_EXPORT DisplayLockContext final
 
   // See GetScopedForcedUpdate() for description.
   class ScopedForcedUpdate {
+    DISALLOW_NEW();
+
    public:
     ScopedForcedUpdate(ScopedForcedUpdate&&);
     ~ScopedForcedUpdate();
@@ -95,6 +100,7 @@ class CORE_EXPORT DisplayLockContext final
   ScriptPromise acquire(ScriptState*, DisplayLockOptions*);
   ScriptPromise update(ScriptState*);
   ScriptPromise commit(ScriptState*);
+  ScriptPromise updateAndCommit(ScriptState*);
 
   // Lifecycle observation / state functions.
   bool ShouldStyle() const;
@@ -105,6 +111,22 @@ class CORE_EXPORT DisplayLockContext final
   void DidPrePaint();
   bool ShouldPaint() const;
   void DidPaint();
+
+  // Returns true if the contents of the associated element should be visible
+  // from and activatable by find-in-page, tab order, anchor links, etc.
+  bool IsActivatable() const;
+
+  // Trigger commit because of activation from tab order, url fragment,
+  // find-in-page, etc.
+  void CommitForActivation();
+
+  bool ShouldCommitForActivation() const;
+
+  // Returns true if this lock is locked. Note from the outside perspective, the
+  // lock is locked any time the state is not kUnlocked or kPendingAcquire.
+  bool IsLocked() const {
+    return state_ != kUnlocked && state_ != kPendingAcquire;
+  }
 
   // Called when the layout tree is attached. This is used to verify
   // containment.
@@ -144,6 +166,23 @@ class CORE_EXPORT DisplayLockContext final
     kUpdating,
     kCommitting,
     kUnlocked,
+    kPendingAcquire,
+  };
+
+  class StateChangeHelper {
+    DISALLOW_NEW();
+
+   public:
+    explicit StateChangeHelper(DisplayLockContext*);
+
+    operator State() const { return state_; }
+    StateChangeHelper& operator=(State);
+    void UpdateActivationBlockingCount(bool old_activatable,
+                                       bool new_activatable);
+
+   private:
+    State state_ = kUnlocked;
+    UntracedMember<DisplayLockContext> context_;
   };
 
   // Initiate a commit.
@@ -192,21 +231,34 @@ class CORE_EXPORT DisplayLockContext final
 
   // Helper functions to resolve the update/commit promises.
   enum ResolverState { kResolve, kReject, kDetach };
-  void FinishUpdateResolver(ResolverState);
-  void FinishCommitResolver(ResolverState);
+  void FinishUpdateResolver(ResolverState, const char* reject_reason = nullptr);
+  void FinishCommitResolver(ResolverState, const char* reject_reason = nullptr);
+  void FinishAcquireResolver(ResolverState,
+                             const char* reject_reason = nullptr);
+  void FinishResolver(Member<ScriptPromiseResolver>*,
+                      ResolverState,
+                      const char* reject_reason);
+
+  // Returns true if the element supports display locking. Note that this can
+  // only be called if the style is clean. It checks the layout object if it
+  // exists. Otherwise, falls back to checking computed style.
+  bool ElementSupportsDisplayLocking() const;
 
   std::unique_ptr<DisplayLockBudget> update_budget_;
 
   Member<ScriptPromiseResolver> commit_resolver_;
   Member<ScriptPromiseResolver> update_resolver_;
+  Member<ScriptPromiseResolver> acquire_resolver_;
   WeakMember<Element> element_;
+  WeakMember<Document> document_;
 
-  State state_ = kUnlocked;
+  StateChangeHelper state_;
   LayoutRect pending_frame_rect_;
   base::Optional<LayoutRect> locked_frame_rect_;
 
   bool update_forced_ = false;
   bool timeout_task_is_scheduled_ = false;
+  bool activatable_ = false;
 
   base::WeakPtrFactory<DisplayLockContext> weak_factory_;
 };

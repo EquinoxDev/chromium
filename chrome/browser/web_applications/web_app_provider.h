@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/web_applications/components/pending_app_manager.h"
@@ -54,36 +55,47 @@ class WebAppProvider : public KeyedService,
   static WebAppProvider* GetForWebContents(content::WebContents* web_contents);
 
   explicit WebAppProvider(Profile* profile);
+  ~WebAppProvider() override;
+
+  // Create subsystems but do not start them (yet).
+  void Init();
+  // Start registry. All subsystems depend on it.
+  void StartRegistry();
+
+  // UIs can use InstallManager for user-initiated Web Apps install.
+  InstallManager& install_manager() { return *install_manager_; }
 
   // Clients can use PendingAppManager to install, uninstall, and update
   // Web Apps.
   PendingAppManager& pending_app_manager() { return *pending_app_manager_; }
 
-  ~WebAppProvider() override;
-
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
   static WebAppTabHelperBase* CreateTabHelper(
       content::WebContents* web_contents);
-
-  // Returns true if a bookmark can be installed for a given |web_contents|.
-  static bool CanInstallWebApp(content::WebContents* web_contents);
-
-  // Starts a bookmark installation process for a given |web_contents|.
-  static void InstallWebApp(content::WebContents* web_contents,
-                            bool force_shortcut_app);
-
-  void Reset();
 
   // content::NotificationObserver
   void Observe(int type,
                const content::NotificationSource& source,
                const content::NotificationDetails& details) override;
 
- private:
+  // Fires when app registry becomes ready.
+  // Consider to use base::ObserverList or extensions::OneShotEvent if many
+  // subscribers needed.
+  void SetRegistryReadyCallback(base::OnceClosure callback);
+
+  // Count a number of all apps which are installed by user (non-default).
+  // Requires app registry to be in a ready state.
+  int CountUserInstalledApps() const;
+
+ protected:
   // Create extension-independent subsystems.
   void CreateWebAppsSubsystems(Profile* profile);
   // ... or create legacy extension-based subsystems.
   void CreateBookmarkAppsSubsystems(Profile* profile);
+
+  void OnRegistryReady();
+
+  void Reset();
 
   void OnScanForExternalWebApps(
       std::vector<web_app::PendingAppManager::AppInfo>);
@@ -104,6 +116,11 @@ class WebAppProvider : public KeyedService,
   std::unique_ptr<SystemWebAppManager> system_web_app_manager_;
 
   content::NotificationRegistrar notification_registrar_;
+
+  base::OnceClosure registry_ready_callback_;
+  bool registry_is_ready_ = false;
+
+  Profile* profile_;
 
   base::WeakPtrFactory<WebAppProvider> weak_ptr_factory_{this};
 

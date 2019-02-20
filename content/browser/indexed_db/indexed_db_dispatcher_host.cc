@@ -28,12 +28,6 @@ namespace content {
 
 namespace {
 
-const char kInvalidOrigin[] = "Origin is invalid";
-
-bool IsValidOrigin(const url::Origin& origin) {
-  return !origin.opaque();
-}
-
 blink::mojom::IDBStatus GetIndexedDBStatus(leveldb::Status status) {
   if (status.ok())
     return blink::mojom::IDBStatus::OK;
@@ -131,8 +125,7 @@ IndexedDBDispatcherHost::IndexedDBDispatcherHost(
     : indexed_db_context_(std::move(indexed_db_context)),
       blob_storage_context_(std::move(blob_storage_context)),
       ipc_process_id_(ipc_process_id),
-      idb_helper_(new IDBSequenceHelper(ipc_process_id_,
-                                        indexed_db_context_)),
+      idb_helper_(new IDBSequenceHelper(ipc_process_id_, indexed_db_context_)),
       weak_factory_(this) {
   DCHECK(indexed_db_context_.get());
 }
@@ -144,6 +137,12 @@ IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {
 void IndexedDBDispatcherHost::AddBinding(
     blink::mojom::IDBFactoryRequest request,
     const url::Origin& origin) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (blob_storage_context_) {
+    io_weak_blob_storage_context_ =
+        blob_storage_context_->context()->AsWeakPtr();
+    blob_storage_context_.reset();
+  }
   bindings_.AddBinding(this, std::move(request), {origin});
 }
 
@@ -174,11 +173,6 @@ void IndexedDBDispatcherHost::GetDatabaseInfo(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const auto& context = bindings_.dispatch_context();
-  if (!IsValidOrigin(context.origin)) {
-    mojo::ReportBadMessage(kInvalidOrigin);
-    return;
-  }
-
   scoped_refptr<IndexedDBCallbacks> callbacks(
       new IndexedDBCallbacks(this->AsWeakPtr(), context.origin,
                              std::move(callbacks_info), IDBTaskRunner()));
@@ -193,11 +187,6 @@ void IndexedDBDispatcherHost::GetDatabaseNames(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const auto& context = bindings_.dispatch_context();
-  if (!IsValidOrigin(context.origin)) {
-    mojo::ReportBadMessage(kInvalidOrigin);
-    return;
-  }
-
   scoped_refptr<IndexedDBCallbacks> callbacks(
       new IndexedDBCallbacks(this->AsWeakPtr(), context.origin,
                              std::move(callbacks_info), IDBTaskRunner()));
@@ -216,11 +205,6 @@ void IndexedDBDispatcherHost::Open(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const auto& context = bindings_.dispatch_context();
-  if (!IsValidOrigin(context.origin)) {
-    mojo::ReportBadMessage(kInvalidOrigin);
-    return;
-  }
-
   scoped_refptr<IndexedDBCallbacks> callbacks(
       new IndexedDBCallbacks(this->AsWeakPtr(), context.origin,
                              std::move(callbacks_info), IDBTaskRunner()));
@@ -242,11 +226,6 @@ void IndexedDBDispatcherHost::DeleteDatabase(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const auto& context = bindings_.dispatch_context();
-  if (!IsValidOrigin(context.origin)) {
-    mojo::ReportBadMessage(kInvalidOrigin);
-    return;
-  }
-
   scoped_refptr<IndexedDBCallbacks> callbacks(
       new IndexedDBCallbacks(this->AsWeakPtr(), context.origin,
                              std::move(callbacks_info), IDBTaskRunner()));
@@ -262,11 +241,6 @@ void IndexedDBDispatcherHost::AbortTransactionsAndCompactDatabase(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const auto& context = bindings_.dispatch_context();
-  if (!IsValidOrigin(context.origin)) {
-    mojo::ReportBadMessage(kInvalidOrigin);
-    return;
-  }
-
   base::OnceCallback<void(leveldb::Status)> callback_on_io = base::BindOnce(
       &CallCompactionStatusCallbackOnIOThread,
       base::ThreadTaskRunnerHandle::Get(), std::move(mojo_callback));
@@ -283,11 +257,6 @@ void IndexedDBDispatcherHost::AbortTransactionsForDatabase(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   const auto& context = bindings_.dispatch_context();
-  if (!IsValidOrigin(context.origin)) {
-    mojo::ReportBadMessage(kInvalidOrigin);
-    return;
-  }
-
   base::OnceCallback<void(leveldb::Status)> callback_on_io = base::BindOnce(
       &CallAbortStatusCallbackOnIOThread, base::ThreadTaskRunnerHandle::Get(),
       std::move(mojo_callback));

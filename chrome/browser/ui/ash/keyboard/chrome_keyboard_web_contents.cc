@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_web_contents.h"
 
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
@@ -263,8 +264,9 @@ void ChromeKeyboardWebContents::OnWindowBoundsChanged(
 }
 
 void ChromeKeyboardWebContents::MaybeRunLoadCallback() {
-  if (!load_callback_.is_null() && !contents_size_.IsEmpty() &&
-      !token_.is_empty()) {
+  // Note: |contents_size_| may still be empty, in which case
+  // AshKeyboardUI::AshKeyboardView::OnWindowBoundsChanged should get called
+  // with the correct contents size.
+  if (!load_callback_.is_null() && !token_.is_empty())
     std::move(load_callback_).Run(token_, contents_size_);
-  }
 }

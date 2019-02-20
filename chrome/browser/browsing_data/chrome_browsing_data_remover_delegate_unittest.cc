@@ -820,19 +820,32 @@ class RemoveDownloadsTester {
 
 }  // namespace
 
+ACTION(QuitMainMessageLoop) {
+  base::RunLoop::QuitCurrentWhenIdleDeprecated();
+}
+
+class PersonalDataLoadedObserverMock
+    : public autofill::PersonalDataManagerObserver {
+ public:
+  PersonalDataLoadedObserverMock() {}
+  ~PersonalDataLoadedObserverMock() override {}
+  MOCK_METHOD0(OnPersonalDataChanged, void());
+  MOCK_METHOD0(OnPersonalDataFinishedProfileTasks, void());
+};
+
 // RemoveAutofillTester is not a part of the anonymous namespace above, as
 // PersonalDataManager declares it a friend in an empty namespace.
-class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
+class RemoveAutofillTester {
  public:
   explicit RemoveAutofillTester(TestingProfile* profile)
       : personal_data_manager_(
             autofill::PersonalDataManagerFactory::GetForProfile(profile)) {
     autofill::test::DisableSystemServices(profile->GetPrefs());
-    personal_data_manager_->AddObserver(this);
+    personal_data_manager_->AddObserver(&personal_data_observer_);
   }
 
-  ~RemoveAutofillTester() override {
-    personal_data_manager_->RemoveObserver(this);
+  ~RemoveAutofillTester() {
+    personal_data_manager_->RemoveObserver(&personal_data_observer_);
     autofill::test::ReenableSystemServices();
   }
 
@@ -880,7 +893,8 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
     profiles.push_back(profile);
 
     personal_data_manager_->SetProfiles(&profiles);
-    base::TaskScheduler::GetInstance()->FlushForTesting();
+
+    WaitForOnPersonalDataFinishedProfileTasks();
 
     std::vector<autofill::CreditCard> cards;
     autofill::CreditCard card;
@@ -895,15 +909,24 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
     cards.push_back(card);
 
     personal_data_manager_->SetCreditCards(&cards);
-    base::TaskScheduler::GetInstance()->FlushForTesting();
+    WaitForOnPersonalDataChanged();
   }
 
  private:
-  void OnPersonalDataChanged() override {
-    base::RunLoop::QuitCurrentWhenIdleDeprecated();
+  void WaitForOnPersonalDataChanged() {
+    EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged())
+        .WillRepeatedly(QuitMainMessageLoop());
+    base::RunLoop().Run();
+  }
+
+  void WaitForOnPersonalDataFinishedProfileTasks() {
+    EXPECT_CALL(personal_data_observer_, OnPersonalDataFinishedProfileTasks())
+        .WillRepeatedly(QuitMainMessageLoop());
+    base::RunLoop().Run();
   }
 
   autofill::PersonalDataManager* personal_data_manager_;
+  PersonalDataLoadedObserverMock personal_data_observer_;
   DISALLOW_COPY_AND_ASSIGN(RemoveAutofillTester);
 };
 
@@ -2610,8 +2633,8 @@ TEST_F(ChromeBrowsingDataRemoverDelegateTest,
   // Add a bookmark with a visited timestamp before the deletion interval.
   bookmarks::BookmarkNode::MetaInfoMap meta_info = {
       {"last_visited",
-       base::Int64ToString((delete_begin - base::TimeDelta::FromSeconds(1))
-                               .ToInternalValue())}};
+       base::NumberToString((delete_begin - base::TimeDelta::FromSeconds(1))
+                                .ToInternalValue())}};
   bookmark_model->AddURLWithCreationTimeAndMetaInfo(
       bookmark_model->mobile_node(), 0, base::ASCIIToUTF16("my title"),
       GURL("http://foo-2.org/"), delete_begin - base::TimeDelta::FromDays(1),

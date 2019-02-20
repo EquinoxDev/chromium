@@ -75,8 +75,6 @@ HTMLElement* MediaControlInputElement::CreateOverflowElement(
   if (MediaControlsImpl::IsModern()) {
     overflow_menu_container_ = HTMLDivElement::Create(GetDocument());
     overflow_menu_container_->ParserAppendChild(overflow_menu_text_);
-    // Having the container selectable caused aria output to be duplicated.
-    overflow_menu_container_->setTabIndex(-1);
     UpdateOverflowSubtitleElement(button->GetOverflowMenuSubtitleString());
     element->ParserAppendChild(overflow_menu_container_);
   } else {
@@ -275,9 +273,7 @@ void MediaControlInputElement::UpdateDisplayType() {
 }
 
 WebSize MediaControlInputElement::GetSizeOrDefault() const {
-  if (HasOverflowButton()) {
-    // If this has an overflow button then it is a button control and therefore
-    // has a default size of kDefaultButtonSize.
+  if (IsControlPanelButton()) {
     return MediaControlElementsHelper::GetSizeOrDefault(
         *this, WebSize(kDefaultButtonSize, kDefaultButtonSize));
   }

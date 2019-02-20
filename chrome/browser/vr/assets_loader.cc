@@ -4,6 +4,7 @@
 
 #include "chrome/browser/vr/assets_loader.h"
 
+#include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/memory/singleton.h"
 #include "base/single_thread_task_runner.h"
@@ -13,7 +14,7 @@
 #include "base/values.h"
 #include "chrome/browser/vr/metrics/metrics_helper.h"
 #include "chrome/browser/vr/model/assets.h"
-#include "chrome/browser/vr/vr_features.h"
+#include "chrome/browser/vr/vr_buildflags.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "media/audio/sounds/wav_audio_handler.h"

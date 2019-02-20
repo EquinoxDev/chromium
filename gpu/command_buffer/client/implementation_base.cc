@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
@@ -19,8 +20,8 @@
 namespace gpu {
 
 #if !defined(_MSC_VER)
-const size_t ImplementationBase::kMaxSizeOfSimpleResult;
-const unsigned int ImplementationBase::kStartingOffset;
+const uint32_t ImplementationBase::kMaxSizeOfSimpleResult;
+const uint32_t ImplementationBase::kStartingOffset;
 #endif
 
 ImplementationBase::ImplementationBase(CommandBufferHelper* helper,

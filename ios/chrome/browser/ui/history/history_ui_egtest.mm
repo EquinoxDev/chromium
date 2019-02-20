@@ -19,7 +19,7 @@
 #import "ios/chrome/browser/ui/authentication/signin_earlgrey_utils.h"
 #import "ios/chrome/browser/ui/history/history_ui_constants.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_constants.h"
-#import "ios/chrome/browser/ui/settings/settings_collection_view_controller.h"
+#import "ios/chrome/browser/ui/settings/settings_table_view_controller.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_url_item.h"
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller_constants.h"
 #import "ios/chrome/browser/ui/util/transparent_link_button.h"
@@ -251,6 +251,38 @@ id<GREYMatcher> OpenInNewIncognitoTabButton() {
       assertWithMatcher:grey_nil()];
   [[EarlGrey selectElementWithMatcher:HistoryEntry(_URL3, _URL3.GetContent())]
       assertWithMatcher:grey_nil()];
+}
+
+// Tests that long press on scrim while search box is enabled dismisses the
+// search controller.
+- (void)testSearchLongPressOnScrimCancelsSearchController {
+  [self loadTestURLs];
+  [self openHistoryPanel];
+  [[EarlGrey selectElementWithMatcher:SearchIconButton()]
+      performAction:grey_tap()];
+
+  // Try long press.
+  [[EarlGrey selectElementWithMatcher:HistoryEntry(_URL1, kTitle1)]
+      performAction:grey_longPress()];
+
+  // Verify context menu is not visible.
+  [[EarlGrey
+      selectElementWithMatcher:ButtonWithAccessibilityLabelId(
+                                   IDS_IOS_CONTENT_CONTEXT_OPENLINKNEWTAB)]
+      assertWithMatcher:grey_nil()];
+
+  // Verify that scrim is not visible.
+  [[EarlGrey selectElementWithMatcher:grey_accessibilityID(
+                                          kHistorySearchScrimIdentifier)]
+      assertWithMatcher:grey_nil()];
+
+  // Verifiy we went back to original folder content.
+  [[EarlGrey selectElementWithMatcher:HistoryEntry(_URL1, kTitle1)]
+      assertWithMatcher:grey_notNil()];
+  [[EarlGrey selectElementWithMatcher:HistoryEntry(_URL2, kTitle2)]
+      assertWithMatcher:grey_notNil()];
+  [[EarlGrey selectElementWithMatcher:HistoryEntry(_URL3, _URL3.GetContent())]
+      assertWithMatcher:grey_notNil()];
 }
 
 // Tests deletion of history entries.

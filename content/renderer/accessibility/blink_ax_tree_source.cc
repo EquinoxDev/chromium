@@ -15,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "content/common/accessibility_messages.h"
+#include "content/renderer/accessibility/ax_image_annotator.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/accessibility/render_accessibility_impl.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
@@ -115,14 +116,15 @@ class AXContentNodeDataSparseAttributeAdapter
       case WebAXObjectAttribute::kAriaActiveDescendant:
         // TODO(dmazzoni): WebAXObject::ActiveDescendant currently returns
         // more information than the sparse interface does.
+        // ******** Why is this a TODO? ********
         break;
       case WebAXObjectAttribute::kAriaDetails:
         dst_->AddIntAttribute(ax::mojom::IntAttribute::kDetailsId,
                               value.AxID());
         break;
       case WebAXObjectAttribute::kAriaErrorMessage:
-        dst_->AddIntAttribute(ax::mojom::IntAttribute::kErrormessageId,
-                              value.AxID());
+        // Use WebAXObject::ErrorMessage(), which provides both ARIA error
+        // messages as well as built-in HTML form validation messages.
         break;
       default:
         NOTREACHED();
@@ -693,6 +695,11 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
                            src.AriaActiveDescendant().AxID());
     }
 
+    if (!src.ErrorMessage().IsDetached()) {
+      dst->AddIntAttribute(ax::mojom::IntAttribute::kErrormessageId,
+                           src.ErrorMessage().AxID());
+    }
+
     if (ui::IsHeading(dst->role) && src.HeadingLevel()) {
       dst->AddIntAttribute(ax::mojom::IntAttribute::kHierarchicalLevel,
                            src.HeadingLevel());
@@ -873,6 +880,17 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
     }
   }
 
+  if (accessibility_mode_.has_mode(ui::AXMode::kLabelImages) &&
+      dst->role == ax::mojom::Role::kImage) {
+    DCHECK(image_annotator_);
+    if (image_annotator_->HasAnnotationInCache(src)) {
+      dst->AddStringAttribute(ax::mojom::StringAttribute::kImageAnnotation,
+                              image_annotator_->GetImageAnnotation(src));
+    } else if (!image_annotator_->HasImageInCache(src)) {
+      image_annotator_->OnImageAdded(src);
+    }
+  }
+
   // The majority of the rest of this code computes attributes needed for
   // all modes, not just for screen readers.
 
@@ -966,6 +984,7 @@ void BlinkAXTreeSource::SerializeNode(WebAXObject src,
   }
 
   if (src.IsScrollableContainer()) {
+    dst->AddBoolAttribute(ax::mojom::BoolAttribute::kScrollable, true);
     const gfx::Point& scroll_offset = src.GetScrollOffset();
     dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollX, scroll_offset.x());
     dst->AddIntAttribute(ax::mojom::IntAttribute::kScrollY, scroll_offset.y());

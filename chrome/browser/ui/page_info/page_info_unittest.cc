@@ -7,6 +7,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/at_exit.h"
@@ -86,6 +87,7 @@ class MockPageInfoUI : public PageInfoUI {
   MOCK_METHOD1(SetCookieInfo, void(const CookieInfoList& cookie_info_list));
   MOCK_METHOD0(SetPermissionInfoStub, void());
   MOCK_METHOD1(SetIdentityInfo, void(const IdentityInfo& identity_info));
+  MOCK_METHOD1(SetPageFeatureInfo, void(const PageFeatureInfo& info));
 
   void SetPermissionInfo(
       const PermissionInfoList& permission_info_list,
@@ -407,7 +409,8 @@ TEST_F(PageInfoTest, OnChosenObjectDeleted) {
 
   ASSERT_EQ(1u, last_chosen_object_info().size());
   const PageInfoUI::ChosenObjectInfo* info = last_chosen_object_info()[0].get();
-  page_info()->OnSiteChosenObjectDeleted(info->ui_info, *info->object);
+  page_info()->OnSiteChosenObjectDeleted(info->ui_info,
+                                         info->chooser_object->value);
 
   EXPECT_FALSE(store->HasDevicePermission(url(), url(), *device_info));
   EXPECT_EQ(0u, last_chosen_object_info().size());

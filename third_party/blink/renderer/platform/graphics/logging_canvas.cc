@@ -41,7 +41,6 @@
 #include "third_party/blink/renderer/platform/image-encoders/image_encoder.h"
 #include "third_party/blink/renderer/platform/wtf/hex_number.h"
 #include "third_party/blink/renderer/platform/wtf/text/base64.h"
-#include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -343,18 +342,11 @@ void AppendFlagToString(String* flags_string, bool is_set, const String& name) {
 }
 
 String StringForSkPaintFlags(const SkPaint& paint) {
-  if (!paint.getFlags())
+  if (!paint.isAntiAlias() && !paint.isDither())
     return "none";
   String flags_string = "";
   AppendFlagToString(&flags_string, paint.isAntiAlias(), "AntiAlias");
   AppendFlagToString(&flags_string, paint.isDither(), "Dither");
-  AppendFlagToString(&flags_string, paint.isFakeBoldText(), "FakeBoldText");
-  AppendFlagToString(&flags_string, paint.isLinearText(), "LinearText");
-  AppendFlagToString(&flags_string, paint.isSubpixelText(), "SubpixelText");
-  AppendFlagToString(&flags_string, paint.isLCDRenderText(), "LCDRenderText");
-  AppendFlagToString(&flags_string, paint.isEmbeddedBitmapText(),
-                     "EmbeddedBitmapText");
-  AppendFlagToString(&flags_string, paint.isAutohinted(), "Autohinted");
   return flags_string;
 }
 
@@ -416,43 +408,8 @@ String StyleName(SkPaint::Style style) {
   };
 }
 
-String TextEncodingName(SkTextEncoding encoding) {
-  switch (encoding) {
-    case kUTF8_SkTextEncoding:
-      return "UTF-8";
-    case kUTF16_SkTextEncoding:
-      return "UTF-16";
-    case kUTF32_SkTextEncoding:
-      return "UTF-32";
-    case kGlyphID_SkTextEncoding:
-      return "GlyphID";
-    default:
-      NOTREACHED();
-      return "?";
-  };
-}
-
-String HintingName(SkFontHinting hinting) {
-  switch (hinting) {
-    case SkFontHinting::kNone:
-      return "None";
-    case SkFontHinting::kSlight:
-      return "Slight";
-    case SkFontHinting::kNormal:
-      return "Normal";
-    case SkFontHinting::kFull:
-      return "Full";
-    default:
-      NOTREACHED();
-      return "?";
-  };
-}
-
 std::unique_ptr<JSONObject> ObjectForSkPaint(const SkPaint& paint) {
   std::unique_ptr<JSONObject> paint_item = JSONObject::Create();
-  paint_item->SetDouble("textSize", paint.getTextSize());
-  paint_item->SetDouble("textScaleX", paint.getTextScaleX());
-  paint_item->SetDouble("textSkewX", paint.getTextSkewX());
   if (SkShader* shader = paint.getShader())
     paint_item->SetObject("shader", ObjectForSkShader(*shader));
   paint_item->SetString("color", StringForSkColor(paint.getColor()));
@@ -464,9 +421,6 @@ std::unique_ptr<JSONObject> ObjectForSkPaint(const SkPaint& paint) {
   paint_item->SetString("strokeCap", StrokeCapName(paint.getStrokeCap()));
   paint_item->SetString("strokeJoin", StrokeJoinName(paint.getStrokeJoin()));
   paint_item->SetString("styleName", StyleName(paint.getStyle()));
-  paint_item->SetString("textEncoding",
-                        TextEncodingName(paint.getTextEncoding()));
-  paint_item->SetString("hinting", HintingName(paint.getHinting()));
   if (paint.getBlendMode() != SkBlendMode::kSrcOver)
     paint_item->SetString("blendMode", SkBlendMode_Name(paint.getBlendMode()));
   if (paint.getImageFilter())
@@ -483,13 +437,6 @@ String ClipOpName(SkClipOp op) {
     default:
       return "Unknown type";
   };
-}
-
-String SaveLayerFlagsToString(SkCanvas::SaveLayerFlags flags) {
-  String flags_string = "";
-  if (flags & SkCanvas::kPreserveLCDText_SaveLayerFlag)
-    flags_string.append("kPreserveLCDText_SaveLayerFlag ");
-  return flags_string;
 }
 
 }  // namespace
@@ -777,7 +724,7 @@ SkCanvas::SaveLayerStrategy LoggingCanvas::getSaveLayerStrategy(
     params->SetObject("bounds", ObjectForSkRect(*rec.fBounds));
   if (rec.fPaint)
     params->SetObject("paint", ObjectForSkPaint(*rec.fPaint));
-  params->SetString("saveFlags", SaveLayerFlagsToString(rec.fSaveLayerFlags));
+  params->SetInteger("saveFlags", static_cast<int>(rec.fSaveLayerFlags));
   return this->SkCanvas::getSaveLayerStrategy(rec);
 }
 

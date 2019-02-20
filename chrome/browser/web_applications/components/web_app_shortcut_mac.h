@@ -26,20 +26,26 @@ extern bool g_app_shims_allow_update_and_launch_in_tests;
 namespace web_app {
 
 enum class LaunchShimUpdateBehavior {
-  NO_UPDATE,
-  UPDATE_IF_INSTALLED,
-  RECREATE,
+  DO_NOT_RECREATE,
+  RECREATE_IF_INSTALLED,
+  RECREATE_UNCONDITIONALLY,
 };
 
 // Callback type for LaunchShim. If |shim_process| is valid then the
 // app shim was launched.
-using LaunchShimCallback = base::OnceCallback<void(base::Process shim_process)>;
+using ShimLaunchedCallback =
+    base::OnceCallback<void(base::Process shim_process)>;
+
+// Callback on termination takes no arguments.
+using ShimTerminatedCallback = base::OnceClosure;
 
 // Launch the shim specified by |shortcut_info|. Update the shim prior to launch
-// if requested. Return in |callback| the pid that was launched (or an invalid
-// pid if none was launched).
+// if requested. Return in |launched_callback| the pid that was launched (or an
+// invalid pid if none was launched). If |launched_callback| returns a valid
+// pid, then |terminated_callback| will be called when that process terminates.
 void LaunchShim(LaunchShimUpdateBehavior update_behavior,
-                LaunchShimCallback callback,
+                ShimLaunchedCallback launched_callback,
+                ShimTerminatedCallback terminated_callback,
                 std::unique_ptr<web_app::ShortcutInfo> shortcut_info);
 
 std::unique_ptr<web_app::ShortcutInfo> RecordAppShimErrorAndBuildShortcutInfo(
@@ -63,32 +69,39 @@ class WebAppShortcutCreator {
 
   virtual ~WebAppShortcutCreator();
 
-  // Returns the base name for the shortcut.
-  virtual base::FilePath GetShortcutBasename() const;
+  // Returns the base name for the shortcut. This will be a sanitized version
+  // of the application title. If |copy_number| is not 1, then append it before
+  // the .app part of the extension.
+  virtual base::FilePath GetShortcutBasename(int copy_number = 1) const;
+
+  // Returns the fallback name for the shortcut. This name will be a combination
+  // of the profile name and extension id. This is used if the app title is
+  // unable to be used for the bundle path (e.g: "...").
+  base::FilePath GetFallbackBasename() const;
 
   // Returns a path to the Chrome Apps folder in the relevant applications
   // folder. E.g. ~/Applications or /Applications.
   virtual base::FilePath GetApplicationsDirname() const;
 
   // The full path to the app bundle under the relevant Applications folder.
-  base::FilePath GetApplicationsShortcutPath() const;
+  // If |avoid_conflicts| is true then return a path that does not yet exist (by
+  // appending " 2", " 3", etc, to the end of the file name).
+  base::FilePath GetApplicationsShortcutPath(bool avoid_conflicts) const;
 
   // Returns the paths to app bundles with the given id as found by launch
   // services, sorted by preference.
   std::vector<base::FilePath> GetAppBundlesById() const;
-
-  // The full path to the app bundle under the profile folder.
-  base::FilePath GetInternalShortcutPath() const;
 
   bool CreateShortcuts(ShortcutCreationReason creation_reason,
                        ShortcutLocations creation_locations);
   void DeleteShortcuts();
 
   // Recreate the shortcuts where they are found on disk and in the profile
-  // path. If |recreate_if_needed| is true, then recreate the shortcuts if no
+  // path. If |create_if_needed| is true, then create the shortcuts if no
   // matching shortcuts are found on disk. Populate |updated_paths| with the
-  // paths that were updated.
-  bool UpdateShortcuts(bool recreate_if_needed,
+  // paths that were updated. Return false if no paths were updated or if there
+  // exist paths that failed to update.
+  bool UpdateShortcuts(bool create_if_needed,
                        std::vector<base::FilePath>* updated_paths);
 
   // Show the bundle we just generated in the Finder.
@@ -114,11 +127,10 @@ class WebAppShortcutCreator {
   // relevant information.
   bool BuildShortcut(const base::FilePath& staging_path) const;
 
-  // Builds a shortcut and copies it to the specified app paths. Returns with
-  // the number of successful copies created. If non-nullptr, populates
+  // Builds a shortcut and copies it to the specified app paths. Populates
   // |updated_paths| with the paths that were successfully updated.
-  size_t CreateShortcutsAt(const std::vector<base::FilePath>& app_paths,
-                           std::vector<base::FilePath>* updated_paths) const;
+  void CreateShortcutsAt(const std::vector<base::FilePath>& app_paths,
+                         std::vector<base::FilePath>* updated_paths) const;
 
   // Updates the InfoPlist.string inside |app_path| with the display name for
   // the app.

@@ -5,12 +5,17 @@
 #include "third_party/blink/public/common/features.h"
 
 #include "build/build_config.h"
+#include "services/network/public/cpp/features.h"
 
 namespace blink {
 namespace features {
 
 const base::Feature kAutofillPreviewStyleExperiment{
     "AutofillPreviewStyleExperiment", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enable defer commits a bit to avoid flash.
+const base::Feature kAvoidFlashBetweenNavigation{
+    "AvoidFlashBetweenNavigation", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable eagerly setting up a CacheStorage interface pointer and
 // passing it to service workers on startup as an optimization.
@@ -35,7 +40,10 @@ const base::Feature kFirstContentfulPaintPlusPlus{
 // Tracks "jank" from layout objects changing their visual location between
 // animation frames (see crbug.com/581518).
 const base::Feature kJankTracking{"JankTracking",
-                                  base::FEATURE_DISABLED_BY_DEFAULT};
+                                  base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kJankTrackingSweepLine{"JankTrackingSweepLine",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable a new compositing mode called BlinkGenPropertyTrees where Blink
 // generates the compositor property trees. See: https://crbug.com/836884.
@@ -53,16 +61,50 @@ const base::Feature kMixedContentAutoupgrade{"AutoupgradeMixedContent",
 const base::Feature kMojoBlobURLs{"MojoBlobURLs",
                                   base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Used to control the collection of anchor element metrics (crbug.com/856683).
+// If kNavigationPredictor is enabled, then metrics of anchor elements
+// in the first viewport after the page load and the metrics of the clicked
+// anchor element will be extracted and recorded. Additionally, navigation
+// predictor may preconnect/prefetch to resources/origins to make the
+// future navigations faster.
+const base::Feature kNavigationPredictor{"NavigationPredictor",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enable off-the-main-thread dedicated worker script fetch.
+// (https://crbug.com/835717)
+const base::Feature kOffMainThreadDedicatedWorkerScriptFetch{
+    "OffMainThreadDedicatedWorkerScriptFetch",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enable off-the-main-thread shared worker script fetch.
+// (https://crbug.com/924041)
+const base::Feature kOffMainThreadSharedWorkerScriptFetch{
+    "OffMainThreadSharedWorkerScriptFetch", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Onion souping for all DOMStorage. https://crbug.com/781870
 const base::Feature kOnionSoupDOMStorage{"OnionSoupDOMStorage",
                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
+// Enable browser-initiated dedicated worker script loading
+// (PlzDedicatedWorker). https://crbug.com/906991
+const base::Feature kPlzDedicatedWorker{"PlzDedicatedWorker",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enable Portals. https://crbug.com/865123.
 const base::Feature kPortals{"Portals", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enable limiting previews loading hints to specific resource types.
+const base::Feature kPreviewsResourceLoadingHintsSpecificResourceTypes{
+    "PreviewsResourceLoadingHintsSpecificResourceTypes",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Purge memory when freezing only if the renderer is backgrounded.
+const base::Feature kPurgeMemoryOnlyForBackgroundedProcesses{
+    "FreezePurgeMemoryBackgroundedOnly", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enable Implicit Root Scroller. https://crbug.com/903260.
 const base::Feature kImplicitRootScroller{"ImplicitRootScroller",
-                                          base::FEATURE_DISABLED_BY_DEFAULT};
+                                          base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables usage of getDisplayMedia() that allows capture of web content, see
 // https://crbug.com/865060.
@@ -74,17 +116,14 @@ const base::Feature kRTCGetDisplayMedia{"RTCGetDisplayMedia",
 // unless the default is overridden (by passing {sdpSemantics:'plan-b'} as the
 // argument).
 const base::Feature kRTCUnifiedPlanByDefault{"RTCUnifiedPlanByDefault",
-                                             base::FEATURE_DISABLED_BY_DEFAULT};
+                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Used to control the collection of anchor element metrics (crbug.com/856683).
-// If kRecordAnchorMetricsClicked is enabled, then metrics of anchor elements
-// clicked by the user will be extracted and recorded.
-// If kRecordAnchorMetricsVisible is enabled, then metrics of anchor elements
-// in the first viewport after the page load will be extracted and recorded.
-const base::Feature kRecordAnchorMetricsClicked{
-    "RecordAnchorMetricsClicked", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kRecordAnchorMetricsVisible{
-    "RecordAnchorMetricsVisible", base::FEATURE_DISABLED_BY_DEFAULT};
+// Determines if the SDP attrbute extmap-allow-mixed should be offered by
+// default or not. The default value can be overridden by passing
+// {offerExtmapAllowMixed:true} as an argument to the RTCPeerConnection
+// constructor.
+const base::Feature kRTCOfferExtmapAllowMixed{
+    "RTCOfferExtmapAllowMixed", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables to load the response body through Mojo data pipe passed by
 // WebURLLoaderClient::DidStartLoadingResponseBody() instead of
@@ -99,6 +138,9 @@ const base::Feature kServiceWorkerImportedScriptUpdateCheck{
 // Enables reading a subresource's body data and side data in parallel.
 const base::Feature kServiceWorkerParallelSideDataReading{
     "ServiceWorkerParallelSideDataReading", base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kServiceWorkerAggressiveCodeCache{
+    "ServiceWorkerAggressiveCodeCache", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable new service worker glue for NetworkService. Can be
 // enabled independently of NetworkService.
@@ -127,6 +169,10 @@ const base::Feature kStopNonTimersInBackground {
 #endif
 };
 
+// Enable text snippets in URL fragments. https://crbug.com/919204.
+const base::Feature kTextFragmentAnchor{"TextFragmentAnchor",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables the site isolated Wasm code cache that is keyed on the resource URL
 // and the origin lock of the renderer that is requesting the resource. When
 // this flag is enabled, content/GeneratedCodeCache handles code cache requests.
@@ -154,6 +200,44 @@ const char kMixedContentAutoupgradeModeOptionallyBlockable[] =
 // in the image decode cache. See crbug.com/900264 for details on the feature.
 const base::Feature kDecodeLossyWebPImagesToYUV{
     "DecodeLossyWebPImagesToYUV", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Use accelerated canvases whenever possible see https://crbug.com/909937
+const base::Feature kAlwaysAccelerateCanvas{"AlwaysAccelerateCanvas",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
+
+bool IsOffMainThreadSharedWorkerScriptFetchEnabled() {
+  // Off-the-main-thread shared worker script fetch depends on PlzSharedWorker
+  // (NetworkService).
+  DCHECK(!base::FeatureList::IsEnabled(
+             features::kOffMainThreadSharedWorkerScriptFetch) ||
+         base::FeatureList::IsEnabled(network::features::kNetworkService))
+      << "OffMainThreadSharedWorkerScriptFetch is enabled but NetworkService "
+      << "isn't. OffMainThreadSharedWorkerScriptFetch requires NetworkService.";
+  return base::FeatureList::IsEnabled(network::features::kNetworkService) &&
+         base::FeatureList::IsEnabled(
+             features::kOffMainThreadSharedWorkerScriptFetch);
+}
+
+bool IsPlzDedicatedWorkerEnabled() {
+  // PlzDedicatedWorker depends on off-the-main-thread dedicated worker script
+  // fetch and NetworkService.
+#if DCHECK_IS_ON()
+  if (base::FeatureList::IsEnabled(features::kPlzDedicatedWorker)) {
+    DCHECK(base::FeatureList::IsEnabled(
+        features::kOffMainThreadDedicatedWorkerScriptFetch))
+        << "PlzDedicatedWorker is enabled but "
+        << "OffMainThreadDedicatedWorkerScriptFetch isn't. PlzDedicatedWorker "
+        << "requires OffMainThreadDedicatedWorkerScriptFetch.";
+    DCHECK(base::FeatureList::IsEnabled(network::features::kNetworkService))
+        << "PlzDedicatedWorker is enabled but NetworkService isn't. "
+        << "PlzDedicatedWorker requires NetworkService.";
+  }
+#endif  // DCHECK_IS_ON()
+  return base::FeatureList::IsEnabled(
+             features::kOffMainThreadDedicatedWorkerScriptFetch) &&
+         base::FeatureList::IsEnabled(network::features::kNetworkService) &&
+         base::FeatureList::IsEnabled(features::kPlzDedicatedWorker);
+}
 
 }  // namespace features
 }  // namespace blink

@@ -155,7 +155,7 @@ aura::Window* CreateAndParentTopLevelWindowInRoot(
   window_delegate->set_window(window);
   aura::SetWindowType(window, window_type);
   ApplyProperties(window, property_converter, *properties);
-  window->Init(ui::LAYER_TEXTURED);
+  window->Init(ui::LAYER_NOT_DRAWN);
 
   if (container_window) {
     // |bounds| are in local coordinates.
@@ -187,16 +187,6 @@ aura::Window* CreateAndParentTopLevelWindow(
       root_window_controller, window_type, property_converter, properties);
   DisconnectedAppHandler::Create(window);
 
-  auto ignored_by_shelf_iter = properties->find(
-      ws::mojom::WindowManager::kWindowIgnoredByShelf_InitProperty);
-  if (ignored_by_shelf_iter != properties->end()) {
-    wm::WindowState* window_state = wm::GetWindowState(window);
-    window_state->set_ignored_by_shelf(
-        mojo::ConvertTo<bool>(ignored_by_shelf_iter->second));
-    // No need to persist this value.
-    properties->erase(ignored_by_shelf_iter);
-  }
-
   // TODO: kFocusable_InitProperty should be removed. http://crbug.com/837713.
   auto focusable_iter =
       properties->find(ws::mojom::WindowManager::kFocusable_InitProperty);
@@ -206,7 +196,7 @@ aura::Window* CreateAndParentTopLevelWindow(
         NonClientFrameController::Get(window);
     window->SetProperty(ws::kCanFocus, can_focus);
     if (non_client_frame_controller)
-      non_client_frame_controller->set_can_activate(can_focus);
+      non_client_frame_controller->SetCanActivate(can_focus);
     // No need to persist this value.
     properties->erase(focusable_iter);
   }

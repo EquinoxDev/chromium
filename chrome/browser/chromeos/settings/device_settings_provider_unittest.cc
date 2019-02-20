@@ -98,6 +98,9 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
     proto->set_report_session_status(enable_reporting);
     proto->set_report_os_update_status(enable_reporting);
     proto->set_report_running_kiosk_app(enable_reporting);
+    proto->set_report_power_status(enable_reporting);
+    proto->set_report_storage_status(enable_reporting);
+    proto->set_report_board_status(enable_reporting);
     proto->set_device_status_frequency(frequency);
     BuildAndInstallDevicePolicy();
   }
@@ -159,18 +162,14 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
   void VerifyReportingSettings(bool expected_enable_state,
                                int expected_frequency) {
     const char* reporting_settings[] = {
-      kReportDeviceVersionInfo,
-      kReportDeviceActivityTimes,
-      kReportDeviceBootMode,
-      // Device location reporting is not currently supported.
-      // kReportDeviceLocation,
-      kReportDeviceNetworkInterfaces,
-      kReportDeviceUsers,
-      kReportDeviceHardwareStatus,
-      kReportDeviceSessionStatus,
-      kReportOsUpdateStatus,
-      kReportRunningKioskApp
-    };
+        kReportDeviceVersionInfo, kReportDeviceActivityTimes,
+        kReportDeviceBoardStatus, kReportDeviceBootMode,
+        // Device location reporting is not currently supported.
+        // kReportDeviceLocation,
+        kReportDeviceNetworkInterfaces, kReportDeviceUsers,
+        kReportDeviceHardwareStatus, kReportDevicePowerStatus,
+        kReportDeviceStorageStatus, kReportDeviceSessionStatus,
+        kReportOsUpdateStatus, kReportRunningKioskApp};
 
     const base::Value expected_enable_value(expected_enable_state);
     for (auto* setting : reporting_settings) {
@@ -254,6 +253,25 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
         device_policy_.payload().mutable_plugin_vm_allowed();
     proto->set_plugin_vm_allowed(plugin_vm_allowed);
     BuildAndInstallDevicePolicy();
+  }
+
+  void SetPluginVmLicenseKeySetting(const std::string& plugin_vm_license_key) {
+    em::PluginVmLicenseKeyProto* proto =
+        device_policy_.payload().mutable_plugin_vm_license_key();
+    proto->set_plugin_vm_license_key(plugin_vm_license_key);
+    BuildAndInstallDevicePolicy();
+  }
+
+  void SetDeviceRebootOnUserSignout(
+      em::DeviceRebootOnUserSignoutProto::RebootOnSignoutMode value) {
+    EXPECT_CALL(*this, SettingChanged(_)).Times(AtLeast(1));
+    em::DeviceRebootOnUserSignoutProto* proto =
+        device_policy_.payload().mutable_device_reboot_on_user_signout();
+    proto->set_reboot_on_signout_mode(value);
+    device_policy_.Build();
+    session_manager_client_.set_device_policy(device_policy_.GetBlob());
+    ReloadDeviceSettings();
+    Mock::VerifyAndClearExpectations(this);
   }
 
   ScopedTestingLocalState local_state_;
@@ -601,20 +619,6 @@ TEST_F(DeviceSettingsProviderTest, DecodeLogUploadSettings) {
   VerifyLogUploadSettings(false);
 }
 
-TEST_F(DeviceSettingsProviderTest, SetWallpaperSettings) {
-  // Invalid format should be ignored.
-  const std::string invalid_format = "\\\\invalid\\format";
-  SetWallpaperSettings(invalid_format);
-  EXPECT_EQ(nullptr, provider_->Get(kDeviceWallpaperImage));
-
-  // Set with valid json format.
-  const std::string valid_format(R"({"url":"foo", "hash": "bar"})");
-  SetWallpaperSettings(valid_format);
-  std::unique_ptr<base::DictionaryValue> expected_value =
-      base::DictionaryValue::From(base::JSONReader::Read(valid_format));
-  EXPECT_EQ(*expected_value, *provider_->Get(kDeviceWallpaperImage));
-}
-
 TEST_F(DeviceSettingsProviderTest, SamlLoginAuthenticationType) {
   using PolicyProto = em::SamlLoginAuthenticationTypeProto;
 
@@ -681,6 +685,35 @@ TEST_F(DeviceSettingsProviderTest, DecodePluginVmAllowedSetting) {
 
   SetPluginVmAllowedSetting(false);
   EXPECT_EQ(base::Value(false), *provider_->Get(kPluginVmAllowed));
+}
+
+TEST_F(DeviceSettingsProviderTest, DecodePluginVmLicenseKeySetting) {
+  SetPluginVmLicenseKeySetting("LICENSE_KEY");
+  EXPECT_EQ(base::Value("LICENSE_KEY"), *provider_->Get(kPluginVmLicenseKey));
+}
+
+TEST_F(DeviceSettingsProviderTest, DeviceRebootAfterUserSignout) {
+  using PolicyProto = em::DeviceRebootOnUserSignoutProto;
+
+  VerifyPolicyValue(kDeviceRebootOnUserSignout, nullptr);
+
+  {
+    SetDeviceRebootOnUserSignout(PolicyProto::NEVER);
+    base::Value expected_value(PolicyProto::NEVER);
+    VerifyPolicyValue(kDeviceRebootOnUserSignout, &expected_value);
+  }
+
+  {
+    SetDeviceRebootOnUserSignout(PolicyProto::ARC_SESSION);
+    base::Value expected_value(PolicyProto::ARC_SESSION);
+    VerifyPolicyValue(kDeviceRebootOnUserSignout, &expected_value);
+  }
+
+  {
+    SetDeviceRebootOnUserSignout(PolicyProto::ALWAYS);
+    base::Value expected_value(PolicyProto::ALWAYS);
+    VerifyPolicyValue(kDeviceRebootOnUserSignout, &expected_value);
+  }
 }
 
 }  // namespace chromeos

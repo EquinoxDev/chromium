@@ -61,7 +61,6 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
   void SwitchActiveUser(const AccountId& account_id) override;
   void SwitchToLastActiveUser() override;
   void OnSessionStarted() override;
-  void OnProfileInitialized(User* user) override;
   void RemoveUser(const AccountId& account_id,
                   RemoveUserDelegate* delegate) override;
   void RemoveUserFromList(const AccountId& account_id) override;
@@ -115,7 +114,6 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
       const User& user,
       const gfx::ImageSkia& profile_image) override;
   void NotifyUsersSignInConstraintsChanged() override;
-  void ResetProfileEverInitialized(const AccountId& account_id) override;
   void Initialize() override;
 
   // This method updates "User was added to the device in this session nad is
@@ -169,6 +167,9 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
   // |device_local_accounts_set|.
   virtual void LoadDeviceLocalAccounts(
       std::set<AccountId>* device_local_accounts_set) = 0;
+
+  // Notifies observers that active user has changed.
+  void NotifyActiveUserChanged(const User* active_user);
 
   // Notifies that user has logged in.
   virtual void NotifyOnLogin();
@@ -322,9 +323,6 @@ class USER_MANAGER_EXPORT UserManagerBase : public UserManager {
 
   // Notifies observers that merge session state had changed.
   void NotifyMergeSessionStateChanged();
-
-  // Notifies observers that active user has changed.
-  void NotifyActiveUserChanged(const User* active_user);
 
   // Notifies observers that active account_id hash has changed.
   void NotifyActiveUserHashChanged(const std::string& hash);

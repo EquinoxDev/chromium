@@ -18,9 +18,6 @@ namespace ash {
 
 class ASH_EXPORT ShellObserver {
  public:
-  // Called when the AppList is shown or dismissed.
-  virtual void OnAppListVisibilityChanged(bool shown,
-                                          aura::Window* root_window) {}
 
   // Called when a casting session is started or stopped.
   virtual void OnCastingSessionStartedOrStopped(bool started) {}
@@ -41,27 +38,6 @@ class ASH_EXPORT ShellObserver {
   // Invoked when |pinned_window| enter or exit pinned mode.
   virtual void OnPinnedStateChanged(aura::Window* pinned_window) {}
 
-  // Called when the overview mode is about to be started (before the windows
-  // get re-arranged).
-  virtual void OnOverviewModeStarting() {}
-
-  // Called after the animations that happen when overview mode is started are
-  // complete. If |canceled| it means overview was quit before the start
-  // animations were finished.
-  virtual void OnOverviewModeStartingAnimationComplete(bool canceled) {}
-
-  // Called when the overview mode is about to end (bofore the windows restore
-  // themselves).
-  virtual void OnOverviewModeEnding() {}
-
-  // Called after overview mode has ended.
-  virtual void OnOverviewModeEnded() {}
-
-  // Called after the animations that happen when overview mode is ended are
-  // complete. If |canceled| it means overview was reentered before the exit
-  // animations were finished.
-  virtual void OnOverviewModeEndingAnimationComplete(bool canceled) {}
-
   // Called when the split view mode is about to be started before the window
   // gets snapped and activated).
   virtual void OnSplitViewModeStarting() {}
@@ -80,6 +56,9 @@ class ASH_EXPORT ShellObserver {
 
   // Called at the end of Shell::Init.
   virtual void OnShellInitialized() {}
+
+  // Called at the beginning of ~Shell.
+  virtual void OnShellDestroying() {}
 
   // Called near the end of ~Shell. Shell::Get() still returns the Shell, but
   // most of Shell's state has been deleted.

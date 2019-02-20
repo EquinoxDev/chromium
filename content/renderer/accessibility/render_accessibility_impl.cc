@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
+
 #include "base/bind.h"
 #include "base/containers/queue.h"
 #include "base/location.h"
@@ -17,12 +19,12 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/common/accessibility_messages.h"
+#include "content/renderer/accessibility/ax_image_annotator.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
-#include "third_party/blink/public/web/web_ax_object.h"
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_input_element.h"
 #include "third_party/blink/public/web/web_local_frame.h"
@@ -128,7 +130,8 @@ RenderAccessibilityImpl::RenderAccessibilityImpl(RenderFrameImpl* render_frame,
 
   const WebDocument& document = GetMainDocument();
   if (!document.IsNull()) {
-    ax_context_.reset(new blink::WebAXContext(document));
+    ax_context_ = std::make_unique<blink::WebAXContext>(document);
+    StartOrStopLabelingImages(ui::AXMode(), mode);
 
     // It's possible that the webview has already loaded a webpage without
     // accessibility being enabled. Initialize the browser's cached
@@ -146,8 +149,9 @@ void RenderAccessibilityImpl::DidCreateNewDocument() {
 }
 
 void RenderAccessibilityImpl::AccessibilityModeChanged() {
+  ui::AXMode old_mode = tree_source_.accessibility_mode();
   ui::AXMode new_mode = render_frame_->accessibility_mode();
-  if (tree_source_.accessibility_mode() == new_mode)
+  if (old_mode == new_mode)
     return;
   tree_source_.SetAccessibilityMode(new_mode);
 
@@ -174,6 +178,8 @@ void RenderAccessibilityImpl::AccessibilityModeChanged() {
   serializer_.Reset();
   const WebDocument& document = GetMainDocument();
   if (!document.IsNull()) {
+    StartOrStopLabelingImages(old_mode, new_mode);
+
     // If there are any events in flight, |HandleAXEvent| will refuse to process
     // our new event.
     pending_events_.clear();
@@ -822,6 +828,20 @@ void RenderAccessibilityImpl::AddPluginTreeToUpdate(
 
   if (plugin_tree_source_->GetTreeData(&update->tree_data))
     update->has_tree_data = true;
+}
+
+void RenderAccessibilityImpl::StartOrStopLabelingImages(ui::AXMode old_mode,
+                                                        ui::AXMode new_mode) {
+  if (!old_mode.has_mode(ui::AXMode::kLabelImages) &&
+      new_mode.has_mode(ui::AXMode::kLabelImages)) {
+    ax_image_annotator_ = std::make_unique<AXImageAnnotator>(this);
+    tree_source_.AddImageAnnotator(ax_image_annotator_.get());
+  } else if (old_mode.has_mode(ui::AXMode::kLabelImages) &&
+             !new_mode.has_mode(ui::AXMode::kLabelImages)) {
+    tree_source_.RemoveImageAnnotator();
+    ax_image_annotator_->Destroy();
+    ax_image_annotator_.release();
+  }
 }
 
 void RenderAccessibilityImpl::Scroll(const WebAXObject& target,

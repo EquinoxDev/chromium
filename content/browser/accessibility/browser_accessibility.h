@@ -8,6 +8,8 @@
 #include <cstdint>
 
 #include <map>
+#include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -323,11 +325,18 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // Get text to announce for a live region change if AT does not implement.
   std::string GetLiveRegionText() const;
 
-  // Creates a text position rooted at this object.
+  // Creates a text position rooted at this object. Does not conver to a
+  // leaf text position - see CreatePositionForSelectionAt, below.
   BrowserAccessibilityPosition::AXPositionInstance CreatePositionAt(
       int offset,
       ax::mojom::TextAffinity affinity =
           ax::mojom::TextAffinity::kDownstream) const;
+
+  // |offset| could either be a text character or a child index in case of
+  // non-text objects. Converts to a leaf text position if you pass a
+  // character offset on a container node.
+  BrowserAccessibilityPosition::AXPositionInstance CreatePositionForSelectionAt(
+      int offset) const;
 
   // Gets the text offsets where new lines start.
   std::vector<int> GetLineStartOffsets() const;
@@ -377,12 +386,21 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   int32_t CellIndexToId(int32_t cell_index) const override;
 
   bool AccessibilityPerformAction(const ui::AXActionData& data) override;
+  base::string16 GetLocalizedStringForImageAnnotationStatus(
+      ax::mojom::ImageAnnotationStatus status) const override;
+  base::string16 GetLocalizedRoleDescriptionForUnlabeledImage() const override;
   bool ShouldIgnoreHoveredStateForTesting() override;
   bool IsOffscreen() const override;
-  std::set<int32_t> GetReverseRelations(ax::mojom::IntAttribute attr,
-                                        int32_t dst_id) override;
-  std::set<int32_t> GetReverseRelations(ax::mojom::IntListAttribute attr,
-                                        int32_t dst_id) override;
+  ui::AXPlatformNode* GetTargetNodeForRelation(
+      ax::mojom::IntAttribute attr) override;
+  std::set<ui::AXPlatformNode*> GetTargetNodesForRelation(
+      ax::mojom::IntListAttribute attr) override;
+  std::set<ui::AXPlatformNode*> GetReverseRelations(
+      ax::mojom::IntAttribute attr) override;
+  std::set<ui::AXPlatformNode*> GetReverseRelations(
+      ax::mojom::IntListAttribute attr) override;
+  bool IsOrderedSetItem() const override;
+  bool IsOrderedSet() const override;
   int32_t GetPosInSet() const override;
   int32_t GetSetSize() const override;
 
@@ -414,6 +432,11 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   base::string16 GetInnerText() const;
 
   gfx::Rect GetPageBoundsPastEndOfText() const;
+
+  // Given a set of node ids, return the nodes in this delegate's tree to
+  // which they correspond.
+  std::set<ui::AXPlatformNode*> GetNodesForNodeIdSet(
+      const std::set<int32_t>& ids);
 
   // A unique ID, since node IDs are frame-local.
   ui::AXUniqueId unique_id_;

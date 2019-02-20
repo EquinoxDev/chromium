@@ -5,25 +5,32 @@
 #ifndef CONTENT_BROWSER_CONTACTS_CONTACTS_MANAGER_IMPL_H_
 #define CONTENT_BROWSER_CONTACTS_CONTACTS_MANAGER_IMPL_H_
 
+#include "content/browser/contacts/contacts_provider.h"
 #include "content/common/content_export.h"
 #include "third_party/blink/public/mojom/contacts/contacts_manager.mojom.h"
 
 namespace content {
 
+class RenderFrameHostImpl;
+
 class CONTENT_EXPORT ContactsManagerImpl
     : public blink::mojom::ContactsManager {
  public:
-  static void Create(blink::mojom::ContactsManagerRequest request);
+  static void Create(RenderFrameHostImpl* render_frame_host,
+                     blink::mojom::ContactsManagerRequest request);
 
-  ContactsManagerImpl();
+  explicit ContactsManagerImpl(RenderFrameHostImpl* render_frame_host);
   ~ContactsManagerImpl() override;
 
   void Select(bool multiple,
               bool include_names,
               bool include_emails,
+              bool include_tel,
               SelectCallback callback) override;
 
  private:
+  std::unique_ptr<ContactsProvider> contacts_provider_;
+
   DISALLOW_COPY_AND_ASSIGN(ContactsManagerImpl);
 };
 

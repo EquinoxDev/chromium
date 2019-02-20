@@ -5,6 +5,7 @@
 #include "content/browser/devtools/devtools_url_interceptor_request_job.h"
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
@@ -150,7 +151,7 @@ DevToolsURLInterceptorRequestJob::SubRequest::SubRequest(
       resource_request_info->GetResourceType(),
       resource_request_info->GetPageTransition(),
       resource_request_info->IsDownload(), resource_request_info->is_stream(),
-      resource_request_info->allow_download(),
+      resource_request_info->resource_intercept_policy(),
       resource_request_info->HasUserGesture(),
       resource_request_info->is_load_timing_enabled(),
       resource_request_info->is_upload_progress_enabled(),
@@ -527,7 +528,8 @@ bool IsDownload(net::URLRequest* orig_request, net::URLRequest* subrequest) {
   // should not have this problem, as it's on top of MIME sniffer.
   std::string mime_type;
   subrequest->GetMimeType(&mime_type);
-  return req_info->allow_download() &&
+  return req_info->resource_intercept_policy() ==
+             ResourceInterceptPolicy::kAllowAll &&
          download_utils::IsDownload(orig_request->url(),
                                     subrequest->response_headers(), mime_type);
 }
@@ -582,7 +584,7 @@ void DevToolsURLInterceptorRequestJob::Start() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   auto* store = request_details_.url_request_context->cookie_store();
   if (!store || (request()->load_flags() & net::LOAD_DO_NOT_SEND_COOKIES)) {
-    StartWithCookies(net::CookieList());
+    StartWithCookies(net::CookieList(), net::CookieStatusList());
     return;
   }
 
@@ -636,7 +638,8 @@ void DevToolsURLInterceptorRequestJob::Start() {
 }
 
 void DevToolsURLInterceptorRequestJob::StartWithCookies(
-    const net::CookieList& cookie_list) {
+    const net::CookieList& cookie_list,
+    const net::CookieStatusList& excluded_cookies) {
   request_details_.cookie_line =
       net::CanonicalCookie::BuildCookieLine(cookie_list);
 

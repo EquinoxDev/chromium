@@ -32,6 +32,7 @@
 #include "components/omnibox/browser/autocomplete_controller.h"
 #include "components/omnibox/browser/autocomplete_match.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
+#include "components/omnibox/browser/omnibox_controller_emitter.h"
 #include "components/search_engines/template_url.h"
 #include "content/public/browser/web_ui.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
@@ -148,6 +149,7 @@ struct TypeConverter<mojom::AutocompleteMatchPtr, AutocompleteMatch> {
     result->inline_autocompletion =
         base::UTF16ToUTF8(input.inline_autocompletion);
     result->destination_url = input.destination_url.spec();
+    result->stripped_destination_url = input.stripped_destination_url.spec();
     result->image = input.ImageUrl().spec().c_str();
     result->contents = base::UTF16ToUTF8(input.contents);
     // At this time, we're not bothering to send along the long vector that
@@ -190,12 +192,13 @@ struct TypeConverter<mojom::AutocompleteResultsForProviderPtr,
                      scoped_refptr<AutocompleteProvider>> {
   static mojom::AutocompleteResultsForProviderPtr Convert(
       const scoped_refptr<AutocompleteProvider>& input) {
-    mojom::AutocompleteResultsForProviderPtr result(
+    mojom::AutocompleteResultsForProviderPtr resultsForProvider(
         mojom::AutocompleteResultsForProvider::New());
-    result->provider_name = input->GetName();
-    result->results = mojo::ConvertTo<std::vector<mojom::AutocompleteMatchPtr>>(
-        input->matches());
-    return result;
+    resultsForProvider->provider_name = input->GetName();
+    resultsForProvider->results =
+        mojo::ConvertTo<std::vector<mojom::AutocompleteMatchPtr>>(
+            input->matches());
+    return resultsForProvider;
   }
 };
 
@@ -204,49 +207,59 @@ struct TypeConverter<mojom::AutocompleteResultsForProviderPtr,
 OmniboxPageHandler::OmniboxPageHandler(
     Profile* profile,
     mojo::InterfaceRequest<mojom::OmniboxPageHandler> request)
-    : profile_(profile), binding_(this, std::move(request)) {
+    : profile_(profile), binding_(this, std::move(request)), observer_(this) {
+  observer_.Add(OmniboxControllerEmitter::GetForBrowserContext(profile_));
   ResetController();
 }
 
 OmniboxPageHandler::~OmniboxPageHandler() {}
 
 void OmniboxPageHandler::OnResultChanged(bool default_match_changed) {
-  mojom::OmniboxResultPtr result(mojom::OmniboxResult::New());
-  result->done = controller_->done();
-  result->time_since_omnibox_started_ms =
+  OnOmniboxResultChanged(default_match_changed, controller_.get());
+}
+
+void OmniboxPageHandler::OnOmniboxQuery(AutocompleteController* controller) {
+  page_->HandleNewAutocompleteQuery(controller == controller_.get());
+}
+
+void OmniboxPageHandler::OnOmniboxResultChanged(
+    bool default_match_changed,
+    AutocompleteController* controller) {
+  mojom::OmniboxResponsePtr response(mojom::OmniboxResponse::New());
+  response->done = controller->done();
+  response->time_since_omnibox_started_ms =
       (base::Time::Now() - time_omnibox_started_).InMilliseconds();
   const base::string16 host =
       input_.text().substr(input_.parts().host.begin, input_.parts().host.len);
-  result->host = base::UTF16ToUTF8(host);
-  result->type = AutocompleteInput::TypeToString(input_.type());
+  response->host = base::UTF16ToUTF8(host);
+  response->type = AutocompleteInput::TypeToString(input_.type());
   bool is_typed_host;
   if (!LookupIsTypedHost(host, &is_typed_host))
     is_typed_host = false;
-  result->is_typed_host = is_typed_host;
+  response->is_typed_host = is_typed_host;
 
   {
     // Copy to an ACMatches to make conversion easier. Since this isn't
     // performance critical we don't worry about the cost here.
-    ACMatches matches(controller_->result().begin(),
-                      controller_->result().end());
-    result->combined_results =
+    ACMatches matches(controller->result().begin(), controller->result().end());
+    response->combined_results =
         mojo::ConvertTo<std::vector<mojom::AutocompleteMatchPtr>>(matches);
   }
-  result->results_by_provider =
+  response->results_by_provider =
       mojo::ConvertTo<std::vector<mojom::AutocompleteResultsForProviderPtr>>(
-          controller_->providers());
+          controller->providers());
 
   // Fill AutocompleteMatch::starred.
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForBrowserContext(profile_);
   if (bookmark_model) {
-    for (size_t i = 0; i < result->combined_results.size(); ++i) {
-      result->combined_results[i]->starred = bookmark_model->IsBookmarked(
-          GURL(result->combined_results[i]->destination_url));
+    for (size_t i = 0; i < response->combined_results.size(); ++i) {
+      response->combined_results[i]->starred = bookmark_model->IsBookmarked(
+          GURL(response->combined_results[i]->destination_url));
     }
-    for (size_t i = 0; i < result->results_by_provider.size(); ++i) {
+    for (size_t i = 0; i < response->results_by_provider.size(); ++i) {
       const mojom::AutocompleteResultsForProvider& result_by_provider =
-          *result->results_by_provider[i];
+          *response->results_by_provider[i];
       for (size_t j = 0; j < result_by_provider.results.size(); ++j) {
         result_by_provider.results[j]->starred = bookmark_model->IsBookmarked(
             GURL(result_by_provider.results[j]->destination_url));
@@ -256,20 +269,23 @@ void OmniboxPageHandler::OnResultChanged(bool default_match_changed) {
 
   // Obtain a vector of all image urls required.
   std::vector<std::string> image_urls;
-  for (size_t i = 0; i < result->combined_results.size(); ++i)
-    image_urls.push_back(result->combined_results[i]->image);
-  for (size_t i = 0; i < result->results_by_provider.size(); ++i) {
+  for (size_t i = 0; i < response->combined_results.size(); ++i)
+    image_urls.push_back(response->combined_results[i]->image);
+  for (size_t i = 0; i < response->results_by_provider.size(); ++i) {
     const mojom::AutocompleteResultsForProvider& result_by_provider =
-        *result->results_by_provider[i];
+        *response->results_by_provider[i];
     for (size_t j = 0; j < result_by_provider.results.size(); ++j)
       image_urls.push_back(result_by_provider.results[j]->image);
   }
 
-  page_->HandleNewAutocompleteResult(std::move(result));
+  page_->handleNewAutocompleteResponse(std::move(response),
+                                       controller == controller_.get());
 
   // Fill in image data
   BitmapFetcherService* image_service =
       BitmapFetcherServiceFactory::GetForBrowserContext(profile_);
+  if (!image_service)
+    return;
   for (std::string image_url : image_urls) {
     const ImageReciever handleAnswerImageData = [this,
                                                  image_url](std::string data) {
@@ -356,6 +372,13 @@ void OmniboxPageHandler::StartOmniboxQuery(const std::string& input_string,
   // actual results to not depend on the state of the previous request.
   if (reset_autocomplete_controller)
     ResetController();
+  // TODO (manukh): OmniboxPageHandler::StartOmniboxQuery is invoked only for
+  // queries from the debug page and not for queries from the browser omnibox.
+  // time_omnibox_started_ and input_ are therefore not set for browser omnibox
+  // queries, resulting in inaccurate time_since_omnibox_started_ms, host, type,
+  // and is_typed_host values in the result object being sent to the debug page.
+  // For the user, this means the 'details' section is mostly inaccurate for
+  // browser omnibox queries.
   time_omnibox_started_ = base::Time::Now();
   input_ = AutocompleteInput(
       base::UTF8ToUTF16(input_string), cursor_position,
@@ -368,8 +391,11 @@ void OmniboxPageHandler::StartOmniboxQuery(const std::string& input_string,
   input_.set_current_title(base::UTF8ToUTF16(current_url));
   input_.set_prevent_inline_autocomplete(prevent_inline_autocomplete);
   input_.set_prefer_keyword(prefer_keyword);
+  if (prefer_keyword)
+    input_.set_keyword_mode_entry_method(metrics::OmniboxEventProto::TAB);
   input_.set_from_omnibox_focus(zero_suggest);
 
+  OnOmniboxQuery(controller_.get());
   controller_->Start(input_);
 }
 

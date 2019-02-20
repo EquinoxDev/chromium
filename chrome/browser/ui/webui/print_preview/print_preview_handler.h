@@ -17,10 +17,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
 #include "chrome/common/buildflags.h"
-#include "components/signin/core/browser/gaia_cookie_manager_service.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "printing/backend/print_backend.h"
 #include "printing/buildflags/buildflags.h"
+#include "services/identity/public/cpp/identity_manager.h"
 
 namespace base {
 class DictionaryValue;
@@ -48,9 +48,8 @@ enum PrinterType {
 };
 
 // The handler for Javascript messages related to the print preview dialog.
-class PrintPreviewHandler
-    : public content::WebUIMessageHandler,
-      public GaiaCookieManagerService::Observer {
+class PrintPreviewHandler : public content::WebUIMessageHandler,
+                            public identity::IdentityManager::Observer {
  public:
   PrintPreviewHandler();
   ~PrintPreviewHandler() override;
@@ -60,9 +59,9 @@ class PrintPreviewHandler
   void OnJavascriptAllowed() override;
   void OnJavascriptDisallowed() override;
 
-  // GaiaCookieManagerService::Observer implementation.
-  void OnAddAccountToCookieCompleted(
-      const std::string& account_id,
+  // IdentityManager::Observer implementation.
+  void OnAccountsInCookieUpdated(
+      const identity::AccountsInCookieJarInfo& accounts_in_cookie_jar_info,
       const GoogleServiceAuthError& error) override;
 
   // Called when print preview failed. |request_id| identifies the request that
@@ -157,7 +156,9 @@ class PrintPreviewHandler
   FRIEND_TEST_ALL_PREFIXES(PrintPreviewHandlerFailingTest,
                            GetPrinterCapabilities);
 
+#if defined(OS_CHROMEOS)
   class AccessTokenService;
+#endif
 
   content::WebContents* preview_web_contents() const;
 
@@ -226,8 +227,10 @@ class PrintPreviewHandler
   // |args| is unused.
   void HandleSignin(const base::ListValue* args);
 
+#if defined(OS_CHROMEOS)
   // Generates new token and sends back to UI.
   void HandleGetAccessToken(const base::ListValue* args);
+#endif
 
   // Gathers UMA stats when the print preview dialog is about to close.
   // |args| is unused.
@@ -240,9 +243,11 @@ class PrintPreviewHandler
   void SendInitialSettings(const std::string& callback_id,
                            const std::string& default_printer);
 
+#if defined(OS_CHROMEOS)
   // Send OAuth2 access token.
   void SendAccessToken(const std::string& callback_id,
                        const std::string& access_token);
+#endif
 
   // Sends the printer capabilities to the Web UI. |settings_info| contains
   // printer capabilities information. If |settings_info| is empty, sends
@@ -313,14 +318,16 @@ class PrintPreviewHandler
   bool has_logged_printers_count_;
 
   // The settings used for the most recent preview request.
-  std::unique_ptr<base::DictionaryValue> last_preview_settings_;
+  base::Value last_preview_settings_;
 
+#if defined(OS_CHROMEOS)
   // Holds token service to get OAuth2 access tokens.
   std::unique_ptr<AccessTokenService> token_service_;
+#endif
 
-  // Pointer to cookie manager service so that print preview can listen for GAIA
-  // cookie changes.
-  GaiaCookieManagerService* gaia_cookie_manager_service_;
+  // Pointer to the identity manager service so that print preview can listen
+  // for GAIA cookie changes.
+  identity::IdentityManager* identity_manager_;
 
   // Handles requests for cloud printers. Created lazily by calling
   // GetPrinterHandler().

@@ -176,10 +176,6 @@ const char kDisableBackgroundNetworking[]   = "disable-background-networking";
 // Disables the bundled PPAPI version of Flash.
 const char kDisableBundledPpapiFlash[]      = "disable-bundled-ppapi-flash";
 
-// Disables hardware encoding support for Cast Streaming.
-const char kDisableCastStreamingHWEncoding[] =
-    "disable-cast-streaming-hw-encoding";
-
 // Disables the client-side phishing detection feature. Note that even if
 // client-side phishing detection is enabled, it will only be active if the
 // user has opted in to UMA stats and SafeBrowsing is enabled in the
@@ -293,11 +289,6 @@ const char kEnableExtensionActivityLogging[] =
 const char kEnableExtensionActivityLogTesting[] =
     "enable-extension-activity-log-testing";
 
-// Enable the fast unload controller, which speeds up tab/window close by
-// running a tab's onunload js handler independently of the GUI -
-// crbug.com/142458 .
-const char kEnableFastUnload[] = "enable-fast-unload";
-
 // Runs the Native Client inside the renderer process and enables GPU plugin
 // (internally adds lEnableGpuPlugin to the command line).
 const char kEnableNaCl[]                    = "enable-nacl";
@@ -321,13 +312,6 @@ const char kEnableOfflineAutoReloadVisibleOnly[] =
 // content mode, powerful feature restrictions, etc.)
 const char kEnablePotentiallyAnnoyingSecurityFeatures[] =
     "enable-potentially-annoying-security-features";
-
-// Enables the Power overlay in Settings.
-const char kEnablePowerOverlay[]            = "enable-power-overlay";
-
-// Enables showing unregistered printers in print preview
-const char kEnablePrintPreviewRegisterPromos[] =
-    "enable-print-preview-register-promos";
 
 // Name of the command line flag to force content verification to be on in one
 // of various modes.
@@ -480,6 +464,13 @@ const char kNoStartupWindow[]               = "no-startup-window";
 const char kNoSupervisedUserAcknowledgmentCheck[]  =
     "no-managed-user-acknowledgment-check";
 
+// Calculate the hash of an MHTML file as it is being saved.
+// The browser process will write the serialized MHTML contents to a file and
+// calculate its hash as it is streamed back from the renderer via a Mojo data
+// pipe.
+const char kOnTheFlyMhtmlHashComputation[] =
+    "on-the-fly-mhtml-hash-computation";
+
 // Launches URL in new browser window.
 const char kOpenInNewWindow[]               = "new-window";
 
@@ -559,6 +550,9 @@ const char kRestoreLastSession[]            = "restore-last-session";
 // (with a directory of sub-resources). Enable only saving pages as MHTML.
 // See http://crbug.com/120416 for how to remove this switch.
 const char kSavePageAsMHTML[]               = "save-page-as-mhtml";
+
+// Sets the Reporting API delay to under a second to allow much quicker reports.
+const char kShortReportingDelay[] = "short-reporting-delay";
 
 // If true the app list will be shown.
 const char kShowAppList[]                   = "show-app-list";
@@ -702,12 +696,6 @@ const char kWinHttpProxyResolver[]          = "winhttp-proxy-resolver";
 // resulted in a browser startup.
 const char kWinJumplistAction[]             = "win-jumplist-action";
 
-#if defined(GOOGLE_CHROME_BUILD)
-// Shows a Google icon next to context menu items powered by Google services.
-const char kEnableGoogleBrandedContextMenu[] =
-    "enable-google-branded-context-menu";
-#endif  // defined(GOOGLE_CHROME_BUILD)
-
 #if !defined(GOOGLE_CHROME_BUILD)
 // Enables a live-reload for local NTP resources. This only works when Chrome
 // is running from a Chrome source directory.
@@ -718,15 +706,9 @@ const char kLocalNtpReload[]                = "local-ntp-reload";
 // Android authentication account type for SPNEGO authentication
 const char kAuthAndroidNegotiateAccountType[] = "auth-spnego-account-type";
 
-// Disables Contextual Search.
-const char kDisableContextualSearch[] = "disable-contextual-search";
-
 // Enable the accessibility tab switcher.
 const char kEnableAccessibilityTabSwitcher[] =
     "enable-accessibility-tab-switcher";
-
-// Enables Contextual Search.
-const char kEnableContextualSearch[] = "enable-contextual-search";
 
 // Enables a hung renderer InfoBar allowing the user to close or wait on
 // unresponsive web content.
@@ -769,6 +751,15 @@ const char kDisableLoginScreenApps[] = "disable-login-screen-apps";
 // NOTE: Used by the Chrome OS crash_reporter to identify mash processes. If you
 // change or remove the flag please update platform2/crash_reporter.
 const char kMashServiceName[] = "mash-service-name";
+
+// Use a short (1 second) timeout for merge session loader throttle testing.
+const char kShortMergeSessionTimeoutForTest[] =
+    "short-merge-session-timeout-for-test";
+
+// Selects the scheduler configuration specified in the parameter.
+const char kSchedulerConfiguration[] = "scheduler-configuration";
+const char kSchedulerConfigurationConservative[] = "conservative";
+const char kSchedulerConfigurationPerformance[] = "performance";
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)

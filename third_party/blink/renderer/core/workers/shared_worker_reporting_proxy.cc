@@ -51,7 +51,7 @@ void SharedWorkerReportingProxy::ReportException(
   // spec:
   // "For shared workers, if the error is still not handled afterwards, the
   // error may be reported to a developer console."
-  // https://html.spec.whatwg.org/multipage/workers.html#runtime-script-errors-2
+  // https://html.spec.whatwg.org/C/#runtime-script-errors-2
 }
 
 void SharedWorkerReportingProxy::ReportConsoleMessage(MessageSource,
@@ -62,13 +62,47 @@ void SharedWorkerReportingProxy::ReportConsoleMessage(MessageSource,
   // Not supported in SharedWorker.
 }
 
-void SharedWorkerReportingProxy::DidFailToFetchClassicScript() {
+void SharedWorkerReportingProxy::DidFetchScript() {
   DCHECK(!IsMainThread());
-  // TODO(nhiroki): Dispatch an error event at the SharedWorker object in the
-  // parent document.
+  // TODO(nhiroki): Change the task type to kDOMManipulation here and elsewhere
+  // in this file. See the HTML spec:
+  // https://html.spec.whatwg.org/C/#worker-processing-model:dom-manipulation-task-source-2
+  PostCrossThreadTask(
+      *parent_execution_context_task_runners_->Get(TaskType::kInternalDefault),
+      FROM_HERE,
+      CrossThreadBind(&WebSharedWorkerImpl::DidFetchScript,
+                      CrossThreadUnretained(worker_)));
+}
+
+void SharedWorkerReportingProxy::DidFailToFetchClassicScript() {
+  // TODO(nhiroki): Add a runtime flag check for off-the-main-thread shared
+  // worker script fetch. This function should be called only when the flag is
+  // enabled (https://crbug.com/924041).
+  DCHECK(!IsMainThread());
+  PostCrossThreadTask(
+      *parent_execution_context_task_runners_->Get(TaskType::kInternalDefault),
+      FROM_HERE,
+      CrossThreadBind(&WebSharedWorkerImpl::DidFailToFetchClassicScript,
+                      CrossThreadUnretained(worker_)));
 }
 
 void SharedWorkerReportingProxy::DidFailToFetchModuleScript() {
+  DCHECK(!IsMainThread());
+  // TODO(nhiroki): Implement module scripts for shared workers.
+  // (https://crbug.com/824646)
+  NOTIMPLEMENTED();
+}
+
+void SharedWorkerReportingProxy::DidEvaluateClassicScript(bool success) {
+  DCHECK(!IsMainThread());
+  PostCrossThreadTask(
+      *parent_execution_context_task_runners_->Get(TaskType::kInternalDefault),
+      FROM_HERE,
+      CrossThreadBind(&WebSharedWorkerImpl::DidEvaluateClassicScript,
+                      CrossThreadUnretained(worker_), success));
+}
+
+void SharedWorkerReportingProxy::DidEvaluateModuleScript(bool success) {
   DCHECK(!IsMainThread());
   // TODO(nhiroki): Implement module scripts for shared workers.
   // (https://crbug.com/824646)

@@ -1335,10 +1335,8 @@ Response InspectorDOMAgent::getNodeForLocation(
   if (!node)
     return Response::Error("No node found at given location");
   *backend_node_id = IdentifiersFactory::IntIdForNode(node);
-  if (enabled_.Get()) {
-    Response response = PushDocumentUponHandlelessOperation();
-    if (!response.isSuccess())
-      return response;
+  if (enabled_.Get() && document_ &&
+      document_node_to_id_map_->Contains(document_)) {
     *node_id = PushNodePathToFrontend(node);
   }
   return Response::OK();
@@ -1347,7 +1345,8 @@ Response InspectorDOMAgent::getNodeForLocation(
 Response InspectorDOMAgent::resolveNode(
     protocol::Maybe<int> node_id,
     protocol::Maybe<int> backend_node_id,
-    Maybe<String> object_group,
+    protocol::Maybe<String> object_group,
+    protocol::Maybe<int> execution_context_id,
     std::unique_ptr<v8_inspector::protocol::Runtime::API::RemoteObject>*
         result) {
   String object_group_name = object_group.fromMaybe("");
@@ -1363,7 +1362,8 @@ Response InspectorDOMAgent::resolveNode(
 
   if (!node)
     return Response::Error("No node with given id found");
-  *result = ResolveNode(v8_session_, node, object_group_name);
+  *result = ResolveNode(v8_session_, node, object_group_name,
+                        std::move(execution_context_id));
   if (!*result) {
     return Response::Error(
         "Node with given id does not belong to the document");
@@ -1953,11 +1953,11 @@ void InspectorDOMAgent::StyleAttributeInvalidated(
 }
 
 void InspectorDOMAgent::CharacterDataModified(CharacterData* character_data) {
-  if (IsWhitespace(character_data)) {
+  int id = document_node_to_id_map_->at(character_data);
+  if (IsWhitespace(character_data) && id) {
     DOMNodeRemoved(character_data);
     return;
   }
-  int id = document_node_to_id_map_->at(character_data);
   if (!id) {
     // Push text node if it is being created.
     DidInsertDOMNode(character_data);
@@ -2150,12 +2150,8 @@ Response InspectorDOMAgent::pushNodeByPathToFrontend(const String& path,
 Response InspectorDOMAgent::pushNodesByBackendIdsToFrontend(
     std::unique_ptr<protocol::Array<int>> backend_node_ids,
     std::unique_ptr<protocol::Array<int>>* result) {
-  if (!enabled_.Get())
-    return Response::Error("DOM agent is not enabled");
-
-  Response response = PushDocumentUponHandlelessOperation();
-  if (!response.isSuccess())
-    return response;
+  if (!document_ || !document_node_to_id_map_->Contains(document_))
+    return Response::Error("Document needs to be requested first");
 
   *result = protocol::Array<int>::create();
   for (size_t index = 0; index < backend_node_ids->length(); ++index) {
@@ -2247,10 +2243,9 @@ protocol::Response InspectorDOMAgent::getFrameOwner(
     return Response::Error("No iframe owner for given node");
 
   *backend_node_id = IdentifiersFactory::IntIdForNode(frame_owner);
-  if (enabled_.Get()) {
-    Response response = PushDocumentUponHandlelessOperation();
-    if (!response.isSuccess())
-      return response;
+
+  if (enabled_.Get() && document_ &&
+      document_node_to_id_map_->Contains(document_)) {
     *node_id = PushNodePathToFrontend(frame_owner);
   }
   return Response::OK();
@@ -2274,14 +2269,6 @@ Response InspectorDOMAgent::getFileInfo(const String& object_id, String* path) {
   }
 
   *path = file->GetPath();
-  return Response::OK();
-}
-
-Response InspectorDOMAgent::PushDocumentUponHandlelessOperation() {
-  if (!document_node_to_id_map_->Contains(document_)) {
-    std::unique_ptr<protocol::DOM::Node> root;
-    return getDocument(Maybe<int>(), Maybe<bool>(), &root);
-  }
   return Response::OK();
 }
 

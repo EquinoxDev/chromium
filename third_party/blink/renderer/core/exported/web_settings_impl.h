@@ -82,6 +82,7 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetDownloadableBinaryFontsEnabled(bool) override;
   void SetEditingBehavior(EditingBehavior) override;
   void SetEnableScrollAnimator(bool) override;
+  void SetPrefersReducedMotion(bool) override;
   void SetEnableTouchAdjustment(bool) override;
   void SetWebGL1Enabled(bool) override;
   void SetWebGL2Enabled(bool) override;
@@ -91,11 +92,11 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
                           UScriptCode = USCRIPT_COMMON) override;
   void SetNetworkQuietTimeout(double timeout) override;
   void SetForceMainWorldInitialization(bool) override;
-  void SetForcePreloadNoneForMediaElements(bool) override;
   void SetForceZeroLayoutHeight(bool) override;
   void SetFullscreenSupported(bool) override;
   void SetHideDownloadUI(bool) override;
   void SetPresentationReceiver(bool) override;
+  void SetHighlightAds(bool) override;
   void SetHistoryEntryRequiresUserGesture(bool) override;
   void SetHyperlinkAuditingEnabled(bool) override;
   void SetIgnoreMainFrameOverflowHiddenQuirk(bool) override;
@@ -113,7 +114,7 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetMaxTouchPoints(int) override;
   void SetPictureInPictureEnabled(bool) override;
   void SetDataSaverHoldbackWebApi(bool) override;
-  void SetMediaPlaybackGestureWhitelistScope(const WebString&) override;
+  void SetWebAppScope(const WebString&) override;
   void SetPresentationRequiresUserGesture(bool) override;
   void SetEmbeddedMediaExperienceEnabled(bool) override;
   void SetImmersiveModeEnabled(bool) override;
@@ -126,7 +127,6 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetPassiveEventListenerDefault(PassiveEventListenerDefault) override;
   void SetPasswordEchoDurationInSeconds(double) override;
   void SetPasswordEchoEnabled(bool) override;
-  void SetPerTilePaintingEnabled(bool) override;
   void SetPictographFontFamily(const WebString&,
                                UScriptCode = USCRIPT_COMMON) override;
   void SetPluginsEnabled(bool) override;
@@ -150,8 +150,6 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetShouldClearDocumentBackground(bool) override;
   void SetShouldRespectImageOrientation(bool) override;
   void SetShowContextMenuOnMouseUp(bool) override;
-  void SetShowFPSCounter(bool) override;
-  void SetShowPaintRects(bool) override;
   void SetShrinksViewportContentToFit(bool) override;
   void SetSmartInsertDeleteEnabled(bool) override;
   void SetSmoothScrollForFindEnabled(bool) override;
@@ -199,7 +197,6 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetXSSAuditorEnabled(bool) override;
   void SetMediaControlsEnabled(bool) override;
   void SetDoNotUpdateSelectionOnMutatingSelectionRange(bool) override;
-  void SetMediaDownloadInProductHelpEnabled(bool) override;
   void SetLowPriorityIframesThreshold(WebEffectiveConnectionType) override;
 
   void SetLazyLoadEnabled(bool) override;
@@ -219,8 +216,8 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
   void SetLazyImageLoadingDistanceThresholdPx3G(int) override;
   void SetLazyImageLoadingDistanceThresholdPx4G(int) override;
 
-  bool ShowFPSCounter() const { return show_fps_counter_; }
-  bool ShowPaintRects() const { return show_paint_rects_; }
+  void SetForceDarkModeEnabled(bool) override;
+
   bool RenderVSyncNotificationEnabled() const {
     return render_v_sync_notification_enabled_;
   }
@@ -228,7 +225,6 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
     return auto_zoom_focused_node_to_legible_scale_;
   }
   bool DoubleTapToZoomEnabled() const;
-  bool PerTilePaintingEnabled() const { return per_tile_painting_enabled_; }
   bool SupportDeprecatedTargetDensityDPI() const {
     return support_deprecated_target_density_dpi_;
   }
@@ -249,11 +245,8 @@ class CORE_EXPORT WebSettingsImpl final : public WebSettings {
  private:
   Settings* settings_;
   UntracedMember<DevToolsEmulator> dev_tools_emulator_;
-  bool show_fps_counter_;
-  bool show_paint_rects_;
   bool render_v_sync_notification_enabled_;
   bool auto_zoom_focused_node_to_legible_scale_;
-  bool per_tile_painting_enabled_;
   bool support_deprecated_target_density_dpi_;
   // This quirk is to maintain compatibility with Android apps built on
   // the Android SDK prior to and including version 18. Presumably, this

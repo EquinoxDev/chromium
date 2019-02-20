@@ -222,6 +222,7 @@ void QuicEndpoint::OnStreamFrame(const QuicStreamFrame& frame) {
   // Sanity check against very pathological connections.
   DCHECK_LE(offsets_received_.Size(), 1000u);
 }
+
 void QuicEndpoint::OnCanWrite() {
   if (notifier_ != nullptr) {
     notifier_->OnCanWrite();
@@ -310,10 +311,6 @@ WriteResult QuicEndpoint::Writer::WritePacket(
   return WriteResult(WRITE_STATUS_OK, buf_len);
 }
 
-bool QuicEndpoint::Writer::IsWriteBlockedDataBuffered() const {
-  return false;
-}
-
 bool QuicEndpoint::Writer::IsWriteBlocked() const {
   return is_blocked_;
 }
@@ -352,6 +349,14 @@ WriteStreamDataResult QuicEndpoint::DataProducer::WriteStreamData(
     QuicDataWriter* writer) {
   writer->WriteRepeatedByte(kStreamDataContents, data_length);
   return WRITE_SUCCESS;
+}
+
+bool QuicEndpoint::DataProducer::WriteCryptoData(EncryptionLevel leve,
+                                                 QuicStreamOffset offset,
+                                                 QuicByteCount data_length,
+                                                 QuicDataWriter* writer) {
+  QUIC_BUG << "QuicEndpoint::DataProducer::WriteCryptoData is unimplemented";
+  return false;
 }
 
 void QuicEndpoint::WriteStreamData() {

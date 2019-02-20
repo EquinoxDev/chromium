@@ -126,6 +126,7 @@ class WebViewPlugin : public blink::WebPlugin,
   void OnDestruct() override {}
   void OnZoomLevelChanged() override;
 
+  void LoadHTML(const std::string& html_data, const GURL& url);
   void UpdatePluginForNewGeometry(const blink::WebRect& window_rect,
                                   const blink::WebRect& unobscured_rect);
 
@@ -165,7 +166,7 @@ class WebViewPlugin : public blink::WebPlugin,
     bool CanHandleGestureEvent() override;
     bool CanUpdateLayout() override;
     blink::WebScreenInfo GetScreenInfo() override;
-    blink::WebWidgetClient* WidgetClient() override;
+    void DidInvalidateRect(const blink::WebRect&) override;
 
     // WebWidgetClient methods:
     void SetToolTipText(const blink::WebString&,
@@ -175,7 +176,6 @@ class WebViewPlugin : public blink::WebPlugin,
                        blink::WebDragOperationsMask,
                        const SkBitmap&,
                        const gfx::Point&) override;
-    void DidInvalidateRect(const blink::WebRect&) override;
     void DidChangeCursor(const blink::WebCursorInfo& cursor) override;
     void ScheduleAnimation() override;
     std::unique_ptr<blink::WebURLLoaderFactory> CreateURLLoaderFactory()

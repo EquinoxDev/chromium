@@ -135,7 +135,7 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   // Since the URL of content rendered by this class is not displayed in
   // the URL bar, this method does not need an implementation.
   void ClearCompositorFrame() override {}
-  void ResetFallbackToFirstNavigationSurface() override{};
+  void ResetFallbackToFirstNavigationSurface() override {}
 
   void TransformPointToRootSurface(gfx::PointF* point) override;
   gfx::Rect GetBoundsInRootWindow() override;
@@ -168,6 +168,8 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
   void OnRenderFrameMetadataChangedAfterActivation() override;
   void UpdateIntrinsicSizingInfo(
       const blink::WebIntrinsicSizingInfo& sizing_info) override;
+  std::unique_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
+      override;
 
   bool IsRenderWidgetHostViewChildFrame() override;
 
@@ -210,11 +212,6 @@ class CONTENT_EXPORT RenderWidgetHostViewChildFrame
 
   FrameConnectorDelegate* FrameConnectorForTesting() const {
     return frame_connector_;
-  }
-
-  // Returns the current surface scale factor.
-  float current_surface_scale_factor() {
-    return last_activated_surface_info_.device_scale_factor();
   }
 
   // Returns the view into which this view is directly embedded. This can

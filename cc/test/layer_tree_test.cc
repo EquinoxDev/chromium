@@ -4,6 +4,7 @@
 
 #include "cc/test/layer_tree_test.h"
 
+#include "base/bind.h"
 #include "base/cfi_buildflags.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -108,8 +109,8 @@ class SynchronousLayerTreeFrameSink : public viz::TestLayerTreeFrameSink {
       return;
     task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&SynchronousLayerTreeFrameSink::DispatchInvalidation,
-                   weak_factory_.GetWeakPtr()));
+        base::BindOnce(&SynchronousLayerTreeFrameSink::DispatchInvalidation,
+                       weak_factory_.GetWeakPtr()));
   }
   void DispatchInvalidation() {
     frame_request_pending_ = false;
@@ -434,15 +435,16 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   void DidBeginMainFrame() override { test_hooks_->DidBeginMainFrame(); }
 
+  void DidUpdateLayers() override {}
+
   void BeginMainFrame(const viz::BeginFrameArgs& args) override {
     test_hooks_->BeginMainFrame(args);
   }
 
+  void RecordStartOfFrameMetrics() override {}
   void RecordEndOfFrameMetrics(base::TimeTicks) override {}
 
-  void UpdateLayerTreeHost(bool record_main_frame_metrics) override {
-    test_hooks_->UpdateLayerTreeHost();
-  }
+  void UpdateLayerTreeHost() override { test_hooks_->UpdateLayerTreeHost(); }
 
   void ApplyViewportChanges(const ApplyViewportChangesArgs& args) override {
     test_hooks_->ApplyViewportChanges(args);
@@ -450,6 +452,13 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
 
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
                                          bool has_scrolled_by_touch) override {}
+
+  void SendOverscrollEventFromImplSide(
+      const gfx::Vector2dF& overscroll_delta,
+      ElementId scroll_latched_element_id) override {}
+
+  void SendScrollEndEventFromImplSide(
+      ElementId scroll_latched_element_id) override {}
 
   void RequestNewLayerTreeFrameSink() override {
     test_hooks_->RequestNewLayerTreeFrameSink();
@@ -487,6 +496,8 @@ class LayerTreeHostClientForTesting : public LayerTreeHostClient,
   void DidPresentCompositorFrame(
       uint32_t frame_token,
       const gfx::PresentationFeedback& feedback) override {}
+  void DidGenerateLocalSurfaceIdAllocation(
+      const viz::LocalSurfaceIdAllocation& allocation) override {}
 
  private:
   explicit LayerTreeHostClientForTesting(TestHooks* test_hooks)
@@ -849,7 +860,8 @@ void LayerTreeTest::DoBeginTest() {
   }
 
   if (timeout_seconds_) {
-    timeout_.Reset(base::Bind(&LayerTreeTest::Timeout, base::Unretained(this)));
+    timeout_.Reset(
+        base::BindOnce(&LayerTreeTest::Timeout, base::Unretained(this)));
     main_task_runner_->PostDelayedTask(
         FROM_HERE, timeout_.callback(),
         base::TimeDelta::FromSeconds(timeout_seconds_));

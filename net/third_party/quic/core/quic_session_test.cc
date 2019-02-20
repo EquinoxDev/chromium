@@ -141,7 +141,9 @@ class TestSession : public QuicSession {
                     DefaultQuicConfig(),
                     CurrentSupportedVersions()),
         crypto_stream_(this),
-        writev_consumes_all_data_(false) {
+        writev_consumes_all_data_(false),
+        should_buffer_incoming_streams_(false),
+        num_incoming_streams_created_(0) {
     Initialize();
     this->connection()->SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
@@ -187,14 +189,15 @@ class TestSession : public QuicSession {
           QUIC_TOO_MANY_OPEN_STREAMS, "Too many streams!",
           ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
       return nullptr;
-    } else {
-      TestStream* stream = new TestStream(
-          id, this,
-          DetermineStreamType(id, connection()->transport_version(),
-                              /*is_incoming=*/true, BIDIRECTIONAL));
-      ActivateStream(QuicWrapUnique(stream));
-      return stream;
     }
+
+    TestStream* stream = new TestStream(
+        id, this,
+        DetermineStreamType(id, connection()->transport_version(),
+                            /*is_incoming=*/true, BIDIRECTIONAL));
+    ActivateStream(QuicWrapUnique(stream));
+    ++num_incoming_streams_created_;
+    return stream;
   }
 
   TestStream* CreateIncomingStream(PendingStream pending) override {
@@ -204,6 +207,7 @@ class TestSession : public QuicSession {
         DetermineStreamType(id, connection()->transport_version(),
                             /*is_incoming=*/true, BIDIRECTIONAL));
     ActivateStream(QuicWrapUnique(stream));
+    ++num_incoming_streams_created_;
     return stream;
   }
 
@@ -273,6 +277,18 @@ class TestSession : public QuicSession {
     return WritevData(stream, stream->id(), bytes, 0, FIN);
   }
 
+  bool ShouldBufferIncomingStream(QuicStreamId id) const override {
+    return should_buffer_incoming_streams_;
+  }
+
+  void set_should_buffer_incoming_streams(bool should_buffer_incoming_streams) {
+    should_buffer_incoming_streams_ = should_buffer_incoming_streams;
+  }
+
+  int num_incoming_streams_created() const {
+    return num_incoming_streams_created_;
+  }
+
   using QuicSession::ActivateStream;
   using QuicSession::closed_streams;
   using QuicSession::zombie_streams;
@@ -281,7 +297,9 @@ class TestSession : public QuicSession {
   StrictMock<TestCryptoStream> crypto_stream_;
 
   bool writev_consumes_all_data_;
+  bool should_buffer_incoming_streams_;
   QuicFrame save_frame_;
+  int num_incoming_streams_created_;
 };
 
 class QuicSessionTestBase : public QuicTestWithParam<ParsedQuicVersion> {
@@ -428,9 +446,9 @@ class QuicSessionTestServer : public QuicSessionTestBase {
   QuicFramer client_framer_;
 };
 
-INSTANTIATE_TEST_CASE_P(Tests,
-                        QuicSessionTestServer,
-                        ::testing::ValuesIn(AllSupportedVersions()));
+INSTANTIATE_TEST_SUITE_P(Tests,
+                         QuicSessionTestServer,
+                         ::testing::ValuesIn(AllSupportedVersions()));
 
 TEST_P(QuicSessionTestServer, PeerAddress) {
   EXPECT_EQ(QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort),
@@ -438,7 +456,7 @@ TEST_P(QuicSessionTestServer, PeerAddress) {
 }
 
 TEST_P(QuicSessionTestServer, SelfAddress) {
-  EXPECT_EQ(QuicSocketAddress(), session_.self_address());
+  EXPECT_TRUE(session_.self_address().IsInitialized());
 }
 
 TEST_P(QuicSessionTestServer, DontCallOnWriteBlockedForDisconnectedConnection) {
@@ -895,8 +913,6 @@ TEST_P(QuicSessionTestServer, OnCanWriteWriterBlocks) {
   MockPacketWriter* writer = static_cast<MockPacketWriter*>(
       QuicConnectionPeer::GetWriter(session_.connection()));
   EXPECT_CALL(*writer, IsWriteBlocked()).WillRepeatedly(Return(true));
-  EXPECT_CALL(*writer, IsWriteBlockedDataBuffered())
-      .WillRepeatedly(Return(true));
   EXPECT_CALL(*writer, WritePacket(_, _, _, _, _)).Times(0);
 
   TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
@@ -1272,19 +1288,23 @@ TEST_P(QuicSessionTestServer, ConnectionFlowControlAccountingRstOutOfOrder) {
   const QuicStreamOffset kByteOffset =
       1 + kInitialSessionFlowControlWindowForTest / 2;
 
-  if (transport_version() == QUIC_VERSION_99) {
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .Times(3)
-        .WillRepeatedly(Invoke(&session_, &TestSession::ClearControlFrame));
-  } else {
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .Times(2)
-        .WillRepeatedly(Invoke(&session_, &TestSession::ClearControlFrame));
-  }
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .Times(2)
+      .WillRepeatedly(Invoke(&session_, &TestSession::ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(stream->id(), _));
+
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream->id(),
                                QUIC_STREAM_CANCELLED, kByteOffset);
   session_.OnRstStream(rst_frame);
+  if (transport_version() == QUIC_VERSION_99) {
+    // The test is predicated on the stream being fully closed. For V99, the
+    // RST_STREAM only does one side (the read side from the perspective of the
+    // node receiving the RST_STREAM). This is needed to fully close the
+    // stream and therefore fulfill all of the expects.
+    QuicStopSendingFrame frame(kInvalidControlFrameId, stream->id(),
+                               QUIC_STREAM_CANCELLED);
+    EXPECT_TRUE(session_.OnStopSendingFrame(frame));
+  }
   EXPECT_EQ(kByteOffset, session_.flow_controller()->bytes_consumed());
 }
 
@@ -1503,6 +1523,63 @@ TEST_P(QuicSessionTestServer, DrainingStreamsDoNotCountAsOpenedOutgoing) {
   session_.StreamDraining(stream_id);
 }
 
+TEST_P(QuicSessionTestServer, NoPendingStreams) {
+  session_.set_should_buffer_incoming_streams(false);
+
+  QuicStreamId stream_id = QuicUtils::GetFirstUnidirectionalStreamId(
+      transport_version(), Perspective::IS_CLIENT);
+  QuicStreamFrame data1(stream_id, true, 10, QuicStringPiece("HT"));
+  session_.OnStreamFrame(data1);
+  EXPECT_EQ(1, session_.num_incoming_streams_created());
+
+  QuicStreamFrame data2(stream_id, false, 0, QuicStringPiece("HT"));
+  session_.OnStreamFrame(data2);
+  EXPECT_EQ(1, session_.num_incoming_streams_created());
+}
+
+TEST_P(QuicSessionTestServer, PendingStreams) {
+  if (connection_->transport_version() != QUIC_VERSION_99) {
+    return;
+  }
+  session_.set_should_buffer_incoming_streams(true);
+
+  QuicStreamId stream_id = QuicUtils::GetFirstUnidirectionalStreamId(
+      transport_version(), Perspective::IS_CLIENT);
+  QuicStreamFrame data1(stream_id, true, 10, QuicStringPiece("HT"));
+  session_.OnStreamFrame(data1);
+  EXPECT_EQ(0, session_.num_incoming_streams_created());
+
+  QuicStreamFrame data2(stream_id, false, 0, QuicStringPiece("HT"));
+  session_.OnStreamFrame(data2);
+  EXPECT_EQ(1, session_.num_incoming_streams_created());
+}
+
+TEST_P(QuicSessionTestServer, RstPendingStreams) {
+  if (connection_->transport_version() != QUIC_VERSION_99) {
+    return;
+  }
+  session_.set_should_buffer_incoming_streams(true);
+
+  QuicStreamId stream_id = QuicUtils::GetFirstUnidirectionalStreamId(
+      transport_version(), Perspective::IS_CLIENT);
+  QuicStreamFrame data1(stream_id, true, 10, QuicStringPiece("HT"));
+  session_.OnStreamFrame(data1);
+  EXPECT_EQ(0, session_.num_incoming_streams_created());
+
+  EXPECT_CALL(session_, OnCanCreateNewOutgoingStream()).Times(1);
+  EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
+  EXPECT_CALL(*connection_, OnStreamReset(stream_id, QUIC_RST_ACKNOWLEDGEMENT))
+      .Times(1);
+  QuicRstStreamFrame rst1(kInvalidControlFrameId, stream_id,
+                          QUIC_ERROR_PROCESSING_STREAM, 12);
+  session_.OnRstStream(rst1);
+  EXPECT_EQ(0, session_.num_incoming_streams_created());
+
+  QuicStreamFrame data2(stream_id, false, 0, QuicStringPiece("HT"));
+  session_.OnStreamFrame(data2);
+  EXPECT_EQ(0, session_.num_incoming_streams_created());
+}
+
 TEST_P(QuicSessionTestServer, DrainingStreamsDoNotCountAsOpened) {
   // Verify that a draining stream (which has received a FIN but not consumed
   // it) does not count against the open quota (because it is closed from the
@@ -1537,9 +1614,9 @@ class QuicSessionTestClient : public QuicSessionTestBase {
   QuicSessionTestClient() : QuicSessionTestBase(Perspective::IS_CLIENT) {}
 };
 
-INSTANTIATE_TEST_CASE_P(Tests,
-                        QuicSessionTestClient,
-                        ::testing::ValuesIn(AllSupportedVersions()));
+INSTANTIATE_TEST_SUITE_P(Tests,
+                         QuicSessionTestClient,
+                         ::testing::ValuesIn(AllSupportedVersions()));
 
 TEST_P(QuicSessionTestClient, AvailableBidirectionalStreamsClient) {
   ASSERT_TRUE(session_.GetOrCreateDynamicStream(
@@ -1654,19 +1731,27 @@ TEST_P(QuicSessionTestServer, TestZombieStreams) {
 
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream2->id(),
                                QUIC_STREAM_CANCELLED, 1234);
+  // Just for the RST_STREAM
+  EXPECT_CALL(*connection_, SendControlFrame(_))
+      .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
   if (transport_version() == QUIC_VERSION_99) {
-    // Once for the RST_STREAM, once for the STOP_SENDING
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .Times(2)
-        .WillRepeatedly(Invoke(&session_, &TestSession::ClearControlFrame));
+    EXPECT_CALL(*connection_,
+                OnStreamReset(stream2->id(), QUIC_STREAM_CANCELLED));
   } else {
-    // Just for the RST_STREAM
-    EXPECT_CALL(*connection_, SendControlFrame(_))
-        .WillOnce(Invoke(&session_, &TestSession::ClearControlFrame));
+    EXPECT_CALL(*connection_,
+                OnStreamReset(stream2->id(), QUIC_RST_ACKNOWLEDGEMENT));
   }
-  EXPECT_CALL(*connection_,
-              OnStreamReset(stream2->id(), QUIC_RST_ACKNOWLEDGEMENT));
   stream2->OnStreamReset(rst_frame);
+
+  if (transport_version() == QUIC_VERSION_99) {
+    // The test is predicated on the stream being fully closed. For V99, the
+    // RST_STREAM only does one side (the read side from the perspective of the
+    // node receiving the RST_STREAM). This is needed to fully close the
+    // stream and therefore fulfill all of the expects.
+    QuicStopSendingFrame frame(kInvalidControlFrameId, stream2->id(),
+                               QUIC_STREAM_CANCELLED);
+    EXPECT_TRUE(session_.OnStopSendingFrame(frame));
+  }
   EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
   ASSERT_EQ(1u, session_.closed_streams()->size());
   EXPECT_EQ(stream2->id(), session_.closed_streams()->front()->id());
@@ -1684,6 +1769,10 @@ TEST_P(QuicSessionTestServer, TestZombieStreams) {
   EXPECT_CALL(*connection_,
               OnStreamReset(stream4->id(), QUIC_STREAM_CANCELLED));
   stream4->WriteOrBufferData(body, false, nullptr);
+  // Note well: Reset() actually closes the stream in both directions. For
+  // GOOGLE QUIC it sends a RST_STREAM (which does a 2-way close), for IETF
+  // QUIC/V99 it sends both a RST_STREAM and a STOP_SENDING (each of which
+  // closes in only one direction).
   stream4->Reset(QUIC_STREAM_CANCELLED);
   EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream4->id()));
   EXPECT_EQ(2u, session_.closed_streams()->size());
@@ -1861,8 +1950,11 @@ TEST_P(QuicSessionTestServer, RetransmitLostDataCausesConnectionClose) {
 TEST_P(QuicSessionTestServer, SendMessage) {
   // Cannot send message when encryption is not established.
   EXPECT_FALSE(session_.IsCryptoHandshakeConfirmed());
+  quic::QuicMemSliceStorage storage(nullptr, 0, nullptr, 0);
   EXPECT_EQ(MessageResult(MESSAGE_STATUS_ENCRYPTION_NOT_ESTABLISHED, 0),
-            session_.SendMessage(""));
+            session_.SendMessage(
+                MakeSpan(connection_->helper()->GetStreamSendBufferAllocator(),
+                         "", &storage)));
 
   // Finish handshake.
   CryptoHandshakeMessage handshake_message;
@@ -1870,23 +1962,29 @@ TEST_P(QuicSessionTestServer, SendMessage) {
   EXPECT_TRUE(session_.IsCryptoHandshakeConfirmed());
 
   QuicStringPiece message;
-  QuicMessageFrame frame(1, message);
   EXPECT_CALL(*connection_, SendMessage(1, _))
       .WillOnce(Return(MESSAGE_STATUS_SUCCESS));
   EXPECT_EQ(MessageResult(MESSAGE_STATUS_SUCCESS, 1),
-            session_.SendMessage(message));
+            session_.SendMessage(
+                MakeSpan(connection_->helper()->GetStreamSendBufferAllocator(),
+                         message, &storage)));
   // Verify message_id increases.
   EXPECT_CALL(*connection_, SendMessage(2, _))
       .WillOnce(Return(MESSAGE_STATUS_TOO_LARGE));
   EXPECT_EQ(MessageResult(MESSAGE_STATUS_TOO_LARGE, 0),
-            session_.SendMessage(message));
+            session_.SendMessage(
+                MakeSpan(connection_->helper()->GetStreamSendBufferAllocator(),
+                         message, &storage)));
   // Verify unsent message does not consume a message_id.
   EXPECT_CALL(*connection_, SendMessage(2, _))
       .WillOnce(Return(MESSAGE_STATUS_SUCCESS));
-  QuicMessageFrame frame2(2, message);
   EXPECT_EQ(MessageResult(MESSAGE_STATUS_SUCCESS, 2),
-            session_.SendMessage(message));
+            session_.SendMessage(
+                MakeSpan(connection_->helper()->GetStreamSendBufferAllocator(),
+                         message, &storage)));
 
+  QuicMessageFrame frame(1);
+  QuicMessageFrame frame2(2);
   EXPECT_FALSE(session_.IsFrameOutstanding(QuicFrame(&frame)));
   EXPECT_FALSE(session_.IsFrameOutstanding(QuicFrame(&frame2)));
 
@@ -2204,10 +2302,24 @@ TEST_P(QuicSessionTestServer, OnStopSendingInputValidStream) {
   }
 
   TestStream* stream = session_.CreateOutgoingBidirectionalStream();
+
+  // Ensure that the stream starts out open in both directions.
+  EXPECT_FALSE(QuicStreamPeer::write_side_closed(stream));
+  EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream));
+
   QuicStreamId stream_id = stream->id();
   QuicStopSendingFrame frame(1, stream_id, 123);
   EXPECT_CALL(*stream, OnStopSending(123));
+  // Expect a reset to come back out.
+  EXPECT_CALL(*connection_, SendControlFrame(_));
+  EXPECT_CALL(
+      *connection_,
+      OnStreamReset(stream_id, static_cast<QuicRstStreamErrorCode>(123)));
   EXPECT_TRUE(session_.OnStopSendingFrame(frame));
+  // When the STOP_SENDING is received, the node generates a RST_STREAM,
+  // which closes the stream in the write direction. Ensure this.
+  EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream));
+  EXPECT_TRUE(QuicStreamPeer::write_side_closed(stream));
 }
 
 }  // namespace

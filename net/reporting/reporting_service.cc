@@ -49,8 +49,14 @@ class ReportingServiceImpl : public ReportingService {
     if (!context_->delegate()->CanQueueReport(url::Origin::Create(url)))
       return;
 
-    context_->cache()->AddReport(url, user_agent, group, type, std::move(body),
-                                 depth, context_->tick_clock()->NowTicks(), 0);
+    // Strip username, password, and ref fragment from the URL.
+    GURL sanitized_url = url.GetAsReferrer();
+    if (!sanitized_url.is_valid())
+      return;
+
+    context_->cache()->AddReport(sanitized_url, user_agent, group, type,
+                                 std::move(body), depth,
+                                 context_->tick_clock()->NowTicks(), 0);
   }
 
   void ProcessHeader(const GURL& url,
@@ -60,8 +66,9 @@ class ReportingServiceImpl : public ReportingService {
       return;
     }
 
-    std::unique_ptr<base::Value> header_value = base::JSONReader::Read(
-        "[" + header_string + "]", base::JSON_PARSE_RFC, kMaxJsonDepth);
+    std::unique_ptr<base::Value> header_value =
+        base::JSONReader::ReadDeprecated("[" + header_string + "]",
+                                         base::JSON_PARSE_RFC, kMaxJsonDepth);
     if (!header_value) {
       ReportingHeaderParser::RecordHeaderDiscardedForJsonInvalid();
       return;

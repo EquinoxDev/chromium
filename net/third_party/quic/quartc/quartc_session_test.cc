@@ -5,17 +5,17 @@
 #include "net/third_party/quic/quartc/quartc_session.h"
 
 #include "build/build_config.h"
-#include "net/third_party/quic/core/proto/crypto_server_config.pb.h"
 #include "net/third_party/quic/core/quic_simple_buffer_allocator.h"
 #include "net/third_party/quic/core/quic_types.h"
 #include "net/third_party/quic/core/tls_client_handshaker.h"
 #include "net/third_party/quic/core/tls_server_handshaker.h"
+#include "net/third_party/quic/platform/api/quic_clock.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quic/platform/api/quic_string_utils.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
 #include "net/third_party/quic/platform/api/quic_test_mem_slice_vector.h"
 #include "net/third_party/quic/quartc/counting_packet_filter.h"
-#include "net/third_party/quic/quartc/quartc_factory.h"
+#include "net/third_party/quic/quartc/quartc_endpoint.h"
 #include "net/third_party/quic/quartc/quartc_packet_writer.h"
 #include "net/third_party/quic/quartc/simulated_packet_transport.h"
 #include "net/third_party/quic/test_tools/mock_clock.h"
@@ -33,20 +33,58 @@ namespace {
 
 static QuicByteCount kDefaultMaxPacketSize = 1200;
 
+class FakeQuartcEndpointDelegate : public QuartcEndpoint::Delegate {
+ public:
+  explicit FakeQuartcEndpointDelegate(QuartcSession::Delegate* session_delegate)
+      : session_delegate_(session_delegate) {}
+
+  void OnSessionCreated(QuartcSession* session) override {
+    CHECK_EQ(session_, nullptr);
+    CHECK_NE(session, nullptr);
+    session_ = session;
+    session_->SetDelegate(session_delegate_);
+    session_->StartCryptoHandshake();
+  }
+
+  void OnConnectError(QuicErrorCode error,
+                      const QuicString& error_details) override {
+    LOG(FATAL) << "Unexpected error during QuartcEndpoint::Connect(); error="
+               << error << ", error_details=" << error_details;
+  }
+
+  QuartcSession* session() { return session_; }
+
+ private:
+  QuartcSession::Delegate* session_delegate_;
+  QuartcSession* session_ = nullptr;
+};
+
 class FakeQuartcSessionDelegate : public QuartcSession::Delegate {
  public:
-  explicit FakeQuartcSessionDelegate(QuartcStream::Delegate* stream_delegate)
-      : stream_delegate_(stream_delegate) {}
+  explicit FakeQuartcSessionDelegate(QuartcStream::Delegate* stream_delegate,
+                                     const QuicClock* clock)
+      : stream_delegate_(stream_delegate), clock_(clock) {}
+
+  void OnConnectionWritable() override {
+    LOG(INFO) << "Connection writable!";
+    if (!writable_time_.IsInitialized()) {
+      writable_time_ = clock_->Now();
+    }
+  }
+
   // Called when peers have established forward-secure encryption
   void OnCryptoHandshakeComplete() override {
     LOG(INFO) << "Crypto handshake complete!";
+    crypto_handshake_time_ = clock_->Now();
   }
+
   // Called when connection closes locally, or remotely by peer.
   void OnConnectionClosed(QuicErrorCode error_code,
                           const QuicString& error_details,
                           ConnectionCloseSource source) override {
     connected_ = false;
   }
+
   // Called when an incoming QUIC stream is created.
   void OnIncomingStream(QuartcStream* quartc_stream) override {
     last_incoming_stream_ = quartc_stream;
@@ -69,12 +107,17 @@ class FakeQuartcSessionDelegate : public QuartcSession::Delegate {
   }
 
   bool connected() { return connected_; }
+  QuicTime writable_time() const { return writable_time_; }
+  QuicTime crypto_handshake_time() const { return crypto_handshake_time_; }
 
  private:
   QuartcStream* last_incoming_stream_;
   std::vector<QuicString> incoming_messages_;
   bool connected_ = true;
   QuartcStream::Delegate* stream_delegate_;
+  QuicTime writable_time_ = QuicTime::Zero();
+  QuicTime crypto_handshake_time_ = QuicTime::Zero();
+  const QuicClock* clock_;
 };
 
 class FakeQuartcStreamDelegate : public QuartcStream::Delegate {
@@ -132,16 +175,22 @@ class QuartcSessionTest : public QuicTest {
 
     client_stream_delegate_ = QuicMakeUnique<FakeQuartcStreamDelegate>();
     client_session_delegate_ = QuicMakeUnique<FakeQuartcSessionDelegate>(
-        client_stream_delegate_.get());
+        client_stream_delegate_.get(), simulator_.GetClock());
+    client_endpoint_delegate_ = QuicMakeUnique<FakeQuartcEndpointDelegate>(
+        client_session_delegate_.get());
 
     server_stream_delegate_ = QuicMakeUnique<FakeQuartcStreamDelegate>();
     server_session_delegate_ = QuicMakeUnique<FakeQuartcSessionDelegate>(
-        server_stream_delegate_.get());
+        server_stream_delegate_.get(), simulator_.GetClock());
+    server_endpoint_delegate_ = QuicMakeUnique<FakeQuartcEndpointDelegate>(
+        server_session_delegate_.get());
 
-    QuartcFactoryConfig factory_config;
-    factory_config.alarm_factory = simulator_.GetAlarmFactory();
-    factory_config.clock = simulator_.GetClock();
-    quartc_factory_ = QuicMakeUnique<QuartcFactory>(factory_config);
+    client_endpoint_ = QuicMakeUnique<QuartcEndpoint>(
+        simulator_.GetAlarmFactory(), simulator_.GetClock(),
+        client_endpoint_delegate_.get());
+    server_endpoint_ = QuicMakeUnique<QuartcEndpoint>(
+        simulator_.GetAlarmFactory(), simulator_.GetClock(),
+        server_endpoint_delegate_.get());
   }
 
   // Note that input session config will apply to both server and client.
@@ -150,26 +199,33 @@ class QuartcSessionTest : public QuicTest {
       const QuartcSessionConfig& session_config) {
     Init();
 
-    QuartcSessionConfig client_session_config = session_config;
-    client_session_config.perspective = Perspective::IS_CLIENT;
-    client_session_config.packet_transport = client_transport_.get();
-    client_peer_ = quartc_factory_->CreateQuartcSession(client_session_config);
-    client_peer_->SetDelegate(client_session_delegate_.get());
-
     QuartcSessionConfig server_session_config = session_config;
     server_session_config.perspective = Perspective::IS_SERVER;
     server_session_config.packet_transport = server_transport_.get();
-    server_peer_ = quartc_factory_->CreateQuartcSession(server_session_config);
-    server_peer_->SetDelegate(server_session_delegate_.get());
+    server_endpoint_->Connect(server_session_config);
+
+    QuartcSessionConfig client_session_config = session_config;
+    client_session_config.perspective = Perspective::IS_CLIENT;
+    client_session_config.packet_transport = client_transport_.get();
+    client_endpoint_->Connect(client_session_config);
+
+    CHECK(simulator_.RunUntil([this] {
+      return client_endpoint_delegate_->session() != nullptr &&
+             server_endpoint_delegate_->session() != nullptr;
+    }));
+
+    client_peer_ = client_endpoint_delegate_->session();
+    server_peer_ = server_endpoint_delegate_->session();
   }
 
   // Runs all tasks scheduled in the next 200 ms.
   void RunTasks() { simulator_.RunFor(QuicTime::Delta::FromMilliseconds(200)); }
 
-  void StartHandshake() {
-    server_peer_->StartCryptoHandshake();
-    client_peer_->StartCryptoHandshake();
-    RunTasks();
+  void AwaitHandshake() {
+    simulator_.RunUntil([this] {
+      return client_peer_->IsCryptoHandshakeConfirmed() &&
+             server_peer_->IsCryptoHandshakeConfirmed();
+    });
   }
 
   // Test handshake establishment and sending/receiving of data for two
@@ -257,7 +313,7 @@ class QuartcSessionTest : public QuicTest {
     ASSERT_TRUE(client_peer_->CanSendMessage());
 
     QuartcSession* const peer_sending =
-        direction_from_server ? server_peer_.get() : client_peer_.get();
+        direction_from_server ? server_peer_ : client_peer_;
 
     FakeQuartcSessionDelegate* const delegate_receiving =
         direction_from_server ? client_session_delegate_.get()
@@ -321,52 +377,78 @@ class QuartcSessionTest : public QuicTest {
  protected:
   simulator::Simulator simulator_;
 
-  std::unique_ptr<QuartcFactory> quartc_factory_;
-
   std::unique_ptr<simulator::SimulatedQuartcPacketTransport> client_transport_;
   std::unique_ptr<simulator::SimulatedQuartcPacketTransport> server_transport_;
   std::unique_ptr<simulator::CountingPacketFilter> client_filter_;
   std::unique_ptr<simulator::SymmetricLink> client_server_link_;
 
-  std::unique_ptr<QuartcSession> client_peer_;
-  std::unique_ptr<QuartcSession> server_peer_;
-
   std::unique_ptr<FakeQuartcStreamDelegate> client_stream_delegate_;
   std::unique_ptr<FakeQuartcSessionDelegate> client_session_delegate_;
+  std::unique_ptr<FakeQuartcEndpointDelegate> client_endpoint_delegate_;
   std::unique_ptr<FakeQuartcStreamDelegate> server_stream_delegate_;
   std::unique_ptr<FakeQuartcSessionDelegate> server_session_delegate_;
+  std::unique_ptr<FakeQuartcEndpointDelegate> server_endpoint_delegate_;
+
+  std::unique_ptr<QuartcEndpoint> client_endpoint_;
+  std::unique_ptr<QuartcEndpoint> server_endpoint_;
+
+  QuartcSession* client_peer_ = nullptr;
+  QuartcSession* server_peer_ = nullptr;
 };
 
 TEST_F(QuartcSessionTest, SendReceiveStreams) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   TestSendReceiveStreams();
 }
 
 TEST_F(QuartcSessionTest, SendReceiveMessages) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   TestSendReceiveMessage();
 }
 
 TEST_F(QuartcSessionTest, SendReceiveQueuedMessages) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   TestSendReceiveQueuedMessages(/*direction_from_server=*/true);
   TestSendReceiveQueuedMessages(/*direction_from_server=*/false);
 }
 
 TEST_F(QuartcSessionTest, SendMessageFails) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   TestSendLongMessage();
 }
 
-TEST_F(QuartcSessionTest, PreSharedKeyHandshake) {
+TEST_F(QuartcSessionTest, TestCryptoHandshakeCanWriteTriggers) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  client_peer_->SetPreSharedKey("foo");
-  server_peer_->SetPreSharedKey("foo");
-  StartHandshake();
+
+  AwaitHandshake();
+
+  RunTasks();
+
+  ASSERT_TRUE(client_session_delegate_->writable_time().IsInitialized());
+  ASSERT_TRUE(
+      client_session_delegate_->crypto_handshake_time().IsInitialized());
+  // On client, we are writable 1-rtt before crypto handshake is complete.
+  ASSERT_LT(client_session_delegate_->writable_time(),
+            client_session_delegate_->crypto_handshake_time());
+
+  ASSERT_TRUE(server_session_delegate_->writable_time().IsInitialized());
+  ASSERT_TRUE(
+      server_session_delegate_->crypto_handshake_time().IsInitialized());
+  // On server, the writable time and crypto handshake are the same. (when SHLO
+  // is sent).
+  ASSERT_EQ(server_session_delegate_->writable_time(),
+            server_session_delegate_->crypto_handshake_time());
+}
+
+TEST_F(QuartcSessionTest, PreSharedKeyHandshake) {
+  QuartcSessionConfig config;
+  config.pre_shared_key = "foo";
+  CreateClientAndServerSessions(config);
+  AwaitHandshake();
   TestSendReceiveStreams();
   TestSendReceiveMessage();
 }
@@ -380,7 +462,7 @@ TEST_F(QuartcSessionTest, CannotCreateDataStreamBeforeHandshake) {
 
 TEST_F(QuartcSessionTest, CancelQuartcStream) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   ASSERT_TRUE(client_peer_->IsCryptoHandshakeConfirmed());
   ASSERT_TRUE(server_peer_->IsCryptoHandshakeConfirmed());
 
@@ -402,7 +484,7 @@ TEST_F(QuartcSessionTest, CancelQuartcStream) {
 // SimulatedQuartcPacketTransport::last_packet_number().
 TEST_F(QuartcSessionTest, WriterGivesPacketNumberToTransport) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   ASSERT_TRUE(client_peer_->IsCryptoHandshakeConfirmed());
   ASSERT_TRUE(server_peer_->IsCryptoHandshakeConfirmed());
 
@@ -423,7 +505,7 @@ TEST_F(QuartcSessionTest, WriterGivesPacketNumberToTransport) {
 
 TEST_F(QuartcSessionTest, CloseConnection) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   ASSERT_TRUE(client_peer_->IsCryptoHandshakeConfirmed());
   ASSERT_TRUE(server_peer_->IsCryptoHandshakeConfirmed());
 
@@ -435,7 +517,7 @@ TEST_F(QuartcSessionTest, CloseConnection) {
 
 TEST_F(QuartcSessionTest, StreamRetransmissionEnabled) {
   CreateClientAndServerSessions(QuartcSessionConfig());
-  StartHandshake();
+  AwaitHandshake();
   ASSERT_TRUE(client_peer_->IsCryptoHandshakeConfirmed());
   ASSERT_TRUE(server_peer_->IsCryptoHandshakeConfirmed());
 
@@ -468,9 +550,14 @@ TEST_F(QuartcSessionTest, StreamRetransmissionDisabled) {
   // message will be retransmitted to to probe for more bandwidth.
   client_peer_->connection()->set_fill_up_link_during_probing(false);
 
-  StartHandshake();
+  AwaitHandshake();
   ASSERT_TRUE(client_peer_->IsCryptoHandshakeConfirmed());
   ASSERT_TRUE(server_peer_->IsCryptoHandshakeConfirmed());
+
+  // The client sends an ACK for the crypto handshake next.  This must be
+  // flushed before we set the filter to drop the next packet, in order to
+  // ensure that the filter drops a data-bearing packet instead of just an ack.
+  RunTasks();
 
   QuartcStream* stream = client_peer_->CreateOutgoingBidirectionalStream();
   QuicStreamId stream_id = stream->id();

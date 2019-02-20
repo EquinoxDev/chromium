@@ -80,6 +80,10 @@ suite('CrostiniPageTests', function() {
 
     setup(function() {
       setCrostiniPrefs(true);
+      loadTimeData.overrideValues({
+        showCrostiniExportImport: true,
+      });
+
       settings.navigateTo(settings.routes.CROSTINI);
       crostiniPage.$$('#crostini').click();
       return flushAsync().then(() => {
@@ -90,6 +94,8 @@ suite('CrostiniPageTests', function() {
 
     test('Sanity', function() {
       assertTrue(!!subpage.$$('#crostini-shared-paths'));
+      assertTrue(!!subpage.$$('#export'));
+      assertTrue(!!subpage.$$('#import'));
       assertTrue(!!subpage.$$('#remove'));
     });
 
@@ -102,6 +108,19 @@ suite('CrostiniPageTests', function() {
       });
     });
 
+    test('Export', function() {
+      assertTrue(!!subpage.$$('#export paper-button'));
+      subpage.$$('#export paper-button').click();
+      assertEquals(
+          1, crostiniBrowserProxy.getCallCount('exportCrostiniContainer'));
+    });
+
+    test('Import', function() {
+      assertTrue(!!subpage.$$('#import paper-button'));
+      subpage.$$('#import paper-button').click();
+      assertEquals(
+          1, crostiniBrowserProxy.getCallCount('importCrostiniContainer'));
+    });
 
     test('Remove', function() {
       assertTrue(!!subpage.$$('#remove .subpage-arrow'));
@@ -140,25 +159,26 @@ suite('CrostiniPageTests', function() {
 
     test('Sanity', function() {
       assertEquals(
-          3, subpage.shadowRoot.querySelectorAll('.settings-box').length);
+          2, subpage.shadowRoot.querySelectorAll('.settings-box').length);
+      assertEquals(2, subpage.shadowRoot.querySelectorAll('.list-item').length);
     });
 
     test('Remove', function() {
       assertFalse(subpage.$.crostiniInstructionsRemove.hidden);
-      assertTrue(!!subpage.$$('.settings-box button'));
+      assertTrue(!!subpage.$$('.list-item button'));
       // Remove first shared path, still one left.
-      subpage.$$('.settings-box button').click();
+      subpage.$$('.list-item button').click();
       assertEquals(1, crostiniBrowserProxy.sharedPaths.length);
       setCrostiniPrefs(true, crostiniBrowserProxy.sharedPaths);
       return flushAsync()
           .then(() => {
             Polymer.dom.flush();
             assertEquals(
-                2, subpage.shadowRoot.querySelectorAll('.settings-box').length);
+                1, subpage.shadowRoot.querySelectorAll('.list-item').length);
             assertFalse(subpage.$.crostiniInstructionsRemove.hidden);
 
             // Remove remaining shared path, none left.
-            subpage.$$('.settings-box button').click();
+            subpage.$$('.list-item button').click();
             assertEquals(0, crostiniBrowserProxy.sharedPaths.length);
             setCrostiniPrefs(true, crostiniBrowserProxy.sharedPaths);
             return flushAsync();
@@ -166,7 +186,7 @@ suite('CrostiniPageTests', function() {
           .then(() => {
             Polymer.dom.flush();
             assertEquals(
-                1, subpage.shadowRoot.querySelectorAll('.settings-box').length);
+                0, subpage.shadowRoot.querySelectorAll('.list-item').length);
             // Verify remove instructions are hidden.
             assertTrue(subpage.$.crostiniInstructionsRemove.hidden);
           });

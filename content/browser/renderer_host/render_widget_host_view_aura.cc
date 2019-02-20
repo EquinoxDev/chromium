@@ -60,6 +60,7 @@
 #include "services/ws/public/mojom/window_tree_constants.mojom.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "third_party/blink/public/web/web_ime_text_span.h"
+#include "ui/accessibility/accessibility_switches.h"
 #include "ui/accessibility/platform/aura_window_properties.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
@@ -110,6 +111,7 @@
 #include "content/browser/accessibility/browser_accessibility_manager_win.h"
 #include "content/browser/accessibility/browser_accessibility_win.h"
 #include "content/browser/renderer_host/legacy_render_widget_host_win.h"
+#include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/base/ime/input_method_keyboard_controller.h"
 #include "ui/base/ime/input_method_keyboard_controller_observer.h"
 #include "ui/base/win/hidden_window.h"
@@ -393,13 +395,13 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(
       new TouchSelectionControllerClientAura(this));
   CreateSelectionController();
 
-  RenderViewHost* rvh = host()->GetRenderViewHost();
-  if (rvh) {
+  RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
+  if (owner_delegate) {
     // TODO(mostynb): actually use prefs.  Landing this as a separate CL
     // first to rebaseline some unreliable web tests.
     // NOTE: This will not be run for child frame widgets, which do not have
     // an owner delegate and won't get a RenderViewHost here.
-    ignore_result(rvh->GetWebkitPreferences());
+    ignore_result(owner_delegate->GetWebkitPreferencesForWidget());
   }
 }
 
@@ -602,15 +604,13 @@ void RenderWidgetHostViewAura::OnBeginFrame(base::TimeTicks frame_time) {
 }
 
 RenderFrameHostImpl* RenderWidgetHostViewAura::GetFocusedFrame() const {
-  RenderViewHost* rvh = host()->GetRenderViewHost();
+  RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
   // TODO(crbug.com/689777): Child local roots do not work here?
-  if (!rvh)
+  if (!owner_delegate)
     return nullptr;
-  FrameTreeNode* focused_frame =
-      rvh->GetDelegate()->GetFrameTree()->GetFocusedFrame();
+  FrameTreeNode* focused_frame = owner_delegate->GetFocusedFrame();
   if (!focused_frame)
     return nullptr;
-
   return focused_frame->current_frame_host();
 }
 
@@ -720,6 +720,10 @@ void RenderWidgetHostViewAura::WasOccluded() {
   if (legacy_render_widget_host_HWND_)
     legacy_render_widget_host_HWND_->Hide();
 #endif
+}
+
+bool RenderWidgetHostViewAura::ShouldShowStaleContentOnEviction() {
+  return host() && host()->ShouldShowStaleContentOnEviction();
 }
 
 gfx::Rect RenderWidgetHostViewAura::GetViewBounds() const {
@@ -840,15 +844,6 @@ void RenderWidgetHostViewAura::DisplayTooltipText(
 
 uint32_t RenderWidgetHostViewAura::GetCaptureSequenceNumber() const {
   return latest_capture_sequence_number_;
-}
-
-bool RenderWidgetHostViewAura::DoBrowserControlsShrinkRendererSize() const {
-  return host()->delegate() &&
-         host()->delegate()->DoBrowserControlsShrinkRendererSize();
-}
-
-float RenderWidgetHostViewAura::GetTopControlsHeight() const {
-  return host()->delegate() ? host()->delegate()->GetTopControlsHeight() : 0;
 }
 
 void RenderWidgetHostViewAura::CopyFromSurface(
@@ -1185,9 +1180,24 @@ RenderWidgetHostViewAura::AccessibilityGetAcceleratedWidget() {
 gfx::NativeViewAccessible
 RenderWidgetHostViewAura::AccessibilityGetNativeViewAccessible() {
 #if defined(OS_WIN)
-  if (legacy_render_widget_host_HWND_)
-    return legacy_render_widget_host_HWND_->window_accessible();
+  if (legacy_render_widget_host_HWND_) {
+    if (switches::IsExperimentalAccessibilityPlatformUIAEnabled()) {
+      ui::AXFragmentRootWin* fragment_root =
+          ui::AXFragmentRootWin::GetForAcceleratedWidget(
+              legacy_render_widget_host_HWND_->hwnd());
+      if (fragment_root)
+        return fragment_root->GetNativeViewAccessible();
+    } else {
+      return legacy_render_widget_host_HWND_->window_accessible();
+    }
+  }
 #endif
+
+  if (window_->parent()) {
+    return window_->parent()->GetProperty(
+        aura::client::kParentNativeViewAccessibleKey);
+  }
+
   return nullptr;
 }
 
@@ -1394,36 +1404,41 @@ bool RenderWidgetHostViewAura::GetTextRange(gfx::Range* range) const {
   if (!text_input_manager_ || !GetFocusedWidget())
     return false;
 
-  const TextInputManager::TextSelection* selection =
-      text_input_manager_->GetTextSelection(GetFocusedWidget()->GetView());
-  if (!selection)
+  const TextInputState* state = text_input_manager_->GetTextInputState();
+  if (!state)
     return false;
 
-  range->set_start(selection->offset());
-  range->set_end(selection->offset() + selection->text().length());
+  range->set_start(0);
+  range->set_end(state->value.length());
   return true;
 }
 
 bool RenderWidgetHostViewAura::GetCompositionTextRange(
     gfx::Range* range) const {
-  // TODO(suzhe): implement this method when fixing http://crbug.com/55130.
-  NOTIMPLEMENTED_LOG_ONCE();
-  return false;
+  if (!text_input_manager_ || !GetFocusedWidget())
+    return false;
+
+  const TextInputState* state = text_input_manager_->GetTextInputState();
+  // Return false when there is no composition.
+  if (!state || state->composition_start == -1)
+    return false;
+
+  range->set_start(state->composition_start);
+  range->set_end(state->composition_end);
+  return true;
 }
 
 bool RenderWidgetHostViewAura::GetEditableSelectionRange(
     gfx::Range* range) const {
-  // TODO(yhanada, crbug.com/908762): Return only selections in a text field.
   if (!text_input_manager_ || !GetFocusedWidget())
     return false;
 
-  const TextInputManager::TextSelection* selection =
-      text_input_manager_->GetTextSelection(GetFocusedWidget()->GetView());
-  if (!selection)
+  const TextInputState* state = text_input_manager_->GetTextInputState();
+  if (!state)
     return false;
 
-  range->set_start(selection->range().start());
-  range->set_end(selection->range().end());
+  range->set_start(state->selection_start);
+  range->set_end(state->selection_end);
   return true;
 }
 
@@ -1450,24 +1465,22 @@ bool RenderWidgetHostViewAura::GetTextFromRange(
   if (!text_input_manager_ || !GetFocusedWidget())
     return false;
 
-  const TextInputManager::TextSelection* selection =
-      text_input_manager_->GetTextSelection(GetFocusedWidget()->GetView());
-  if (!selection)
+  const TextInputState* state = text_input_manager_->GetTextInputState();
+  if (!state)
     return false;
 
-  gfx::Range selection_text_range(
-      selection->offset(), selection->offset() + selection->text().length());
+  gfx::Range text_range;
+  GetTextRange(&text_range);
 
-  if (!selection_text_range.Contains(range)) {
+  if (!text_range.Contains(range)) {
     text->clear();
     return false;
   }
-  if (selection_text_range.EqualsIgnoringDirection(range)) {
+  if (text_range.EqualsIgnoringDirection(range)) {
     // Avoid calling substr whose performance is low.
-    *text = selection->text();
+    *text = state->value;
   } else {
-    *text = selection->text().substr(range.GetMin() - selection->offset(),
-                                     range.length());
+    *text = state->value.substr(range.GetMin(), range.length());
   }
   return true;
 }
@@ -1664,13 +1677,15 @@ bool RenderWidgetHostViewAura::HasHitTestMask() const {
   return false;
 }
 
-void RenderWidgetHostViewAura::GetHitTestMask(gfx::Path* mask) const {
-}
+void RenderWidgetHostViewAura::GetHitTestMask(SkPath* mask) const {}
 
 bool RenderWidgetHostViewAura::RequiresDoubleTapGestureEvents() const {
-  RenderViewHost* rvh = host()->GetRenderViewHost();
+  RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
   // TODO(crbug.com/916715): Child local roots do not work here?
-  return rvh && rvh->GetWebkitPreferences().double_tap_to_zoom_enabled;
+  if (!owner_delegate)
+    return false;
+  return owner_delegate->GetWebkitPreferencesForWidget()
+      .double_tap_to_zoom_enabled;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2201,18 +2216,9 @@ void RenderWidgetHostViewAura::ShowContextMenu(
   // NOTE: This only works for main frame widgets then, as child frame widgets
   // don't have an owner delegate and won't get access to the RenderViewHost
   // here.
-  RenderViewHost* rvh = host()->GetRenderViewHost();
-  if (!rvh)
-    return;
-
-  RenderViewHostDelegate* delegate = rvh->GetDelegate();
-  if (!delegate)
-    return;
-
-  RenderViewHostDelegateView* delegate_view = delegate->GetDelegateView();
-  if (!delegate_view)
-    return;
-  delegate_view->ShowContextMenu(GetFocusedFrame(), params);
+  RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
+  if (owner_delegate)
+    owner_delegate->ShowContextMenu(GetFocusedFrame(), params);
 }
 
 void RenderWidgetHostViewAura::NotifyRendererOfCursorVisibilityState(

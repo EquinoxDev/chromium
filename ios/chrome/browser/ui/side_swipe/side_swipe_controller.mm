@@ -27,7 +27,9 @@
 #import "ios/chrome/browser/ui/toolbar/public/side_swipe_toolbar_interacting.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/browser/web/page_placeholder_tab_helper.h"
+#import "ios/chrome/browser/web/tab_id_tab_helper.h"
 #import "ios/chrome/browser/web/web_navigation_util.h"
+#import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/web/public/navigation_item.h"
 #import "ios/web/public/web_client.h"
 #import "ios/web/public/web_state/web_state_observer_bridge.h"
@@ -288,7 +290,8 @@ const NSUInteger kIpadGreySwipeTabCount = 8;
     Tab* tab = [model_ tabAtIndex:index];
     if (tab && PagePlaceholderTabHelper::FromWebState(tab.webState)
                    ->will_add_placeholder_for_next_navigation()) {
-      [sessionIDs addObject:tab.tabId];
+      [sessionIDs
+          addObject:TabIdTabHelper::FromWebState(tab.webState)->tab_id()];
     }
     index = index + dx;
   }
@@ -407,10 +410,14 @@ const NSUInteger kIpadGreySwipeTabCount = 8;
 }
 
 - (BOOL)canNavigate:(BOOL)goBack {
-  if (goBack && [[model_ currentTab] canGoBack]) {
+  WebStateList* webStateList = model_.webStateList;
+  if (!webStateList || !webStateList->GetActiveWebState())
+    return NO;
+  web::WebState* webState = webStateList->GetActiveWebState();
+  if (goBack && webState->GetNavigationManager()->CanGoBack()) {
     return YES;
   }
-  if (!goBack && [[model_ currentTab] canGoForward]) {
+  if (!goBack && webState->GetNavigationManager()->CanGoForward()) {
     return YES;
   }
   return NO;
@@ -455,11 +462,14 @@ const NSUInteger kIpadGreySwipeTabCount = 8;
     animatedFullscreenDisabler_ = nullptr;
   }
 
-  __weak Tab* weakCurrentTab = [model_ currentTab];
   [pageSideSwipeView_ handleHorizontalPan:gesture
       onOverThresholdCompletion:^{
+        WebStateList* webStateList = model_.webStateList;
+        web::WebState* webState = nullptr;
+        if (webStateList) {
+          webState = webStateList->GetActiveWebState();
+        }
         BOOL wantsBack = IsSwipingBack(gesture.direction);
-        web::WebState* webState = [weakCurrentTab webState];
         if (webState) {
           if (wantsBack) {
             web_navigation_util::GoBack(webState);
@@ -530,10 +540,6 @@ const NSUInteger kIpadGreySwipeTabCount = 8;
     SnapshotTabHelper::FromWebState(currentTab.webState)
         ->UpdateSnapshotWithCallback(nil);
 
-    // Hide the infobar after snapshot has been updated (see the previous line)
-    // to avoid it obscuring the cards in the side swipe view.
-    [swipeDelegate_ updateAccessoryViewsForSideSwipeWithVisibility:NO];
-
     // Layout tabs with new snapshots in the current orientation.
     [tabSideSwipeView_ updateViewsForDirection:gesture.direction];
 
@@ -542,10 +548,6 @@ const NSUInteger kIpadGreySwipeTabCount = 8;
     DCHECK([swipeDelegate_ verifyToolbarViewPlacementInView:gesture.view]);
     // Insert above the toolbar.
     [gesture.view addSubview:tabSideSwipeView_];
-
-    // Remove content area so it doesn't receive any pan events.
-    [[swipeDelegate_ sideSwipeContentView] removeFromSuperview];
-    [swipeDelegate_ didRemoveSideSwipeContentView];
   }
 
   [tabSideSwipeView_ handleHorizontalPan:gesture];

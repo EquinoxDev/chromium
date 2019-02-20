@@ -59,9 +59,11 @@
 #include "third_party/blink/renderer/platform/heap/self_keep_alive.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors_error_string.h"
+#include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
@@ -206,7 +208,6 @@ ThreadableLoader::ThreadableLoader(
       resource_fetcher_(resource_fetcher),
       resource_loader_options_(resource_loader_options),
       out_of_blink_cors_(RuntimeEnabledFeatures::OutOfBlinkCorsEnabled()),
-      is_using_data_consumer_handle_(false),
       async_(resource_loader_options.synchronous_policy ==
              kRequestAsynchronously),
       request_context_(mojom::RequestContextType::UNSPECIFIED),
@@ -219,10 +220,11 @@ ThreadableLoader::ThreadableLoader(
       redirect_mode_(network::mojom::FetchRedirectMode::kFollow),
       override_referrer_(false) {
   DCHECK(client);
-  if (auto* scope = DynamicTo<WorkerGlobalScope>(*execution_context_))
-    scope->EnsureFetcher();
-  if (!resource_fetcher_)
+  if (!resource_fetcher_) {
+    if (auto* scope = DynamicTo<WorkerGlobalScope>(*execution_context_))
+      scope->EnsureFetcher();
     resource_fetcher_ = execution_context_->Fetcher();
+  }
 }
 
 void ThreadableLoader::Start(const ResourceRequest& request) {
@@ -700,6 +702,7 @@ bool ThreadableLoader::RedirectReceived(
   // |last_request_url_| by destroying |assign_on_scope_exit|.
 
   ResourceRequest cross_origin_request(new_request);
+  cross_origin_request.SetInitialUrlForResourceTiming(initial_request_url_);
 
   // Remove any headers that may have been added by the network layer that cause
   // access control to fail.
@@ -737,7 +740,8 @@ void ThreadableLoader::DataSent(Resource* resource,
   client_->DidSendData(bytes_sent, total_bytes_to_be_sent);
 }
 
-void ThreadableLoader::DataDownloaded(Resource* resource, int data_length) {
+void ThreadableLoader::DataDownloaded(Resource* resource,
+                                      unsigned long long data_length) {
   DCHECK(client_);
   DCHECK_EQ(resource, GetResource());
   DCHECK(actual_request_.IsNull());
@@ -816,17 +820,12 @@ void ThreadableLoader::ReportResponseReceived(
   frame->Console().ReportResourceResponseReceived(loader, identifier, response);
 }
 
-void ThreadableLoader::ResponseReceived(
-    Resource* resource,
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
+void ThreadableLoader::ResponseReceived(Resource* resource,
+                                        const ResourceResponse& response) {
   DCHECK_EQ(resource, GetResource());
   DCHECK(client_);
 
   checker_.ResponseReceived();
-
-  if (handle)
-    is_using_data_consumer_handle_ = true;
 
   // TODO(toyoshim): Support OOR-CORS preflight and Service Worker case.
   // Note that CORS-preflight is usually handled in the Network Service side,
@@ -835,8 +834,7 @@ void ThreadableLoader::ResponseReceived(
   if (out_of_blink_cors_ && !response.WasFetchedViaServiceWorker()) {
     DCHECK(actual_request_.IsNull());
     fallback_request_for_service_worker_ = ResourceRequest();
-    client_->DidReceiveResponse(resource->Identifier(), response,
-                                std::move(handle));
+    client_->DidReceiveResponse(resource->Identifier(), response);
     return;
   }
 
@@ -874,8 +872,7 @@ void ThreadableLoader::ResponseReceived(
     }
 
     fallback_request_for_service_worker_ = ResourceRequest();
-    client_->DidReceiveResponse(resource->Identifier(), response,
-                                std::move(handle));
+    client_->DidReceiveResponse(resource->Identifier(), response);
     return;
   }
 
@@ -907,8 +904,13 @@ void ThreadableLoader::ResponseReceived(
   DCHECK_EQ(&response, &resource->GetResponse());
   resource->SetResponseType(response_tainting_);
   DCHECK_EQ(response.GetType(), response_tainting_);
-  client_->DidReceiveResponse(resource->Identifier(), response,
-                              std::move(handle));
+  client_->DidReceiveResponse(resource->Identifier(), response);
+}
+
+void ThreadableLoader::ResponseBodyReceived(Resource*, BytesConsumer& body) {
+  checker_.ResponseBodyReceived();
+
+  client_->DidStartLoadingResponseBody(body);
 }
 
 void ThreadableLoader::SetSerializedCachedMetadata(Resource*,
@@ -929,9 +931,6 @@ void ThreadableLoader::DataReceived(Resource* resource,
   DCHECK(client_);
 
   checker_.DataReceived();
-
-  if (is_using_data_consumer_handle_)
-    return;
 
   // Preflight data should be invisible to clients.
   if (!actual_request_.IsNull())
@@ -1101,7 +1100,9 @@ void ThreadableLoader::LoadRequest(
 
 const SecurityOrigin* ThreadableLoader::GetSecurityOrigin() const {
   return security_origin_ ? security_origin_.get()
-                          : resource_fetcher_->Context().GetSecurityOrigin();
+                          : resource_fetcher_->GetProperties()
+                                .GetFetchClientSettingsObject()
+                                .GetSecurityOrigin();
 }
 
 Document* ThreadableLoader::GetDocument() const {

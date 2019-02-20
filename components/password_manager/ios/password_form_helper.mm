@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include "base/bind.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/values.h"
 #include "components/autofill/core/common/form_data.h"
@@ -365,6 +366,23 @@ constexpr char kCommandPrefix[] = "passwordForm";
             withUsername:formData.username_field.value
                 password:formData.password_field.value
        completionHandler:completionHandler];
+}
+
+- (void)fillPasswordForm:(NSString*)formName
+        newPasswordIdentifier:(NSString*)newPasswordIdentifier
+    confirmPasswordIdentifier:(NSString*)confirmPasswordIdentifier
+            generatedPassword:(NSString*)generatedPassword
+            completionHandler:(nullable void (^)(BOOL))completionHandler {
+  // Send JSON over to the web view.
+  [self.jsPasswordManager fillPasswordForm:formName
+                     newPasswordIdentifier:newPasswordIdentifier
+                 confirmPasswordIdentifier:confirmPasswordIdentifier
+                         generatedPassword:generatedPassword
+                         completionHandler:^(BOOL result) {
+                           if (completionHandler) {
+                             completionHandler(result);
+                           }
+                         }];
 }
 
 - (void)fillPasswordFormWithFillData:(const password_manager::FillData&)fillData

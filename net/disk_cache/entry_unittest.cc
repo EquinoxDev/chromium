@@ -84,6 +84,7 @@ class DiskCacheEntryTest : public DiskCacheTestWithCache {
   bool SimpleCacheThirdStreamFileExists(const char* key);
   void SyncDoomEntry(const char* key);
   void UseAfterBackendDestruction();
+  void LastUsedTimePersists();
 };
 
 // This part of the test runs on the background thread.
@@ -3805,7 +3806,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
       // will be checked for outliving the eviction.
       AddDelay();
     }
-    ASSERT_THAT(CreateEntry(key2 + base::IntToString(i), &entry), IsOk());
+    ASSERT_THAT(CreateEntry(key2 + base::NumberToString(i), &entry), IsOk());
     ScopedEntryPtr entry_closer(entry);
     EXPECT_EQ(kWriteSize,
               WriteData(entry, 1, 0, buffer.get(), kWriteSize, false));
@@ -3820,7 +3821,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheEvictOldEntries) {
     // Generally there is no guarantee that at this point the backround eviction
     // is finished. We are testing the positive case, i.e. when the eviction
     // never reaches this entry, should be non-flaky.
-    ASSERT_EQ(net::OK, OpenEntry(key2 + base::IntToString(entry_no), &entry))
+    ASSERT_EQ(net::OK, OpenEntry(key2 + base::NumberToString(entry_no), &entry))
         << "Should not have evicted fresh entry " << entry_no;
     entry->Close();
   }
@@ -5008,6 +5009,98 @@ TEST_F(DiskCacheEntryTest, MemoryOnlyUseAfterBackendDestruction) {
   UseAfterBackendDestruction();
 }
 
+void DiskCacheEntryTest::LastUsedTimePersists() {
+  // Make sure that SetLastUsedTimeForTest persists. When used with SimpleCache,
+  // this also checks that Entry::GetLastUsed is based on information in index,
+  // when available, not atime on disk, which can be inaccurate.
+  const char kKey[] = "a key";
+  InitCache();
+
+  disk_cache::Entry* entry1 = nullptr;
+  ASSERT_THAT(CreateEntry(kKey, &entry1), IsOk());
+  ASSERT_TRUE(nullptr != entry1);
+  base::Time modified_last_used =
+      entry1->GetLastUsed() - base::TimeDelta::FromMinutes(5);
+  entry1->SetLastUsedTimeForTest(modified_last_used);
+  entry1->Close();
+
+  disk_cache::Entry* entry2 = nullptr;
+  ASSERT_THAT(OpenEntry(kKey, &entry2), IsOk());
+  ASSERT_TRUE(nullptr != entry2);
+
+  base::TimeDelta diff = modified_last_used - entry2->GetLastUsed();
+  EXPECT_LT(diff, base::TimeDelta::FromSeconds(2));
+  EXPECT_GT(diff, -base::TimeDelta::FromSeconds(2));
+  entry2->Close();
+}
+
+TEST_F(DiskCacheEntryTest, LastUsedTimePersists) {
+  LastUsedTimePersists();
+}
+
+TEST_F(DiskCacheEntryTest, SimpleLastUsedTimePersists) {
+  SetSimpleCacheMode();
+  LastUsedTimePersists();
+}
+
+TEST_F(DiskCacheEntryTest, MemoryOnlyLastUsedTimePersists) {
+  SetMemoryOnlyMode();
+  LastUsedTimePersists();
+}
+
+TEST_F(DiskCacheEntryTest, SimpleCacheCloseResurrection) {
+  const int kSize = 10;
+  scoped_refptr<net::IOBuffer> buffer =
+      base::MakeRefCounted<net::IOBuffer>(kSize);
+  CacheTestFillBuffer(buffer->data(), kSize, false);
+
+  const char kKey[] = "key";
+  SetSimpleCacheMode();
+  InitCache();
+
+  disk_cache::Entry* entry = nullptr;
+  ASSERT_THAT(CreateEntry(kKey, &entry), IsOk());
+  ASSERT_TRUE(entry != nullptr);
+
+  // Let optimistic create finish.
+  base::RunLoop().RunUntilIdle();
+  disk_cache::SimpleBackendImpl::FlushWorkerPoolForTesting();
+  base::RunLoop().RunUntilIdle();
+
+  disk_cache::Entry* entry2 = nullptr;
+  net::TestCompletionCallback cb_open;
+  int rv = entry->WriteData(1, 0, buffer.get(), kSize,
+                            net::CompletionCallback(), false);
+
+  // Write should be optimistic.
+  ASSERT_EQ(kSize, rv);
+
+  // Since the write is still pending, the open will get queued...
+  int rv2 = cache_->OpenEntry(kKey, net::HIGHEST, &entry2, cb_open.callback());
+  EXPECT_EQ(net::ERR_IO_PENDING, rv2);
+
+  // ... as the open is queued, this Close will temporarily reduce the number
+  // of external references to 0.  This should not break things.
+  entry->Close();
+
+  // Wait till open finishes.
+  ASSERT_EQ(net::OK, cb_open.GetResult(rv2));
+  ASSERT_TRUE(entry2 != nullptr);
+
+  // Get first close a chance to finish.
+  base::RunLoop().RunUntilIdle();
+  disk_cache::SimpleBackendImpl::FlushWorkerPoolForTesting();
+  base::RunLoop().RunUntilIdle();
+
+  // Make sure |entry2| is still usable.
+  scoped_refptr<net::IOBuffer> buffer2 =
+      base::MakeRefCounted<net::IOBuffer>(kSize);
+  memset(buffer2->data(), 0, kSize);
+  EXPECT_EQ(kSize, ReadData(entry2, 1, 0, buffer2.get(), kSize));
+  EXPECT_EQ(0, memcmp(buffer->data(), buffer2->data(), kSize));
+  entry2->Close();
+}
+
 class DiskCacheSimplePrefetchTest : public DiskCacheEntryTest {
  public:
   DiskCacheSimplePrefetchTest()
@@ -5027,11 +5120,11 @@ class DiskCacheSimplePrefetchTest : public DiskCacheEntryTest {
                                    int trailer_speculative_size) {
     std::map<std::string, std::string> params;
     params[disk_cache::kSimpleCacheFullPrefetchBytesParam] =
-        base::IntToString(full_size);
+        base::NumberToString(full_size);
     params[disk_cache::kSimpleCacheTrailerPrefetchHintParam] =
         trailer_hint ? "true" : "false";
     params[disk_cache::kSimpleCacheTrailerPrefetchSpeculativeBytesParam] =
-        base::IntToString(trailer_speculative_size);
+        base::NumberToString(trailer_speculative_size);
     scoped_feature_list_.InitAndEnableFeatureWithParameters(
         disk_cache::kSimpleCachePrefetchExperiment, params);
   }

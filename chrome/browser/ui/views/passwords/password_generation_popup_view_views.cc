@@ -20,7 +20,6 @@
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/controls/styled_label.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/widget/widget.h"
@@ -59,7 +58,8 @@ class PasswordGenerationPopupViewViews::GeneratedPasswordBox
 
     DCHECK(!password_label_);
     password_label_ = autofill::CreateLabelWithColorReadabilityDisabled(
-        password, ChromeTextContext::CONTEXT_BODY_TEXT_LARGE, STYLE_SECONDARY);
+        password, ChromeTextContext::CONTEXT_BODY_TEXT_LARGE,
+        STYLE_SECONDARY_MONOSPACED);
     layout->AddView(password_label_);
   }
 
@@ -98,6 +98,7 @@ PasswordGenerationPopupViewViews::PasswordGenerationPopupViewViews(
     : AutofillPopupBaseView(controller, parent_widget),
       controller_(controller) {
   CreateLayoutAndChildren();
+  SetBackground(views::CreateSolidBackground(GetBackgroundColor()));
 }
 
 PasswordGenerationPopupViewViews::~PasswordGenerationPopupViewViews() = default;
@@ -174,10 +175,11 @@ void PasswordGenerationPopupViewViews::CreateLayoutAndChildren() {
   AddChildView(password_view_);
   PasswordSelectionUpdated();
 
-  views::StyledLabel* help_label =
-      new views::StyledLabel(controller_->HelpText(), this);
-  help_label->SetTextContext(ChromeTextContext::CONTEXT_BODY_TEXT_LARGE);
-  help_label->SetDefaultTextStyle(STYLE_SECONDARY);
+  views::Label* help_label = new views::Label(
+      controller_->HelpText(), ChromeTextContext::CONTEXT_BODY_TEXT_LARGE,
+      STYLE_SECONDARY);
+  help_label->SetMultiLine(true);
+  help_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   help_label->SetBackground(
       views::CreateSolidBackground(GetFooterBackgroundColor()));
   help_label->SetBorder(
@@ -213,17 +215,10 @@ void PasswordGenerationPopupViewViews::GetAccessibleNodeData(
 
 gfx::Size PasswordGenerationPopupViewViews::CalculatePreferredSize() const {
   int width =
-      std::max(GetLayoutManager()->GetPreferredSize(this).width(),
+      std::max(password_view_->GetPreferredSize().width(),
                gfx::ToEnclosingRect(controller_->element_bounds()).width());
   width = std::min(width, kPasswordGenerationMaxWidth);
   return gfx::Size(width, GetHeightForWidth(width));
-}
-
-void PasswordGenerationPopupViewViews::StyledLabelLinkClicked(
-    views::StyledLabel* label,
-    const gfx::Range& range,
-    int event_flags) {
-  controller_->OnSavedPasswordsLinkClicked();
 }
 
 PasswordGenerationPopupView* PasswordGenerationPopupView::Create(

@@ -34,8 +34,8 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/point3_f.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/scroll_offset.h"
+#include "ui/gfx/rrect_f.h"
 #include "ui/gfx/transform.h"
 
 namespace base {
@@ -163,7 +163,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   // specified in layer space, which excludes device scale and page scale
   // factors, and ignoring transforms for this layer or ancestor layers. The
   // root layer's position is not used as it always appears at the origin of
-  // the viewport.
+  // the viewport. When property trees are built by cc (when IsUsingLayerLists
+  // is false), position is used to update |offset_to_transform_parent|.
   void SetPosition(const gfx::PointF& position);
   const gfx::PointF& position() const { return inputs_.position; }
 
@@ -283,8 +284,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
     return inputs_.backdrop_filters;
   }
 
-  void SetBackdropFilterBounds(const gfx::RectF& backdrop_filter_bounds);
-  const gfx::RectF& backdrop_filter_bounds() const {
+  void SetBackdropFilterBounds(const gfx::RRectF& backdrop_filter_bounds);
+  const gfx::RRectF& backdrop_filter_bounds() const {
     return inputs_.backdrop_filter_bounds;
   }
 
@@ -606,6 +607,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   // Called on the scroll layer to trigger showing the overlay scrollbars.
   void ShowScrollbars() { needs_show_scrollbars_ = true; }
 
+  // Captures text content within the given |rect| and returns the associated
+  // NodeHolder in content.
+  virtual void CaptureContent(const gfx::Rect& rect,
+                              std::vector<NodeHolder>* content);
+
   // For tracing. Gets a recorded rasterization of this layer's contents that
   // can be displayed inside representations of this layer. May return null, in
   // which case the layer won't be shown with any content in the tracing
@@ -708,10 +714,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   void SetEffectTreeIndex(int index);
   void SetScrollTreeIndex(int index);
 
-  // Internal to property tree construction. Set or get the position of this
-  // layer relative to the origin after transforming according to this layer's
-  // index into the transform tree. This translation is appended to the
-  // transform that comes from the transform tree for this layer.
+  // The position of this layer after transforming by the layer's transform
+  // node. When property trees are built by cc (when IsUsingLayerLists is false)
+  // this is set by property_tree_builder.cc.
   void SetOffsetToTransformParent(gfx::Vector2dF offset);
   gfx::Vector2dF offset_to_transform_parent() const {
     return offset_to_transform_parent_;
@@ -765,6 +770,32 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
   std::string ToString() const;
 
+  // Called when a property has been modified in a way that the layer knows
+  // immediately that a commit is required.  This implies SetNeedsPushProperties
+  // to push that property.
+  // This is public, so that it can be called directly when needed, for example
+  // in PropertyTreeManager when handling scroll offsets.
+  void SetNeedsCommit();
+
+  // The following data are for profiling and debugging. They will be displayed
+  // e.g. in the Layers panel of DevTools.
+
+  // The compositing reasons of the layer. The values are defined in
+  // third_party/blink/renderer/platform/graphics/compositing_reasons.h.
+  void set_compositing_reasons(uint64_t compositing_reasons) {
+    compositing_reasons_ = compositing_reasons;
+  }
+  uint64_t compositing_reasons() const { return compositing_reasons_; }
+
+  // The id of the DOM node that owns this layer.
+  void set_owner_node_id(int node_id) { owner_node_id_ = node_id; }
+  int owner_node_id() const { return owner_node_id_; }
+
+  // How many times this layer has been repainted.
+  int paint_count() const { return paint_count_; }
+
+  // End of data for profiling and debugging.
+
  protected:
   friend class LayerImpl;
   friend class TreeSynchronizer;
@@ -773,11 +804,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   virtual ~Layer();
 
   // These SetNeeds functions are in order of severity of update:
-  //
-  // Called when a property has been modified in a way that the layer knows
-  // immediately that a commit is required.  This implies SetNeedsPushProperties
-  // to push that property.
-  void SetNeedsCommit();
+
+  // See SetNeedsCommit() above - it belongs here in the order of severity.
 
   // Called when there's been a change in layer structure.  Implies
   // SetNeedsCommit and property tree rebuld, but not SetNeedsPushProperties
@@ -809,6 +837,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   // When true, the layer is about to perform an update. Any commit requests
   // will be handled implicitly after the update completes.
   bool ignore_set_needs_commit_;
+
+  int paint_count_;
 
  private:
   friend class base::RefCounted<Layer>;
@@ -895,7 +925,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
 
     FilterOperations filters;
     FilterOperations backdrop_filters;
-    gfx::RectF backdrop_filter_bounds;
+    gfx::RRectF backdrop_filter_bounds;
     gfx::PointF filters_origin;
     float backdrop_filter_quality;
 
@@ -986,6 +1016,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer> {
   // This value is valid only when LayerTreeHost::has_copy_request() is true
   bool subtree_has_copy_request_ : 1;
   SkColor safe_opaque_background_color_;
+  uint64_t compositing_reasons_;
+  int owner_node_id_;
 
   std::unique_ptr<std::set<Layer*>> clip_children_;
 

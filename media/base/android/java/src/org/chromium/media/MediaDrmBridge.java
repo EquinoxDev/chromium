@@ -19,12 +19,14 @@ import org.chromium.base.annotations.MainDex;
 import org.chromium.media.MediaDrmSessionManager.SessionId;
 import org.chromium.media.MediaDrmSessionManager.SessionInfo;
 
+import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Queue;
+import java.util.Scanner;
 import java.util.UUID;
 
 // Implementation Notes of MediaDrmBridge:
@@ -67,6 +69,7 @@ public class MediaDrmBridge {
     private static final String SESSION_SHARING = "sessionSharing";
     private static final String ENABLE = "enable";
     private static final long INVALID_NATIVE_MEDIA_DRM_BRIDGE = 0;
+    private static final String FIRST_API_LEVEL = "ro.product.first_api_level";
 
     // Scheme UUID for Widevine. See http://dashif.org/identifiers/protection/
     private static final UUID WIDEVINE_UUID =
@@ -401,6 +404,31 @@ public class MediaDrmBridge {
     }
 
     /**
+     * Returns the first API level for this product.
+     *
+     * @return the converted value for FIRST_API_LEVEL if available,
+     * 0 otherwise.
+     */
+    @CalledByNative
+    private static int getFirstApiLevel() {
+        int firstApiLevel = 0;
+        Scanner scanner = null;
+        // If first_api_level property is set, return it.
+        try {
+            Process process = new ProcessBuilder("getprop", FIRST_API_LEVEL).start();
+            scanner = new Scanner(process.getInputStream());
+            firstApiLevel = Integer.parseInt(scanner.nextLine().trim());
+        } catch (IOException | NumberFormatException e) {
+            firstApiLevel = 0;
+        } finally {
+            if (scanner != null) {
+                scanner.close();
+            }
+        }
+        return firstApiLevel;
+    }
+
+    /**
      * Create a new MediaDrmBridge from the crypto scheme UUID.
      *
      * @param schemeUUID Crypto scheme UUID.
@@ -543,6 +571,27 @@ public class MediaDrmBridge {
         }
 
         return false;
+    }
+
+    /**
+     * Provision the current origin. Normally provisioning will be triggered
+     * automatically when MediaCrypto is needed (in the constructor).
+     * However, this is available to preprovision an origin separately.
+     * nativeOnProvisioningComplete() will be called indicating success/failure.
+     */
+    @CalledByNative
+    private void provision() {
+        // This should only be called if no MediaCrypto needed.
+        assert mMediaDrm != null;
+        assert !mRequiresMediaCrypto;
+
+        // Provision only works for origin isolated storage.
+        if (!mOriginSet) {
+            nativeOnProvisioningComplete(mNativeMediaDrmBridge, false);
+            return;
+        }
+
+        startProvisioning();
     }
 
     /**
@@ -1082,8 +1131,7 @@ public class MediaDrmBridge {
         }
 
         MediaDrm.ProvisionRequest request = mMediaDrm.getProvisionRequest();
-        nativeOnStartProvisioning(
-                mNativeMediaDrmBridge, request.getDefaultUrl(), request.getData());
+        nativeOnProvisionRequest(mNativeMediaDrmBridge, request.getDefaultUrl(), request.getData());
     }
 
     /**
@@ -1141,17 +1189,24 @@ public class MediaDrmBridge {
     }
 
     /*
-     *  Continue to createMediaCrypto() after provisioning.
+     *  Provisioning complete. Continue to createMediaCrypto() if required.
      *
      * @param success Whether provisioning has succeeded or not.
      */
     void onProvisioned(boolean success) {
+        if (!mRequiresMediaCrypto) {
+            // No MediaCrypto required, so notify provisioning complete.
+            nativeOnProvisioningComplete(mNativeMediaDrmBridge, success);
+            if (!success) {
+                release();
+            }
+            return;
+        }
+
         if (!success) {
             release();
             return;
         }
-
-        assert mRequiresMediaCrypto;
 
         if (!mOriginSet) {
             createMediaCrypto();
@@ -1409,8 +1464,9 @@ public class MediaDrmBridge {
     private native void nativeOnMediaCryptoReady(
             long nativeMediaDrmBridge, MediaCrypto mediaCrypto);
 
-    private native void nativeOnStartProvisioning(
+    private native void nativeOnProvisionRequest(
             long nativeMediaDrmBridge, String defaultUrl, byte[] requestData);
+    private native void nativeOnProvisioningComplete(long nativeMediaDrmBridge, boolean success);
 
     private native void nativeOnPromiseResolved(long nativeMediaDrmBridge, long promiseId);
     private native void nativeOnPromiseResolvedWithSession(

@@ -20,6 +20,7 @@
 #include "android_webview/browser/aw_render_process.h"
 #include "android_webview/browser/aw_renderer_priority.h"
 #include "android_webview/browser/aw_resource_context.h"
+#include "android_webview/browser/aw_settings.h"
 #include "android_webview/browser/aw_web_contents_delegate.h"
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/child_frame.h"
@@ -81,7 +82,6 @@
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/mhtml_generation_params.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "jni/AwContents_jni.h"
 #include "net/base/auth.h"
@@ -855,6 +855,12 @@ void AwContents::OnNewPicture() {
   }
 }
 
+void AwContents::OnViewTreeForceDarkStateChanged(
+    bool view_tree_force_dark_state) {
+  view_tree_force_dark_state_ = view_tree_force_dark_state;
+  web_contents_->NotifyPreferencesChanged();
+}
+
 base::android::ScopedJavaLocalRef<jbyteArray> AwContents::GetCertificate(
     JNIEnv* env,
     const JavaParamRef<jobject>& obj) {
@@ -1174,6 +1180,14 @@ void AwContents::ScrollTo(JNIEnv* env,
                           jint y) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   browser_view_renderer_.ScrollTo(gfx::Vector2d(x, y));
+}
+
+void AwContents::RestoreScrollAfterTransition(JNIEnv* env,
+                                              const JavaParamRef<jobject>& obj,
+                                              jint x,
+                                              jint y) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  browser_view_renderer_.RestoreScrollAfterTransition(gfx::Vector2d(x, y));
 }
 
 void AwContents::SmoothScroll(JNIEnv* env,

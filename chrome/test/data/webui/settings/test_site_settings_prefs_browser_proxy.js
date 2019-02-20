@@ -8,7 +8,9 @@
  * @typedef {{defaults: !Object<settings.ContentSettingsTypes,
  *                             !DefaultContentSetting>,
  *            exceptions: !Object<settings.ContentSettingsTypes,
- *                                !Array<!RawSiteException>>}}
+ *                                !Array<!RawSiteException>>,
+ *            chooserExceptions: !Object<settings.ContentSettingsTypes,
+ *                                       !Array<!RawChooserException>>}}
  */
 let SiteSettingsPref;
 
@@ -23,11 +25,12 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
   constructor() {
     super([
       'clearFlashPref',
-      'fetchUsbDevices',
+      'fetchBlockAutoplayStatus',
       'fetchZoomLevels',
       'getAllSites',
-      'getFormattedBytes',
+      'getChooserExceptionList',
       'getDefaultValueForContentType',
+      'getFormattedBytes',
       'getExceptionList',
       'getOriginPermissions',
       'isOriginValid',
@@ -36,7 +39,6 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
       'observeProtocolHandlersEnabledState',
       'removeIgnoredHandler',
       'removeProtocolHandler',
-      'removeUsbDevice',
       'removeZoomLevel',
       'resetCategoryPermissionForPattern',
       'resetChooserExceptionForSite',
@@ -45,20 +47,17 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
       'setOriginPermissions',
       'setProtocolDefault',
       'updateIncognitoStatus',
-      'fetchBlockAutoplayStatus',
+      'clearEtldPlus1DataAndCookies',
     ]);
 
     /** @private {boolean} */
     this.hasIncognito_ = false;
 
     /** @private {!SiteSettingsPref} */
-    this.prefs_ = test_util.createSiteSettingsPrefs([], []);
+    this.prefs_ = test_util.createSiteSettingsPrefs([], [], []);
 
     /** @private {!Array<ZoomLevelEntry>} */
     this.zoomList_ = [];
-
-    /** @private {!Array<!UsbDeviceEntry>} */
-    this.usbDevices_ = [];
 
     /** @private {!Array<!ProtocolEntry>} */
     this.protocolHandlers_ = [];
@@ -101,6 +100,13 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
             exceptionList[i].origin, '');
       }
     }
+    for (const type in this.prefs_.chooserExceptions) {
+      let chooserExceptionList = this.prefs_.chooserExceptions[type];
+      for (let i = 0; i < chooserExceptionList.length; ++i) {
+        cr.webUIListenerCallback(
+            'contentSettingChooserPermissionChanged', type);
+      }
+    }
   }
 
   /**
@@ -131,15 +137,6 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
    */
   setZoomList(list) {
     this.zoomList_ = list;
-  }
-
-  /**
-   * Sets the prefs to use when testing.
-   * @param {!Array<UsbDeviceEntry>} list The usb device entry list to set.
-   */
-  setUsbDevices(list) {
-    // Shallow copy of the passed-in array so mutation won't impact the source
-    this.usbDevices_ = list.slice();
   }
 
   /**
@@ -268,6 +265,33 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
   }
 
   /** @override */
+  getChooserExceptionList(chooserType) {
+    // The UI uses the |chooserType| to retrieve the prefs for a chooser
+    // permission, however the test stores the permissions with the setting
+    // category, so we need to get the content settings type that pertains to
+    // this chooser type.
+    let setting = test_util.getContentSettingsTypeFromChooserType(chooserType);
+    assert(
+        settings != null,
+        'ContentSettingsType mapping missing for ' + chooserType);
+
+    let pref = this.prefs_.chooserExceptions[setting];
+    assert(pref != undefined, 'Pref is missing for ' + chooserType);
+
+    if (this.hasIncognito_) {
+      const incognitoElements = [];
+      for (let i = 0; i < pref.length; ++i) {
+        // Copy |pref[i]| to avoid changing the original |pref[i]|.
+        incognitoElements.push(Object.assign({}, pref[i], {incognito: true}));
+      }
+      pref.push(...incognitoElements);
+    }
+
+    this.methodCalled('getChooserExceptionList', chooserType);
+    return Promise.resolve(pref);
+  }
+
+  /** @override */
   isOriginValid(origin) {
     this.methodCalled('isOriginValid', origin);
     return Promise.resolve(this.isOriginValid_);
@@ -322,13 +346,28 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
     contentTypes.forEach(function(contentType) {
       let setting;
       let source;
-      this.prefs_.exceptions[contentType].some((originPrefs) => {
+      let isSet = this.prefs_.exceptions[contentType].some(originPrefs => {
         if (originPrefs.origin == origin) {
           setting = originPrefs.setting;
           source = originPrefs.source;
           return true;
         }
+        return false;
       });
+
+      if (!isSet) {
+        this.prefs_.chooserExceptions[contentType].some(chooserException => {
+          return chooserException.sites.some(originPrefs => {
+            if (originPrefs.origin == origin) {
+              setting = originPrefs.setting;
+              source = originPrefs.source;
+              return true;
+            }
+            return false;
+          });
+        });
+      }
+
       assert(
           setting != undefined,
           'There was no exception set for origin: ' + origin +
@@ -367,17 +406,6 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
   }
 
   /** @override */
-  fetchUsbDevices() {
-    this.methodCalled('fetchUsbDevices');
-    return Promise.resolve(this.usbDevices_);
-  }
-
-  /** @override */
-  removeUsbDevice() {
-    this.methodCalled('removeUsbDevice', arguments);
-  }
-
-  /** @override */
   observeProtocolHandlers() {
     cr.webUIListenerCallback('setHandlersEnabled', true);
     cr.webUIListenerCallback('setProtocolHandlers', this.protocolHandlers_);
@@ -410,5 +438,10 @@ class TestSiteSettingsPrefsBrowserProxy extends TestBrowserProxy {
   /** @override */
   fetchBlockAutoplayStatus() {
     this.methodCalled('fetchBlockAutoplayStatus');
+  }
+
+  /** @override */
+  clearEtldPlus1DataAndCookies() {
+    this.methodCalled('clearEtldPlus1DataAndCookies');
   }
 }

@@ -48,6 +48,19 @@ FakeServer::FakeServer()
   loopback_server_->set_observer_for_tests(this);
 }
 
+FakeServer::FakeServer(const base::FilePath& user_data_dir)
+    : error_type_(sync_pb::SyncEnums::SUCCESS),
+      alternate_triggered_errors_(false),
+      request_counter_(0),
+      weak_ptr_factory_(this) {
+  base::ThreadRestrictions::SetIOAllowed(true);
+  base::FilePath loopback_server_path =
+      user_data_dir.AppendASCII("FakeSyncServer");
+  loopback_server_ = std::make_unique<syncer::LoopbackServer>(
+      loopback_server_path.AppendASCII("profile.pb"));
+  loopback_server_->set_observer_for_tests(this);
+}
+
 FakeServer::~FakeServer() {}
 
 namespace {
@@ -81,8 +94,8 @@ void VerifyNoWalletDataProgressMarkerExists(
 }
 
 std::string GetTokenFromHashAndTime(int64_t hash, const base::Time& time) {
-  return base::Int64ToString(hash) + " " +
-         base::Int64ToString(time.ToDeltaSinceWindowsEpoch().InMicroseconds());
+  return base::NumberToString(hash) + " " +
+         base::NumberToString(time.ToDeltaSinceWindowsEpoch().InMicroseconds());
 }
 
 int64_t GetHashFromToken(const std::string& token, int64_t default_value) {
@@ -438,6 +451,11 @@ void FakeServer::EnableStrongConsistencyWithConflictDetectionModel() {
 void FakeServer::SetMaxGetUpdatesBatchSize(int batch_size) {
   DCHECK(thread_checker_.CalledOnValidThread());
   loopback_server_->SetMaxGetUpdatesBatchSize(batch_size);
+}
+
+void FakeServer::SetBagOfChips(const sync_pb::ChipBag& bag_of_chips) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  loopback_server_->SetBagOfChipsForTesting(bag_of_chips);
 }
 
 const std::set<std::string>& FakeServer::GetCommittedHistoryURLs() const {

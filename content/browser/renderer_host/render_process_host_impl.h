@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/containers/flat_set.h"
 #include "base/gtest_prod_util.h"
@@ -37,7 +38,6 @@
 #include "content/common/associated_interfaces.mojom.h"
 #include "content/common/child_control.mojom.h"
 #include "content/common/content_export.h"
-#include "content/common/media/media_stream.mojom.h"
 #include "content/common/media/renderer_audio_output_stream_factory.mojom.h"
 #include "content/common/renderer.mojom.h"
 #include "content/common/renderer_host.mojom.h"
@@ -54,7 +54,6 @@
 #include "mojo/public/cpp/system/invitation.h"
 #include "services/network/public/mojom/mdns_responder.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "services/resource_coordinator/public/cpp/process_resource_coordinator.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
@@ -64,6 +63,8 @@
 #include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
+#include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
+#include "third_party/blink/public/platform/modules/broadcastchannel/broadcast_channel.mojom.h"
 #include "ui/gfx/gpu_memory_buffer.h"
 
 #if defined(OS_ANDROID)
@@ -85,6 +86,7 @@ class ChildConnection;
 class FileSystemManagerImpl;
 class IndexedDBDispatcherHost;
 class InProcessChildThreadParams;
+class IsolationContext;
 class MediaStreamTrackMetricsHost;
 class P2PSocketDispatcherHost;
 class PermissionServiceContext;
@@ -218,8 +220,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void PurgeAndSuspend() override;
   void Resume() override;
   mojom::Renderer* GetRendererInterface() override;
-  resource_coordinator::ProcessResourceCoordinator*
-  GetProcessResourceCoordinator() override;
   void CreateURLLoaderFactory(
       const base::Optional<url::Origin>& origin,
       network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
@@ -231,7 +231,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void SetIsUsed() override;
 
   bool HostHasNotBeenUsed() override;
-  void LockToOrigin(const GURL& lock_url) override;
+  void LockToOrigin(const IsolationContext& isolation_context,
+                    const GURL& lock_url) override;
   void BindCacheStorage(blink::mojom::CacheStorageRequest request,
                         const url::Origin& origin) override;
   void BindIndexedDB(blink::mojom::IDBFactoryRequest request,
@@ -287,6 +288,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // hosted apps.
   static bool IsSuitableHost(RenderProcessHost* host,
                              BrowserContext* browser_context,
+                             const IsolationContext& isolation_context,
                              const GURL& site_url,
                              const GURL& lock_url);
 
@@ -299,12 +301,14 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Important: |url| should be a full URL and *not* a site URL.
   static RenderProcessHost* GetSoleProcessHostForURL(
       BrowserContext* browser_context,
+      const IsolationContext& isolation_context,
       const GURL& url);
 
   // Variant of the above that takes in a SiteInstance site URL and the
   // process's origin lock URL, when they are known.
   static RenderProcessHost* GetSoleProcessHostForSite(
       BrowserContext* browser_context,
+      const IsolationContext& isolation_context,
       const GURL& site_url,
       const GURL& lock_url);
 
@@ -360,6 +364,11 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static scoped_refptr<base::SingleThreadTaskRunner>
   GetInProcessRendererThreadTaskRunnerForTesting();
 
+#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+  // Gets the platform-specific limit. Used by GetMaxRendererProcessCount().
+  static size_t GetPlatformMaxRendererProcessCount();
+#endif
+
   // This forces a renderer that is running "in process" to shut down.
   static void ShutDownInProcessRenderer();
 
@@ -374,6 +383,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
       blink::mojom::StoragePartitionServiceRequest request)>;
   static void SetStoragePartitionServiceRequestHandlerForTesting(
       StoragePartitionServiceRequestHandler handler);
+
+  // Allows external code to supply a callback which handles a
+  // BroadcastChannelProviderRequest. Used for supplying test versions of the
+  // service.
+  using BroadcastChannelProviderRequestHandler = base::RepeatingCallback<void(
+      RenderProcessHostImpl* rph,
+      blink::mojom::BroadcastChannelProviderRequest request)>;
+  static void SetBroadcastChannelProviderRequestHandlerForTesting(
+      BroadcastChannelProviderRequestHandler handler);
 
   RenderFrameMessageFilter* render_frame_message_filter_for_testing() const {
     return render_frame_message_filter_.get();
@@ -399,6 +417,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnMediaStreamAdded() override;
   void OnMediaStreamRemoved() override;
   int get_media_stream_count_for_testing() const { return media_stream_count_; }
+
+  void OnForegroundServiceWorkerAdded() override;
+  void OnForegroundServiceWorkerRemoved() override;
 
   // Sets the global factory used to create new RenderProcessHosts in unit
   // tests.  It may be nullptr, in which case the default RenderProcessHost will
@@ -538,6 +559,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
       viz::mojom::CompositingModeReporterRequest request);
   void CreateStoragePartitionService(
       blink::mojom::StoragePartitionServiceRequest request);
+  void CreateBroadcastChannelProvider(
+      blink::mojom::BroadcastChannelProviderRequest request);
   void CreateRendererHost(mojom::RendererHostAssociatedRequest request);
   void BindVideoDecoderService(media::mojom::InterfaceFactoryRequest request);
 
@@ -602,9 +625,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   void CreateMediaStreamDispatcherHost(
       MediaStreamManager* media_stream_manager,
-      mojom::MediaStreamDispatcherHostRequest request);
+      blink::mojom::MediaStreamDispatcherHostRequest request);
   void CreateMediaStreamTrackMetricsHost(
-      mojom::MediaStreamTrackMetricsHostRequest request);
+      blink::mojom::MediaStreamTrackMetricsHostRequest request);
 
 #if BUILDFLAG(ENABLE_MDNS)
   void CreateMdnsResponder(network::mojom::MdnsResponderRequest request);
@@ -764,6 +787,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Owned by |browser_context_|.
   StoragePartitionImpl* storage_partition_impl_;
 
+  // Keeps track of the BindingIds  returned by storage_partition_impl_->Bind()
+  // calls so we can Unbind() them on cleanup.
+  std::set<mojo::BindingId> storage_partition_binding_ids_;
+
   // The observers watching our lifetime.
   base::ObserverList<RenderProcessHostObserver>::Unchecked observers_;
 
@@ -869,8 +896,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // determine if if a process should be backgrounded.
   int media_stream_count_ = 0;
 
-  resource_coordinator::ProcessResourceCoordinator
-      process_resource_coordinator_;
+  // Tracks service workers that may need to respond to events from other
+  // processes in a timely manner.  Used to determine if a process should
+  // not be backgrounded.
+  int foreground_service_worker_count_ = 0;
 
   // A WeakPtrFactory which is reset every time Cleanup() runs. Used to vend
   // WeakPtrs which are invalidated any time the RPHI is recycled.

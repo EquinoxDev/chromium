@@ -80,6 +80,7 @@
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/page/scrolling/fragment_anchor.h"
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_controller.h"
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_util.h"
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
@@ -318,7 +319,13 @@ IntRect PaintLayerScrollableArea::PaintLayerScrollableArea::CornerRect(
     // FIXME: This isn't right. We need to know the thickness of custom
     // scrollbars even when they don't exist in order to set the resizer square
     // size properly.
-    horizontal_thickness = GetPageScrollbarTheme().ScrollbarThickness();
+    horizontal_thickness =
+        GetLayoutBox()
+            ->GetDocument()
+            .GetPage()
+            ->GetChromeClient()
+            .WindowToViewportScalar(
+                GetPageScrollbarTheme().ScrollbarThickness());
     vertical_thickness = horizontal_thickness;
   } else if (VerticalScrollbar() && !HorizontalScrollbar()) {
     horizontal_thickness = VerticalScrollbar()->ScrollbarThickness();
@@ -487,10 +494,12 @@ void PaintLayerScrollableArea::UpdateScrollOffset(
     }
   }
 
+  if (FragmentAnchor* anchor = frame_view->GetFragmentAnchor())
+    anchor->DidScroll(scroll_type);
+
   if (IsExplicitScrollType(scroll_type)) {
     if (scroll_type != kCompositorScroll)
       ShowOverlayScrollbars();
-    frame_view->ClearFragmentAnchor();
     GetScrollAnchor()->Clear();
   }
 
@@ -2156,12 +2165,21 @@ void PaintLayerScrollableArea::UpdateCompositingLayersAfterScroll() {
     DCHECK(Layer()->HasCompositedLayerMapping());
     ScrollingCoordinator* scrolling_coordinator = GetScrollingCoordinator();
     bool handled_scroll =
-        Layer()->IsRootLayer() && scrolling_coordinator &&
+        (Layer()->IsRootLayer() ||
+         RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) &&
+        scrolling_coordinator &&
         scrolling_coordinator->UpdateCompositedScrollOffset(this);
 
     if (!handled_scroll) {
-      Layer()->GetCompositedLayerMapping()->SetNeedsGraphicsLayerUpdate(
-          kGraphicsLayerUpdateSubtree);
+      if (!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled()) {
+        // In non-BGPT mode, we need to do a full sub-tree update here, because
+        // we need to update the position property to compute
+        // offset_to_transform_parent. For more context, see the comment from
+        // chrishtr@ here:
+        // https://chromium-review.googlesource.com/c/chromium/src/+/1403639/6/third_party/blink/renderer/core/paint/paint_layer_scrollable_area.cc
+        Layer()->GetCompositedLayerMapping()->SetNeedsGraphicsLayerUpdate(
+            kGraphicsLayerUpdateSubtree);
+      }
       compositor->SetNeedsCompositingUpdate(
           kCompositingUpdateAfterGeometryChange);
     }
@@ -2336,7 +2354,7 @@ void PaintLayerScrollableArea::ResetRebuildScrollbarLayerFlags() {
   rebuild_vertical_scrollbar_layer_ = false;
 }
 
-CompositorAnimationHost* PaintLayerScrollableArea::GetCompositorAnimationHost()
+cc::AnimationHost* PaintLayerScrollableArea::GetCompositorAnimationHost()
     const {
   return layer_->GetLayoutObject().GetFrameView()->GetCompositorAnimationHost();
 }
@@ -2682,7 +2700,7 @@ static LayoutRect InvalidatePaintOfScrollbarIfNeeded(
     // container to ensure newly expanded/shrunk areas of the box to be
     // invalidated.
     needs_paint_invalidation = false;
-    DCHECK(!graphics_layer->DrawsContent() ||
+    DCHECK(!graphics_layer->PaintsContentOrHitTest() ||
            graphics_layer->GetPaintController().GetPaintArtifact().IsEmpty());
   }
 
@@ -2868,6 +2886,13 @@ PaintLayerScrollableArea::ScrollingBackgroundDisplayItemClient::DebugName()
     const {
   return "Scrolling background of " +
          scrollable_area_->GetLayoutBox()->DebugName();
+}
+
+DOMNodeId
+PaintLayerScrollableArea::ScrollingBackgroundDisplayItemClient::OwnerNodeId()
+    const {
+  return static_cast<const DisplayItemClient*>(scrollable_area_->GetLayoutBox())
+      ->OwnerNodeId();
 }
 
 bool PaintLayerScrollableArea::ScrollingBackgroundDisplayItemClient::

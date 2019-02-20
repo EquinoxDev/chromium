@@ -14,6 +14,7 @@
 <translation id="1153356358378277386">Сопряженные устройства</translation>
 <translation id="1195412055398077112">Каемка экрана</translation>
 <translation id="119944043368869598">Удалить все</translation>
+<translation id="123828989343052515">Добавить рабочий стол</translation>
 <translation id="1247372569136754018">Микрофон (встроенный)</translation>
 <translation id="1252999807265626933">Подключен источник питания: <ph name="POWER_SOURCE" /></translation>
 <translation id="1255033239764210633">Какая сейчас погода?</translation>
@@ -68,10 +69,12 @@
 <translation id="1969011864782743497"><ph name="DEVICE_NAME" /> (USB)</translation>
 <translation id="1993072747612765854">Подробнее о последнем обновлении <ph name="SYSTEM_APP_NAME" />…</translation>
 <translation id="1995660704900986789">Выключить</translation>
+<translation id="1999763610967697511">Перетаскивание</translation>
 <translation id="2012624427112548395">CTRL + ПОИСК + H</translation>
 <translation id="2016340657076538683">Введите сообщение</translation>
 <translation id="2050339315714019657">Книжная</translation>
 <translation id="2067602449040652523">Яркость клавиатуры</translation>
+<translation id="209965399369889474">Нет подключения к сети</translation>
 <translation id="2127372758936585790">Маломощное зарядное устройство</translation>
 <translation id="2135456203358955318">Закрепленная лупа</translation>
 <translation id="2144487987174258011">Перезагрузите, чтобы обновить Adobe Flash Player</translation>
@@ -94,6 +97,7 @@
 <translation id="2412593942846481727">Доступно обновление</translation>
 <translation id="2413728805700750528">Управляемый сеанс "<ph name="DISPLAY_NAME" />" выполняется в домене <ph name="DOMAIN" /></translation>
 <translation id="2416346634399901812">Подключено к сети "<ph name="NETWORK_NAME" />"</translation>
+<translation id="2427507373259914951">Нажатие на левую кнопку мыши</translation>
 <translation id="2429753432712299108">Устройству <ph name="DEVICE_NAME" /> требуется разрешение на подключение через Bluetooth. Проверьте, отображается ли на нем код: <ph name="PASSKEY" />.</translation>
 <translation id="2482878487686419369">Уведомления</translation>
 <translation id="2484513351006226581">Чтобы переключить раскладку клавиатуры, нажмите клавиши <ph name="KEYBOARD_SHORTCUT" />.</translation>
@@ -132,6 +136,7 @@
 <translation id="3000461861112256445">Монофонический звук</translation>
 <translation id="3009178788565917040">Выход</translation>
 <translation id="3019353588588144572">Оставшееся время до полной зарядки батареи: <ph name="TIME_REMAINING" />.</translation>
+<translation id="3051128274746680507">Скоро будет удален ваш контролируемый профиль. Войдите в аккаунт, чтобы получить подробную информацию.</translation>
 <translation id="3055162170959710888">Сегодня вы уже использовали это устройство <ph name="USED_TIME" />.</translation>
 <translation id="3077734595579995578">shift</translation>
 <translation id="3081696990447829002">Развернуть меню</translation>
@@ -143,10 +148,10 @@
 <translation id="3153444934357957346">Для множественного входа можно использовать не более <ph name="MULTI_PROFILE_USER_LIMIT" /> аккаунтов.</translation>
 <translation id="3154351730702813399">Администратору устройства доступна информация о том, какие страницы вы просматриваете в браузере.</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{Подключено одно устройство}one{Подключено # устройство}few{Подключено # устройства}many{Подключено # устройств}other{Подключено # устройства}}</translation>
-<translation id="32244657276328332">Не подключено к сети</translation>
 <translation id="3236488194889173876">Нет доступных мобильных сетей</translation>
 <translation id="3255483164551725916">Что ты умеешь?</translation>
 <translation id="3294437725009624529">Гость</translation>
+<translation id="3308453408813785101">Пользователь <ph name="USER_EMAIL_ADDRESS" /> сможет войти в аккаунт позже.</translation>
 <translation id="332587331255250389">Замените батарею в стилусе.</translation>
 <translation id="3351879221545518001">Вы транслируете изображение своего экрана.</translation>
 <translation id="3364721542077212959">Инструменты стилуса</translation>
@@ -193,6 +198,7 @@
 <translation id="4072264167173457037">сигнал средней мощности</translation>
 <translation id="4146833061457621061">Включить музыку</translation>
 <translation id="4181841719683918333">Языки</translation>
+<translation id="4195877955194704651">Меню "Автоматическое нажатие"</translation>
 <translation id="4217571870635786043">Голосовой ввод</translation>
 <translation id="4261870227682513959">Показать настройки уведомлений. Уведомления отключены.</translation>
 <translation id="4269883910223712419">Администратор этого устройства имеет возможность:</translation>
@@ -230,6 +236,7 @@
 <translation id="479989351350248267">поиск</translation>
 <translation id="4804818685124855865">Отключиться</translation>
 <translation id="4849058404725798627">Выделять элементы, выбранные с помощью клавиатуры</translation>
+<translation id="485592688953820832">Отсутствие действий (пауза)</translation>
 <translation id="4872237917498892622">Alt + Search или Shift</translation>
 <translation id="4890187583552566966">Администратор отключил Google Ассистента</translation>
 <translation id="4895488851634969361">Батарея полностью заряжена.</translation>
@@ -256,6 +263,7 @@
 <translation id="5430931332414098647">Мгновенная точка доступа</translation>
 <translation id="5431825016875453137">OpenVPN / L2TP</translation>
 <translation id="544691375626129091">В этот сеанс уже добавлены все доступные пользователи.</translation>
+<translation id="5465662442746197494">Справка</translation>
 <translation id="5496819745535887422">Администратор возвращает ваше устройство к прежней версии системы. После перезагрузки все данные с устройства будут удалены.</translation>
 <translation id="553675580533261935">Завершение сеанса</translation>
 <translation id="5537725057119320332">Cast</translation>
@@ -264,7 +272,6 @@
 <translation id="5571066253365925590">Bluetooth включен</translation>
 <translation id="5597451508971090205"><ph name="SHORT_WEEKDAY" />, <ph name="DATE" /></translation>
 <translation id="5600837773213129531">Чтобы отключить озвучивание текста на экране, нажмите CTRL + ALT + Z.</translation>
-<translation id="5626283214046138476">Срок действия контролируемого аккаунта скоро истечет.</translation>
 <translation id="5648021990716966815">Микрофонный разъем</translation>
 <translation id="5669267381087807207">Активация</translation>
 <translation id="5673434351075758678">В результате синхронизации настроек язык изменен. Теперь используется <ph name="TO_LOCALE" />, а не <ph name="FROM_LOCALE" />.</translation>
@@ -368,6 +375,7 @@
 <translation id="7348093485538360975">Экранная клавиатура</translation>
 <translation id="735745346212279324">VPN-соединение прервано</translation>
 <translation id="7377169924702866686">Включен режим Caps Lock.</translation>
+<translation id="7384299914270925461"><ph name="SIGN" /><ph name="MINUTES_REMAINING" />:<ph name="SECONDS_REMAINING" /> сек.</translation>
 <translation id="7398254312354928459">Установлено соединение с другой сетью</translation>
 <translation id="742594950370306541">Камера используется.</translation>
 <translation id="743058460480092004">Камера и микрофон используются.</translation>
@@ -419,13 +427,17 @@
 <translation id="8113423164597455979">Уведомления включены для всех приложений</translation>
 <translation id="8132793192354020517">Подключено к сети <ph name="NAME" /></translation>
 <translation id="813913629614996137">Инициализация...</translation>
+<translation id="8142441511840089262">Двойное нажатие кнопкой мыши</translation>
 <translation id="8142699993796781067">Частные сети</translation>
+<translation id="8167567890448493835">Используемый язык: <ph name="LOCALE_NAME" /></translation>
 <translation id="8190698733819146287">Настройки языков и ввода…</translation>
 <translation id="8192202700944119416">Уведомления скрыты</translation>
+<translation id="8203795194971602413">Нажатие правой кнопкой мыши</translation>
 <translation id="8236042855478648955">Пора сделать перерыв</translation>
 <translation id="8261506727792406068">Удалить</translation>
 <translation id="8297006494302853456">Слабый</translation>
 <translation id="8308637677604853869">Предыдущее меню</translation>
+<translation id="8332664326438198339">Вернуться к панели запуска</translation>
 <translation id="8341451174107936385"><ph name="UNLOCK_MORE_FEATURES" />  <ph name="GET_STARTED" /></translation>
 <translation id="8351131234907093545">Создать заметку</translation>
 <translation id="8375916635258623388"><ph name="DEVICE_NAME" /> и телефон будут подключены друг к другу автоматически</translation>
@@ -441,7 +453,6 @@
 <translation id="8454013096329229812">Wi-Fi включен</translation>
 <translation id="847056008324733326">Настройки масштаба экрана</translation>
 <translation id="8477270416194247200">Для отмены нажмите ALT + SEARCH или SHIFT.</translation>
-<translation id="8484916590211895857"><ph name="NAME" />: повторное подключение...</translation>
 <translation id="8513108775083588393">Автоповорот</translation>
 <translation id="8517041960877371778">Не удается зарядить устройство <ph name="DEVICE_TYPE" />, пока оно включено.</translation>
 <translation id="8627191004499078455">Подключено устройство "<ph name="DEVICE_NAME" />"</translation>
@@ -456,9 +467,7 @@
 <translation id="8734991477317290293">Это может быть попыткой узнать, какие клавиши вы нажимаете.</translation>
 <translation id="8735953464173050365">Показать настройки клавиатуры. Выбрана клавиатура "<ph name="KEYBOARD_NAME" />".</translation>
 <translation id="875593634123171288">Показать настройки VPN</translation>
-<translation id="8809737090443522491">Введите название приложения или документа</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
-<translation id="8825534185036233643">Зеркалирование более двух дисплеев не поддерживается.</translation>
 <translation id="8828714802988429505">90°</translation>
 <translation id="8843682306134542540">Изменить настройки автоповорота экрана. <ph name="STATE_TEXT" />.</translation>
 <translation id="8850991929411075241">Клавиша поиска + Esc</translation>
@@ -466,7 +475,7 @@
 <translation id="8874184842967597500">Не подключено</translation>
 <translation id="8877788021141246043">Создать напоминание</translation>
 <translation id="8878886163241303700">Раскрытый экран</translation>
-<translation id="8898978413391960553">00:00 сек.</translation>
+<translation id="890616557918890486">Изменить источник</translation>
 <translation id="8921624153894383499">Google Ассистент не говорит на этом языке</translation>
 <translation id="8938800817013097409">Устройство USB-C (порт справа на задней панели)</translation>
 <translation id="8940956008527784070">Низкий заряд батареи (<ph name="PERCENTAGE" />%)</translation>

@@ -82,7 +82,7 @@ class FrameThrottlingTest : public PaintTestConfigurations, public SimTest {
   }
 };
 
-INSTANTIATE_PAINT_TEST_CASE_P(FrameThrottlingTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(FrameThrottlingTest);
 
 TEST_P(FrameThrottlingTest, ThrottleInvisibleFrames) {
   SimRequest main_resource("https://example.com/", "text/html");
@@ -296,15 +296,14 @@ TEST_P(FrameThrottlingTest, ThrottledLifecycleUpdate) {
     EXPECT_EQ(DocumentLifecycle::kPaintClean,
               frame_document->Lifecycle().GetState());
   } else {
-    // Resets to kLayoutClean due to a call to SetNeedsCompositingInputsUpdate.
     // TODO(chrishtr): fix this test by manually resetting to
     // kVisualUpdatePending before call to CompositeFrame.
-    EXPECT_EQ(DocumentLifecycle::kLayoutClean,
+    EXPECT_EQ(DocumentLifecycle::kPaintClean,
               frame_document->Lifecycle().GetState());
 
     // A hit test will not force a complete lifecycle update.
     WebView().HitTestResultAt(gfx::Point());
-    EXPECT_EQ(DocumentLifecycle::kLayoutClean,
+    EXPECT_EQ(DocumentLifecycle::kPaintClean,
               frame_document->Lifecycle().GetState());
   }
 }
@@ -687,6 +686,10 @@ TEST_P(FrameThrottlingTest, ScrollingCoordinatorShouldSkipThrottledLayer) {
 
 TEST_P(FrameThrottlingTest,
        ScrollingCoordinatorShouldSkipCompositedThrottledFrame) {
+  // TODO(crbug.com/922419): The test is broken for LayoutNG.
+  if (RuntimeEnabledFeatures::LayoutNGEnabled())
+    return;
+
   WebView().GetSettings()->SetPreferCompositingToLCDTextEnabled(true);
 
   // Create a hidden frame which is throttled.
@@ -1036,6 +1039,10 @@ TEST_P(FrameThrottlingTest, ThrottleInnerCompositedLayer) {
 }
 
 TEST_P(FrameThrottlingTest, ThrottleSubtreeAtomically) {
+  // TODO(crbug.com/922419): The test is broken for LayoutNG.
+  if (RuntimeEnabledFeatures::LayoutNGEnabled())
+    return;
+
   // Create two nested frames which are throttled.
   SimRequest main_resource("https://example.com/", "text/html");
   SimRequest frame_resource("https://example.com/iframe.html", "text/html");

@@ -30,7 +30,6 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/origin_util.h"
-#include "content/public/common/renderer_preferences.h"
 #include "headless/lib/browser/headless_browser_context_impl.h"
 #include "headless/lib/browser/headless_browser_impl.h"
 #include "headless/lib/browser/headless_browser_main_parts.h"
@@ -38,6 +37,7 @@
 #include "headless/lib/browser/protocol/headless_handler.h"
 #include "headless/public/internal/headless_devtools_client_impl.h"
 #include "printing/buildflags/buildflags.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/switches.h"
@@ -163,6 +163,7 @@ class HeadlessWebContentsImpl::Delegate : public content::WebContentsDelegate {
     load_url_params.is_renderer_initiated = params.is_renderer_initiated;
     load_url_params.should_replace_current_entry =
         params.should_replace_current_entry;
+    load_url_params.reload_type = params.reload_type;
 
     if (params.uses_post) {
       load_url_params.load_type =

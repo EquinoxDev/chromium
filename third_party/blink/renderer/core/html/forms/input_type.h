@@ -58,7 +58,7 @@ class CORE_EXPORT InputType : public GarbageCollectedFinalized<InputType> {
   static InputType* CreateText(HTMLInputElement&);
   static const AtomicString& NormalizeTypeName(const AtomicString&);
   virtual ~InputType();
-  virtual void Trace(blink::Visitor*);
+  virtual void Trace(Visitor*);
 
   virtual InputTypeView* CreateView() = 0;
   virtual const AtomicString& FormControlType() const = 0;
@@ -91,7 +91,7 @@ class CORE_EXPORT InputType : public GarbageCollectedFinalized<InputType> {
   // is missing.
   virtual String DefaultLabel() const;
 
-  // https://html.spec.whatwg.org/multipage/forms.html#dom-input-value
+  // https://html.spec.whatwg.org/C/#dom-input-value
   enum class ValueMode { kValue, kDefault, kDefaultOn, kFilename };
   virtual ValueMode GetValueMode() const = 0;
 

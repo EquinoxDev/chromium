@@ -13,10 +13,7 @@ import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.tab.SadTab;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.Tab.TabHidingType;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabPersistentStore.TabPersistentStoreObserver;
-import org.chromium.content_public.browser.ChildProcessImportance;
 import org.chromium.content_public.browser.LoadUrlParams;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -105,11 +102,7 @@ public class TabModelSelectorImpl extends TabModelSelectorBase implements TabMod
         if (tab != null) mTabSaver.addTabToSaveQueue(tab);
     }
 
-    /**
-     *
-     * @param overviewModeBehavior The {@link OverviewModeBehavior} that should be used to determine
-     *                             when the app is in overview mode or not.
-     */
+    @Override
     public void setOverviewModeBehavior(OverviewModeBehavior overviewModeBehavior) {
         assert overviewModeBehavior != null;
         mOverviewModeBehavior = overviewModeBehavior;
@@ -343,7 +336,6 @@ public class TabModelSelectorImpl extends TabModelSelectorBase implements TabMod
     public void requestToShowTab(Tab tab, @TabSelectionType int type) {
         boolean isFromExternalApp =
                 tab != null && tab.getLaunchType() == TabLaunchType.FROM_EXTERNAL_APP;
-        Tab tabToDropImportance = null;
         if (mVisibleTab != tab && tab != null && !tab.isNativePage()) {
             TabModelImpl.startTabSwitchLatencyTiming(type);
         }
@@ -359,14 +351,10 @@ public class TabModelSelectorImpl extends TabModelSelectorBase implements TabMod
                 mVisibleTab.hide(TabHidingType.CHANGED_TABS);
                 mTabSaver.addTabToSaveQueue(mVisibleTab);
             }
-            tabToDropImportance = mVisibleTab;
             mVisibleTab = null;
         }
 
         if (tab == null) {
-            if (tabToDropImportance != null) {
-                tabToDropImportance.setImportance(ChildProcessImportance.NORMAL);
-            }
             notifyChanged();
             return;
         }
@@ -379,9 +367,6 @@ public class TabModelSelectorImpl extends TabModelSelectorBase implements TabMod
             // |tabToDropImportance| must be null, so no need to drop importance.
             return;
         }
-        if (tabToDropImportance == null) {
-            tabToDropImportance = mVisibleTab;
-        }
         mVisibleTab = tab;
 
         // Don't execute the tab display part if Chrome has just been sent to background. This
@@ -390,13 +375,6 @@ public class TabModelSelectorImpl extends TabModelSelectorBase implements TabMod
         if (type != TabSelectionType.FROM_EXIT) {
             tab.show(type);
             mUma.onShowTab(tab.getId(), tab.isBeingRestored());
-        }
-
-        // Always raise importance before lowering it on old Tab because in case these two Tabs
-        // are hosted by the same process, the process importance is not dropped momentarily.
-        mVisibleTab.setImportance(ChildProcessImportance.MODERATE);
-        if (tabToDropImportance != null) {
-            tabToDropImportance.setImportance(ChildProcessImportance.NORMAL);
         }
     }
 

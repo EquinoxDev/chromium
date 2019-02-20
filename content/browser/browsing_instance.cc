@@ -15,23 +15,46 @@
 
 namespace content {
 
+// Start the BrowsingInstance ID counter from 1 to avoid a conflict with the
+// invalid BrowsingInstanceId value, which is 0 in its underlying IdType32.
+int BrowsingInstance::next_browsing_instance_id_ = 1;
+
 BrowsingInstance::BrowsingInstance(BrowserContext* browser_context)
     : browser_context_(browser_context),
-      active_contents_count_(0u) {
+      isolation_context_(
+          BrowsingInstanceId::FromUnsafeValue(next_browsing_instance_id_++)),
+      active_contents_count_(0u),
+      default_process_(nullptr) {
   DCHECK(browser_context);
 }
 
+void BrowsingInstance::RenderProcessHostDestroyed(RenderProcessHost* host) {
+  DCHECK_EQ(default_process_, host);
+  // Only clear the default process if the RenderProcessHost object goes away,
+  // not if the renderer process goes away while the RenderProcessHost remains.
+  default_process_->RemoveObserver(this);
+  default_process_ = nullptr;
+}
+
+void BrowsingInstance::SetDefaultProcess(RenderProcessHost* default_process) {
+  DCHECK(!default_process_);
+  default_process_ = default_process;
+  default_process_->AddObserver(this);
+}
+
 bool BrowsingInstance::HasSiteInstance(const GURL& url) {
-  std::string site = SiteInstance::GetSiteForURL(browser_context_, url)
-                         .possibly_invalid_spec();
+  std::string site =
+      SiteInstanceImpl::GetSiteForURL(browser_context_, isolation_context_, url)
+          .possibly_invalid_spec();
 
   return site_instance_map_.find(site) != site_instance_map_.end();
 }
 
 scoped_refptr<SiteInstanceImpl> BrowsingInstance::GetSiteInstanceForURL(
     const GURL& url) {
-  std::string site = SiteInstance::GetSiteForURL(browser_context_, url)
-                         .possibly_invalid_spec();
+  std::string site =
+      SiteInstanceImpl::GetSiteForURL(browser_context_, isolation_context_, url)
+          .possibly_invalid_spec();
 
   auto i = site_instance_map_.find(site);
   if (i != site_instance_map_.end())
@@ -78,11 +101,18 @@ void BrowsingInstance::UnregisterSiteInstance(SiteInstanceImpl* site_instance) {
   }
 }
 
+// static
+BrowsingInstanceId BrowsingInstance::NextBrowsingInstanceId() {
+  return BrowsingInstanceId::FromUnsafeValue(next_browsing_instance_id_);
+}
+
 BrowsingInstance::~BrowsingInstance() {
   // We should only be deleted when all of the SiteInstances that refer to
   // us are gone.
   DCHECK(site_instance_map_.empty());
   DCHECK_EQ(0u, active_contents_count_);
+  if (default_process_)
+    default_process_->RemoveObserver(this);
 }
 
 }  // namespace content

@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.appmenu;
 
 import android.animation.Animator;
 import android.animation.Animator.AnimatorListener;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.content.Context;
 import android.content.res.Resources;
@@ -26,6 +27,7 @@ import android.view.View.OnKeyListener;
 import android.view.ViewGroup;
 import android.view.ViewStub;
 import android.view.WindowManager;
+import android.view.accessibility.AccessibilityEvent;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ImageButton;
@@ -72,6 +74,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
     private AnimatorSet mMenuItemEnterAnimator;
     private AnimatorListener mAnimationHistogramRecorder = AnimationFrameTimeHistogram
             .getAnimatorRecorder("WrenchMenu.OpeningAnimationFrameTimes");
+    private Runnable mAdapterInvalidator;
 
     /**
      * Creates and sets up the App Menu.
@@ -100,6 +103,10 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
                 res.getDimensionPixelSize(R.dimen.menu_negative_vertical_offset_not_top_anchored);
 
         mTempLocation = new int[2];
+
+        mAdapterInvalidator = () -> {
+            if (mAdapter != null) mAdapter.notifyDataSetChanged();
+        };
     }
 
     /**
@@ -170,6 +177,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         mPopup = new PopupWindow(context);
         mPopup.setFocusable(true);
         mPopup.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
+        UpdateMenuItemHelper.getInstance().registerObserver(mAdapterInvalidator);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // The window layout type affects the z-index of the popup window on M+.
@@ -183,6 +191,7 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
 
             if (mMenuItemEnterAnimator != null) mMenuItemEnterAnimator.cancel();
 
+            UpdateMenuItemHelper.getInstance().unregisterObserver(mAdapterInvalidator);
             mHandler.appMenuDismissed();
             mHandler.onMenuVisibilityChanged(false);
 
@@ -200,8 +209,8 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
 
         // Need to explicitly set the background here.  Relying on it being set in the style caused
         // an incorrectly drawn background.
-        mPopup.setBackgroundDrawable(
-                ApiCompatibilityUtils.getDrawable(context.getResources(), R.drawable.popup_bg));
+        mPopup.setBackgroundDrawable(ApiCompatibilityUtils.getDrawable(
+                context.getResources(), R.drawable.popup_bg_tinted));
         if (!isByPermanentButton) {
             mPopup.setAnimationStyle(
                     showFromBottom ? R.style.OverflowMenuAnimBottom : R.style.OverflowMenuAnim);
@@ -521,7 +530,21 @@ public class AppMenu implements OnItemClickListener, OnKeyListener {
         }
 
         mMenuItemEnterAnimator.addListener(mAnimationHistogramRecorder);
+        mMenuItemEnterAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                focusHighlightedView();
+            }
+        });
         mMenuItemEnterAnimator.start();
+    }
+
+    private void focusHighlightedView() {
+        View highlightedView = mAdapter.getHighlightedView();
+        if (highlightedView == null) return;
+
+        highlightedView.requestFocus();
+        highlightedView.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_FOCUSED);
     }
 
     private int inflateFooter(

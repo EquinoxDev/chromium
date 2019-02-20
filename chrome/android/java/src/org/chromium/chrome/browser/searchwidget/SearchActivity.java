@@ -34,7 +34,7 @@ import org.chromium.chrome.browser.snackbar.SnackbarManager.SnackbarManageable;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabDelegateFactory;
 import org.chromium.chrome.browser.tab.TabIdManager;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.components.url_formatter.UrlFormatter;
 import org.chromium.content_public.browser.LoadUrlParams;
@@ -146,7 +146,7 @@ public class SearchActivity extends AsyncInitializationActivity
                 R.id.search_location_bar);
         mSearchBox.setDelegate(this);
         mSearchBox.setToolbarDataProvider(mSearchBoxDataProvider);
-        mSearchBox.initializeControls(new WindowDelegate(getWindow()), getWindowAndroid());
+        mSearchBox.initializeControls(new WindowDelegate(getWindow()), getWindowAndroid(), null);
 
         // Kick off everything needed for the user to type into the box.
         beginQuery();
@@ -181,7 +181,7 @@ public class SearchActivity extends AsyncInitializationActivity
         final Callback<Boolean> onSearchEngineFinalizedCallback = new Callback<Boolean>() {
             @Override
             public void onResult(Boolean result) {
-                if (isActivityDestroyed()) return;
+                if (isActivityFinishingOrDestroyed()) return;
 
                 if (result == null || !result.booleanValue()) {
                     Log.e(TAG, "User failed to select a default search engine.");

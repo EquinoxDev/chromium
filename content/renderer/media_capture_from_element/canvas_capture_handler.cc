@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/macros.h"
 #include "base/rand_util.h"
@@ -26,6 +27,7 @@
 #include "third_party/libyuv/include/libyuv.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/gpu/GrBackendSurface.h"
+#include "ui/gfx/color_space.h"
 
 using media::VideoFrame;
 
@@ -59,7 +61,7 @@ class VideoCapturerSource : public media::VideoCapturerSource {
     return formats;
   }
   void StartCapture(const media::VideoCaptureParams& params,
-                    const VideoCaptureDeliverFrameCB& frame_callback,
+                    const blink::VideoCaptureDeliverFrameCB& frame_callback,
                     const RunningCallback& running_callback) override {
     DCHECK(main_render_thread_checker_.CalledOnValidThread());
     if (canvas_handler_.get()) {
@@ -174,7 +176,7 @@ void CanvasCaptureHandler::SendNewFrame(
                                 static_cast<const uint8_t*>(pixmap.addr(0, 0)),
                                 gfx::Size(pixmap.width(), pixmap.height()),
                                 pixmap.rowBytes(), pixmap.colorType()),
-              timestamp);
+              timestamp, image->refColorSpace());
     return;
   }
 
@@ -267,7 +269,7 @@ void CanvasCaptureHandler::ReadARGBPixelsSync(sk_sp<SkImage> image) {
           is_opaque, false /* flip */,
           temp_argb_frame->visible_data(VideoFrame::kARGBPlane), image_size,
           temp_argb_frame->stride(VideoFrame::kARGBPlane), kN32_SkColorType),
-      timestamp);
+      timestamp, image->refColorSpace());
 }
 
 void CanvasCaptureHandler::ReadARGBPixelsAsync(
@@ -359,6 +361,7 @@ void CanvasCaptureHandler::OnARGBPixelsReadAsync(
   }
   // Let |image| fall out of scope after we are done reading.
   const bool is_opaque = image->isOpaque();
+  const auto color_space = image->refColorSpace();
   image = nullptr;
 
   SendFrame(
@@ -367,11 +370,11 @@ void CanvasCaptureHandler::OnARGBPixelsReadAsync(
                         temp_argb_frame->visible_rect().size(),
                         temp_argb_frame->stride(VideoFrame::kARGBPlane),
                         kN32_SkColorType),
-      this_frame_ticks);
+      this_frame_ticks, color_space);
 }
 
 void CanvasCaptureHandler::OnYUVPixelsReadAsync(
-    sk_sp<SkImage> /* image */,
+    sk_sp<SkImage> image,
     scoped_refptr<media::VideoFrame> yuv_frame,
     base::TimeTicks this_frame_ticks,
     bool success) {
@@ -380,7 +383,7 @@ void CanvasCaptureHandler::OnYUVPixelsReadAsync(
     DLOG(ERROR) << "Couldn't read SkImage using async callback";
     return;
   }
-  SendFrame(yuv_frame, this_frame_ticks);
+  SendFrame(yuv_frame, this_frame_ticks, image->refColorSpace());
 }
 
 scoped_refptr<media::VideoFrame> CanvasCaptureHandler::ConvertToYUVFrame(
@@ -443,7 +446,8 @@ scoped_refptr<media::VideoFrame> CanvasCaptureHandler::ConvertToYUVFrame(
 }
 
 void CanvasCaptureHandler::SendFrame(scoped_refptr<VideoFrame> video_frame,
-                                     base::TimeTicks this_frame_ticks) {
+                                     base::TimeTicks this_frame_ticks,
+                                     sk_sp<SkColorSpace> color_space) {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
 
   // If this function is called asynchronously, |delegate_| might have been
@@ -454,6 +458,8 @@ void CanvasCaptureHandler::SendFrame(scoped_refptr<VideoFrame> video_frame,
   if (!first_frame_ticks_)
     first_frame_ticks_ = this_frame_ticks;
   video_frame->set_timestamp(this_frame_ticks - *first_frame_ticks_);
+  if (color_space)
+    video_frame->set_color_space(gfx::ColorSpace(*color_space));
 
   last_frame_ = video_frame;
   io_task_runner_->PostTask(
@@ -471,22 +477,23 @@ void CanvasCaptureHandler::AddVideoCapturerSourceToVideoTrack(
   base::Base64Encode(base::RandBytesAsString(64), &str_track_id);
   const blink::WebString track_id = blink::WebString::FromASCII(str_track_id);
   media::VideoCaptureFormats preferred_formats = source->GetPreferredFormats();
-  std::unique_ptr<MediaStreamVideoSource> media_stream_source(
+  MediaStreamVideoSource* media_stream_source =
       new MediaStreamVideoCapturerSource(
-          MediaStreamSource::SourceStoppedCallback(), std::move(source)));
+          blink::WebPlatformMediaStreamSource::SourceStoppedCallback(),
+          std::move(source));
   blink::WebMediaStreamSource webkit_source;
   webkit_source.Initialize(track_id, blink::WebMediaStreamSource::kTypeVideo,
                            track_id, false);
-  webkit_source.SetExtraData(media_stream_source.get());
+  webkit_source.SetPlatformSource(base::WrapUnique(media_stream_source));
   webkit_source.SetCapabilities(ComputeCapabilitiesForVideoSource(
       track_id, preferred_formats,
       media::VideoFacingMode::MEDIA_VIDEO_FACING_NONE,
       false /* is_device_capture */));
 
   web_track->Initialize(webkit_source);
-  web_track->SetTrackData(new MediaStreamVideoTrack(
-      media_stream_source.release(),
-      MediaStreamVideoSource::ConstraintsCallback(), true));
+  web_track->SetPlatformTrack(std::make_unique<MediaStreamVideoTrack>(
+      media_stream_source, MediaStreamVideoSource::ConstraintsCallback(),
+      true));
 }
 
 }  // namespace content

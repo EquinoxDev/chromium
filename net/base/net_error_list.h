@@ -111,7 +111,7 @@ NET_ERROR(CONTEXT_SHUT_DOWN, -26)
 
 // The request failed because the response was delivered along with requirements
 // which are not met ('X-Frame-Options' and 'Content-Security-Policy' ancestor
-// checks, for instance).
+// checks and 'Cross-Origin-Resource-Policy', for instance).
 NET_ERROR(BLOCKED_BY_RESPONSE, -27)
 
 // The request failed after the response was received, based on client-side
@@ -825,6 +825,12 @@ NET_ERROR(CACHE_AUTH_FAILURE_AFTER_READ, -410)
 // that the cache entry would not have been useable with the transaction's
 // current configuration (e.g. load flags, mode, etc.)
 NET_ERROR(CACHE_ENTRY_NOT_SUITABLE, -411)
+
+// The disk cache is unable to doom this entry.
+NET_ERROR(CACHE_DOOM_FAILURE, -412)
+
+// The disk cache is unable to open or create this entry.
+NET_ERROR(CACHE_OPEN_OR_CREATE_FAILURE, -413)
 
 // The server's response was insecure (e.g. there was a cert error).
 NET_ERROR(INSECURE_RESPONSE, -501)

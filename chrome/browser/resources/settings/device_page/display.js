@@ -136,22 +136,6 @@ Polymer({
     },
 
     /** @private */
-    multiMirroringAvailable_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('multiMirroringAvailable');
-      }
-    },
-
-    /** @private */
-    nightLightFeatureEnabled_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('nightLightFeatureEnabled');
-      }
-    },
-
-    /** @private */
     unifiedDesktopMode_: {
       type: Boolean,
       value: false,
@@ -584,9 +568,7 @@ Polymer({
     }
 
     return this.isMirrored_(displays) ||
-        (!unifiedDesktopMode &&
-         ((this.multiMirroringAvailable_ && displays.length > 1) ||
-          displays.length == 2));
+        (!unifiedDesktopMode && displays.length > 1);
   },
 
   /**
@@ -720,7 +702,8 @@ Polymer({
   },
 
   /**
-   * @param {!{detail: string}} e |e.detail| is the id of the selected display.
+   * @param {!CustomEvent<string>} e |e.detail| is the id of the selected
+   *     display.
    * @private
    */
   onSelectDisplay_: function(e) {
@@ -738,11 +721,12 @@ Polymer({
 
   /**
    * Handles event when a display tab is selected.
-   * @param {!{detail: !{item: !{displayId: string}}}} e
+   * @param {!CustomEvent<!{item: !{displayId: string}}>} e
    * @private
    */
   onSelectDisplayTab_: function(e) {
-    this.onSelectDisplay_({detail: e.detail.item.displayId});
+    this.onSelectDisplay_(
+        new CustomEvent('select-display', {detail: e.detail.item.displayId}));
   },
 
   /**

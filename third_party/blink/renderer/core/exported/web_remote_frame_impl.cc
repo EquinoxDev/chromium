@@ -144,13 +144,15 @@ WebLocalFrame* WebRemoteFrameImpl::CreateLocalChild(
     WebSandboxFlags sandbox_flags,
     WebLocalFrameClient* client,
     blink::InterfaceRegistry* interface_registry,
+    mojo::ScopedMessagePipeHandle document_interface_broker_handle,
     WebFrame* previous_sibling,
     const ParsedFeaturePolicy& container_policy,
     const WebFrameOwnerProperties& frame_owner_properties,
     FrameOwnerElementType frame_owner_element_type,
     WebFrame* opener) {
-  WebLocalFrameImpl* child =
-      WebLocalFrameImpl::Create(scope, client, interface_registry, opener);
+  WebLocalFrameImpl* child = WebLocalFrameImpl::Create(
+      scope, client, interface_registry,
+      std::move(document_interface_broker_handle), opener);
   InsertAfter(child, previous_sibling);
   RemoteFrameOwner* owner = RemoteFrameOwner::Create(
       static_cast<SandboxFlags>(sandbox_flags), container_policy,
@@ -242,9 +244,16 @@ void WebRemoteFrameImpl::SetReplicatedName(const WebString& name) {
   GetFrame()->Tree().SetName(name);
 }
 
-void WebRemoteFrameImpl::SetReplicatedFeaturePolicyHeader(
-    const ParsedFeaturePolicy& parsed_header) {
+void WebRemoteFrameImpl::SetReplicatedFeaturePolicyHeaderAndOpenerPolicies(
+    const ParsedFeaturePolicy& parsed_header,
+    const FeaturePolicy::FeatureState& opener_feature_state) {
   feature_policy_header_ = parsed_header;
+  if (RuntimeEnabledFeatures::FeaturePolicyForSandboxEnabled()) {
+    DCHECK(opener_feature_state.empty() || GetFrame()->IsMainFrame());
+    if (opener_feature_state_.empty()) {
+      opener_feature_state_ = opener_feature_state;
+    }
+  }
   ApplyReplicatedFeaturePolicyHeader();
 }
 
@@ -259,7 +268,8 @@ void WebRemoteFrameImpl::ApplyReplicatedFeaturePolicyHeader() {
   if (GetFrame()->Owner())
     container_policy = GetFrame()->Owner()->ContainerPolicy();
   GetFrame()->GetSecurityContext()->InitializeFeaturePolicy(
-      feature_policy_header_, container_policy, parent_feature_policy);
+      feature_policy_header_, container_policy, parent_feature_policy,
+      opener_feature_state_.empty() ? nullptr : &opener_feature_state_);
 }
 
 void WebRemoteFrameImpl::AddReplicatedContentSecurityPolicyHeader(
@@ -297,6 +307,7 @@ void WebRemoteFrameImpl::ForwardResourceTimingToParent(
       ToWebLocalFrameImpl(Parent()->ToWebLocalFrame());
   HTMLFrameOwnerElement* owner_element =
       ToHTMLFrameOwnerElement(frame_->Owner());
+  DCHECK(owner_element);
   DOMWindowPerformance::performance(*parent_frame->GetFrame()->DomWindow())
       ->AddResourceTiming(info, owner_element->localName());
 }

@@ -35,15 +35,8 @@ ASH_PUBLIC_EXPORT extern const base::Feature kEnablePlayStoreAppSearch;
 // Enables in-app data search.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppDataSearch;
 
-// Enables using gestures to show or hide the home launcher.
-// TODO(crbug.com/872319): Remove this after the feature is launched.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableHomeLauncherGestures;
-
 // Enables the Settings shortcut search.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableSettingsShortcutSearch;
-
-// Enables the apps grid gap feature.
-ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppsGridGapFeature;
 
 // Enables the feature to display zero state suggestions.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableZeroStateSuggestions;
@@ -54,17 +47,24 @@ ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppListSearchAutocomplete;
 // Enables the feature to rank app search result using AppSearchResultRanker.
 ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppSearchResultRanker;
 
+// Enables the feature to include a single reinstallation candidate in
+// zero-state.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableAppReinstallZeroState;
+
+// Enables the embedded Assistant UI in the app list.
+ASH_PUBLIC_EXPORT extern const base::Feature kEnableEmbeddedAssistantUI;
+
 bool ASH_PUBLIC_EXPORT IsAnswerCardEnabled();
 bool ASH_PUBLIC_EXPORT IsAppShortcutSearchEnabled();
 bool ASH_PUBLIC_EXPORT IsBackgroundBlurEnabled();
 bool ASH_PUBLIC_EXPORT IsPlayStoreAppSearchEnabled();
 bool ASH_PUBLIC_EXPORT IsAppDataSearchEnabled();
-bool ASH_PUBLIC_EXPORT IsHomeLauncherGesturesEnabled();
 bool ASH_PUBLIC_EXPORT IsSettingsShortcutSearchEnabled();
-bool ASH_PUBLIC_EXPORT IsAppsGridGapFeatureEnabled();
 bool ASH_PUBLIC_EXPORT IsZeroStateSuggestionsEnabled();
 bool ASH_PUBLIC_EXPORT IsAppListSearchAutocompleteEnabled();
 bool ASH_PUBLIC_EXPORT IsAppSearchResultRankerEnabled();
+bool ASH_PUBLIC_EXPORT IsAppReinstallZeroStateEnabled();
+bool ASH_PUBLIC_EXPORT IsEmbeddedAssistantUIEnabled();
 
 std::string ASH_PUBLIC_EXPORT AnswerServerUrl();
 std::string ASH_PUBLIC_EXPORT AnswerServerQuerySuffix();

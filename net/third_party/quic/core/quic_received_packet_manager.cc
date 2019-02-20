@@ -4,6 +4,7 @@
 
 #include "net/third_party/quic/core/quic_received_packet_manager.h"
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 
@@ -25,8 +26,7 @@ const size_t kMaxPacketsAfterNewMissing = 4;
 }  // namespace
 
 QuicReceivedPacketManager::QuicReceivedPacketManager(QuicConnectionStats* stats)
-    : peer_least_packet_awaiting_ack_(0),
-      ack_frame_updated_(false),
+    : ack_frame_updated_(false),
       max_ack_ranges_(0),
       time_largest_observed_(QuicTime::Zero()),
       save_timestamps_(false),
@@ -44,7 +44,8 @@ void QuicReceivedPacketManager::RecordPacketReceived(
   }
   ack_frame_updated_ = true;
 
-  if (LargestAcked(ack_frame_) > packet_number) {
+  if (LargestAcked(ack_frame_).IsInitialized() &&
+      LargestAcked(ack_frame_) > packet_number) {
     // Record how out of order stats.
     ++stats_->packets_reordered;
     stats_->max_sequence_reordering =
@@ -55,7 +56,8 @@ void QuicReceivedPacketManager::RecordPacketReceived(
     stats_->max_time_reordering_us =
         std::max(stats_->max_time_reordering_us, reordering_time_us);
   }
-  if (packet_number > LargestAcked(ack_frame_)) {
+  if (!LargestAcked(ack_frame_).IsInitialized() ||
+      packet_number > LargestAcked(ack_frame_)) {
     ack_frame_.largest_acked = packet_number;
     time_largest_observed_ = receipt_time;
   }
@@ -74,10 +76,18 @@ void QuicReceivedPacketManager::RecordPacketReceived(
           std::make_pair(packet_number, receipt_time));
     }
   }
+
+  if (least_received_packet_number_.IsInitialized()) {
+    least_received_packet_number_ =
+        std::min(least_received_packet_number_, packet_number);
+  } else {
+    least_received_packet_number_ = packet_number;
+  }
 }
 
 bool QuicReceivedPacketManager::IsMissing(QuicPacketNumber packet_number) {
-  return packet_number < LargestAcked(ack_frame_) &&
+  return LargestAcked(ack_frame_).IsInitialized() &&
+         packet_number < LargestAcked(ack_frame_) &&
          !ack_frame_.packets.Contains(packet_number);
 }
 
@@ -120,9 +130,14 @@ const QuicFrame QuicReceivedPacketManager::GetUpdatedAckFrame(
 
 void QuicReceivedPacketManager::DontWaitForPacketsBefore(
     QuicPacketNumber least_unacked) {
+  if (!least_unacked.IsInitialized()) {
+    return;
+  }
   // ValidateAck() should fail if peer_least_packet_awaiting_ack shrinks.
-  DCHECK_LE(peer_least_packet_awaiting_ack_, least_unacked);
-  if (least_unacked > peer_least_packet_awaiting_ack_) {
+  DCHECK(!peer_least_packet_awaiting_ack_.IsInitialized() ||
+         peer_least_packet_awaiting_ack_ <= least_unacked);
+  if (!peer_least_packet_awaiting_ack_.IsInitialized() ||
+      least_unacked > peer_least_packet_awaiting_ack_) {
     peer_least_packet_awaiting_ack_ = least_unacked;
     bool packets_updated = ack_frame_.packets.RemoveUpTo(least_unacked);
     if (packets_updated) {
@@ -132,14 +147,25 @@ void QuicReceivedPacketManager::DontWaitForPacketsBefore(
     }
   }
   DCHECK(ack_frame_.packets.Empty() ||
+         !peer_least_packet_awaiting_ack_.IsInitialized() ||
          ack_frame_.packets.Min() >= peer_least_packet_awaiting_ack_);
 }
 
 bool QuicReceivedPacketManager::HasMissingPackets() const {
-  return ack_frame_.packets.NumIntervals() > 1 ||
-         (!ack_frame_.packets.Empty() &&
-          ack_frame_.packets.Min() >
-              std::max(QuicPacketNumber(1), peer_least_packet_awaiting_ack_));
+  if (ack_frame_.packets.Empty()) {
+    return false;
+  }
+  if (ack_frame_.packets.NumIntervals() > 1) {
+    return true;
+  }
+  if (!GetQuicRestartFlag(quic_enable_accept_random_ipn)) {
+    return ack_frame_.packets.Min() >
+           (peer_least_packet_awaiting_ack_.IsInitialized()
+                ? peer_least_packet_awaiting_ack_
+                : QuicPacketNumber(1));
+  }
+  return peer_least_packet_awaiting_ack_.IsInitialized() &&
+         ack_frame_.packets.Min() > peer_least_packet_awaiting_ack_;
 }
 
 bool QuicReceivedPacketManager::HasNewMissingPackets() const {
@@ -153,6 +179,18 @@ bool QuicReceivedPacketManager::ack_frame_updated() const {
 
 QuicPacketNumber QuicReceivedPacketManager::GetLargestObserved() const {
   return LargestAcked(ack_frame_);
+}
+
+QuicPacketNumber QuicReceivedPacketManager::PeerFirstSendingPacketNumber()
+    const {
+  if (!GetQuicRestartFlag(quic_enable_accept_random_ipn)) {
+    return QuicPacketNumber(1);
+  }
+  if (!least_received_packet_number_.IsInitialized()) {
+    QUIC_BUG << "No packets have been received yet";
+    return QuicPacketNumber(1);
+  }
+  return least_received_packet_number_;
 }
 
 }  // namespace quic

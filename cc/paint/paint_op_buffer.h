@@ -18,7 +18,7 @@
 #include "base/memory/aligned_memory.h"
 #include "base/optional.h"
 #include "cc/base/math_util.h"
-#include "cc/paint/image_provider.h"
+#include "cc/paint/node_holder.h"
 #include "cc/paint/paint_canvas.h"
 #include "cc/paint/paint_export.h"
 #include "cc/paint/paint_flags.h"
@@ -40,6 +40,7 @@ class SkStrikeServer;
 // See: third_party/skia/src/core/SkLiteDL.h.
 namespace cc {
 class ClientPaintCache;
+class ImageProvider;
 class ServicePaintCache;
 
 class CC_PAINT_EXPORT ThreadsafeMatrix : public SkMatrix {
@@ -65,7 +66,7 @@ class CC_PAINT_EXPORT ThreadsafePath : public SkPath {
                           const SerializeOptions& options);                  \
   static PaintOp* Deserialize(const volatile void* input, size_t input_size, \
                               void* output, size_t output_size,              \
-                              const DeserializeOptions& options);
+                              const DeserializeOptions& options)
 
 enum class PaintOpType : uint8_t {
   Annotate,
@@ -181,13 +182,16 @@ class CC_PAINT_EXPORT PaintOp {
   struct CC_PAINT_EXPORT DeserializeOptions {
     DeserializeOptions(TransferCacheDeserializeHelper* transfer_cache,
                        ServicePaintCache* paint_cache,
-                       SkStrikeClient* strike_client);
+                       SkStrikeClient* strike_client,
+                       std::vector<uint8_t>* scratch_buffer);
     TransferCacheDeserializeHelper* transfer_cache = nullptr;
     ServicePaintCache* paint_cache = nullptr;
     SkStrikeClient* strike_client = nullptr;
     uint32_t raster_color_space_id = gfx::ColorSpace::kInvalidId;
     // Do a DumpWithoutCrashing when serialization fails.
     bool crash_dump_on_failure = false;
+    // Used to memcpy Skia flattenables into to avoid TOCTOU issues.
+    std::vector<uint8_t>* scratch_buffer = nullptr;
   };
 
   // Indicates how PaintImages are serialized.
@@ -734,6 +738,11 @@ class CC_PAINT_EXPORT DrawTextBlobOp final : public PaintOpWithFlags {
                  SkScalar x,
                  SkScalar y,
                  const PaintFlags& flags);
+  DrawTextBlobOp(sk_sp<SkTextBlob> blob,
+                 SkScalar x,
+                 SkScalar y,
+                 const PaintFlags& flags,
+                 const NodeHolder& node_holder);
   ~DrawTextBlobOp();
   static void RasterWithFlags(const DrawTextBlobOp* op,
                               const PaintFlags* flags,
@@ -746,6 +755,8 @@ class CC_PAINT_EXPORT DrawTextBlobOp final : public PaintOpWithFlags {
   sk_sp<SkTextBlob> blob;
   SkScalar x;
   SkScalar y;
+  // This field isn't serialized.
+  NodeHolder node_holder;
 
  private:
   DrawTextBlobOp();
@@ -825,13 +836,8 @@ class CC_PAINT_EXPORT SaveLayerOp final : public PaintOpWithFlags {
 class CC_PAINT_EXPORT SaveLayerAlphaOp final : public PaintOp {
  public:
   static constexpr PaintOpType kType = PaintOpType::SaveLayerAlpha;
-  SaveLayerAlphaOp(const SkRect* bounds,
-                   uint8_t alpha,
-                   bool preserve_lcd_text_requests)
-      : PaintOp(kType),
-        bounds(bounds ? *bounds : kUnsetRect),
-        alpha(alpha),
-        preserve_lcd_text_requests(preserve_lcd_text_requests) {}
+  SaveLayerAlphaOp(const SkRect* bounds, uint8_t alpha)
+      : PaintOp(kType), bounds(bounds ? *bounds : kUnsetRect), alpha(alpha) {}
   static void Raster(const SaveLayerAlphaOp* op,
                      SkCanvas* canvas,
                      const PlaybackParams& params);
@@ -841,7 +847,6 @@ class CC_PAINT_EXPORT SaveLayerAlphaOp final : public PaintOp {
 
   SkRect bounds;
   uint8_t alpha;
-  bool preserve_lcd_text_requests;
 };
 
 class CC_PAINT_EXPORT ScaleOp final : public PaintOp {

@@ -20,7 +20,7 @@ ScriptPromise Clipboard::readText(ScriptState* script_state) {
   return ClipboardPromise::CreateForReadText(script_state);
 }
 
-ScriptPromise Clipboard::write(ScriptState* script_state, DataTransfer* data) {
+ScriptPromise Clipboard::write(ScriptState* script_state, Blob* data) {
   return ClipboardPromise::CreateForWrite(script_state, data);
 }
 

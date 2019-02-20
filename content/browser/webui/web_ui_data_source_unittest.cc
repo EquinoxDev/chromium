@@ -214,11 +214,20 @@ TEST_F(WebUIDataSourceTest, MimeType) {
 
 TEST_F(WebUIDataSourceTest, IsGzipped) {
   EXPECT_FALSE(source()->IsGzipped("foobar"));
+  EXPECT_FALSE(source()->IsGzipped(""));
+  source()->UseGzip();
+  EXPECT_TRUE(source()->IsGzipped("foobar"));
+  EXPECT_TRUE(source()->IsGzipped(""));
+}
+
+TEST_F(WebUIDataSourceTest, IsGzippedWithCallback) {
+  EXPECT_FALSE(source()->IsGzipped("foobar"));
 
   source()->AddResourcePath("foobar", kDummyResourceId);
   source()->SetDefaultResource(kDummyDefaultResourceId);
   source()->SetJsonPath("strings.js");
-  source()->UseGzip({"json/special/path"});
+  source()->UseGzip(base::BindRepeating(
+      [](const std::string& path) { return path != "json/special/path"; }));
 
   EXPECT_TRUE(source()->IsGzipped("foobar"));
   EXPECT_TRUE(source()->IsGzipped("foobar?query"));
@@ -230,6 +239,10 @@ TEST_F(WebUIDataSourceTest, IsGzipped) {
   EXPECT_FALSE(source()->IsGzipped("json/special/path?query"));
   EXPECT_FALSE(source()->IsGzipped("strings.js"));
   EXPECT_FALSE(source()->IsGzipped("strings.js?query"));
+}
+
+TEST_F(WebUIDataSourceTest, ShouldServeMimeTypeAsContentTypeHeader) {
+  EXPECT_TRUE(source()->source()->ShouldServeMimeTypeAsContentTypeHeader());
 }
 
 }  // namespace content

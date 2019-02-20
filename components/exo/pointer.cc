@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "ash/public/cpp/shell_window_ids.h"
+#include "base/bind.h"
 #include "components/exo/pointer_delegate.h"
 #include "components/exo/pointer_gesture_pinch_delegate.h"
 #include "components/exo/shell_surface_util.h"
@@ -250,6 +251,11 @@ void Pointer::OnMouseEvent(ui::MouseEvent* event) {
     }
     case ui::ET_SCROLL: {
       ui::ScrollEvent* scroll_event = static_cast<ui::ScrollEvent*>(event);
+
+      // Scrolling with 3+ fingers should not be handled since it will be used
+      // to trigger overview mode.
+      if (scroll_event->finger_count() >= 3)
+        break;
       delegate_->OnPointerScroll(
           event->time_stamp(),
           gfx::Vector2dF(scroll_event->x_offset(), scroll_event->y_offset()),

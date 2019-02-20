@@ -94,6 +94,9 @@ class NavigationManagerImpl : public NavigationManager {
   virtual void OnNavigationItemsPruned(size_t pruned_item_count) = 0;
   virtual void OnNavigationItemCommitted() = 0;
 
+  // Called when renderer-initiated navigation has started.
+  virtual void OnRendererInitiatedNavigationStarted(const GURL& url) = 0;
+
   // Prepares for the deletion of WKWebView such as caching necessary data.
   virtual void DetachFromWebView();
 
@@ -142,15 +145,12 @@ class NavigationManagerImpl : public NavigationManager {
                                            NSString* state_object,
                                            ui::PageTransition transition) = 0;
 
-  // Returns true after session restoration has started, until the first
-  // post-restore navigation is finished. Returns true when first post-restore
-  // navigation is started, even though technically session restoration is
-  // complete.
-  virtual bool IsRestoreSessionInProgress() const = 0;
-
   // Sets the index of the pending navigation item. -1 means no navigation or a
   // new navigation.
   virtual void SetPendingItemIndex(int index) = 0;
+
+  // Applies the workaround for crbug.com/887497.
+  virtual void ApplyWKWebViewForwardHistoryClobberWorkaround();
 
   // Resets the transient url rewriter list.
   void RemoveTransientURLRewriters();
@@ -175,6 +175,10 @@ class NavigationManagerImpl : public NavigationManager {
   // TODO(crbug.com/661316): Make this private once all navigation code is moved
   // out of CRWWebController.
   NavigationItemImpl* GetCurrentItemImpl() const;
+
+  // Returns the last committed NavigationItem, which may be null if there
+  // are no committed entries or session restoration is in-progress.
+  NavigationItemImpl* GetLastCommittedItemImpl() const;
 
   // Updates the pending or last committed navigation item after replaceState.
   // TODO(crbug.com/783382): This is a legacy method to maintain backward
@@ -227,10 +231,6 @@ class NavigationManagerImpl : public NavigationManager {
   // TODO(crbug.com/738020): Remove legacy code and merge
   // WKBasedNavigationManager into this class after the navigation experiment.
 
-  // Checks whether or not two URLs differ only in the fragment.
-  static bool IsFragmentChangeNavigationBetweenUrls(const GURL& existing_url,
-                                                    const GURL& new_url);
-
   // Applies the user agent override to |pending_item|, or inherits the user
   // agent of |inherit_from| if |user_agent_override_option| is INHERIT.
   static void UpdatePendingItemUserAgentType(
@@ -241,6 +241,9 @@ class NavigationManagerImpl : public NavigationManager {
   // Must be called by subclasses before restoring |item_count| navigation
   // items.
   void WillRestore(size_t item_count);
+
+  // Some app-specific URLs need to be rewritten to about: scheme.
+  void RewriteItemURLIfNecessary(NavigationItem* item) const;
 
   // Creates a NavigationItem using the given properties, where |previous_url|
   // is the URL of the navigation just prior to the current one. If
@@ -265,7 +268,8 @@ class NavigationManagerImpl : public NavigationManager {
                                NavigationInitiationType type,
                                bool has_user_gesture) = 0;
   virtual void FinishReload();
-  virtual void FinishLoadURLWithParams();
+  virtual void FinishLoadURLWithParams(
+      NavigationInitiationType initiation_type);
 
   // Returns true if the subclass uses placeholder URLs and this is such a URL.
   virtual bool IsPlaceholderUrl(const GURL& url) const;

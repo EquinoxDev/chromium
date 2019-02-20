@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
@@ -239,7 +240,7 @@ void CastChannelAsyncApiFunction::SetResultFromSocket(
   FillChannelInfo(socket, &channel_info);
   api::cast_channel::ChannelError error = ToChannelError(socket.error_state());
   if (error != api::cast_channel::CHANNEL_ERROR_NONE) {
-    SetError("Channel socket error = " + base::IntToString(error));
+    SetError("Channel socket error = " + base::NumberToString(error));
   }
   SetResultFromChannelInfo(channel_info);
 }
@@ -256,7 +257,7 @@ void CastChannelAsyncApiFunction::SetResultFromError(
   channel_info.connect_info.auth =
       api::cast_channel::CHANNEL_AUTH_TYPE_SSL_VERIFIED;
   SetResultFromChannelInfo(channel_info);
-  SetError("Channel error = " + base::IntToString(error));
+  SetError("Channel error = " + base::NumberToString(error));
 }
 
 void CastChannelAsyncApiFunction::SetResultFromChannelInfo(

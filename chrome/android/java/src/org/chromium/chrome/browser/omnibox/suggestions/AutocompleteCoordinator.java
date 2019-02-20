@@ -8,6 +8,7 @@ import android.content.Context;
 import android.support.annotation.Nullable;
 import android.support.v4.view.ViewCompat;
 import android.view.KeyEvent;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStub;
@@ -17,8 +18,7 @@ import org.chromium.base.Callback;
 import org.chromium.base.StrictModeContext;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.modelutil.LazyConstructionPropertyMcp;
-import org.chromium.chrome.browser.modelutil.ModelListAdapter;
+import org.chromium.chrome.browser.ActivityTabProvider;
 import org.chromium.chrome.browser.omnibox.LocationBarVoiceRecognitionHandler;
 import org.chromium.chrome.browser.omnibox.UrlBar.UrlTextChangeListener;
 import org.chromium.chrome.browser.omnibox.UrlBarEditingTextStateProvider;
@@ -26,12 +26,20 @@ import org.chromium.chrome.browser.omnibox.UrlFocusChangeListener;
 import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteController.OnSuggestionsReceivedListener;
 import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestionsList.OmniboxSuggestionListEmbedder;
 import org.chromium.chrome.browser.omnibox.suggestions.SuggestionListViewBinder.SuggestionListViewHolder;
+import org.chromium.chrome.browser.omnibox.suggestions.answer.AnswerSuggestionView;
+import org.chromium.chrome.browser.omnibox.suggestions.answer.AnswerSuggestionViewBinder;
+import org.chromium.chrome.browser.omnibox.suggestions.basic.SuggestionView;
+import org.chromium.chrome.browser.omnibox.suggestions.basic.SuggestionViewViewBinder;
+import org.chromium.chrome.browser.omnibox.suggestions.editurl.EditUrlSuggestionProcessor;
+import org.chromium.chrome.browser.omnibox.suggestions.editurl.EditUrlSuggestionViewBinder;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
 import org.chromium.chrome.browser.util.KeyNavigationUtil;
 import org.chromium.ui.ViewProvider;
 import org.chromium.ui.base.PageTransition;
 import org.chromium.ui.base.WindowAndroid;
+import org.chromium.ui.modelutil.LazyConstructionPropertyMcp;
+import org.chromium.ui.modelutil.ModelListAdapter;
 import org.chromium.ui.modelutil.PropertyModel;
 
 import java.util.ArrayList;
@@ -47,9 +55,51 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
     private ListView mListView;
 
     /**
+     * A processor of omnibox suggestions. Implementers are provided the opportunity to analyze a
+     * suggestion and create a custom model.
+     */
+    public interface SuggestionProcessor {
+        /**
+         * @param suggestion The suggestion to process.
+         * @return Whether this suggestion processor handles this type of suggestion.
+         */
+        boolean doesProcessSuggestion(OmniboxSuggestion suggestion);
+
+        /**
+         * @return The type of view the models created by this processor represent.
+         */
+        int getViewTypeId();
+
+        /**
+         * @see org.chromium.chrome.browser.omnibox.UrlFocusChangeListener#onUrlFocusChange(boolean)
+         */
+        void onUrlFocusChange(boolean hasFocus);
+
+        /**
+         * Signals that native initialization has completed.
+         */
+        void onNativeInitialized();
+
+        /**
+         * Create a model for a suggestion at the specified position.
+         * @param suggestion The suggestion to create the model for.
+         * @return A model for the suggestion.
+         */
+        PropertyModel createModelForSuggestion(OmniboxSuggestion suggestion);
+
+        /**
+         * Populate a model for the given suggestion.
+         * @param suggestion The suggestion to populate the model for.
+         * @param model The model to populate.
+         * @param position The position of the suggestion in the list.
+         */
+        void populateModel(OmniboxSuggestion suggestion, PropertyModel model, int position);
+    }
+
+    /**
      * Provides the additional functionality to trigger and interact with autocomplete suggestions.
      */
-    public interface AutocompleteDelegate {
+    public interface AutocompleteDelegate extends EditUrlSuggestionProcessor.LocationBarDelegate {
         /**
          * Notified that the URL text has changed.
          */
@@ -80,11 +130,6 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
          * @param inputStart The time the input started for the load request.
          */
         void loadUrl(String url, @PageTransition int transition, long inputStart);
-
-        /**
-         * Requests that the specified text be set as the current editing text in the omnibox.
-         */
-        void setOmniboxEditingText(String text);
 
         /**
          * @return Whether the omnibox was focused via the NTP fakebox.
@@ -148,10 +193,24 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
                 list.setClipToPadding(false);
 
                 // Register a view type for a default omnibox suggestion.
+                // Note: clang-format does a bad job formatting lambdas so we turn it off here.
+                // clang-format off
                 adapter.registerType(
                         OmniboxSuggestionUiType.DEFAULT,
                         () -> new SuggestionView(mListView.getContext()),
                         SuggestionViewViewBinder::bind);
+
+                adapter.registerType(
+                        OmniboxSuggestionUiType.EDIT_URL_SUGGESTION,
+                        () -> EditUrlSuggestionProcessor.createView(mListView.getContext()),
+                        EditUrlSuggestionViewBinder::bind);
+
+                adapter.registerType(
+                        OmniboxSuggestionUiType.ANSWER_SUGGESTION,
+                        () -> (AnswerSuggestionView) LayoutInflater.from(mListView.getContext())
+                                .inflate(R.layout.omnibox_answer_suggestion, null),
+                        AnswerSuggestionViewBinder::bind);
+                // clang-format on
 
                 mHolder = new SuggestionListViewHolder(container, list, adapter);
 
@@ -203,6 +262,13 @@ public class AutocompleteCoordinator implements UrlFocusChangeListener, UrlTextC
      */
     public void setWindowAndroid(WindowAndroid windowAndroid) {
         mMediator.setWindowAndroid(windowAndroid);
+    }
+
+    /**
+     * @param provider A means of accessing the activity's tab.
+     */
+    public void setActivityTabProvider(ActivityTabProvider provider) {
+        mMediator.setActivityTabProvider(provider);
     }
 
     /**

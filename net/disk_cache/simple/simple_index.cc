@@ -185,21 +185,13 @@ SimpleIndex::SimpleIndex(
     : cleanup_tracker_(std::move(cleanup_tracker)),
       delegate_(delegate),
       cache_type_(cache_type),
-      cache_size_(0),
-      max_size_(0),
-      high_watermark_(0),
-      low_watermark_(0),
-      eviction_in_progress_(false),
-      initialized_(false),
-      init_method_(INITIALIZE_METHOD_MAX),
       index_file_(std::move(index_file)),
       io_thread_(io_thread),
       // Creating the callback once so it is reused every time
       // write_to_disk_timer_.Start() is called.
       write_to_disk_cb_(base::Bind(&SimpleIndex::WriteToDisk,
                                    AsWeakPtr(),
-                                   INDEX_WRITE_REASON_IDLE)),
-      app_on_background_(false) {}
+                                   INDEX_WRITE_REASON_IDLE)) {}
 
 SimpleIndex::~SimpleIndex() {
   DCHECK(io_thread_checker_.CalledOnValidThread());
@@ -321,6 +313,15 @@ uint64_t SimpleIndex::GetCacheSizeBetween(base::Time initial_time,
 size_t SimpleIndex::EstimateMemoryUsage() const {
   return base::trace_event::EstimateMemoryUsage(entries_set_) +
          base::trace_event::EstimateMemoryUsage(removed_entries_);
+}
+
+base::Time SimpleIndex::GetLastUsedTime(uint64_t entry_hash) {
+  DCHECK(io_thread_checker_.CalledOnValidThread());
+  DCHECK_NE(cache_type_, net::APP_CACHE);
+  auto it = entries_set_.find(entry_hash);
+  if (it == entries_set_.end())
+    return base::Time();
+  return it->second.GetLastUsedTime();
 }
 
 void SimpleIndex::SetLastUsedTimeForTest(uint64_t entry_hash,

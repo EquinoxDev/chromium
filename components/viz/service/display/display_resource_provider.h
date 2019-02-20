@@ -43,6 +43,7 @@ class GLES2Interface;
 namespace viz {
 class ContextProvider;
 class SharedBitmapManager;
+class SkiaOutputSurface;
 
 // This class provides abstractions for receiving and using resources from other
 // modules/threads/processes. It abstracts away GL textures vs GpuMemoryBuffers
@@ -63,9 +64,12 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
     kGpu,
     kSoftware,
   };
+  // TODO(cblume, crbug.com/900973): |enable_shared_images| is a temporary
+  // solution that unblocks us until SharedImages are threadsafe in WebView.
   DisplayResourceProvider(Mode mode,
                           ContextProvider* compositor_context_provider,
-                          SharedBitmapManager* shared_bitmap_manager);
+                          SharedBitmapManager* shared_bitmap_manager,
+                          bool enable_shared_images = true);
   ~DisplayResourceProvider() override;
 
   bool IsSoftware() const { return mode_ == kSoftware; }
@@ -170,7 +174,8 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
   class VIZ_SERVICE_EXPORT ScopedReadLockSkImage {
    public:
     ScopedReadLockSkImage(DisplayResourceProvider* resource_provider,
-                          ResourceId resource_id);
+                          ResourceId resource_id,
+                          SkAlphaType alpha_type = kPremul_SkAlphaType);
     ~ScopedReadLockSkImage();
 
     const SkImage* sk_image() const { return sk_image_.get(); }
@@ -185,14 +190,23 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
     DISALLOW_COPY_AND_ASSIGN(ScopedReadLockSkImage);
   };
 
-  // Maintains set of lock for external use.
+  // Maintains set of resources locked for external use by SkiaRenderer.
   class VIZ_SERVICE_EXPORT LockSetForExternalUse {
    public:
-    explicit LockSetForExternalUse(DisplayResourceProvider* resource_provider);
+    // There should be at most one instance of this class per
+    // |resource_provider|. Both |resource_provider| and |client| outlive this
+    // class.
+    LockSetForExternalUse(DisplayResourceProvider* resource_provider,
+                          SkiaOutputSurface* client);
     ~LockSetForExternalUse();
 
     // Lock a resource for external use.
     ResourceMetadata LockResource(ResourceId resource_id);
+
+    // Lock a resource and create a SkImage from it by using
+    // Client::CreateImage.
+    sk_sp<SkImage> LockResourceAndCreateSkImage(ResourceId resource_id,
+                                                SkAlphaType alpha_type);
 
     // Unlock all locked resources with a |sync_token|.
     // See UnlockForExternalUse for the detail. All resources must be unlocked
@@ -469,7 +483,10 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
 
   ResourceMap resources_;
   ChildMap children_;
-  base::flat_map<ResourceId, sk_sp<SkImage>> resource_sk_image_;
+  base::flat_map<ResourceId, sk_sp<SkImage>> resource_sk_images_;
+  // If set, all |resource_sk_images_| were created with this client.
+  SkiaOutputSurface* external_use_client_ = nullptr;
+
   base::flat_map<int, std::vector<ResourceId>> batched_returning_resources_;
   scoped_refptr<ResourceFence> current_read_lock_fence_;
   // Keep track of whether deleted resources should be batched up or returned
@@ -491,6 +508,8 @@ class VIZ_SERVICE_EXPORT DisplayResourceProvider
   // Set of ResourceIds that would like to be notified about promotion hints.
   ResourceIdSet wants_promotion_hints_set_;
 #endif
+
+  bool enable_shared_images_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayResourceProvider);
 };

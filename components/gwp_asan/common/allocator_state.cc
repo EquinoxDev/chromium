@@ -9,18 +9,19 @@
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 
-using base::debug::StackTrace;
-
 namespace gwp_asan {
 namespace internal {
 
 // TODO: Delete out-of-line constexpr defininitons once C++17 is in use.
 constexpr size_t AllocatorState::kGpaMaxPages;
+constexpr size_t AllocatorState::kMaxStackFrames;
+constexpr size_t AllocatorState::kMaxPackedTraceLength;
+
+AllocatorState::AllocatorState() {}
 
 AllocatorState::GetMetadataReturnType AllocatorState::GetMetadataForAddress(
     uintptr_t exception_address,
-    SlotMetadata* slot,
-    ErrorType* error_type) const {
+    uintptr_t* slot_address) const {
   CHECK(IsValid());
 
   if (!PointerIsMine(exception_address))
@@ -30,10 +31,7 @@ AllocatorState::GetMetadataReturnType AllocatorState::GetMetadataForAddress(
   if (slot_idx >= kGpaMaxPages)
     return GetMetadataReturnType::kErrorBadSlot;
 
-  *slot = data[slot_idx];
-  *error_type = GetErrorType(exception_address, slot->alloc.trace_addr != 0,
-                             slot->dealloc.trace_addr != 0);
-
+  *slot_address = slot_metadata + (slot_idx * sizeof(SlotMetadata));
   return GetMetadataReturnType::kGwpAsanCrash;
 }
 
@@ -53,6 +51,9 @@ bool AllocatorState::IsValid() const {
 
   if (first_page_addr != pages_base_addr + page_size ||
       pages_end_addr - pages_base_addr != page_size * (total_pages * 2 + 1))
+    return false;
+
+  if (!slot_metadata)
     return false;
 
   return true;
@@ -92,8 +93,10 @@ AllocatorState::ErrorType AllocatorState::GetErrorType(uintptr_t addr,
                                                        bool deallocated) const {
   if (!allocated)
     return ErrorType::kUnknown;
-  if (double_free_detected)
+  if (double_free_address)
     return ErrorType::kDoubleFree;
+  if (free_invalid_address)
+    return ErrorType::kFreeInvalidAddress;
   if (deallocated)
     return ErrorType::kUseAfterFree;
   if (addr < first_page_addr)
@@ -134,6 +137,8 @@ size_t AllocatorState::AddrToSlot(uintptr_t addr) const {
   DCHECK_LT(slot, kGpaMaxPages);
   return slot;
 }
+
+AllocatorState::SlotMetadata::SlotMetadata() {}
 
 }  // namespace internal
 }  // namespace gwp_asan

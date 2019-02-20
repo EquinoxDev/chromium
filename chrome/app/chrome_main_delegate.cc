@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/base_paths.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/files/file_path.h"
@@ -46,8 +47,9 @@
 #include "components/crash/content/app/crash_reporter_client.h"
 #include "components/crash/core/common/crash_key.h"
 #include "components/crash/core/common/crash_keys.h"
+#include "components/gwp_asan/buildflags/buildflags.h"
 #include "components/nacl/common/buildflags.h"
-#include "components/services/heap_profiling/public/cpp/allocator_shim.h"
+#include "components/services/heap_profiling/public/cpp/sampling_profiler_wrapper.h"
 #include "components/services/heap_profiling/public/cpp/stream.h"
 #include "components/tracing/common/tracing_sampler_profiler.h"
 #include "components/version_info/version_info.h"
@@ -77,7 +79,6 @@
 #include "chrome/child/v8_crashpad_support_win.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome_elf/chrome_elf_main.h"
-#include "components/gwp_asan/client/gwp_asan.h"  // nogncheck
 #include "sandbox/win/src/sandbox.h"
 #include "ui/base/resource/resource_bundle_win.h"
 #endif
@@ -132,6 +133,7 @@
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include "components/crash/content/app/breakpad_linux.h"
+#include "v8/include/v8-wasm-trap-handler-posix.h"
 #include "v8/include/v8.h"
 #endif
 
@@ -158,9 +160,15 @@
 #include "components/startup_metric_utils/browser/startup_metric_utils.h"
 #endif
 
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER) && BUILDFLAG(ENABLE_PDF)
 #include "chrome/child/pdf_child_init.h"
+#endif
 
+#if BUILDFLAG(ENABLE_GWP_ASAN)
+#include "components/gwp_asan/client/gwp_asan.h"  // nogncheck
+#endif
+
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
 base::LazyInstance<ChromeContentGpuClient>::DestructorAtExit
     g_chrome_content_gpu_client = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<ChromeContentRendererClient>::DestructorAtExit
@@ -526,8 +534,11 @@ bool ChromeMainDelegate::ShouldCreateFeatureList() {
 #endif
 
 void ChromeMainDelegate::PostFieldTrialInitialization() {
-#if defined(OS_WIN)
-  gwp_asan::EnableForMalloc();
+#if BUILDFLAG(ENABLE_GWP_ASAN)
+  version_info::Channel channel = chrome::GetChannel();
+  bool is_canary_dev = (channel == version_info::Channel::CANARY ||
+                        channel == version_info::Channel::DEV);
+  gwp_asan::EnableForMalloc(is_canary_dev);
 #endif
 }
 
@@ -538,6 +549,22 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
+
+  // Only allow disabling web security via the command-line flag if the user has
+  // specified a distinct profile directory. This still enables tests to disable
+  // web security by setting the kWebKitWebSecurityEnabled pref directly.
+  //
+  // Note that this is done in ChromeMainDelegate::BasicStartupComplete()
+  // because this is the earliest callback. Many places in Chromium gate
+  // security features around kDisableWebSecurity, and it is unreasonable to
+  // expect them all to properly also check for kUserDataDir.
+  if (command_line.HasSwitch(switches::kDisableWebSecurity) &&
+      !command_line.HasSwitch(switches::kUserDataDir)) {
+    LOG(ERROR) << "Web security may only be disabled if '--user-data-dir' is "
+                  "also specified.";
+    base::CommandLine::ForCurrentProcess()->RemoveSwitch(
+        switches::kDisableWebSecurity);
+  }
 
 #if defined(OS_WIN)
   // Browser should not be sandboxed.
@@ -570,7 +597,7 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
   v8_crashpad_support::SetUp();
 #endif
 #if defined(OS_LINUX)
-  breakpad::SetFirstChanceExceptionHandler(v8::V8::TryHandleSignal);
+  breakpad::SetFirstChanceExceptionHandler(v8::TryHandleWebAssemblyTrapPosix);
 #endif
 
 #if defined(OS_POSIX)
@@ -914,7 +941,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
         locale;
   }
 
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER) && BUILDFLAG(ENABLE_PDF)
   InitializePDF();
 #endif
 

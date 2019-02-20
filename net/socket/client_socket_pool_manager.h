@@ -35,9 +35,8 @@ class HttpProxyClientSocketPool;
 class HttpRequestHeaders;
 class NetLogWithSource;
 class ProxyInfo;
+class ProxyServer;
 class TransportClientSocketPool;
-class SOCKSClientSocketPool;
-class SSLClientSocketPool;
 
 struct SSLConfig;
 
@@ -76,16 +75,28 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
       HttpNetworkSession::SocketPoolType pool_type,
       int socket_count);
 
+  static base::TimeDelta unused_idle_socket_timeout(
+      HttpNetworkSession::SocketPoolType pool_type);
+  static void set_unused_idle_socket_timeout(
+      HttpNetworkSession::SocketPoolType pool_type,
+      base::TimeDelta timeout);
+
   virtual void FlushSocketPoolsWithError(int error) = 0;
   virtual void CloseIdleSockets() = 0;
+  // Returns the socket pool for direct HTTP and SSL connections.
   virtual TransportClientSocketPool* GetTransportSocketPool() = 0;
-  virtual SSLClientSocketPool* GetSSLSocketPool() = 0;
-  virtual SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
-      const HostPortPair& socks_proxy) = 0;
-  virtual HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
-      const HostPortPair& http_proxy) = 0;
-  virtual SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
-      const HostPortPair& proxy_server) = 0;
+  // Returns the socket pool used for both SOCKS and SSL over SOCKS.
+  // TODO(https://crbug.com/929714): Merge this with
+  // GetSocketPoolForHTTPLikeProxy(), once GetSocketPoolForSSLWithProxy() and
+  // GetSocketPoolForHTTPLikeProxy() have been merged.
+  virtual TransportClientSocketPool* GetSocketPoolForSOCKSProxy(
+      const ProxyServer& socks_proxy) = 0;
+  // Returns the HttpProxyClientSocketPool for a ProxyServer that uses an
+  // "HTTP-like" scheme, as defined by ProxyServer::is_http_like().
+  virtual TransportClientSocketPool* GetSocketPoolForHTTPLikeProxy(
+      const ProxyServer& http_proxy) = 0;
+  virtual TransportClientSocketPool* GetSocketPoolForSSLWithProxy(
+      const ProxyServer& proxy_server) = 0;
   // Creates a Value summary of the state of the socket pools.
   virtual std::unique_ptr<base::Value> SocketPoolInfoToValue() const = 0;
 

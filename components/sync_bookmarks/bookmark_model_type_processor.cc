@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_task_runner_handle.h"
@@ -206,9 +207,9 @@ void BookmarkModelTypeProcessor::OnUpdateReceived(
   const bool got_new_encryption_requirements =
       bookmark_tracker_->model_type_state().encryption_key_name() !=
       model_type_state.encryption_key_name();
-  updates_handler.Process(updates, got_new_encryption_requirements);
   bookmark_tracker_->set_model_type_state(
       std::make_unique<sync_pb::ModelTypeState>(model_type_state));
+  updates_handler.Process(updates, got_new_encryption_requirements);
   // Schedule save just in case one is needed.
   schedule_save_closure_.Run();
 }
@@ -331,11 +332,13 @@ void BookmarkModelTypeProcessor::ConnectIfReady() {
 
   if (bookmark_tracker_ &&
       bookmark_tracker_->model_type_state().cache_guid() != cache_guid_) {
-    // TODO(crbug.com/820049): Properly handle a mismatch between the loaded
-    // cache guid stored in |bookmark_tracker_.model_type_state_| at
-    // DecodeSyncMetadata() and the one received from sync at OnSyncStarting()
-    // stored in |cache_guid_|.
-    return;
+    // TODO(crbug.com/820049): Add basic unit testing  consider using
+    // StopTrackingMetadata().
+    // In case of a cache guid mismatch, treat it as a corrupted metadata and
+    // start clean.
+    bookmark_model_->RemoveObserver(bookmark_model_observer_.get());
+    bookmark_model_observer_.reset();
+    bookmark_tracker_.reset();
   }
 
   auto activation_context =

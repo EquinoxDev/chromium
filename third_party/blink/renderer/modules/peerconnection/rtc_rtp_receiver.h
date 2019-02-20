@@ -9,10 +9,13 @@
 
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_rtc_rtp_receiver.h"
+#include "third_party/blink/public/platform/web_rtc_rtp_source.h"
+#include "third_party/blink/public/platform/web_vector.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_contributing_source.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_receive_parameters.h"
+#include "third_party/blink/renderer/modules/peerconnection/rtc_rtp_synchronization_source.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
@@ -41,7 +44,8 @@ class RTCRtpReceiver final : public ScriptWrappable {
   RTCDtlsTransport* transport();
   RTCDtlsTransport* rtcp_transport();
   RTCRtpReceiveParameters* getParameters();
-  const HeapVector<Member<RTCRtpContributingSource>>& getContributingSources();
+  HeapVector<Member<RTCRtpSynchronizationSource>> getSynchronizationSources();
+  HeapVector<Member<RTCRtpContributingSource>> getContributingSources();
   ScriptPromise getStats(ScriptState*);
 
   const WebRTCRtpReceiver& web_receiver() const;
@@ -60,9 +64,10 @@ class RTCRtpReceiver final : public ScriptWrappable {
   Member<MediaStreamTrack> track_;
   MediaStreamVector streams_;
 
-  // The current contributing sources (|getContributingSources|).
-  HeapVector<Member<RTCRtpContributingSource>> contributing_sources_;
-  bool contributing_sources_needs_updating_ = true;
+  // The current SSRCs and CSRCs. getSynchronizationSources() returns the SSRCs
+  // and getContributingSources() returns the CSRCs.
+  WebVector<std::unique_ptr<WebRTCRtpSource>> web_sources_;
+  bool web_sources_needs_updating_ = true;
   Member<RTCRtpTransceiver> transceiver_;
 };
 

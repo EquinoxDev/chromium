@@ -15,19 +15,12 @@ namespace blink {
 // https://dom.spec.whatwg.org/#callbackdef-eventlistener
 class CORE_EXPORT JSEventListener final : public JSBasedEventListener {
  public:
-  static JSEventListener* Create(ScriptState* script_state,
-                                 v8::Local<v8::Object> listener,
-                                 const V8PrivateProperty::Symbol& property) {
-    return MakeGarbageCollected<JSEventListener>(script_state, listener,
-                                                 property);
+  static JSEventListener* CreateOrNull(V8EventListener* listener) {
+    return listener ? MakeGarbageCollected<JSEventListener>(listener) : nullptr;
   }
 
-  JSEventListener(ScriptState* script_state,
-                  v8::Local<v8::Object> listener,
-                  const V8PrivateProperty::Symbol& property)
-      : event_listener_(V8EventListener::Create(listener)) {
-    Attach(script_state, listener, property, this);
-  }
+  explicit JSEventListener(V8EventListener* listener)
+      : event_listener_(listener) {}
 
   // blink::CustomWrappable overrides:
   void Trace(blink::Visitor*) override;
@@ -38,8 +31,8 @@ class CORE_EXPORT JSEventListener final : public JSBasedEventListener {
   // multiple CallbackInterfaceBase objects that have the same
   // |CallbackInterfaceBase::callback_object_| but have different
   // |CallbackInterfaceBase::incumbent_script_state_|s.
-  bool operator==(const EventListener& other) const override {
-    auto* other_listener = DynamicTo<JSEventListener>(other);
+  bool Matches(const EventListener& other) const override {
+    const auto* other_listener = DynamicTo<JSEventListener>(other);
     return other_listener && event_listener_->HasTheSameCallbackObject(
                                  *other_listener->event_listener_);
   }

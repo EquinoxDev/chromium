@@ -29,8 +29,9 @@ class TestDataSource : public ProducerClient::DataSourceBase {
   void WritePacketBigly();
 
   // DataSourceBase implementation
-  void StartTracing(ProducerClient* producer_client,
-                    const mojom::DataSourceConfig& data_source_config) override;
+  void StartTracing(
+      ProducerClient* producer_client,
+      const perfetto::DataSourceConfig& data_source_config) override;
   void StopTracing(
       base::OnceClosure stop_complete_callback = base::OnceClosure()) override;
   void Flush(base::RepeatingClosure flush_complete_callback) override;
@@ -51,8 +52,9 @@ class MockProducerClient : public ProducerClient {
 
   void SetupDataSource(const std::string& data_source_name);
 
-  void StartDataSource(uint64_t id,
-                       mojom::DataSourceConfigPtr data_source_config) override;
+  void StartDataSource(
+      uint64_t id,
+      const perfetto::DataSourceConfig& data_source_config) override;
 
   void StopDataSource(uint64_t id, StopDataSourceCallback callback) override;
 
@@ -104,6 +106,7 @@ class MockConsumer : public perfetto::Consumer {
                    bool has_more) override;
   void OnDetach(bool success) override;
   void OnAttach(bool success, const perfetto::TraceConfig&) override;
+  void OnTraceStats(bool success, const perfetto::TraceStats&) override;
 
  private:
   std::unique_ptr<perfetto::TracingService::ConsumerEndpoint>
@@ -123,7 +126,7 @@ class MockProducerHost : public ProducerHost {
   ~MockProducerHost() override;
 
   void RegisterDataSource(
-      mojom::DataSourceRegistrationPtr registration_info) override;
+      const perfetto::DataSourceDescriptor& registration_info) override;
 
   void OnConnect() override;
 

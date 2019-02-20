@@ -65,6 +65,10 @@ extern const char kSyncSuppressStart[];
 extern const char kSyncEncryptionBootstrapToken[];
 extern const char kSyncKeystoreEncryptionBootstrapToken[];
 
+extern const char kSyncCacheGuid[];
+extern const char kSyncBirthday[];
+extern const char kSyncBagOfChips[];
+
 #if defined(OS_CHROMEOS)
 extern const char kSyncSpareBootstrapToken[];
 #endif  // defined(OS_CHROMEOS)
@@ -79,9 +83,6 @@ extern const char kSyncShutdownCleanly[];
 extern const char kSyncInvalidationVersions[];
 
 extern const char kSyncLastRunVersion[];
-
-extern const char kSyncPassphraseEncryptionTransitionInProgress[];
-extern const char kSyncNigoriStateForPassphraseTransition[];
 
 extern const char kEnableLocalSyncBackend[];
 extern const char kLocalSyncBackendDir[];

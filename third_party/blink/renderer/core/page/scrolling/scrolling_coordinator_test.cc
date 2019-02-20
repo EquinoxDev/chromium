@@ -87,7 +87,7 @@ class ScrollingCoordinatorTest : public testing::Test,
         ScopedPaintTouchActionRectsForTest(
             GetParam() & kScrollingCoordinatorTestPaintTouchActionRects),
         base_url_("http://www.test.com/") {
-    helper_.Initialize(nullptr, nullptr, &ConfigureSettings);
+    helper_.Initialize(nullptr, nullptr, nullptr, &ConfigureSettings);
     GetWebView()->MainFrameWidget()->Resize(IntSize(320, 240));
 
     // macOS attaches main frame scrollbars to the VisualViewport so the
@@ -157,7 +157,7 @@ class ScrollingCoordinatorTest : public testing::Test,
   frame_test_helpers::WebViewHelper helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     All,
     ScrollingCoordinatorTest,
     ::testing::Values(kScrollingCoordinatorTestNoFlags,
@@ -198,6 +198,11 @@ TEST_P(ScrollingCoordinatorTest, fastScrollingByDefault) {
 
 TEST_P(ScrollingCoordinatorTest, fastFractionalScrollingDiv) {
   ScopedFractionalScrollOffsetsForTest fractional_scroll_offsets(true);
+
+  // TODO(920417): Re-enable this test when main thread scrolling supports
+  // fractional scroll offsets.
+  if (RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled())
+    return;
 
   RegisterMockedHttpURLLoad("fractional-scroll-div.html");
   NavigateTo(base_url_ + "fractional-scroll-div.html");
@@ -1421,7 +1426,7 @@ class ScrollingCoordinatorTestWithAcceleratedContext
   FakeGLES2Interface gl_;
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     All,
     ScrollingCoordinatorTestWithAcceleratedContext,
     ::testing::Values(kScrollingCoordinatorTestNoFlags,

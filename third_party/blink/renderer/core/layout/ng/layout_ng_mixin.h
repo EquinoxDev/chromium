@@ -23,7 +23,6 @@ class NGLayoutResult;
 class NGPaintFragment;
 class NGPhysicalFragment;
 struct NGInlineNodeData;
-struct NGPhysicalOffset;
 
 // This mixin holds code shared between LayoutNG subclasses of
 // LayoutBlockFlow.
@@ -56,6 +55,9 @@ class LayoutNGMixin : public Base {
 
   PositionWithAffinity PositionForPoint(const LayoutPoint&) const final;
 
+  void ComputeSelfHitTestRects(Vector<LayoutRect>&,
+                               const LayoutPoint& layer_offset) const override;
+
   // Returns the last layout result for this block flow with the given
   // constraint space and break token, or null if it is not up-to-date or
   // otherwise unavailable.
@@ -72,29 +74,21 @@ class LayoutNGMixin : public Base {
   scoped_refptr<const NGLayoutResult> CachedLayoutResultForTesting() final;
 
   NGPaintFragment* PaintFragment() const final { return paint_fragment_.get(); }
-  void SetPaintFragment(const NGBreakToken*,
-                        scoped_refptr<const NGPhysicalFragment>,
-                        NGPhysicalOffset) final;
-  void UpdatePaintFragmentFromCachedLayoutResult(
-      const NGBreakToken*,
-      scoped_refptr<const NGPhysicalFragment>,
-      NGPhysicalOffset) final;
+  void SetPaintFragment(const NGBlockBreakToken*,
+                        scoped_refptr<const NGPhysicalFragment>) final;
 
  protected:
   bool IsOfType(LayoutObject::LayoutObjectType) const override;
+
+  void ComputeIntrinsicLogicalWidths(
+      LayoutUnit& min_logical_width,
+      LayoutUnit& max_logical_width) const override;
 
   void ComputeVisualOverflow(bool recompute_floats) final;
 
   void AddVisualOverflowFromChildren();
   void AddLayoutOverflowFromChildren() final;
 
- private:
-  void AddScrollingOverflowFromChildren();
-  void SetPaintFragment(scoped_refptr<const NGPhysicalFragment> fragment,
-                        NGPhysicalOffset offset,
-                        scoped_refptr<NGPaintFragment>* current);
-
- protected:
   void AddOutlineRects(Vector<LayoutRect>&,
                        const LayoutPoint& additional_offset,
                        NGOutlineType) const final;
@@ -112,6 +106,10 @@ class LayoutNGMixin : public Base {
   scoped_refptr<NGPaintFragment> paint_fragment_;
 
   friend class NGBaseLayoutAlgorithmTest;
+
+ private:
+  void AddScrollingOverflowFromChildren();
+  bool NeedsRelativePositionedLayoutOnly() const;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT

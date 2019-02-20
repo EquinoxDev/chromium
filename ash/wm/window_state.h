@@ -26,7 +26,6 @@ class Rect;
 }
 
 namespace ash {
-class ImmersiveGestureDragHandler;
 class LockWindowState;
 class TabletModeWindowState;
 
@@ -279,13 +278,6 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool bounds_changed_by_user() const { return bounds_changed_by_user_; }
   void set_bounds_changed_by_user(bool bounds_changed_by_user);
 
-  // True if the window is ignored by the shelf layout manager for
-  // purposes of darkening the shelf.
-  bool ignored_by_shelf() const { return ignored_by_shelf_; }
-  void set_ignored_by_shelf(bool ignored_by_shelf) {
-    ignored_by_shelf_ = ignored_by_shelf;
-  }
-
   // True if the window should be offered a chance to consume special system
   // keys such as brightness, volume, etc. that are usually handled by the
   // shell.
@@ -438,7 +430,6 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   std::unique_ptr<WindowStateDelegate> delegate_;
 
   bool bounds_changed_by_user_;
-  bool ignored_by_shelf_;
   bool can_consume_system_keys_;
   std::unique_ptr<DragDetails> drag_details_;
 
@@ -475,10 +466,6 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool ignore_property_change_;
 
   std::unique_ptr<State> current_state_;
-
-  // An object that assists with dragging immersive mode windows in tablet mode.
-  // Only non-null when immersive mode is active.
-  std::unique_ptr<ImmersiveGestureDragHandler> immersive_gesture_drag_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowState);
 };

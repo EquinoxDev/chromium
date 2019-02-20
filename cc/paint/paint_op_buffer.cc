@@ -206,13 +206,13 @@ static bool g_has_paint_flags[kNumOpTypes] = {TYPES(M)};
 #define M(T)                                         \
   static_assert(sizeof(T) <= sizeof(LargestPaintOp), \
                 #T " must be no bigger than LargestPaintOp");
-TYPES(M);
+TYPES(M)
 #undef M
 
 #define M(T)                                               \
   static_assert(alignof(T) <= PaintOpBuffer::PaintOpAlign, \
                 #T " must have alignment no bigger than PaintOpAlign");
-TYPES(M);
+TYPES(M)
 #undef M
 
 using AnalyzeOpFunc = void (*)(PaintOpBuffer*, const PaintOp*);
@@ -355,10 +355,14 @@ PaintOp::SerializeOptions& PaintOp::SerializeOptions::operator=(
 PaintOp::DeserializeOptions::DeserializeOptions(
     TransferCacheDeserializeHelper* transfer_cache,
     ServicePaintCache* paint_cache,
-    SkStrikeClient* strike_client)
+    SkStrikeClient* strike_client,
+    std::vector<uint8_t>* scratch_buffer)
     : transfer_cache(transfer_cache),
       paint_cache(paint_cache),
-      strike_client(strike_client) {}
+      strike_client(strike_client),
+      scratch_buffer(scratch_buffer) {
+  DCHECK(scratch_buffer);
+}
 
 size_t AnnotateOp::Serialize(const PaintOp* base_op,
                              void* memory,
@@ -1020,7 +1024,7 @@ PaintOp* DrawTextBlobOp::Deserialize(const volatile void* input,
                                      void* output,
                                      size_t output_size,
                                      const DeserializeOptions& options) {
-  DCHECK_GE(output_size, sizeof(DrawTextBlobOp));
+  DCHECK_GE(output_size, sizeof(DrawTextBlobOp) - sizeof(NodeHolder));
   DrawTextBlobOp* op = new (output) DrawTextBlobOp;
 
   PaintOpReader helper(input, input_size, options);
@@ -1218,12 +1222,11 @@ void DrawImageOp::RasterWithFlags(const DrawImageOp* op,
       op->image, SkIRect::MakeWH(op->image.width(), op->image.height()),
       flags ? flags->getFilterQuality() : kNone_SkFilterQuality,
       canvas->getTotalMatrix());
-  auto scoped_decoded_draw_image =
-      params.image_provider->GetDecodedDrawImage(draw_image);
-  if (!scoped_decoded_draw_image)
+  auto scoped_result = params.image_provider->GetRasterContent(draw_image);
+  if (!scoped_result)
     return;
 
-  const auto& decoded_image = scoped_decoded_draw_image.decoded_image();
+  const auto& decoded_image = scoped_result.decoded_image();
   DCHECK(decoded_image.image());
 
   DCHECK_EQ(0, static_cast<int>(decoded_image.src_rect_offset().width()));
@@ -1268,12 +1271,11 @@ void DrawImageRectOp::RasterWithFlags(const DrawImageRectOp* op,
   DrawImage draw_image(
       op->image, int_src_rect,
       flags ? flags->getFilterQuality() : kNone_SkFilterQuality, matrix);
-  auto scoped_decoded_draw_image =
-      params.image_provider->GetDecodedDrawImage(draw_image);
-  if (!scoped_decoded_draw_image)
+  auto scoped_result = params.image_provider->GetRasterContent(draw_image);
+  if (!scoped_result)
     return;
 
-  const auto& decoded_image = scoped_decoded_draw_image.decoded_image();
+  const auto& decoded_image = scoped_result.decoded_image();
   DCHECK(decoded_image.image());
 
   SkSize scale_adjustment = SkSize::Make(
@@ -1393,14 +1395,7 @@ void SaveLayerAlphaOp::Raster(const SaveLayerAlphaOp* op,
                               const PlaybackParams& params) {
   // See PaintOp::kUnsetRect
   bool unset = op->bounds.left() == SK_ScalarInfinity;
-  if (op->preserve_lcd_text_requests) {
-    SkPaint paint;
-    paint.setAlpha(op->alpha);
-    canvas->saveLayerPreserveLCDTextRequests(unset ? nullptr : &op->bounds,
-                                             &paint);
-  } else {
-    canvas->saveLayerAlpha(unset ? nullptr : &op->bounds, op->alpha);
-  }
+  canvas->saveLayerAlpha(unset ? nullptr : &op->bounds, op->alpha);
 }
 
 void ScaleOp::Raster(const ScaleOp* op,
@@ -1763,6 +1758,8 @@ bool DrawTextBlobOp::AreEqual(const PaintOp* base_left,
     return false;
   if (!AreEqualEvenIfNaN(left->y, right->y))
     return false;
+  if (left->node_holder != right->node_holder)
+    return false;
 
   SkSerialProcs default_procs;
   return left->blob->serialize(default_procs)
@@ -1813,8 +1810,6 @@ bool SaveLayerAlphaOp::AreEqual(const PaintOp* base_left,
   if (!AreSkRectsEqual(left->bounds, right->bounds))
     return false;
   if (left->alpha != right->alpha)
-    return false;
-  if (left->preserve_lcd_text_requests != right->preserve_lcd_text_requests)
     return false;
   return true;
 }
@@ -2195,6 +2190,17 @@ DrawTextBlobOp::DrawTextBlobOp(sk_sp<SkTextBlob> blob,
                                const PaintFlags& flags)
     : PaintOpWithFlags(kType, flags), blob(std::move(blob)), x(x), y(y) {}
 
+DrawTextBlobOp::DrawTextBlobOp(sk_sp<SkTextBlob> blob,
+                               SkScalar x,
+                               SkScalar y,
+                               const PaintFlags& flags,
+                               const NodeHolder& holder)
+    : PaintOpWithFlags(kType, flags),
+      blob(std::move(blob)),
+      x(x),
+      y(y),
+      node_holder(holder) {}
+
 DrawTextBlobOp::~DrawTextBlobOp() = default;
 
 PaintOpBuffer::CompositeIterator::CompositeIterator(
@@ -2387,6 +2393,8 @@ void PaintOpBuffer::Playback(SkCanvas* canvas,
   PlaybackParams new_params(params.image_provider, canvas->getTotalMatrix(),
                             params.custom_callback,
                             params.did_draw_op_callback);
+  // TODO(xidachen): retrieve the PaintRecord stored in PaintWorkletImageCache,
+  // from the PaintWorkletImageProvider in the params.
   for (PlaybackFoldingIterator iter(this, offsets); iter; ++iter) {
     const PaintOp* op = *iter;
 

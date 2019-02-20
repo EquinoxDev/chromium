@@ -13,6 +13,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
@@ -241,7 +242,7 @@ void UsbServiceImpl::GetDevices(const GetDevicesCallback& callback) {
   if (usb_unavailable_) {
     task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(callback, std::vector<scoped_refptr<UsbDevice>>()));
+        base::BindOnce(callback, std::vector<scoped_refptr<UsbDevice>>()));
     return;
   }
 

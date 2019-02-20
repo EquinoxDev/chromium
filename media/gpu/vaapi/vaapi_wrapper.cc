@@ -178,10 +178,11 @@ bool IsBlackListedDriver(const std::string& va_vendor_string,
     }
   }
 
-  // TODO(posciak): Remove once VP8 encoding is to be enabled by default.
+  // TODO(crbug.com/811912): Remove once VP9 encoding is to be enabled by
+  // default.
   if (mode == VaapiWrapper::CodecMode::kEncode &&
-      va_profile == VAProfileVP8Version0_3 &&
-      !base::FeatureList::IsEnabled(kVaapiVP8Encoder)) {
+      va_profile == VAProfileVP9Profile0 &&
+      !base::FeatureList::IsEnabled(kVaapiVP9Encoder)) {
     return true;
   }
 
@@ -337,15 +338,16 @@ bool VADisplayState::InitializeOnce() {
            << va_vendor_string_;
 
   // The VAAPI version is determined from what is loaded on the system by
-  // calling vaInitialize(). We want a runtime evaluation of libva version,
-  // of what is loaded on the system, with, what browser is compiled with.
-  // Also since the libva is now ABI-compatible, relax the version check
-  // which helps in upgrading the libva, without breaking any existing
-  // functionality.
-  if (!VA_CHECK_VERSION(major_version, minor_version, 0)) {
-    LOG(ERROR) << "This build of Chromium requires VA-API version "
-               << VA_MAJOR_VERSION << "." << VA_MINOR_VERSION
-               << ", system version: " << major_version << "." << minor_version;
+  // calling vaInitialize(). Since the libva is now ABI-compatible, relax the
+  // version check which helps in upgrading the libva, without breaking any
+  // existing functionality. Make sure the system version is not older than
+  // the version with which the chromium is built since libva is only
+  // guaranteed to be backward (and not forward) compatible.
+  if (VA_MAJOR_VERSION > major_version ||
+     (VA_MAJOR_VERSION == major_version && VA_MINOR_VERSION > minor_version)) {
+    LOG(ERROR) << "The system version " << major_version << "." << minor_version
+               << " should be greater than or equal to "
+               << VA_MAJOR_VERSION << "." << VA_MINOR_VERSION;
     return false;
   }
   return true;
@@ -393,7 +395,8 @@ static std::vector<VAConfigAttrib> GetRequiredAttribs(
     required_attribs.push_back({VAConfigAttribRateControl, VA_RC_CBR});
 
   // VAConfigAttribEncPackedHeaders is H.264 specific.
-  if (profile >= VAProfileH264Baseline && profile <= VAProfileH264High) {
+  if ((profile >= VAProfileH264Baseline && profile <= VAProfileH264High) ||
+      (profile == VAProfileH264ConstrainedBaseline)) {
     required_attribs.push_back(
         {VAConfigAttribEncPackedHeaders,
          VA_ENC_PACKED_HEADER_SEQUENCE | VA_ENC_PACKED_HEADER_PICTURE});
@@ -1009,15 +1012,9 @@ scoped_refptr<VASurface> VaapiWrapper::CreateVASurfaceForPixmap(
   va_attrib_extbuf.width = size.width();
   va_attrib_extbuf.height = size.height();
 
-  size_t num_fds = pixmap->GetDmaBufFdCount();
   size_t num_planes =
       gfx::NumberOfPlanesForBufferFormat(pixmap->GetBufferFormat());
-  if (num_fds == 0 || num_fds > num_planes) {
-    LOG(ERROR) << "Invalid number of dmabuf fds: " << num_fds
-               << " , planes: " << num_planes;
-    return nullptr;
-  }
-
+  std::vector<uintptr_t> fds(num_planes);
   for (size_t i = 0; i < num_planes; ++i) {
     va_attrib_extbuf.pitches[i] = pixmap->GetDmaBufPitch(i);
     va_attrib_extbuf.offsets[i] = pixmap->GetDmaBufOffset(i);
@@ -1026,17 +1023,15 @@ scoped_refptr<VASurface> VaapiWrapper::CreateVASurfaceForPixmap(
   }
   va_attrib_extbuf.num_planes = num_planes;
 
-  std::vector<unsigned long> fds(num_fds);
-  for (size_t i = 0; i < num_fds; ++i) {
-    int dmabuf_fd = pixmap->GetDmaBufFd(i);
-    if (dmabuf_fd < 0) {
-      LOG(ERROR) << "Failed to get dmabuf from an Ozone NativePixmap";
-      return nullptr;
-    }
-    fds[i] = dmabuf_fd;
+  if (pixmap->GetDmaBufFd(0) < 0) {
+    LOG(ERROR) << "Failed to get dmabuf from an Ozone NativePixmap";
+    return nullptr;
   }
-  va_attrib_extbuf.buffers = fds.data();
-  va_attrib_extbuf.num_buffers = fds.size();
+  // We only have to pass the first file descriptor to a driver. A VA-API driver
+  // shall create a VASurface from the single fd correctly.
+  uintptr_t fd = base::checked_cast<uintptr_t>(pixmap->GetDmaBufFd(0));
+  va_attrib_extbuf.buffers = &fd;
+  va_attrib_extbuf.num_buffers = 1u;
 
   va_attrib_extbuf.flags = 0;
   va_attrib_extbuf.private_data = NULL;

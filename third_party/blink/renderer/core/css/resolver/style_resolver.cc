@@ -321,11 +321,24 @@ static void MatchElementScopeRules(const Element& element,
   collector.FinishAddingAuthorRulesForTreeScope();
 }
 
+void StyleResolver::MatchPseudoPartRulesForUAHost(
+    const Element& element,
+    ElementRuleCollector& collector) {
+  if (element.ShadowPseudoId() != "-webkit-input-placeholder")
+    return;
+
+  // We allow ::placeholder pseudo element after ::part(). See
+  // MatchSlottedRulesForUAHost for a more detailed explanation.
+  DCHECK(element.OwnerShadowHost());
+  MatchPseudoPartRules(*element.OwnerShadowHost(), collector);
+}
+
 void StyleResolver::MatchPseudoPartRules(const Element& element,
                                          ElementRuleCollector& collector) {
   if (!RuntimeEnabledFeatures::CSSPartPseudoElementEnabled())
     return;
 
+  MatchPseudoPartRulesForUAHost(element, collector);
   DOMTokenList* part = element.GetPart();
   if (!part)
     return;
@@ -1036,11 +1049,9 @@ scoped_refptr<ComputedStyle> StyleResolver::InitialStyleForElement(
 
 scoped_refptr<ComputedStyle> StyleResolver::StyleForText(Text* text_node) {
   DCHECK(text_node);
-
-  Node* parent_node = LayoutTreeBuilderTraversal::Parent(*text_node);
-  if (!parent_node || !parent_node->GetComputedStyle())
-    return InitialStyleForElement(GetDocument());
-  return parent_node->MutableComputedStyle();
+  if (Node* parent_node = LayoutTreeBuilderTraversal::Parent(*text_node))
+    return parent_node->MutableComputedStyle();
+  return nullptr;
 }
 
 void StyleResolver::UpdateFont(StyleResolverState& state) {

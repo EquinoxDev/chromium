@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/css/parser/css_property_parser_helpers.h"
 
+#include "third_party/blink/renderer/core/css/css_axis_value.h"
 #include "third_party/blink/renderer/core/css/css_calculation_value.h"
 #include "third_party/blink/renderer/core/css/css_color_value.h"
 #include "third_party/blink/renderer/core/css/css_crossfade_value.h"
@@ -453,7 +454,9 @@ CSSPrimitiveValue* ConsumeGradientLengthOrPercent(
 CSSPrimitiveValue* ConsumeAngle(
     CSSParserTokenRange& range,
     const CSSParserContext* context,
-    base::Optional<WebFeature> unitless_zero_feature) {
+    base::Optional<WebFeature> unitless_zero_feature,
+    double minimum_value,
+    double maximum_value) {
   // Ensure that we have a context for counting the
   // unitless_zero_feature if it is requested.
   DCHECK(context || !unitless_zero_feature);
@@ -479,10 +482,30 @@ CSSPrimitiveValue* ConsumeAngle(
   }
   CalcParser calc_parser(range, kValueRangeAll);
   if (const CSSCalcValue* calculation = calc_parser.Value()) {
-    if (calculation->Category() == kCalcAngle)
-      return calc_parser.ConsumeValue();
+    if (calculation->Category() != kCalcAngle)
+      return nullptr;
+    if (CSSPrimitiveValue* result = calc_parser.ConsumeValue()) {
+      if (result->GetDoubleValue() < minimum_value) {
+        return CSSPrimitiveValue::Create(minimum_value,
+                                         result->TypeWithCalcResolved());
+      }
+      if (result->GetDoubleValue() > maximum_value) {
+        return CSSPrimitiveValue::Create(maximum_value,
+                                         result->TypeWithCalcResolved());
+      }
+      return result;
+    }
   }
   return nullptr;
+}
+
+CSSPrimitiveValue* ConsumeAngle(
+    CSSParserTokenRange& range,
+    const CSSParserContext* context,
+    base::Optional<WebFeature> unitless_zero_feature) {
+  return ConsumeAngle(range, context, std::move(unitless_zero_feature),
+                      std::numeric_limits<double>::lowest(),
+                      std::numeric_limits<double>::max());
 }
 
 CSSPrimitiveValue* ConsumeTime(CSSParserTokenRange& range,
@@ -1453,6 +1476,27 @@ CSSValue* ConsumeImageOrNone(CSSParserTokenRange& range,
   if (range.Peek().Id() == CSSValueNone)
     return ConsumeIdent(range);
   return ConsumeImage(range, context);
+}
+
+CSSValue* ConsumeAxis(CSSParserTokenRange& range) {
+  CSSValueID axis_id = range.Peek().Id();
+  if (axis_id == CSSValueX || axis_id == CSSValueY || axis_id == CSSValueZ) {
+    ConsumeIdent(range);
+    return CSSAxisValue::Create(axis_id);
+  }
+
+  CSSValue* x_dimension =
+      css_property_parser_helpers::ConsumeNumber(range, kValueRangeAll);
+  CSSValue* y_dimension =
+      css_property_parser_helpers::ConsumeNumber(range, kValueRangeAll);
+  CSSValue* z_dimension =
+      css_property_parser_helpers::ConsumeNumber(range, kValueRangeAll);
+  if (!x_dimension || !y_dimension || !z_dimension)
+    return nullptr;
+  double x = ToCSSPrimitiveValue(x_dimension)->GetDoubleValue();
+  double y = ToCSSPrimitiveValue(y_dimension)->GetDoubleValue();
+  double z = ToCSSPrimitiveValue(z_dimension)->GetDoubleValue();
+  return CSSAxisValue::Create(x, y, z);
 }
 
 static CSSValue* ConsumeCrossFade(CSSParserTokenRange& args,

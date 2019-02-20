@@ -4,6 +4,7 @@
 
 #include "chrome/browser/installable/installable_manager.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,6 +22,11 @@
 using IconPurpose = blink::Manifest::ImageResource::Purpose;
 
 namespace {
+
+const char kInsecureOrigin[] = "http://www.google.com";
+const char kOtherInsecureOrigin[] = "http://maps.google.com";
+const char kUnsafeSecureOriginFlag[] =
+    "unsafely-treat-insecure-origin-as-secure";
 
 InstallableParams GetManifestParams() {
   InstallableParams params;
@@ -74,7 +80,7 @@ class LazyWorkerInstallableManager : public InstallableManager {
   ~LazyWorkerInstallableManager() override {}
 
  protected:
-  void OnWaitingForServiceWorker() override { quit_closure_.Run(); };
+  void OnWaitingForServiceWorker() override { quit_closure_.Run(); }
 
  private:
   base::Closure quit_closure_;
@@ -250,6 +256,13 @@ class InstallableManagerBrowserTest : public InProcessBrowserTest {
     CHECK(manager);
 
     return manager;
+  }
+};
+
+class InstallableManagerWhitelistOriginBrowserTest
+    : public InstallableManagerBrowserTest {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitchASCII(kUnsafeSecureOriginFlag, kInsecureOrigin);
   }
 };
 
@@ -1319,6 +1332,30 @@ IN_PROC_BROWSER_TEST_F(InstallableManagerBrowserTest,
   EXPECT_EQ(NOT_OFFLINE_CAPABLE, tester->error_code());
 }
 
+IN_PROC_BROWSER_TEST_F(InstallableManagerBrowserTest,
+                       CheckPageWithNestedServiceWorkerCanBeInstalled) {
+  base::RunLoop run_loop;
+  std::unique_ptr<CallbackTester> tester(
+      new CallbackTester(run_loop.QuitClosure()));
+
+  NavigateAndRunInstallableManager(browser(), tester.get(), GetWebAppParams(),
+                                   "/banners/nested_sw_test_page.html");
+
+  RunInstallableManager(browser(), tester.get(), GetWebAppParams());
+  run_loop.Run();
+
+  EXPECT_FALSE(tester->manifest().IsEmpty());
+  EXPECT_FALSE(tester->manifest_url().is_empty());
+
+  EXPECT_FALSE(tester->primary_icon_url().is_empty());
+  EXPECT_NE(nullptr, tester->primary_icon());
+  EXPECT_TRUE(tester->valid_manifest());
+  EXPECT_TRUE(tester->has_worker());
+  EXPECT_TRUE(tester->badge_icon_url().is_empty());
+  EXPECT_EQ(nullptr, tester->badge_icon());
+  EXPECT_EQ(NO_ERROR_DETECTED, tester->error_code());
+}
+
 IN_PROC_BROWSER_TEST_F(InstallableManagerBrowserTest, CheckDataUrlIcon) {
   // Verify that InstallableManager can handle data URL icons.
   base::RunLoop run_loop;
@@ -1512,4 +1549,15 @@ IN_PROC_BROWSER_TEST_F(InstallableManagerBrowserTest,
               tester->manifest().short_name.string());
     EXPECT_EQ(NO_ERROR_DETECTED, tester->error_code());
   }
+}
+
+IN_PROC_BROWSER_TEST_F(InstallableManagerWhitelistOriginBrowserTest,
+                       SecureOriginCheckRespectsUnsafeFlag) {
+  // The whitelisted origin should be regarded as secure.
+  ui_test_utils::NavigateToURL(browser(), GURL(kInsecureOrigin));
+  EXPECT_TRUE(GetManager(browser())->IsContentSecureForTesting());
+
+  // While a non-whitelisted origin should not.
+  ui_test_utils::NavigateToURL(browser(), GURL(kOtherInsecureOrigin));
+  EXPECT_FALSE(GetManager(browser())->IsContentSecureForTesting());
 }

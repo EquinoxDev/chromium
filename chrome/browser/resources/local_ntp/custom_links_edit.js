@@ -209,6 +209,15 @@ function focusBackOnCancel(event) {
 
 
 /**
+ * Handler for the 'updateTheme' message from the host page.
+ * @param {object} info Data received in the message.
+ */
+function updateTheme(info) {
+  document.documentElement.setAttribute('darkmode', info.isDarkMode);
+}
+
+
+/**
  * Event handler for messages from the host page.
  * @param {Event} event Event received.
  */
@@ -234,6 +243,8 @@ function handlePostMessage(event) {
     window.setTimeout(() => {
       $(IDS.TITLE_FIELD).select();
     }, 10);
+  } else if (cmd === 'updateTheme') {
+    updateTheme(args);
   }
 }
 
@@ -256,10 +267,8 @@ function init() {
   document.title = queryArgs['editTitle'];
 
   // Enable RTL.
-  // TODO(851293): Add RTL formatting.
   if (queryArgs['rtl'] == '1') {
-    let html = document.querySelector('html');
-    html.dir = 'rtl';
+    document.documentElement.setAttribute('dir', 'rtl');
   }
 
   // Populate text content.

@@ -6,6 +6,7 @@
 
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray_notifier.h"
+#include "base/bind.h"
 
 namespace chromeos {
 
@@ -17,6 +18,7 @@ ScreenCaptureNotificationUIChromeOS::ScreenCaptureNotificationUIChromeOS(
 ScreenCaptureNotificationUIChromeOS::~ScreenCaptureNotificationUIChromeOS() {
   // MediaStreamCaptureIndicator will delete ScreenCaptureNotificationUI object
   // after it stops screen capture.
+  stop_callback_.Reset();
   ash::Shell::Get()->system_tray_notifier()->NotifyScreenCaptureStop();
 }
 
@@ -28,7 +30,7 @@ gfx::NativeViewId ScreenCaptureNotificationUIChromeOS::OnStarted(
       base::BindRepeating(
           &ScreenCaptureNotificationUIChromeOS::ProcessStopRequestFromUI,
           base::Unretained(this)),
-      text_);
+      std::move(source_callback), text_);
   return 0;
 }
 

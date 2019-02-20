@@ -31,7 +31,7 @@ namespace content {
 //
 // [1]: See https://www.w3.org/TR/webauthn/.
 class CONTENT_EXPORT AuthenticatorRequestClientDelegate
-    : public device::FidoRequestHandlerBase::TransportAvailabilityObserver {
+    : public device::FidoRequestHandlerBase::Observer {
  public:
   // Failure reasons that might be of interest to the user, so the embedder may
   // decide to inform the user.
@@ -44,9 +44,14 @@ class CONTENT_EXPORT AuthenticatorRequestClientDelegate
   AuthenticatorRequestClientDelegate();
   ~AuthenticatorRequestClientDelegate() override;
 
-  // Called when the request fails for the given |reason|, just before this
-  // delegate is destroyed.
-  virtual void DidFailWithInterestingReason(InterestingFailureReason reason);
+  // Called when the request fails for the given |reason|. Embedders may return
+  // true if they want AuthenticatorImpl to hold off from resolving the WebAuthn
+  // request with an error, e.g. because they want the user to dismiss an error
+  // dialog first. In this case, embedders *must* eventually invoke the
+  // FidoRequestHandlerBase::CancelCallback in order to resolve the request.
+  // Returning false causes AuthenticatorImpl to resolve the request with the
+  // error right away.
+  virtual bool DoesBlockRequestOnFailure(InterestingFailureReason reason);
 
   // Supplies callbacks that the embedder can invoke to initiate certain
   // actions, namely: initiate BLE pairing process, cancel WebAuthN request, and
@@ -98,7 +103,13 @@ class CONTENT_EXPORT AuthenticatorRequestClientDelegate
   // WebAuthN UI will default to the same transport type during next API call.
   virtual void UpdateLastTransportUsed(device::FidoTransportProtocol transport);
 
-  // device::FidoRequestHandlerBase::TransportAvailabilityObserver:
+  // Disables the UI (needed in cases when called by other components, like
+  // cryptotoken).
+  virtual void DisableUI();
+
+  virtual bool IsWebAuthnUIEnabled();
+
+  // device::FidoRequestHandlerBase::Observer:
   void OnTransportAvailabilityEnumerated(
       device::FidoRequestHandlerBase::TransportAvailabilityInfo data) override;
   // If true, the request handler will defer dispatch of its request onto the

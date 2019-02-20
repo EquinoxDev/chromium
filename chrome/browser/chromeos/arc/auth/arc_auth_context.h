@@ -11,15 +11,18 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/timer/timer.h"
-#include "google_apis/gaia/ubertoken_fetcher.h"
 #include "net/base/backoff_entry.h"
 #include "services/identity/public/cpp/identity_manager.h"
 
 class Profile;
+
+namespace signin {
+class UbertokenFetcher;
+}
+
 namespace arc {
 
-class ArcAuthContext : public UbertokenConsumer,
-                       public GaiaAuthConsumer,
+class ArcAuthContext : public GaiaAuthConsumer,
                        public identity::IdentityManager::Observer {
  public:
   // Creates an |ArcAuthContext| for the given |account_id|. This |account_id|
@@ -46,12 +49,12 @@ class ArcAuthContext : public UbertokenConsumer,
 
   // identity::IdentityManager::Observer:
   void OnRefreshTokenUpdatedForAccount(
-      const AccountInfo& account_info) override;
+      const CoreAccountInfo& account_info) override;
   void OnRefreshTokensLoaded() override;
 
-  // UbertokenConsumer:
-  void OnUbertokenSuccess(const std::string& token) override;
-  void OnUbertokenFailure(const GoogleServiceAuthError& error) override;
+  // Ubertoken fetch completion callback.
+  void OnUbertokenFetchComplete(GoogleServiceAuthError error,
+                                const std::string& uber_token);
 
   // GaiaAuthConsumer:
   void OnMergeSessionSuccess(const std::string& data) override;
@@ -85,7 +88,7 @@ class ArcAuthContext : public UbertokenConsumer,
   base::OneShotTimer refresh_token_timeout_;
   base::OneShotTimer retry_timeout_;
   std::unique_ptr<GaiaAuthFetcher> merger_fetcher_;
-  std::unique_ptr<UbertokenFetcher> ubertoken_fetcher_;
+  std::unique_ptr<signin::UbertokenFetcher> ubertoken_fetcher_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcAuthContext);
 };

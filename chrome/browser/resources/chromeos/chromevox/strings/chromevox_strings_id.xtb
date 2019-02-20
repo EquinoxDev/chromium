@@ -54,6 +54,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="1346059596910821859">Tips</translation>
 <translation id="1346748346194534595">Kanan</translation>
 <translation id="135978014023467274">Update ke ChromeVox 63 berhasil.</translation>
+<translation id="1360699455582016846">Klik item di bawah tombol perutean <ph name="ROUTING_KEY_NUMBER" /></translation>
 <translation id="136718599399906424">Baris tabel berikutnya</translation>
 <translation id="1377925789329510816">Ini adalah judul terakhir. Tekan Penelusuran+H untuk meringkas judul pertama, atau Penelusuran+Shift+H untuk membuka judul kedua pada halaman ini.</translation>
 <translation id="1383876407941801731">Telusuri</translation>
@@ -112,6 +113,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="1905379170753160525">Tampilkan daftar judul</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">#ed</translation>
+<translation id="1914635379910604678"><ph name="DOT" /> akor</translation>
 <translation id="1954623340234317532">Kontrol pekan dalam tahun</translation>
 <translation id="1964135212174907577">Objek Berikutnya</translation>
 <translation id="1969092762068865084">Juli</translation>
@@ -267,6 +269,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="316542773973815724">Navigasi</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{spasi}other{# spasi}}</translation>
 <translation id="320961988183078793">memasukkan <ph name="TYPE" /></translation>
+<translation id="3218691001991391708">menempelkan <ph name="TEXT" />.</translation>
 <translation id="3223701887221307104"><ph name="NAME" />, tab</translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">Tautan yang dikunjungi</translation>
@@ -286,48 +289,6 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="3322936298410871309">Judul tingkat 1 sebelumnya</translation>
 <translation id="3323447499041942178">Kotak teks</translation>
 <translation id="3338224621010291843">Penggeser <ph name="VALUE" /> <ph name="NAME" /></translation>
-<translation id="3353420241558113817">{"ar": "Arab",
-        "bg": "Bulgaria",
-        "ca": "Katala",
-        "cs": "Ceko",
-        "da": "Denmark",
-        "de": "Jerman",
-        "de_CH": "Jerman (Swiss)",
-        "de_DE": "Jerman (Jerman)",
-        "el": "Yunani",
-        "en": "Inggris",
-        "en_CA": "Inggris (Kanada)",
-        "en_GB": "Inggris (Inggris Raya)",
-        "en_US": "Inggris (Amerika Serikat)",
-        "es": "Spanyol",
-        "et": "Estonia",
-        "fr": "Prancis",
-        "fr_CA": "Prancis (Kanada)",
-        "fr_FR": "Prancis (Prancis)",
-        "fi": "Finlandia",
-        "he": "Ibrani",
-        "hi": "Hindi",
-        "hr": "Kroat",
-        "hu": "Magyar",
-        "is": "Islan",
-        "it": "Italia",
-        "ko": "Korea",
-        "lt": "Lituania",
-        "lv": "Latvia",
-        "nb": "Norsk",
-        "nl": "Belanda",
-        "pl": "Polandia",
-        "pt": "Portugis",
-        "ro": "Rumania",
-        "ru": "Rusia",
-        "sk": "Slovakia",
-        "sl": "Slovenia",
-        "sr": "Serb",
-        "sv": "Swensk",
-        "tr": "Turki",
-        "vi": "Vietnam",
-        "zh": "China",
-        "zh_TW": "China (Han Tradisional)"}</translation>
 <translation id="335581015389089642">Ucapan</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{tambah}other{# tanda tambah}}</translation>
@@ -344,12 +305,14 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="3468959318854349468">Tanpa judul</translation>
 <translation id="3473644018603298796">sld <ph name="COUNT" /></translation>
 <translation id="3486232535569802404"><ph name="V1" /> hingga <ph name="V2" /></translation>
+<translation id="3490765818161916458">Petak daftar</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{kurung siku tutup}other{# kurung siku tutup}}</translation>
 <translation id="3493915602752813531">Tidak ada jangkar berikutnya.</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{tanda tanya}other{# tanda tanya}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{tanda caret}other{# tanda caret}}</translation>
 <translation id="352577523970648069">Kolom teks yang dapat diedit</translation>
+<translation id="3549141990712742152">memotong <ph name="TEXT" />.</translation>
 <translation id="3549680091535286226">Tap dengan 2 jari untuk menghentikan ucapan untuk sementara</translation>
 <translation id="3568702578574425662"><ph name="NAME" />, kotak centang tidak dicentang</translation>
 <translation id="3589661172894441357">Glosarium</translation>
@@ -381,6 +344,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="3856075812838139784">Hanya baca</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">Menu</translation>
+<translation id="3907138069015388678">lstgrd</translation>
 <translation id="3909320334364316587">Judul tingkat 6 sebelumnya</translation>
 <translation id="3914173277599553213">Diperlukan</translation>
 <translation id="3914732343065571127">Referensi Perintah ChromeVox</translation>
@@ -515,7 +479,6 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="4973762002207131920">Dialihkan ke <ph name="KEY" />.</translation>
 <translation id="4975416682604111799">milidetik</translation>
 <translation id="49787999531187221">ChromeVox tidak aktif.</translation>
-<translation id="4979263087381759787">Opsi Developer</translation>
 <translation id="4979404613699303341">Tombol sebelumnya</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />, <ph name="NAME" />, kotak daftar</translation>
 <translation id="4983588134362688868">Menuju ke bagian atas halaman</translation>
@@ -530,6 +493,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="5020651427400641814">Aktifkan penyimpanan log ucapan</translation>
 <translation id="5041394372352067729">Pindahkan layar braille ke bagian atas halaman</translation>
 <translation id="5042770794184672516">Meningkatkan volume ucapan</translation>
+<translation id="5042992464904238023">Konten Web</translation>
 <translation id="5050015258024679800">Judul tingkat 4 sebelumnya</translation>
 <translation id="5054047268577924192">Item daftar sebelumnya</translation>
 <translation id="5075936896689244141">Peta tombol berikutnya</translation>
@@ -674,6 +638,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="6129953537138746214">Spasi</translation>
 <translation id="6132506484792346370">Kotak daftar atau kotak kombo</translation>
 <translation id="6142308968191113180">Judul 4</translation>
+<translation id="6158882249329863701">baris <ph name="TABLECELLROWINDEX" /> kolom <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="6164829606128959761">pengukur</translation>
 <translation id="6169420925157477918">Gambar dengan deskripsi panjang</translation>
 <translation id="6186305613600865047">Melompat ke bagian bawah halaman</translation>
@@ -689,6 +654,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="6307969636681130414">Ditekan</translation>
 <translation id="6322856989298155004">Suara</translation>
 <translation id="6324551002951139333">Kesalahan tata bahasa terdeteksi</translation>
+<translation id="6325241889020214828">menyalin <ph name="TEXT" />.</translation>
 <translation id="6348657800373377022">Kotak kombo</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{butir}other{# butir}}</translation>
 <translation id="6355910664415701303">Tidak ada item daftar sebelumnya.</translation>
@@ -698,6 +664,7 @@ Jika telah menyelesaikan tutorial, gunakan ChromeVox untuk mengakses tombol Tutu
 <translation id="6387719785439924554">aside</translation>
 <translation id="6411426777058107714">Tidak ada tombol radio sebelumnya.</translation>
 <translation id="6414968628640960377">Elemen berbeda sebelumnya.</translation>
+<translation id="6417265370957905582">Asisten Google</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{titik dua}other{# titik dua}}</translation>
 <translation id="6438968337250688271"><ph name="NAME" />, menu</translation>
 <translation id="6444046323172968959">Dialog notifikasi</translation>
@@ -877,6 +844,7 @@ Untuk membuka menu browser Chrome, tekan Alt+F.</translation>
 <translation id="8037651341025652929">Kesimpulan</translation>
 <translation id="8042761080832772327">Mengedit teks, entri penelusuran</translation>
 <translation id="8049189770492311300">Timer</translation>
+<translation id="8056782883599416672">{"ar": "Arab", "as": "Assam", "aw": "Awadhi", "be": "Bengali", "bg": "Bulgaria", "bh": "Bihari", "bo": "Tibet", "br": "Braj", "ca": "Katala", "ckb": "Sorani", "cs": "Ceko", "cy": "Wales", "da": "Denmark", "de": "Jerman", "de_CH": "Jerman (Swiss)", "de_DE": "Jerman (Jerman)", "dra": "Dravida", "el": "Yunani", "en": "Inggris", "en_CA": "Inggris (Kanada)", "en_GB": "Inggris (Inggris Raya)", "en_US": "Inggris (Amerika Serikat)", "eo": "Esperanto", "es": "Spanyol", "et": "Estonia", "fa": "Persia", "fr": "Prancis", "fr_CA": "Prancis (Kanada)", "fr_FR": "Prancis (Prancis)", "fi": "Finlandia", "ga": "Irlandia", "gd": "Gaelik", "gon": "Gondi", "gu": "Gujarati", "he": "Ibrani", "hi": "Hindi", "hr": "Kroasia", "hu": "Hungaria", "hy": "Armenia", "is": "Islan", "it": "Italia", "iu": "Inuktitut", "ka": "Kannada", "kh": "Khasi", "ko": "Korea", "kok": "Konkani", "kru": "Kurukh", "ks": "Kashmiri", "lt": "Lituania", "lv": "Latvia", "mao": "Maori", "ml": "Malayalam", "mt": "Malta", "mwr": "Marwari", "mn": "Mongolia", "mun": "Munda", "nb": "Bokmål Norwegia", "ne": "Nepali", "nl": "Belanda", "no": "Norwegia", "or": "Oriya", "pi": "Pali", "pl": "Polandia", "pt": "Portugis", "pu": "Punjabi", "ro": "Rumania", "ru": "Rusia", "sa": "Sanskerta", "si": "Sindhi", "sin": "Sinhala", "sk": "Slowakia", "sl": "Slovenia", "sr": "Serbia", "sv": "Swedia", "ta": "Tamil", "te": "Telugu", "tr": "Turki", "tsn": "Afrikaans", "uk": "Ukraina", "ur": "Urdu", "vi": "Vietnam", "zh": "China", "zh_TW": "China (Aksara Han Tradisional)"}</translation>
 <translation id="8065607967589909823">Pemilihannya adalah</translation>
 <translation id="8066678206530322333">Spanduk</translation>
 <translation id="8076492880354921740">Tab</translation>
@@ -886,6 +854,7 @@ Untuk membuka menu browser Chrome, tekan Alt+F.</translation>
 <translation id="8153880621934657047">Tidak ada di dalam tabel.</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{garis bawah}other{# garis bawah}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">Deteksi dan alihkan bahasa ChromeVox secara otomatis.</translation>
 <translation id="8184828902145951186">baris</translation>
 <translation id="8186185314313222077">beralih ke layar penuh</translation>
 <translation id="8199231515320852133">Mengumumkan judul sel saat ini</translation>
@@ -960,6 +929,7 @@ Untuk membuka menu browser Chrome, tekan Alt+F.</translation>
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">Tombol Pengubah</translation>
 <translation id="8943175951035496220">Tidak ada sel di kanan.</translation>
+<translation id="8946628535652548639">b<ph name="TABLECELLROWINDEX" />k<ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">Lupakan</translation>
 <translation id="900114243503212879">file</translation>

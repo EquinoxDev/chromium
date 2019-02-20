@@ -14,6 +14,7 @@
 #include "ash/assistant/model/assistant_query.h"
 #include "ash/assistant/model/assistant_response.h"
 #include "ash/assistant/model/assistant_ui_element.h"
+#include "ash/assistant/model/assistant_ui_model.h"
 #include "ash/assistant/ui/assistant_ui_constants.h"
 #include "ash/assistant/util/deep_link_util.h"
 #include "ash/assistant/util/histogram_util.h"
@@ -24,6 +25,7 @@
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/voice_interaction/voice_interaction_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
+#include "base/bind.h"
 #include "base/optional.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/services/assistant/public/features.h"
@@ -128,9 +130,20 @@ void AssistantInteractionController::OnDeepLinkReceived(
     return;
   }
 
+  // Explicitly call ShowUi() to set the correct Assistant entry point.
+  // ShowUi() will no-op if UI is already shown.
   assistant_controller_->ui_controller()->ShowUi(
       AssistantEntryPoint::kDeepLink);
-  StartTextInteraction(query.value(), /*allow_tts=*/false,
+
+  // A text query originating from a deep link will carry forward the allowance/
+  // forbiddance of TTS from the previous response. This is predominately aimed
+  // at addressing the use case of tapping a card from a previous query response
+  // in which case we are essentially continuing the preceding interaction. Deep
+  // links are also potentially fired from notifications or other sources. If we
+  // need to allow deep link creators the ability to set |allow_tts| explicitly,
+  // we can expose a deep link parameter when the need arises.
+  StartTextInteraction(query.value(), /*allow_tts=*/model_.response() &&
+                                          model_.response()->has_tts(),
                        /*query_source=*/AssistantQuerySource::kDeepLink);
 }
 
@@ -625,6 +638,7 @@ void AssistantInteractionController::OnUiVisible(
       FALLTHROUGH;
     case AssistantEntryPoint::kDeepLink:
     case AssistantEntryPoint::kHotword:
+    case AssistantEntryPoint::kLauncherSearchResult:
       should_attempt_warmer_welcome_ = false;
       break;
     case AssistantEntryPoint::kUnspecified:
@@ -632,6 +646,14 @@ void AssistantInteractionController::OnUiVisible(
       // No action necessary.
       break;
   }
+
+  // Explicitly check the interaction state to ensure warmer welcome will
+  // not interrupt any ongoing active interactions. This happens, for example,
+  // when the first Assistant launch of the current user session is trigger by
+  // Assistant notification, or directly sending query without showing Ui
+  // during integration test.
+  if (model_.interaction_state() == InteractionState::kActive)
+    should_attempt_warmer_welcome_ = false;
 
   // TODO(yileili): Currently WW is only triggered when the first Assistant
   // launch of the user session does not automatically start an interaction that

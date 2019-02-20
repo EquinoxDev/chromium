@@ -47,7 +47,6 @@
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/autofill/core/common/autofill_switches.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/password_manager/content/browser/content_password_manager_driver.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_requirements_service.h"
@@ -56,6 +55,7 @@
 #include "components/signin/core/browser/signin_buildflags.h"
 #include "components/signin/core/browser/signin_header_helper.h"
 #include "components/signin/core/browser/signin_metrics.h"
+#include "components/sync/driver/sync_service.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/ukm/content/source_url_recorder.h"
 #include "components/user_prefs/user_prefs.h"
@@ -71,11 +71,13 @@
 #include "chrome/browser/android/signin/signin_promo_util_android.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/android/autofill/autofill_logger_android.h"
+#include "chrome/browser/ui/android/autofill/card_expiration_date_fix_flow_view_android.h"
 #include "chrome/browser/ui/android/autofill/card_name_fix_flow_view_android.h"
 #include "chrome/browser/ui/android/infobars/autofill_credit_card_filling_infobar.h"
 #include "components/autofill/core/browser/autofill_credit_card_filling_infobar_delegate_mobile.h"
 #include "components/autofill/core/browser/autofill_save_card_infobar_delegate_mobile.h"
 #include "components/autofill/core/browser/autofill_save_card_infobar_mobile.h"
+#include "components/autofill/core/browser/ui/card_expiration_date_fix_flow_view_delegate_mobile.h"
 #include "components/autofill/core/browser/ui/card_name_fix_flow_view_delegate_mobile.h"
 #include "components/infobars/core/infobar.h"
 #include "ui/android/window_android.h"
@@ -123,7 +125,7 @@ PrefService* ChromeAutofillClient::GetPrefs() {
 syncer::SyncService* ChromeAutofillClient::GetSyncService() {
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
-  return ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
+  return ProfileSyncServiceFactory::GetForProfile(profile);
 }
 
 identity::IdentityManager* ChromeAutofillClient::GetIdentityManager() {
@@ -247,15 +249,16 @@ void ChromeAutofillClient::ShowLocalCardMigrationDialog(
 
 void ChromeAutofillClient::ConfirmMigrateLocalCardToCloud(
     std::unique_ptr<base::DictionaryValue> legal_message,
+    const std::string& user_email,
     const std::vector<MigratableCreditCard>& migratable_credit_cards,
     LocalCardMigrationCallback start_migrating_cards_callback) {
 #if !defined(OS_ANDROID)
   autofill::ManageMigrationUiController::CreateForWebContents(web_contents());
   autofill::ManageMigrationUiController* controller =
       autofill::ManageMigrationUiController::FromWebContents(web_contents());
-  controller->ShowOfferDialog(
-      std::move(legal_message),
-      migratable_credit_cards, std::move(start_migrating_cards_callback));
+  controller->ShowOfferDialog(std::move(legal_message), user_email,
+                              migratable_credit_cards,
+                              std::move(start_migrating_cards_callback));
 #endif
 }
 
@@ -291,11 +294,13 @@ void ChromeAutofillClient::ConfirmSaveCreditCardLocally(
   InfoBarService::FromWebContents(web_contents())
       ->AddInfoBar(CreateSaveCardInfoBarMobile(
           std::make_unique<AutofillSaveCardInfoBarDelegateMobile>(
-              /*upload=*/false, /*should_request_name_from_user=*/false, card,
+              /*upload=*/false, /*should_request_name_from_user=*/false,
+              /*should_request_expiration_date_from_user=*/false, card,
               std::make_unique<base::DictionaryValue>(),
               /*upload_save_card_callback=*/
               AutofillClient::UploadSaveCardPromptCallback(),
-              /*local_save_card_callback=*/std::move(callback), GetPrefs())));
+              /*local_save_card_callback=*/std::move(callback), GetPrefs(),
+              payments_client_->is_off_the_record())));
 #else
   // Do lazy initialization of SaveCardBubbleControllerImpl.
   autofill::SaveCardBubbleControllerImpl::CreateForWebContents(
@@ -320,6 +325,21 @@ void ChromeAutofillClient::ConfirmAccountNameFixFlow(
           std::move(card_name_fix_flow_view_delegate_mobile), web_contents());
   card_name_fix_flow_view_android_->Show();
 }
+
+void ChromeAutofillClient::ConfirmExpirationDateFixFlow(
+    base::OnceCallback<void(const base::string16&, const base::string16&)>
+        callback) {
+  std::unique_ptr<CardExpirationDateFixFlowViewDelegateMobile>
+      card_expiration_date_fix_flow_view_delegate_mobile =
+          std::make_unique<CardExpirationDateFixFlowViewDelegateMobile>(
+              /*upload_save_card_callback=*/std::move(callback));
+
+  card_expiration_date_fix_flow_view_android_ =
+      std::make_unique<CardExpirationDateFixFlowViewAndroid>(
+          std::move(card_expiration_date_fix_flow_view_delegate_mobile),
+          web_contents());
+  card_expiration_date_fix_flow_view_android_->Show();
+}
 #endif
 
 void ChromeAutofillClient::ConfirmSaveCreditCardToCloud(
@@ -334,11 +354,13 @@ void ChromeAutofillClient::ConfirmSaveCreditCardToCloud(
   std::unique_ptr<AutofillSaveCardInfoBarDelegateMobile>
       save_card_info_bar_delegate_mobile =
           std::make_unique<AutofillSaveCardInfoBarDelegateMobile>(
-              /*upload=*/true, should_request_name_from_user, card,
+              /*upload=*/true, should_request_name_from_user,
+              should_request_expiration_date_from_user, card,
               std::move(legal_message),
               /*upload_save_card_callback=*/std::move(callback),
               /*local_save_card_callback=*/
-              AutofillClient::LocalSaveCardPromptCallback(), GetPrefs());
+              AutofillClient::LocalSaveCardPromptCallback(), GetPrefs(),
+              payments_client_->is_off_the_record());
   if (save_card_info_bar_delegate_mobile->LegalMessagesParsedSuccessfully()) {
     InfoBarService::FromWebContents(web_contents())
         ->AddInfoBar(CreateSaveCardInfoBarMobile(

@@ -14,6 +14,7 @@
 <translation id="1153356358378277386">페어링된 기기</translation>
 <translation id="1195412055398077112">오버스캔</translation>
 <translation id="119944043368869598">모두 삭제</translation>
+<translation id="123828989343052515">새 데스크</translation>
 <translation id="1247372569136754018">마이크(내부)</translation>
 <translation id="1252999807265626933"><ph name="POWER_SOURCE" />에서 충전 중</translation>
 <translation id="1255033239764210633">날씨가 어때?</translation>
@@ -68,10 +69,12 @@
 <translation id="1969011864782743497"><ph name="DEVICE_NAME" />(USB)</translation>
 <translation id="1993072747612765854">최신 <ph name="SYSTEM_APP_NAME" /> 업데이트에 관해 자세히 알아보세요.</translation>
 <translation id="1995660704900986789">끄기</translation>
+<translation id="1999763610967697511">드래그 앤 드롭</translation>
 <translation id="2012624427112548395">Ctrl+Search+H</translation>
 <translation id="2016340657076538683">메시지 입력</translation>
 <translation id="2050339315714019657">세로 방향</translation>
 <translation id="2067602449040652523">키보드 밝기</translation>
+<translation id="209965399369889474">네트워크에 연결되어 있지 않음</translation>
 <translation id="2127372758936585790">저출력 충전기</translation>
 <translation id="2135456203358955318">고정 돋보기</translation>
 <translation id="2144487987174258011">Adobe Flash Player를 업데이트하려면 다시 시작하세요.</translation>
@@ -94,6 +97,7 @@
 <translation id="2412593942846481727">업데이트 가능</translation>
 <translation id="2413728805700750528"><ph name="DISPLAY_NAME" />은(는) <ph name="DOMAIN" />에서 관리하는 관리 세션입니다.</translation>
 <translation id="2416346634399901812"><ph name="NETWORK_NAME" />에 연결됨</translation>
+<translation id="2427507373259914951">왼쪽 클릭</translation>
 <translation id="2429753432712299108">블루투스 기기 '<ph name="DEVICE_NAME" />'에서 페어링 허가를 요청합니다. 허가하기 전에 다음 패스키가 기기에 표시되는지 확인하세요. <ph name="PASSKEY" /></translation>
 <translation id="2482878487686419369">알림</translation>
 <translation id="2484513351006226581">키보드 레이아웃을 전환하려면 <ph name="KEYBOARD_SHORTCUT" />을(를) 누르세요.</translation>
@@ -132,6 +136,7 @@
 <translation id="3000461861112256445">모노 오디오</translation>
 <translation id="3009178788565917040">출력</translation>
 <translation id="3019353588588144572">배터리 충전이 완료될 때까지 남은 시간은 <ph name="TIME_REMAINING" />입니다.</translation>
+<translation id="3051128274746680507">관리 대상 사용자 프로필이 곧 삭제됩니다. 자세히 알아보려면 로그인하세요.</translation>
 <translation id="3055162170959710888">오늘 이 기기를 <ph name="USED_TIME" /> 동안 사용했습니다.</translation>
 <translation id="3077734595579995578">Shift</translation>
 <translation id="3081696990447829002">메뉴 펼치기</translation>
@@ -143,10 +148,10 @@
 <translation id="3153444934357957346">멀티 로그인에는 계정을 <ph name="MULTI_PROFILE_USER_LIMIT" />개까지만 사용할 수 있습니다.</translation>
 <translation id="3154351730702813399">기기 관리자가 탐색 활동을 모니터링할 수 있습니다.</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{기기 1개에 연결됨}other{기기 #개에 연결됨}}</translation>
-<translation id="32244657276328332">네트워크에 연결되어 있지 않음</translation>
 <translation id="3236488194889173876">사용할 수 있는 모바일 네트워크 없음</translation>
 <translation id="3255483164551725916">무엇을 할 수 있어?</translation>
 <translation id="3294437725009624529">게스트</translation>
+<translation id="3308453408813785101"><ph name="USER_EMAIL_ADDRESS" />님은 나중에도 로그인할 수 있습니다.</translation>
 <translation id="332587331255250389">배터리를 교체해 주세요</translation>
 <translation id="3351879221545518001">현재 화면을 전송하고 있습니다.</translation>
 <translation id="3364721542077212959">스타일러스 도구</translation>
@@ -193,6 +198,7 @@
 <translation id="4072264167173457037">신호 보통</translation>
 <translation id="4146833061457621061">음악을 틀어 줘</translation>
 <translation id="4181841719683918333">언어</translation>
+<translation id="4195877955194704651">자동 클릭 버튼</translation>
 <translation id="4217571870635786043">음성기록</translation>
 <translation id="4261870227682513959">알림 설정을 표시합니다. 알림이 사용 중지되어 있습니다.</translation>
 <translation id="4269883910223712419">이 기기의 관리자는 다음과 같은 작업을 할 수 있습니다.</translation>
@@ -230,6 +236,7 @@
 <translation id="479989351350248267">검색</translation>
 <translation id="4804818685124855865">연결 해제</translation>
 <translation id="4849058404725798627">키보드 포커스로 개체 강조표시</translation>
+<translation id="485592688953820832">작업 없음(일시중지)</translation>
 <translation id="4872237917498892622">Alt+검색 또는 Shift 키</translation>
 <translation id="4890187583552566966">관리자가 Google 어시스턴트를 사용 중지했습니다.</translation>
 <translation id="4895488851634969361">배터리 충전이 완료되었습니다.</translation>
@@ -256,6 +263,7 @@
 <translation id="5430931332414098647">인스턴트 테더링</translation>
 <translation id="5431825016875453137">OpenVPN/L2TP</translation>
 <translation id="544691375626129091">사용 가능한 모든 사용자가 이미 이 세션에 추가되었습니다.</translation>
+<translation id="5465662442746197494">도움이 필요하신가요?</translation>
 <translation id="5496819745535887422">관리자가 내 기기를 롤백하고 있습니다. 기기가 다시 시작되면 모든 데이터가 삭제됩니다.</translation>
 <translation id="553675580533261935">세션 종료</translation>
 <translation id="5537725057119320332">전송</translation>
@@ -264,7 +272,6 @@
 <translation id="5571066253365925590">블루투스를 사용함</translation>
 <translation id="5597451508971090205"><ph name="DATE" /> <ph name="SHORT_WEEKDAY" /></translation>
 <translation id="5600837773213129531">음성 피드백을 사용 중지하려면 Ctrl + Alt + Z를 누르세요.</translation>
-<translation id="5626283214046138476">관리 대상 사용자 계정이 곧 만료됩니다.</translation>
 <translation id="5648021990716966815">마이크 잭</translation>
 <translation id="5669267381087807207">활성화 중</translation>
 <translation id="5673434351075758678">설정 동기화 후 ‘<ph name="FROM_LOCALE" />’에서 ‘<ph name="TO_LOCALE" />’(으)로 변경합니다.</translation>
@@ -368,6 +375,7 @@
 <translation id="7348093485538360975">터치 키보드</translation>
 <translation id="735745346212279324">VPN 연결 끊김</translation>
 <translation id="7377169924702866686">Caps Lock이 켜져 있습니다.</translation>
+<translation id="7384299914270925461"><ph name="SIGN" /><ph name="MINUTES_REMAINING" />:<ph name="SECONDS_REMAINING" />초</translation>
 <translation id="7398254312354928459">네트워크 연결 전환됨</translation>
 <translation id="742594950370306541">카메라가 사용 중입니다.</translation>
 <translation id="743058460480092004">카메라와 마이크가 사용 중입니다.</translation>
@@ -419,13 +427,17 @@
 <translation id="8113423164597455979">모든 앱에서 사용 중</translation>
 <translation id="8132793192354020517"><ph name="NAME" />에 연결됨</translation>
 <translation id="813913629614996137">초기화 중...</translation>
+<translation id="8142441511840089262">더블클릭</translation>
 <translation id="8142699993796781067">사설 네트워크</translation>
+<translation id="8167567890448493835"><ph name="LOCALE_NAME" /> 사용 중</translation>
 <translation id="8190698733819146287">언어 및 입력 설정...</translation>
 <translation id="8192202700944119416">알림이 숨겨져 있음</translation>
+<translation id="8203795194971602413">오른쪽 클릭</translation>
 <translation id="8236042855478648955">휴식 시간</translation>
 <translation id="8261506727792406068">삭제</translation>
 <translation id="8297006494302853456">약함</translation>
 <translation id="8308637677604853869">이전 메뉴</translation>
+<translation id="8332664326438198339">런처로 돌아가기</translation>
 <translation id="8341451174107936385"><ph name="UNLOCK_MORE_FEATURES" />  <ph name="GET_STARTED" /></translation>
 <translation id="8351131234907093545">메모 만들기</translation>
 <translation id="8375916635258623388">이 <ph name="DEVICE_NAME" />과(와) 휴대전화가 자동으로 연결됩니다.</translation>
@@ -441,7 +453,6 @@
 <translation id="8454013096329229812">Wi-Fi가 켜져 있습니다.</translation>
 <translation id="847056008324733326">배율 설정 표시</translation>
 <translation id="8477270416194247200">취소하려면 Alt+검색 또는 Shift 키를 누르세요.</translation>
-<translation id="8484916590211895857"><ph name="NAME" />: 다시 연결하는 중...</translation>
 <translation id="8513108775083588393">자동 회전</translation>
 <translation id="8517041960877371778"><ph name="DEVICE_TYPE" />이(가) 켜져 있는 동안에는 충전되지 않을 수 있습니다.</translation>
 <translation id="8627191004499078455"><ph name="DEVICE_NAME" />에 연결됨</translation>
@@ -456,9 +467,7 @@
 <translation id="8734991477317290293">키 입력 내용을 도용하려는 시도일 수 있습니다.</translation>
 <translation id="8735953464173050365">키보드 설정을 표시합니다. <ph name="KEYBOARD_NAME" />이(가) 선택되었습니다.</translation>
 <translation id="875593634123171288">VPN 설정 표시</translation>
-<translation id="8809737090443522491">앱 또는 문서 이름 입력</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
-<translation id="8825534185036233643">3개 이상의 디스플레이 미러링은 지원되지 않습니다.</translation>
 <translation id="8828714802988429505">90°</translation>
 <translation id="8843682306134542540">회전 잠금을 전환합니다. <ph name="STATE_TEXT" /></translation>
 <translation id="8850991929411075241">Search+Esc</translation>
@@ -466,7 +475,7 @@
 <translation id="8874184842967597500">연결되지 않음</translation>
 <translation id="8877788021141246043">알림을 설정해 줘</translation>
 <translation id="8878886163241303700">화면 확대</translation>
-<translation id="8898978413391960553">00:00초</translation>
+<translation id="890616557918890486">소스 변경</translation>
 <translation id="8921624153894383499">Google 어시스턴트가 이 언어를 지원하지 않음</translation>
 <translation id="8938800817013097409">USB-C 기기(우측 후면 포트)</translation>
 <translation id="8940956008527784070">배터리 부족(<ph name="PERCENTAGE" />%)</translation>

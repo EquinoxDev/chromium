@@ -29,7 +29,6 @@ def _GenerateTestCommand(script,
                          chromedriver,
                          ref_chromedriver=None,
                          chrome=None,
-                         chrome_version=None,
                          android_package=None,
                          verbose=False):
   _, log_path = tempfile.mkstemp(prefix='chromedriver_log_')
@@ -46,9 +45,6 @@ def _GenerateTestCommand(script,
   if chrome:
     cmd.append('--chrome=' + chrome)
 
-  if chrome_version:
-    cmd.append('--chrome-version=' + chrome_version)
-
   if verbose:
     cmd.append('--verbose')
 
@@ -58,12 +54,8 @@ def _GenerateTestCommand(script,
   return cmd
 
 
-def RunReplayTests(chromedriver, chrome,
-                   chrome_version=None, chrome_version_name=None):
-  version_info = ''
-  if chrome_version_name:
-    version_info = '(%s)' % chrome_version_name
-  util.MarkBuildStepStart('replay_tests%s' % version_info)
+def RunReplayTests(chromedriver, chrome):
+  util.MarkBuildStepStart('replay_tests')
 
   _, log_path = tempfile.mkstemp(prefix='chromedriver_log_')
   print 'chromedriver server log: %s' % log_path
@@ -74,8 +66,6 @@ def RunReplayTests(chromedriver, chrome,
     chrome,
     '--output-log-path=%s' % log_path
   ]
-  if chrome_version:
-    cmd.append('--chrome-version=%s' % chrome_version)
   code = util.RunCommand(cmd)
 
   if code:
@@ -84,37 +74,29 @@ def RunReplayTests(chromedriver, chrome,
 
 
 def RunPythonTests(chromedriver, ref_chromedriver,
-                   chrome=None, chrome_version=None,
-                   chrome_version_name=None, android_package=None):
-  version_info = ''
-  if chrome_version_name:
-    version_info = '(%s)' % chrome_version_name
-  util.MarkBuildStepStart('python_tests%s' % version_info)
+                   chrome=None,
+                   android_package=None):
+  util.MarkBuildStepStart('python_tests')
   code = util.RunCommand(
       _GenerateTestCommand('run_py_tests.py',
                            chromedriver,
                            ref_chromedriver=ref_chromedriver,
                            chrome=chrome,
-                           chrome_version=chrome_version,
                            android_package=android_package))
   if code:
     util.MarkBuildStepError()
   return code
 
 
-def RunJavaTests(chromedriver, chrome=None, chrome_version=None,
-                 chrome_version_name=None, android_package=None,
+def RunJavaTests(chromedriver, chrome=None,
+                 android_package=None,
                  verbose=False):
-  version_info = ''
-  if chrome_version_name:
-    version_info = '(%s)' % chrome_version_name
-  util.MarkBuildStepStart('java_tests%s' % version_info)
+  util.MarkBuildStepStart('java_tests')
   code = util.RunCommand(
       _GenerateTestCommand('run_java_tests.py',
                            chromedriver,
                            ref_chromedriver=None,
                            chrome=chrome,
-                           chrome_version=chrome_version,
                            android_package=android_package,
                            verbose=verbose))
   if code:
@@ -162,12 +144,6 @@ def main():
       '', '--android-packages',
       help='Comma separated list of application package names, '
            'if running tests on Android.')
-  # Option 'chrome-version' is for desktop only.
-  parser.add_option(
-      '', '--chrome-version',
-      help='Version of chrome, e.g., \'HEAD\', \'27\', or \'26\'.'
-           'Default is to run tests against all of these versions.'
-           'Notice: this option only applies to desktop.')
   options, _ = parser.parse_args()
 
   exe_postfix = ''
@@ -214,54 +190,24 @@ def main():
       code = code or code1 or code2
     return code
   else:
-    versions = {'HEAD': archive.GetLatestRevision()}
-    # Linux64 build numbers
-    if util.IsLinux():
-      versions['72'] = '612434'
-      versions['71'] = '599034'
-      versions['70'] = '587811'
-
-    # Mac build numbers
-    elif util.IsMac():
-      versions['72'] = '612451'
-      versions['71'] = '599028'
-      versions['70'] = '587811'
-
-    # Windows build numbers
-    elif util.IsWindows():
-      versions['72'] = '612432'
-      versions['71'] = '598927'
-      versions['70'] = '587814'
-
     code = 0
-    for version, revision in versions.iteritems():
-      if options.chrome_version and version != options.chrome_version:
-        continue
-      download_site = archive.GetDownloadSite()
-      version_name = version
-      if version_name == 'HEAD':
-        version_name = revision
-      temp_dir, chrome_path = DownloadChrome(version_name, revision,
+    download_site = archive.GetDownloadSite()
+    revision = archive.GetLatestRevision()
+    temp_dir, chrome_path = DownloadChrome(revision, revision,
                                              download_site)
-      if not chrome_path:
-        code = 1
-        continue
-      code1 = RunPythonTests(chromedriver,
-                             ref_chromedriver,
-                             chrome=chrome_path,
-                             chrome_version=version,
-                             chrome_version_name='v%s' % version_name)
-      code2 = RunJavaTests(chromedriver, chrome=chrome_path,
-                           chrome_version=version,
-                           chrome_version_name='v%s' % version_name,
-                           verbose=True)
-      code3 = RunReplayTests(chromedriver,
-                             chrome=chrome_path,
-                             chrome_version=version,
-                             chrome_version_name='v%s' % version_name)
-      code = code or code1 or code2 or code3
-      _KillChromes()
-      shutil.rmtree(temp_dir)
+    if not chrome_path:
+      code = 1
+    code1 = RunPythonTests(chromedriver,
+                           ref_chromedriver,
+                           chrome=chrome_path)
+    code2 = RunJavaTests(chromedriver,
+                         verbose=True,
+                         chrome=chrome_path)
+    code3 = RunReplayTests(chromedriver,
+                           chrome=chrome_path)
+    code = code or code1 or code2 or code3
+    _KillChromes()
+    shutil.rmtree(temp_dir)
     cpp_tests = os.path.join(build_dir, cpp_tests_name)
     return RunCppTests(cpp_tests) or code
 

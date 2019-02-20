@@ -398,7 +398,29 @@ message FocusElementProto {
   optional string title = 2;
 
   // Restrict interaction to the area spanned by the given elements.
-  repeated ElementReferenceProto touchable_element_area = 5;
+  //
+  // Deprecated: use touchable_element_area instead. Ignored if
+  // touchable_element_area is non-empty.
+  repeated ElementReferenceProto deprecated_touchable_elements = 5;
+
+  // Restrict interaction to a series of rectangular areas.
+  optional ElementAreaProto touchable_element_area = 6;
+}
+
+// An area made up of rectangles whole border are made defined by the position
+// of a given set of elements.
+message ElementAreaProto {
+  // A rectangle, drawn by one or more elements.
+  //
+  // The rectangle is the smallest rectangle that includes all listed elements.
+  message Rectangle {
+    repeated ElementReferenceProto elements = 1;
+
+    // If true, the width of the rectangle always corresponds to the width of
+    // the screen.
+    optional bool full_width = 2;
+  }
+  repeated Rectangle rectangles = 1;
 }
 
 message AutofillStrings {
@@ -453,9 +475,6 @@ message UseAddressProto {
   // An optional list of fields that should be filled by this action.
   repeated RequiredField required_fields = 6;
 
-  // If set to false, clear the overlay for the duration of the action.
-  optional bool show_overlay = 7 [default = true];
-
   optional AutofillStrings strings = 8;
 }
 
@@ -467,9 +486,6 @@ message UseCreditCardProto {
 
   // A reference to the card number field in the form that should be filled.
   optional ElementReferenceProto form_field_element = 3;
-
-  // If set to false, clear the overlay for the duration of the action.
-  optional bool show_overlay = 5 [default = true];
 
   optional AutofillStrings strings = 8;
 }
@@ -499,9 +515,6 @@ message UploadDomProto {
 
 // Shows the progress bar.
 message ShowProgressBarProto {
-  // Specifies whether the progress is done and should be removed.
-  optional bool done = 2;
-
   // Message to show on the progress bar while loading.
   optional string message = 3;
 
@@ -548,6 +561,9 @@ message PromptProto {
     // Server payload originally sent by the server. This should
     // be transmitted as-is by the client without interpreting.
     optional bytes server_payload = 5;
+
+    // The chip is only visible if the given element exists.
+    optional ElementReferenceProto show_only_if_element_exists = 6;
   }
   repeated Choice choices = 4;
 }
@@ -615,6 +631,17 @@ message DateTimeProto {
   optional TimeProto time = 2;
 }
 
+message DetailsChanges {
+  // Whether the changes require user approval.
+  optional bool user_approval_required = 1;
+
+  // Whether the title should be highlighted.
+  optional bool highlight_title = 2;
+
+  // Whether the date should be highlighted.
+  optional bool highlight_date = 3;
+}
+
 message DetailsProto {
   optional string title = 1;
 
@@ -636,6 +663,9 @@ message DetailsProto {
 // Show contextual information.
 message ShowDetailsProto {
   optional DetailsProto details = 1;
+
+  // Flags indicating which parts of the details (if any) have changed.
+  optional DetailsChanges change_flags = 2;
 }
 
 // Set the value of an form element.

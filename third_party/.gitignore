@@ -21,6 +21,7 @@
 /android_tools/
 /android_tools_internal/
 /android_webview_glue/src
+/androidx/lib/
 /angle
 /angle_dx11
 /apache-portable-runtime/src
@@ -58,12 +59,14 @@
 /cros_system_api
 /custom_tabs_client/src
 /cygwin
+/dav1d/libdav1d
 /dawn
 /depot_tools
 /devtools-node-modules
 /directxsdk
 /dom_distiller_js/dist
 /elfutils/src
+/emoji-segmenter/src
 /errorprone/lib
 /espresso/lib/
 /eyesfree/src
@@ -86,7 +89,7 @@
 /google_toolbox_for_mac/src
 /googlemac
 /googletest/src
-/grpc
+/grpc/src
 /gson/lib/
 /gvr-android-sdk/common_library.aar
 /gvr-android-sdk/test-libraries/controller_test_api.aar

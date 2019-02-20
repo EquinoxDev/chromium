@@ -9,13 +9,18 @@
 #include "ash/assistant/assistant_screen_context_controller.h"
 #include "ash/assistant/ui/assistant_container_view.h"
 #include "ash/assistant/ui/assistant_ui_constants.h"
+#include "ash/assistant/util/assistant_util.h"
 #include "ash/assistant/util/deep_link_util.h"
 #include "ash/assistant/util/histogram_util.h"
+#include "ash/multi_user/multi_user_window_manager.h"
+#include "ash/public/cpp/app_list/app_list_features.h"
+#include "ash/session/session_controller.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/toast/toast_data.h"
 #include "ash/system/toast/toast_manager.h"
 #include "ash/voice_interaction/voice_interaction_controller.h"
+#include "base/bind.h"
 #include "base/optional.h"
 #include "chromeos/services/assistant/public/mojom/assistant.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -130,6 +135,11 @@ void AssistantUiController::OnScreenContextRequestStateChanged(
   if (model_.visibility() != AssistantVisibility::kVisible)
     return;
 
+  // TODO(wutao): Behavior is not defined.
+  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+    return;
+
+  DCHECK(container_view_);
   // Once screen context request state has become idle, it is safe to activate
   // the Assistant widget without causing complications.
   if (request_state == ScreenContextRequestState::kIdle)
@@ -168,6 +178,11 @@ bool AssistantUiController::OnCaptionButtonPressed(AssistantButtonId id) {
 // TODO(dmblack): This event doesn't need to be handled here anymore. Move it
 // out of AssistantUiController.
 void AssistantUiController::OnDialogPlateButtonPressed(AssistantButtonId id) {
+  if (id == AssistantButtonId::kBackInLauncher) {
+    CloseUi(AssistantExitPoint::kBackInLauncher);
+    return;
+  }
+
   if (id != AssistantButtonId::kSettings)
     return;
 
@@ -178,6 +193,10 @@ void AssistantUiController::OnDialogPlateButtonPressed(AssistantButtonId id) {
 
 void AssistantUiController::OnHighlighterEnabledChanged(
     HighlighterEnabledState state) {
+  // TODO(wutao): Behavior is not defined.
+  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+    return;
+
   switch (state) {
     case HighlighterEnabledState::kEnabled:
       if (model_.visibility() != AssistantVisibility::kVisible)
@@ -216,6 +235,10 @@ void AssistantUiController::OnDeepLinkReceived(
   if (!assistant::util::IsWebDeepLinkType(type))
     return;
 
+  // TODO(wutao): Behavior is not defined.
+  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+    return;
+
   ShowUi(AssistantEntryPoint::kDeepLink);
   UpdateUiMode(AssistantUiMode::kWebUi);
 }
@@ -228,8 +251,12 @@ void AssistantUiController::OnUrlOpened(const GURL& url, bool from_server) {
   // navigation was initiated by a server response. Otherwise the navigation
   // was user initiated so we only hide the UI to retain session state. That way
   // the user can choose to resume their session if they are so inclined.
+  // However, we close the UI if it is in the |kLauncherEmbeddedUi| mode, where
+  // we only maintain |kVisible| and |kClosed| two states.
   if (from_server)
     CloseUi(AssistantExitPoint::kNewBrowserTabFromServer);
+  else if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+    CloseUi(AssistantExitPoint::kNewBrowserTabFromUser);
   else
     HideUi(AssistantExitPoint::kNewBrowserTabFromUser);
 }
@@ -268,6 +295,15 @@ void AssistantUiController::OnUiVisibilityChanged(
       // Upon becoming visible, we stop the auto close timer.
       auto_close_timer_.Stop();
 
+      // Only record the entry point when Assistant UI becomes visible.
+      assistant::util::RecordAssistantEntryPoint(entry_point.value());
+
+      if (!container_view_) {
+        DCHECK_EQ(AssistantUiMode::kLauncherEmbeddedUi, model_.ui_mode());
+        event_monitor_.reset();
+        break;
+      }
+
       // We need to monitor events for the root window while we're visible to
       // give us an opportunity to dismiss Assistant UI when the user starts an
       // interaction outside of our bounds. TODO(dmblack): Investigate how this
@@ -277,8 +313,19 @@ void AssistantUiController::OnUiVisibilityChanged(
       event_monitor_ = views::EventMonitor::CreateWindowMonitor(
           this, root_window, {ui::ET_MOUSE_PRESSED, ui::ET_TOUCH_PRESSED});
 
-      // Only record the entry point when Assistant UI becomes visible.
-      assistant::util::RecordAssistantEntryPoint(entry_point.value());
+      // We also want to associate the window for Assistant UI with the active
+      // user so that we don't leak across user sessions.
+      auto* window_manager = MultiUserWindowManager::Get();
+      if (window_manager) {
+        const mojom::UserSession* user_session =
+            Shell::Get()->session_controller()->GetUserSession(0);
+        if (user_session) {
+          window_manager->SetWindowOwner(
+              container_view_->GetWidget()->GetNativeWindow(),
+              user_session->user_info->account_id,
+              /*show_for_current_user=*/true);
+        }
+      }
       break;
   }
 
@@ -311,6 +358,18 @@ void AssistantUiController::ShowUi(AssistantEntryPoint entry_point) {
     ShowToast(kUnboundServiceToastId, IDS_ASH_ASSISTANT_ERROR_GENERIC);
     return;
   }
+
+  if (app_list_features::IsEmbeddedAssistantUIEnabled() &&
+      assistant::util::IsEmbeddedUiEntryPoint(entry_point)) {
+    // No container view when embedded in launcher.
+    DCHECK(!container_view_);
+
+    model_.SetUiMode(AssistantUiMode::kLauncherEmbeddedUi);
+    model_.SetVisible(entry_point);
+    return;
+  }
+
+  DCHECK_NE(AssistantUiMode::kLauncherEmbeddedUi, model_.ui_mode());
 
   if (model_.visibility() == AssistantVisibility::kVisible) {
     // If Assistant window is already visible, we just try to retake focus.
@@ -348,6 +407,9 @@ void AssistantUiController::CloseUi(AssistantExitPoint exit_point) {
     container_view_->GetWidget()->CloseNow();
     DCHECK_EQ(nullptr, container_view_);
   }
+
+  // Reset to default state.
+  model_.SetUiMode(AssistantUiMode::kMainUi);
 }
 
 void AssistantUiController::ToggleUi(
@@ -376,9 +438,19 @@ void AssistantUiController::UpdateUiMode(
   // If a UI mode is provided, we will use it in lieu of updating UI mode on the
   // basis of interaction/widget visibility state.
   if (ui_mode.has_value()) {
-    model_.SetUiMode(ui_mode.value());
+    AssistantUiMode mode = ui_mode.value();
+    // TODO(wutao): Behavior is not defined.
+    if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi) {
+      DCHECK_NE(AssistantUiMode::kMiniUi, mode);
+      DCHECK_NE(AssistantUiMode::kWebUi, mode);
+    }
+    model_.SetUiMode(mode);
     return;
   }
+
+  // TODO(wutao): Behavior is not defined.
+  if (model_.ui_mode() == AssistantUiMode::kLauncherEmbeddedUi)
+    return;
 
   InputModality input_modality = assistant_controller_->interaction_controller()
                                      ->model()
@@ -498,7 +570,8 @@ AssistantContainerView* AssistantUiController::GetViewForTest() {
 }
 
 void AssistantUiController::CreateContainerView() {
-  container_view_ = new AssistantContainerView(assistant_controller_);
+  container_view_ =
+      new AssistantContainerView(assistant_controller_->view_delegate());
   container_view_->GetWidget()->AddObserver(this);
 
   // To save resources, only watch these events while Assistant UI exists.

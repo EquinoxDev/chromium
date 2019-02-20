@@ -54,6 +54,7 @@
 <translation id="1346059596910821859">Савет</translation>
 <translation id="1346748346194534595">Удесно</translation>
 <translation id="135978014023467274">Ажурирали сте ChromeVox на ChromeVox 63!</translation>
+<translation id="1360699455582016846">Кликните на ставку испод тастера за усмеравање <ph name="ROUTING_KEY_NUMBER" /></translation>
 <translation id="136718599399906424">Следећи ред табеле</translation>
 <translation id="1377925789329510816">Ово је последњи наслов. Притисните тастер за претрагу + H да бисте се вратили на први наслов или тастер за претрагу + Shift + H да бисте отишли на други наслов на овој страници.</translation>
 <translation id="1383876407941801731">Претражи</translation>
@@ -112,6 +113,7 @@
 <translation id="1905379170753160525">Приказивање листе заглавља</translation>
 <translation id="1912556590115083156">посећени линк</translation>
 <translation id="1913761808037590218">број</translation>
+<translation id="1914635379910604678">Акорд <ph name="DOT" /></translation>
 <translation id="1954623340234317532">Контрола недеље у години</translation>
 <translation id="1964135212174907577">Следећи објекат</translation>
 <translation id="1969092762068865084">јул</translation>
@@ -267,6 +269,7 @@
 <translation id="316542773973815724">Навигација</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{размак}one{# размак}few{# размака}other{# размака}}</translation>
 <translation id="320961988183078793">унета је ставка <ph name="TYPE" /></translation>
+<translation id="3218691001991391708">Налепи <ph name="TEXT" />.</translation>
 <translation id="3223701887221307104">Картица <ph name="NAME" /></translation>
 <translation id="3226035351387556942">поље за потврду</translation>
 <translation id="3229375994964697375">Посећени линк</translation>
@@ -286,48 +289,6 @@
 <translation id="3322936298410871309">Претходно заглавље 1. нивоа</translation>
 <translation id="3323447499041942178">Оквир за текст</translation>
 <translation id="3338224621010291843"><ph name="VALUE" /> <ph name="NAME" /> клизач</translation>
-<translation id="3353420241558113817">{"ar": "арапски",
-        "bg": "бугарски",
-        "ca": "каталонски",
-        "cs": "чешки",
-        "da": "дански",
-        "de": "немачки",
-        "de_CH": "немачки (Швајцарска)",
-        "de_DE": "немачки (Немачка)",
-        "el": "грчки",
-        "en": "енглески",
-        "en_CA": "енглески (Канада)",
-        "en_GB": "енглески (Уједињено Краљевство)",
-        "en_US": "енглески (Сједињене Америчке Државе)",
-        "es": "шпански",
-        "et": "естонски",
-        "fr": "француски",
-        "fr_CA": "француски (Канада)",
-        "fr_FR": "француски (Француска)",
-        "fi": "фински",
-        "he": "хебрејски",
-        "hi": "хинди",
-        "hr": "хрватски",
-        "hu": "мађарски",
-        "is": "исландски",
-        "it": "италијански",
-        "ko": "корејски",
-        "lt": "литвански",
-        "lv": "летонски",
-        "nb": "норвешки (бокмал)",
-        "nl": "холандски",
-        "pl": "пољски",
-        "pt": "португалски",
-        "ro": "румунски",
-        "ru": "руски",
-        "sk": "словачки",
-        "sl": "словеначки",
-        "sr": "српски",
-        "sv": "шведски",
-        "tr": "турски",
-        "vi": "вијетнамски",
-        "zh": "кинески",
-        "zh_TW": "кинески (традиционални Хан)"}</translation>
 <translation id="335581015389089642">Говор</translation>
 <translation id="3359142382821736686">разделник</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{знак плус}one{# знак плус}few{# знака плус}other{# знакова плус}}</translation>
@@ -344,12 +305,14 @@
 <translation id="3468959318854349468">Нема наслова</translation>
 <translation id="3473644018603298796">sld <ph name="COUNT" /></translation>
 <translation id="3486232535569802404"><ph name="V1" /> до <ph name="V2" /></translation>
+<translation id="3490765818161916458">Листа/мрежа</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{десна угласта заграда}one{# десна угласта заграда}few{# десне угласте заграде}other{# десних угластих заграда}}</translation>
 <translation id="3493915602752813531">Нема следећег сидра.</translation>
 <translation id="3494946239022273294">ставка менија</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{знак питања}one{# знак питања}few{# знака питања}other{# знакова питања}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{карет}one{# карет}few{# карета}other{# карета}}</translation>
 <translation id="352577523970648069">Изменљиво поље за текст</translation>
+<translation id="3549141990712742152">Исеци <ph name="TEXT" />.</translation>
 <translation id="3549680091535286226">Додирните са два прста да бисте привремено зауставили говор</translation>
 <translation id="3568702578574425662">Поље за потврду <ph name="NAME" /> није означено</translation>
 <translation id="3589661172894441357">Речник термина</translation>
@@ -381,6 +344,7 @@
 <translation id="3856075812838139784">Само за читање</translation>
 <translation id="3887576927692165210">оквир за текст</translation>
 <translation id="3897092660631435901">Мени</translation>
+<translation id="3907138069015388678">Лст/мрж</translation>
 <translation id="3909320334364316587">Претходно заглавље 6. нивоа</translation>
 <translation id="3914173277599553213">Обавезно</translation>
 <translation id="3914732343065571127">Референца за команде за ChromeVox</translation>
@@ -515,7 +479,6 @@
 <translation id="4973762002207131920">Пребачено је на <ph name="KEY" />.</translation>
 <translation id="4975416682604111799">милисекунде</translation>
 <translation id="49787999531187221">ChromeVox је сада неактиван.</translation>
-<translation id="4979263087381759787">Опције за програмере</translation>
 <translation id="4979404613699303341">Претходно дугме</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />, <ph name="NAME" />, оквир листе</translation>
 <translation id="4983588134362688868">Прелазак на врх странице</translation>
@@ -530,6 +493,7 @@
 <translation id="5020651427400641814">Омогући евидентирање говора</translation>
 <translation id="5041394372352067729">Померање екрана са Брајевом азбуком у врх странице</translation>
 <translation id="5042770794184672516">Повећавање јачине звука говора</translation>
+<translation id="5042992464904238023">Веб садржај</translation>
 <translation id="5050015258024679800">Претходно заглавље 4. нивоа</translation>
 <translation id="5054047268577924192">Претходна ставка листе</translation>
 <translation id="5075936896689244141">Мапа тастера Next</translation>
@@ -674,6 +638,7 @@
 <translation id="6129953537138746214">Размак</translation>
 <translation id="6132506484792346370">Оквир са листом или комбиновани оквир</translation>
 <translation id="6142308968191113180">Заглавље 4</translation>
+<translation id="6158882249329863701"><ph name="TABLECELLROWINDEX" />. ред <ph name="TABLECELLCOLUMNINDEX" />. колона</translation>
 <translation id="6164829606128959761">мерач</translation>
 <translation id="6169420925157477918">Слика са дугим описом</translation>
 <translation id="6186305613600865047">Прелазак на дно странице</translation>
@@ -689,6 +654,7 @@
 <translation id="6307969636681130414">Притиснуто</translation>
 <translation id="6322856989298155004">Звукови</translation>
 <translation id="6324551002951139333">Откривена је граматичка грешка</translation>
+<translation id="6325241889020214828">Копирај <ph name="TEXT" />.</translation>
 <translation id="6348657800373377022">Комбиновани оквир</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{знак за набрајање}one{# знак за набрајање}few{# знака за набрајање}other{# знакова за набрајање}}</translation>
 <translation id="6355910664415701303">Нема претходне ставке листе.</translation>
@@ -698,6 +664,7 @@
 <translation id="6387719785439924554">aside</translation>
 <translation id="6411426777058107714">Нема претходног дугмета за избор.</translation>
 <translation id="6414968628640960377">Претходни другачији елемент.</translation>
+<translation id="6417265370957905582">Google помоћник</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{две тачке}one{# знак две тачке}few{# знака две тачке}other{# знакова две тачке}}</translation>
 <translation id="6438968337250688271">Мени <ph name="NAME" /></translation>
 <translation id="6444046323172968959">Дијалог обавештења</translation>
@@ -877,6 +844,89 @@
 <translation id="8037651341025652929">Закључак</translation>
 <translation id="8042761080832772327">Измените текст, унос за претрагу</translation>
 <translation id="8049189770492311300">Тајмер</translation>
+<translation id="8056782883599416672">{"ar": "арапски",
+        "as": "асамски",
+        "aw": "авади",
+        "be": "бенгалски",
+        "bg": "бугарски",
+        "bh": "бихари",
+        "bo": "тибетански",
+        "br": "браџ",
+        "ca": "каталонски",
+        "ckb": "сорани ",
+        "cs": "чешки",
+        "cy": "велшки",
+        "da": "дански",
+        "de": "немачки",
+        "de_CH": "немачки (Швајцарска)",
+        "de_DE": "немачки (Немачка)",
+        "dra": "дравидски",
+        "el": "грчки",
+        "en": "енглески",
+        "en_CA": "енглески (Канада)",
+        "en_GB": "енглески (Уједињено Краљевство)",
+        "en_US": "енглески (Сједињене Америчке Државе)",
+        "eo": "есперанто",
+        "es": "шпански",
+        "et": "естонски",
+        "fa": "персијски",
+        "fr": "француски",
+        "fr_CA": "француски (Канада)",
+        "fr_FR": "француски (Француска)",
+        "fi": "фински",
+        "ga": "ирски",
+        "gd": "галски",
+        "gon": "гонди",
+        "gu": "гуџарати",
+        "he": "хебрејски",
+        "hi": "хинди",
+        "hr": "хрватски",
+        "hu": "мађарски",
+        "hy": "јерменски",
+        "is": "исландски",
+        "it": "италијански",
+        "iu": "инуктитут",
+        "ka": "канада",
+        "kh": "кхаси",
+        "ko": "корејски",
+        "kok": "конкани",
+        "kru": "курух",
+        "ks": "кашмири",
+        "lt": "литвански",
+        "lv": "летонски",
+        "mao": "маорски",
+        "ml": "малајалам",
+        "mt": "малтешки",
+        "mwr": "марвари",
+        "mn": "монголски",
+        "mun": "мунда",
+        "nb": "норвешки (бокмал)",
+        "ne": "непалски",
+        "nl": "холандски",
+        "no": "норвешки",
+        "or": "орија",
+        "pi": "пали",
+        "pl": "пољски",
+        "pt": "португалски",
+        "pu": "пенџапски",
+        "ro": "румунски",
+        "ru": "руски",
+        "sa": "санскрит",
+        "si": "синдхи",
+        "sin": "синхала",
+        "sk": "словачки",
+        "sl": "словеначки",
+        "sr": "српски",
+        "sv": "шведски",
+        "ta": "тамилски",
+        "te": "телугу",
+        "tr": "турски",
+        "tsn": "африканс",
+        "uk": "украјински",
+        "ur": "урду",
+        "vi": "вијетнамски",
+        "zh": "кинески",
+        "zh_TW": "кинески (традиционални Хан)"}</translation>
 <translation id="8065607967589909823">Избор је</translation>
 <translation id="8066678206530322333">Банер</translation>
 <translation id="8076492880354921740">Картице</translation>
@@ -886,6 +936,7 @@
 <translation id="8153880621934657047">Нисте унутар табеле.</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{доња црта}one{# доња црта}few{# доње црте}other{# доњих црта}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">Аутоматски откривај и мењај језик ChromeVox-а.</translation>
 <translation id="8184828902145951186">ред</translation>
 <translation id="8186185314313222077">укључи/искључи цео екран</translation>
 <translation id="8199231515320852133">Објављивање заглавља актуелне ћелије</translation>
@@ -960,6 +1011,7 @@
 <translation id="8937112856099038376">интерни линк</translation>
 <translation id="8940925288729953902">Модификујући тастери</translation>
 <translation id="8943175951035496220">Нема ћелија десно.</translation>
+<translation id="8946628535652548639"><ph name="TABLECELLROWINDEX" />. р<ph name="TABLECELLCOLUMNINDEX" />. к</translation>
 <translation id="8978496506222343566">објашњење</translation>
 <translation id="8986362086234534611">Заборави</translation>
 <translation id="900114243503212879">file</translation>

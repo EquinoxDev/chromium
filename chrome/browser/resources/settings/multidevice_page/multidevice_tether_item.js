@@ -48,6 +48,18 @@ Polymer({
       type: Object,
       value: settings.routes,
     },
+
+    /**
+     * Whether to show technology badge on mobile network icon.
+     * @private
+     */
+    showTechnologyBadge_: {
+      type: Boolean,
+      value: function() {
+        return loadTimeData.valueExists('showTechnologyBadge') &&
+            loadTimeData.getBoolean('showTechnologyBadge');
+      }
+    },
   },
 
   listeners: {
@@ -91,8 +103,8 @@ Polymer({
    * triggering updateTetherNetworkState_ and rendering this callback
    * redundant. As a result, we return early if the active network is not
    * changed.
-   * @param {{detail: Array<string>}} event stores an array of the GUIDs of all
-   *     networks that changed in its detail property.
+   * @param {!CustomEvent<!Array<string>>} event stores an array of the GUIDs of
+   *     all networks that changed in its detail property.
    * @private
    */
   onNetworksChanged_: function(event) {

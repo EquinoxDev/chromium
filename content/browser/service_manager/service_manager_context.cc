@@ -13,7 +13,6 @@
 #include "base/command_line.h"
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/feature_list.h"
-#include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
@@ -35,7 +34,12 @@
 #include "content/browser/utility_process_host_client.h"
 #include "content/browser/wake_lock/wake_lock_context_host.h"
 #include "content/common/service_manager/service_manager_connection_impl.h"
-#include "content/grit/content_resources.h"
+#include "content/public/app/content_browser_manifest.h"
+#include "content/public/app/content_gpu_manifest.h"
+#include "content/public/app/content_packaged_services_manifest.h"
+#include "content/public/app/content_plugin_manifest.h"
+#include "content/public/app/content_renderer_manifest.h"
+#include "content/public/app/content_utility_manifest.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_data.h"
@@ -60,7 +64,7 @@
 #include "services/device/device_service.h"
 #include "services/device/public/mojom/constants.mojom.h"
 #include "services/media_session/media_session_service.h"
-#include "services/media_session/public/cpp/switches.h"
+#include "services/media_session/public/cpp/features.h"
 #include "services/media_session/public/mojom/constants.mojom.h"
 #include "services/metrics/metrics_mojo_service.h"
 #include "services/metrics/public/mojom/constants.mojom.h"
@@ -76,18 +80,18 @@
 #include "services/service_manager/public/cpp/manifest.h"
 #include "services/service_manager/public/cpp/service.h"
 #include "services/service_manager/public/mojom/service.mojom.h"
-#include "services/service_manager/runner/common/client_util.h"
-#include "services/service_manager/runner/host/service_process_launcher.h"
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "services/service_manager/service_manager.h"
+#include "services/service_manager/service_process_launcher.h"
 #include "services/shape_detection/public/mojom/constants.mojom.h"
+#include "services/tracing/public/cpp/tracing_features.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 #include "services/tracing/tracing_service.h"
 #include "services/video_capture/public/mojom/constants.mojom.h"
 #include "services/video_capture/service_impl.h"
 #include "services/viz/public/interfaces/constants.mojom.h"
+#include "ui/base/buildflags.h"
 #include "ui/base/ui_base_features.h"
-#include "ui/base/ui_features.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
@@ -119,8 +123,17 @@ base::LazyInstance<std::map<std::string, base::WeakPtr<UtilityProcessHost>>>::
 
 // If enabled, network service will run in it's own thread when running
 // in-process, otherwise it is run on the IO thread.
+// On ChromeOS the network service has to run on the IO thread because
+// ProfileIOData and NetworkContext both try to set up NSS, which has has to be
+// called from the IO thread.
 const base::Feature kNetworkServiceDedicatedThread{
-    "NetworkServiceDedicatedThread", base::FEATURE_ENABLED_BY_DEFAULT};
+  "NetworkServiceDedicatedThread",
+#if defined(OS_CHROMEOS)
+      base::FEATURE_DISABLED_BY_DEFAULT
+#else
+      base::FEATURE_ENABLED_BY_DEFAULT
+#endif
+};
 
 void DestroyConnectorOnIOThread() { g_io_thread_connector.Get().reset(); }
 
@@ -213,33 +226,6 @@ void StartServiceInGpuProcess(
   BindInterfaceInGpuProcess(mojo::MakeRequest(&service_factory));
   service_factory->CreateService(std::move(request), service_name,
                                  std::move(pid_receiver));
-}
-
-service_manager::Manifest LoadServiceManifest(base::StringPiece service_name,
-                                              int resource_id) {
-  std::string contents =
-      GetContentClient()
-          ->GetDataResource(resource_id, ui::ScaleFactor::SCALE_FACTOR_NONE)
-          .as_string();
-  DCHECK(!contents.empty());
-
-  service_manager::Manifest manifest =
-      service_manager::Manifest::FromValueDeprecated(
-          base::JSONReader::Read(contents));
-  base::Optional<service_manager::Manifest> overlay =
-      GetContentClient()->browser()->GetServiceManifestOverlay(service_name);
-  if (overlay)
-    manifest.Amend(*overlay);
-
-  if (!manifest.preloaded_files.empty()) {
-    std::map<std::string, base::FilePath> preloaded_files_map;
-    for (const auto& info : manifest.preloaded_files)
-      preloaded_files_map.emplace(info.key, info.path);
-    ChildProcessLauncher::SetRegisteredFilesForService(
-        service_name.as_string(), std::move(preloaded_files_map));
-  }
-
-  return manifest;
 }
 
 class NullServiceProcessLauncherFactory
@@ -542,44 +528,37 @@ ServiceManagerContext::ServiceManagerContext(
   // The |service_manager_thread_task_runner_| must have been created before
   // starting the ServiceManager.
   DCHECK(service_manager_thread_task_runner_);
-  service_manager::mojom::ServiceRequest packaged_services_request;
-  if (service_manager::ServiceManagerIsRemote()) {
-    auto endpoint = mojo::PlatformChannel::RecoverPassedEndpointFromCommandLine(
-        *base::CommandLine::ForCurrentProcess());
-    auto invitation = mojo::IncomingInvitation::Accept(std::move(endpoint));
-    packaged_services_request =
-        service_manager::GetServiceRequestFromCommandLine(&invitation);
-  } else {
-    static const struct ManifestInfo {
-      const char* name;
-      int resource_id;
-    } kManifestInfo[] = {
-        {mojom::kBrowserServiceName, IDR_MOJO_CONTENT_BROWSER_MANIFEST},
-        {mojom::kGpuServiceName, IDR_MOJO_CONTENT_GPU_MANIFEST},
-        {mojom::kPackagedServicesServiceName,
-         IDR_MOJO_CONTENT_PACKAGED_SERVICES_MANIFEST},
-        {mojom::kPluginServiceName, IDR_MOJO_CONTENT_PLUGIN_MANIFEST},
-        {mojom::kRendererServiceName, IDR_MOJO_CONTENT_RENDERER_MANIFEST},
-        {mojom::kUtilityServiceName, IDR_MOJO_CONTENT_UTILITY_MANIFEST},
-    };
-    std::vector<service_manager::Manifest> manifests;
-    for (const auto& manifest_info : kManifestInfo) {
-      manifests.push_back(
-          LoadServiceManifest(manifest_info.name, manifest_info.resource_id));
+  std::vector<service_manager::Manifest> manifests{
+      GetContentBrowserManifest(),          GetContentGpuManifest(),
+      GetContentPackagedServicesManifest(), GetContentPluginManifest(),
+      GetContentRendererManifest(),         GetContentUtilityManifest(),
+  };
+  for (auto& manifest : manifests) {
+    base::Optional<service_manager::Manifest> overlay =
+        GetContentClient()->browser()->GetServiceManifestOverlay(
+            manifest.service_name);
+    if (overlay)
+      manifest.Amend(*overlay);
+    if (!manifest.preloaded_files.empty()) {
+      std::map<std::string, base::FilePath> preloaded_files_map;
+      for (const auto& info : manifest.preloaded_files)
+        preloaded_files_map.emplace(info.key, info.path);
+      ChildProcessLauncher::SetRegisteredFilesForService(
+          manifest.service_name, std::move(preloaded_files_map));
     }
-    for (const auto& manifest :
-         GetContentClient()->browser()->GetExtraServiceManifests()) {
-      manifests.push_back(
-          LoadServiceManifest(manifest.name, manifest.resource_id));
-    }
-    in_process_context_ =
-        new InProcessServiceManagerContext(service_manager_thread_task_runner_);
-
-    service_manager::mojom::ServicePtr packaged_services_service;
-    packaged_services_request = mojo::MakeRequest(&packaged_services_service);
-    in_process_context_->Start(packaged_services_service.PassInterface(),
-                               std::move(manifests));
   }
+  for (auto& extra_manifest :
+       GetContentClient()->browser()->GetExtraServiceManifests()) {
+    manifests.emplace_back(std::move(extra_manifest));
+  }
+  in_process_context_ =
+      new InProcessServiceManagerContext(service_manager_thread_task_runner_);
+
+  service_manager::mojom::ServicePtr packaged_services_service;
+  service_manager::mojom::ServiceRequest packaged_services_request =
+      mojo::MakeRequest(&packaged_services_service);
+  in_process_context_->Start(packaged_services_service.PassInterface(),
+                             std::move(manifests));
 
   packaged_services_connection_ =
       ServiceManagerConnection::Create(std::move(packaged_services_request),
@@ -609,16 +588,12 @@ ServiceManagerContext::ServiceManagerContext(
       base::BindRepeating(&CreateResourceCoordinatorService));
 
   RegisterInProcessService(packaged_services_connection_.get(),
-                           tracing::mojom::kServiceName,
-                           service_manager_thread_task_runner_,
-                           base::BindRepeating(&CreateTracingService));
-
-  RegisterInProcessService(packaged_services_connection_.get(),
                            metrics::mojom::kMetricsServiceName,
                            service_manager_thread_task_runner_,
                            base::BindRepeating(&metrics::CreateMetricsService));
 
-  if (media_session::IsMediaSessionEnabled()) {
+  if (base::FeatureList::IsEnabled(
+          media_session::features::kMediaSessionService)) {
     RegisterInProcessService(packaged_services_connection_.get(),
                              media_session::mojom::kServiceName,
                              base::SequencedTaskRunnerHandle::Get(),
@@ -659,6 +634,19 @@ ServiceManagerContext::ServiceManagerContext(
   ContentBrowserClient::OutOfProcessServiceMap out_of_process_services;
   GetContentClient()->browser()->RegisterOutOfProcessServices(
       &out_of_process_services);
+
+  if (base::FeatureList::IsEnabled(features::kTracingServiceInProcess)) {
+    RegisterInProcessService(
+        packaged_services_connection_.get(), tracing::mojom::kServiceName,
+        base::CreateSequencedTaskRunnerWithTraits(
+            {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN,
+             base::WithBaseSyncPrimitives(),
+             base::TaskPriority::USER_BLOCKING}),
+        base::BindRepeating(&CreateTracingService));
+  } else {
+    out_of_process_services[tracing::mojom::kServiceName] =
+        base::BindRepeating(&base::ASCIIToUTF16, "Tracing Service");
+  }
 
   out_of_process_services[data_decoder::mojom::kServiceName] =
       base::BindRepeating(&base::ASCIIToUTF16, "Data Decoder Service");

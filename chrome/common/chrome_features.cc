@@ -14,15 +14,6 @@ namespace features {
 
 // All features in alphabetical order.
 
-// Enables Ads Metrics.
-const base::Feature kAdsFeature{"AdsMetrics", base::FEATURE_ENABLED_BY_DEFAULT};
-
-#if defined(OS_ANDROID)
-const base::Feature kAllowAutoplayUnmutedInWebappManifestScope{
-    "AllowAutoplayUnmutedInWebappManifestScope",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-#endif  // defined(OS_ANDROID)
-
 #if defined(OS_MACOSX)
 // Enables the menu item for Javascript execution via AppleScript.
 const base::Feature kAppleScriptExecuteJavaScriptMenuItem{
@@ -58,8 +49,8 @@ const base::Feature kAppNotificationStatusMessaging{
 
 #if !defined(OS_ANDROID)
 // Use the App Service. See chrome/services/app_service/README.md.
-const base::Feature kAppService{"AppService",
-                                base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kAppServiceAsh{"AppServiceAsh",
+                                   base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // !defined(OS_ANDROID)
 
 // If enabled, the list of content suggestions on the New Tab page will contain
@@ -181,6 +172,11 @@ const base::Feature kClipboardContentSetting{"ClipboardContentSetting",
 // Enable project Crostini, Linux VMs on Chrome OS.
 const base::Feature kCrostini{"Crostini", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enables not installed apps/packages to be searched for and installed in the
+// App launcher.
+const base::Feature kCrostiniAppSearch{"CrostiniAppSearch",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enables an uninstall option in the right-click menu of Crostini (Linux)
 // applications.
 // TODO(iby): Remove once remaining bugs fixed.
@@ -213,7 +209,7 @@ const base::Feature kDesktopPWAsLinkCapturing{
 // Determines whether out of scope pages in the hosted app will use the
 // custom tab UI.
 const base::Feature kDesktopPWAsCustomTabUI{"DesktopPWAsCustomTabUI",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Determines whether in scope requests are always opened in the same window.
 const base::Feature kDesktopPWAsStayInWindow{"DesktopPWAsStayInWindow",
@@ -223,6 +219,10 @@ const base::Feature kDesktopPWAsStayInWindow{"DesktopPWAsStayInWindow",
 // extensions.
 const base::Feature kDesktopPWAsWithoutExtensions{
     "DesktopPWAsWithoutExtensions", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables or disables the ability to install PWAs from the omnibox.
+const base::Feature kDesktopPWAsOmniboxInstall{
+    "DesktopPWAsOmniboxInstall", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Disables downloads of unsafe file types over HTTP.
 const base::Feature kDisallowUnsafeHttpDownloads{
@@ -238,7 +238,13 @@ const base::Feature kDownloadsLocationChange{"DownloadsLocationChange",
 // Show the number of open incognito windows besides incognito icon on the
 // toolbar.
 const base::Feature kEnableIncognitoWindowCounter{
-    "EnableIncognitoWindowCounter", base::FEATURE_DISABLED_BY_DEFAULT};
+    "EnableIncognitoWindowCounter", base::FEATURE_ENABLED_BY_DEFAULT};
+
+#if defined(OS_CHROMEOS)
+// Enables event-based status reporting for child accounts in Chrome OS.
+const base::Feature kEventBasedStatusReporting{
+    "EventBasedStatusReporting", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
 
 // An experimental way of showing app banners, which has modal banners and gives
 // developers more control over when to show them.
@@ -251,16 +257,14 @@ const base::Feature kExperimentalAppBanners {
 #endif
 };
 
-#if defined(OS_CHROMEOS)
-const base::Feature kExperimentalCrostiniUI{"ExperimentalCrostiniUI",
-                                            base::FEATURE_DISABLED_BY_DEFAULT};
-#endif
-
 // If enabled, this feature's |kExternalInstallDefaultButtonKey| field trial
 // parameter value controls which |ExternalInstallBubbleAlert| button is the
 // default.
 const base::Feature kExternalExtensionDefaultButtonControl{
     "ExternalExtensionDefaultButtonControl", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables Focus Mode which brings up a PWA-like window look.
+const base::Feature kFocusMode{"FocusMode", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if BUILDFLAG(ENABLE_VR)
 
@@ -273,6 +277,12 @@ const base::Feature kOculusVR{"OculusVR", base::FEATURE_DISABLED_BY_DEFAULT};
 // Controls OpenVR support.
 const base::Feature kOpenVR{"OpenVR", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif  // ENABLE_OPENVR
+
+#if BUILDFLAG(ENABLE_WINDOWS_MR)
+// Controls Windows Mixed Reality support.
+const base::Feature kWindowsMixedReality{"WindowsMixedReality",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+#endif  // ENABLE_WINDOWS_MR
 
 #endif  // BUILDFLAG(ENABLE_VR)
 
@@ -290,6 +300,11 @@ const base::Feature kGdiTextPrinting{"GdiTextPrinting",
 // of languages.
 const base::Feature kGeoLanguage{"GeoLanguage",
                                  base::FEATURE_DISABLED_BY_DEFAULT};
+
+#if !defined(OS_ANDROID) && defined(GOOGLE_CHROME_BUILD)
+const base::Feature kGoogleBrandedContextMenu{
+    "GoogleBrandedContextMenu", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif  // !defined(OS_ANDROID) && defined(GOOGLE_CHROME_BUILD)
 
 #if defined(OS_ANDROID)
 const base::Feature kGrantNotificationsToDSE{"GrantNotificationsToDSE",
@@ -311,7 +326,7 @@ const base::Feature kHappinessTrackingSurveysForDesktop{
 #if !defined(OS_ANDROID)
 // Replaces the WebUI Cast dialog with a Views toolkit one.
 const base::Feature kViewsCastDialog{"ViewsCastDialog",
-                                     base::FEATURE_DISABLED_BY_DEFAULT};
+                                     base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // !defined(OS_ANDROID)
 
 // Enables navigation suggestions UI for lookalike URLs (e.g. internationalized
@@ -366,10 +381,6 @@ const base::Feature kAcknowledgeNtpOverrideOnDeactivate{
     "AcknowledgeNtpOverrideOnDeactivate", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
-// The material redesign of the Incognito NTP.
-const base::Feature kMaterialDesignIncognitoNTP{
-    "MaterialDesignIncognitoNTP", base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Enables or disables modal permission prompts.
 const base::Feature kModalPermissionPrompts{"ModalPermissionPrompts",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
@@ -415,7 +426,7 @@ const base::Feature kOfflinePageDownloadSuggestionsFeature{
 #if defined(OS_ANDROID)
 // Enables or disabled the OOM intervention.
 const base::Feature kOomIntervention{"OomIntervention",
-                                     base::FEATURE_DISABLED_BY_DEFAULT};
+                                     base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
 #if defined(OS_CHROMEOS)
@@ -451,12 +462,6 @@ const base::Feature kDisablePostScriptPrinting{
     "DisablePostScriptPrinting", base::FEATURE_DISABLED_BY_DEFAULT};
 #endif
 
-// Enables a page for manaing policies at chrome://policy-tool.
-#if !defined(OS_ANDROID)
-const base::Feature kPolicyTool{"PolicyTool",
-                                base::FEATURE_DISABLED_BY_DEFAULT};
-#endif
-
 // Allows prediction operations (e.g., prefetching) on all connection types.
 const base::Feature kPredictivePrefetchingAllowedOnAllConnectionTypes{
     "PredictivePrefetchingAllowedOnAllConnectionTypes",
@@ -467,13 +472,6 @@ const base::Feature kPredictivePrefetchingAllowedOnAllConnectionTypes{
 // https://crbug.com/626728
 const base::Feature kPreferHtmlOverPlugins{"PreferHtmlOverPlugins",
                                            base::FEATURE_ENABLED_BY_DEFAULT};
-#endif
-
-#if defined(OS_CHROMEOS)
-// The lock screen will be preloaded so it is instantly available when the user
-// locks the Chromebook device.
-const base::Feature kPreloadLockScreen{"PreloadLockScreen",
-                                       base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -491,6 +489,16 @@ const base::Feature kNupPrinting{"NupPrinting",
 // background when closed.
 const base::Feature kPushMessagingBackgroundMode{
     "PushMessagingBackgroundMode", base::FEATURE_DISABLED_BY_DEFAULT};
+
+#if defined(OS_CHROMEOS)
+// Enables permanent removal of Legacy Supervised Users on startup.
+const base::Feature kRemoveSupervisedUsersOnStartup{
+    "RemoveSupervisedUsersOnStartup", base::FEATURE_DISABLED_BY_DEFAULT};
+#endif
+
+// Enables Load image context menu item for broken images.
+const base::Feature kLoadBrokenImagesFromContextMenu{
+    "LoadBrokenImagesFromContextMenu", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kSafeSearchUrlReporting{"SafeSearchUrlReporting",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
@@ -538,21 +546,17 @@ const char kSitePerProcessOnlyForHighMemoryClientsParamName[] =
 
 // The site settings all sites list page in the Chrome settings UI.
 const base::Feature kSiteSettings{"SiteSettings",
-                                  base::FEATURE_DISABLED_BY_DEFAULT};
+                                  base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables committed error pages instead of transient navigation entries for
 // SSL interstitial error pages (i.e. certificate errors).
 const base::Feature kSSLCommittedInterstitials{
-    "SSLCommittedInterstitials", base::FEATURE_DISABLED_BY_DEFAULT};
+    "SSLCommittedInterstitials", base::FEATURE_ENABLED_BY_DEFAULT};
 
 #if defined(OS_CHROMEOS)
 // Enables or disables the ability to add a Samba Share to the Files app
 const base::Feature kNativeSmb{"NativeSmb", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_CHROMEOS)
-
-// Enables a special visual treatment for windows with a single tab.
-const base::Feature kSingleTabMode{"SingleTabMode",
-                                   base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables or disables the ability to use the sound content setting to mute a
 // website.
@@ -588,6 +592,13 @@ const base::Feature kTopSitesFromSiteEngagement{
     "TopSitesFromSiteEngagement", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_CHROMEOS)
+// Enables or disables usage time state notifier for supervised accounts on
+// Chrome OS.
+const base::Feature kUsageTimeStateNotifier{"UsageTimeStateNotifier",
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
+#endif
+
+#if defined(OS_CHROMEOS)
 // Enables or disables logging for adaptive screen brightness on Chrome OS.
 const base::Feature kAdaptiveScreenBrightnessLogging{
     "AdaptiveScreenBrightnessLogging", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -607,10 +618,6 @@ const base::Feature kUseSameCacheForMedia{"UseSameCacheForMedia",
 const base::Feature kArcCupsApi{"ArcCupsApi",
                                 base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enables or disables the opt-in IME menu in the language settings page.
-const base::Feature kOptInImeMenu{"OptInImeMenu",
-                                  base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Enables or disables pin quick unlock.
 const base::Feature kQuickUnlockPin{"QuickUnlockPin",
                                     base::FEATURE_ENABLED_BY_DEFAULT};
@@ -623,10 +630,6 @@ const base::Feature kQuickUnlockPinSignin{"QuickUnlockPinSignin",
 const base::Feature kQuickUnlockFingerprint{"QuickUnlockFingerprint",
                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Enables or disables emoji, handwriting and voice input on opt-in IME menu.
-const base::Feature kEHVInputOnImeMenu{"EmojiHandwritingVoiceInput",
-                                       base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Enables or disables the bulk printer policies on Chrome OS.
 const base::Feature kBulkPrinters{"BulkPrinters",
                                   base::FEATURE_ENABLED_BY_DEFAULT};
@@ -634,10 +637,6 @@ const base::Feature kBulkPrinters{"BulkPrinters",
 // Enables or disables flash component updates on Chrome OS.
 const base::Feature kCrosCompUpdates{"CrosCompUpdates",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Enables or disables Chrome OS Component updates on Chrome OS.
-const base::Feature kCrOSComponent{"CrOSComponent",
-                                   base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables or disables TPM firmware update capability on Chrome OS.
 const base::Feature kTPMFirmwareUpdate{"TPMFirmwareUpdate",
@@ -656,9 +655,17 @@ const base::Feature kMachineLearningService{"MachineLearningService",
 // TODO(crbug.com/874630): Remove this kill-switch
 const base::Feature kUsbguard{"USBGuard", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Enable USB Bouncer for managing a device whitelist for USBGuard on Chrome OS.
+const base::Feature kUsbbouncer{"USBBouncer",
+                                base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Enable running shill in a minijail sandbox on Chrome OS.
 const base::Feature kShillSandboxing{"ShillSandboxing",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enable support for multiple scheduler configurations.
+const base::Feature kSchedulerConfiguration{"SchedulerConfiguration",
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 #endif  // defined(OS_CHROMEOS)
 

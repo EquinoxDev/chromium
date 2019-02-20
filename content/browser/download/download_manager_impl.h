@@ -257,7 +257,6 @@ class CONTENT_EXPORT DownloadManagerImpl
   base::Optional<download::DownloadEntry> GetInProgressEntry(
       download::DownloadItemImpl* download) override;
   bool IsOffTheRecord() const override;
-  bool IsActiveNetworkMetered() const override;
   void ReportBytesWasted(download::DownloadItemImpl* download) override;
 
   // Drops a download before it is created.
@@ -295,6 +294,13 @@ class CONTENT_EXPORT DownloadManagerImpl
   // Retrieves a download from |in_progress_downloads_|.
   std::unique_ptr<download::DownloadItemImpl> RetrieveInProgressDownload(
       uint32_t id);
+
+  // Import downloads from |in_progress_downloads_| into |downloads_|, resolve
+  // missing download IDs.
+  void ImportInProgressDownloads(uint32_t next_id);
+
+  // Called when this object is considered initialized.
+  void OnDownloadManagerInitialized();
 
 #if defined(OS_ANDROID)
   // Check whether a download should be cleared from history. On Android,
@@ -373,8 +379,10 @@ class CONTENT_EXPORT DownloadManagerImpl
   int interrupted_download_cleared_from_history_;
 
   // In progress downloads returned by |in_progress_manager_| that are not yet
-  // added to |downloads_|.
-  std::unordered_map<uint32_t, std::unique_ptr<download::DownloadItemImpl>>
+  // added to |downloads_|. If a download was started without launching full
+  // browser process, its ID will be invalid. DownloadManager will assign new
+  // ID to it when importing all downloads.
+  std::vector<std::unique_ptr<download::DownloadItemImpl>>
       in_progress_downloads_;
 
   // Callbacks to run once download ID is determined.

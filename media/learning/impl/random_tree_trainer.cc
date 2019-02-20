@@ -9,20 +9,10 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/optional.h"
+#include "base/threading/sequenced_task_runner_handle.h"
 
 namespace media {
 namespace learning {
-
-// static
-TrainingAlgorithmCB RandomTreeTrainer::GetTrainingAlgorithmCB(
-    const LearningTask& task) {
-  return base::BindRepeating(
-      [](LearningTask task, TrainingData training_data,
-         TrainedModelCB model_cb) {
-        std::move(model_cb).Run(RandomTreeTrainer().Train(task, training_data));
-      },
-      task);
-}
 
 RandomTreeTrainer::Split::Split() = default;
 
@@ -143,18 +133,21 @@ struct LeafNode : public Model {
 RandomTreeTrainer::RandomTreeTrainer(RandomNumberGenerator* rng)
     : HasRandomNumberGenerator(rng) {}
 
-RandomTreeTrainer::~RandomTreeTrainer() = default;
+RandomTreeTrainer::~RandomTreeTrainer() {}
 
-std::unique_ptr<Model> RandomTreeTrainer::Train(
-    const LearningTask& task,
-    const TrainingData& training_data) {
+void RandomTreeTrainer::Train(const LearningTask& task,
+                              const TrainingData& training_data,
+                              TrainedModelCB model_cb) {
   // Start with all the training data.
   std::vector<size_t> training_idx;
   training_idx.reserve(training_data.size());
   for (size_t idx = 0; idx < training_data.size(); idx++)
     training_idx.push_back(idx);
 
-  return Train(task, training_data, training_idx);
+  // It's a little odd that we don't post training.  Perhaps we should.
+  auto model = Train(task, training_data, training_idx);
+  base::SequencedTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(model_cb), std::move(model)));
 }
 
 std::unique_ptr<Model> RandomTreeTrainer::Train(
@@ -187,30 +180,38 @@ std::unique_ptr<Model> RandomTreeTrainer::Build(
   // classification, and 5 for regression.
 
   // Remove any constant attributes in |training_data| from |unused_set|.  Also
-  // check if our training data has a constant target value.
-  std::set<TargetValue> target_values;
-  std::vector<std::set<FeatureValue>> feature_values;
+  // check if our training data has a constant target value.  For both features
+  // and the target value, if the Optional has a value then it's the singular
+  // value that we've found so far.  If we find a second one, then we'll clear
+  // the Optional.
+  base::Optional<TargetValue> target_value(
+      training_data[training_idx[0]].target_value);
+  std::vector<base::Optional<FeatureValue>> feature_values;
   feature_values.resize(training_data[0].features.size());
+  for (size_t feature_idx : unused_set) {
+    feature_values[feature_idx] =
+        training_data[training_idx[0]].features[feature_idx];
+  }
   for (size_t idx : training_idx) {
-    const TrainingExample& example = training_data[idx];
+    const LabelledExample& example = training_data[idx];
     // Record this target value to see if there is more than one.  We skip the
     // insertion if we've already determined that it's not constant.
-    if (target_values.size() < 2)
-      target_values.insert(example.target_value);
+    if (target_value && target_value != example.target_value)
+      target_value.reset();
 
     // For all features in |unused_set|, see if it's a constant in our subset of
     // the training data.
     for (size_t feature_idx : unused_set) {
-      auto& values = feature_values[feature_idx];
-      if (values.size() < 2)
-        values.insert(example.features[feature_idx]);
+      auto& value = feature_values[feature_idx];
+      if (value && *value != example.features[feature_idx])
+        value.reset();
     }
   }
 
   // Is the output constant in |training_data|?  If so, then generate a leaf.
   // If we're not normalizing leaves, then this matters since this training data
   // might be split across multiple leaves.
-  if (target_values.size() == 1) {
+  if (target_value) {
     return std::make_unique<LeafNode>(training_data, training_idx,
                                       task.target_description.ordering);
   }
@@ -220,8 +221,8 @@ std::unique_ptr<Model> RandomTreeTrainer::Build(
   // don't want to use one of our potential splits on it.
   FeatureSet new_unused_set = unused_set;
   for (size_t feature_idx : unused_set) {
-    auto& values = feature_values[feature_idx];
-    if (values.size() == 1)
+    auto& value = feature_values[feature_idx];
+    if (value)
       new_unused_set.erase(feature_idx);
   }
 
@@ -315,7 +316,7 @@ RandomTreeTrainer::Split RandomTreeTrainer::ConstructSplit(
   // the training data directly.
   double total_weight = 0.;
   for (size_t idx : training_idx) {
-    const TrainingExample& example = training_data[idx];
+    const LabelledExample& example = training_data[idx];
     total_weight += example.weight;
 
     // Get the value of the |index|-th feature for |example|.
@@ -417,7 +418,7 @@ FeatureValue RandomTreeTrainer::FindNumericSplitPoint(
   FeatureValue v_min = training_data[training_idx[0]].features[split_index];
   FeatureValue v_max = training_data[training_idx[0]].features[split_index];
   for (size_t idx : training_idx) {
-    const TrainingExample& example = training_data[idx];
+    const LabelledExample& example = training_data[idx];
     // Get the value of the |split_index|-th feature for
     FeatureValue v_i = example.features[split_index];
     if (v_i < v_min)
@@ -436,8 +437,8 @@ FeatureValue RandomTreeTrainer::FindNumericSplitPoint(
     // Choose a random split point.  Note that we want to end up with two
     // buckets, so we don't have a trivial split.  By picking [v_min, v_max),
     // |v_min| will always be in one bucket and |v_max| will always not be.
-    v_split = FeatureValue((rand() % (v_max.value() - v_min.value())) +
-                           v_min.value());
+    v_split = FeatureValue(
+        rng()->GenerateDouble(v_max.value() - v_min.value()) + v_min.value());
   }
 
   return v_split;

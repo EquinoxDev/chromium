@@ -27,6 +27,7 @@
 #include "components/password_manager/core/browser/form_fetcher_impl.h"
 #include "components/password_manager/core/browser/form_saver.h"
 #include "components/password_manager/core/browser/log_manager.h"
+#include "components/password_manager/core/browser/password_form_filling.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_driver.h"
@@ -424,19 +425,26 @@ void PasswordFormManager::PresaveGeneratedPassword(
     form_without_username.username_value.clear();
     form_saver()->PresaveGeneratedPassword(form_without_username);
   }
-  // If a password had been generated already, a call to
-  // PresaveGeneratedPassword() implies that this password was modified.
+
   if (!has_generated_password_) {
     votes_uploader_.set_generated_password_changed(false);
     metrics_recorder_->SetGeneratedPasswordStatus(
         PasswordFormMetricsRecorder::GeneratedPasswordStatus::
             kPasswordAccepted);
   } else {
-    votes_uploader_.set_generated_password_changed(true);
-    metrics_recorder_->SetGeneratedPasswordStatus(
-        PasswordFormMetricsRecorder::GeneratedPasswordStatus::kPasswordEdited);
+    // If the password is already generated and the new value to presave differs
+    // from the presaved one, then mark that the generated password was changed.
+    // If a user recovers the original generated password, it will be recorded
+    // as a password change.
+    if (generated_password_ != form.password_value) {
+      votes_uploader_.set_generated_password_changed(true);
+      metrics_recorder_->SetGeneratedPasswordStatus(
+          PasswordFormMetricsRecorder::GeneratedPasswordStatus::
+              kPasswordEdited);
+    }
   }
   has_generated_password_ = true;
+  generated_password_ = form.password_value;
   votes_uploader_.set_has_generated_password(true);
 }
 
@@ -444,6 +452,7 @@ void PasswordFormManager::PasswordNoLongerGenerated() {
   DCHECK(has_generated_password_);
   form_saver()->RemovePresavedPassword();
   has_generated_password_ = false;
+  generated_password_.clear();
   votes_uploader_.set_has_generated_password(false);
   votes_uploader_.set_generated_password_changed(false);
   metrics_recorder_->SetGeneratedPasswordStatus(
@@ -549,10 +558,10 @@ void PasswordFormManager::ProcessFrameInternal(
     return;
   if (!driver)
     return;
-  likely_form_filling_ = SendFillInformationToRenderer(
-      *client_, driver.get(), IsBlacklisted(), observed_form_, best_matches_,
-      form_fetcher_->GetFederatedMatches(), preferred_match_,
-      GetMetricsRecorder());
+  SendFillInformationToRenderer(*client_, driver.get(), IsBlacklisted(),
+                                observed_form_, best_matches_,
+                                form_fetcher_->GetFederatedMatches(),
+                                preferred_match_, GetMetricsRecorder());
 }
 
 void PasswordFormManager::ProcessLoginPrompt() {
@@ -610,6 +619,10 @@ void PasswordFormManager::CreatePendingCredentials() {
   DCHECK(submitted_form_);
   ValueElementPair password_to_save(PasswordToSave(*submitted_form_));
 
+  // Calculate the user's action based on existing matches and the submitted
+  // form.
+  metrics_recorder_->CalculateUserAction(best_matches_, *submitted_form_);
+
   // Look for the actually submitted credentials in the list of previously saved
   // credentials that were available to autofilling.
   const PasswordForm* saved_form = FindBestSavedMatch(submitted_form_.get());
@@ -624,9 +637,6 @@ void PasswordFormManager::CreatePendingCredentials() {
       // from Android apps, store a copy with the current origin and signon
       // realm. This ensures that on the next visit, a precise match is found.
       is_new_login_ = true;
-      metrics_recorder_->SetUserAction(password_overridden_
-                                           ? UserAction::kOverridePassword
-                                           : UserAction::kChoosePslMatch);
 
       // Update credential to reflect that it has been used for submission.
       // If this isn't updated, then password generation uploads are off for
@@ -665,21 +675,6 @@ void PasswordFormManager::CreatePendingCredentials() {
       }
     } else {  // Not a PSL match but a match of an already stored credential.
       is_new_login_ = false;
-      if (password_overridden_) {
-        // Stored credential matched by username but with mismatching password.
-        // This means the user has overridden the password.
-        metrics_recorder_->SetUserAction(UserAction::kOverridePassword);
-      } else {
-        // In case |saved_form| is pointing to the same form as
-        // |preferred_match_| and the form was filled on page load, the user
-        // either did not do anything, or re-selected the default option.
-        // Otherwise, the user purposefully chose a credential.
-        metrics_recorder_->SetUserAction(
-            saved_form == preferred_match_ &&
-                    likely_form_filling_ == LikelyFormFilling::kFillOnPageLoad
-                ? UserAction::kNone
-                : UserAction::kChoose);
-      }
     }
   } else if (!best_matches_.empty() &&
              submitted_form_->type != autofill::PasswordForm::TYPE_API &&
@@ -826,8 +821,6 @@ const PasswordForm* PasswordFormManager::FindBestSavedMatch(
 
 void PasswordFormManager::CreatePendingCredentialsForNewCredentials(
     const base::string16& password_element) {
-  // User typed in a new, unknown username.
-  metrics_recorder_->SetUserAction(UserAction::kOverrideUsernameAndPassword);
   pending_credentials_ = observed_form_;
   pending_credentials_.username_element = submitted_form_->username_element;
   pending_credentials_.username_value = submitted_form_->username_value;
@@ -1021,6 +1014,7 @@ std::unique_ptr<PasswordFormManager> PasswordFormManager::Clone() {
   result->pending_credentials_ = pending_credentials_;
   result->is_new_login_ = is_new_login_;
   result->has_generated_password_ = has_generated_password_;
+  result->generated_password_ = generated_password_;
   result->password_overridden_ = password_overridden_;
   result->retry_password_form_password_update_ =
       retry_password_form_password_update_;

@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/task/post_task.h"
 #include "components/guest_view/browser/guest_view_manager.h"
@@ -75,6 +76,16 @@ net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
       base::Bind(&ShellBrowserContext::InitURLRequestContextOnIOThread,
                  base::Unretained(this)));
   return url_request_context_getter();
+}
+
+void ShellBrowserContext::SetCorsOriginAccessListForOrigin(
+    const url::Origin& source_origin,
+    std::vector<network::mojom::CorsOriginPatternPtr> allow_patterns,
+    std::vector<network::mojom::CorsOriginPatternPtr> block_patterns,
+    base::OnceClosure closure) {
+  // This method is called for Extension supports, but tests do not need to
+  // support exceptional CORS handling.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE, std::move(closure));
 }
 
 void ShellBrowserContext::InitURLRequestContextOnIOThread() {

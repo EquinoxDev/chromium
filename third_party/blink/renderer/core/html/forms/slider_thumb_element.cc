@@ -280,8 +280,10 @@ bool SliderThumbElement::WillRespondToMouseClickEvents() {
 
 void SliderThumbElement::DetachLayoutTree(const AttachContext& context) {
   if (in_drag_mode_) {
-    if (LocalFrame* frame = GetDocument().GetFrame())
-      frame->GetEventHandler().SetCapturingMouseEventsNode(nullptr);
+    if (LocalFrame* frame = GetDocument().GetFrame()) {
+      frame->GetEventHandler().ReleasePointerCapture(
+          PointerEventFactory::kMouseId, this);
+    }
   }
   HTMLDivElement::DetachLayoutTree(context);
 }

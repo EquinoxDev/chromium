@@ -23,6 +23,8 @@ extern const base::Feature kLitePageServerPreviews;
 extern const base::Feature kAndroidOmniboxPreviewsBadge;
 extern const base::Feature kSlowPageTriggering;
 extern const base::Feature kPreviewsDisallowedOnReloads;
+extern const base::Feature kHTTPSServerPreviewsUsingURLLoader;
+extern const base::Feature kDataSaverLiteModeRebranding;
 
 }  // namespace features
 }  // namespace previews

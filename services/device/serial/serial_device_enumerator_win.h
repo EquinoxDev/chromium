@@ -5,7 +5,10 @@
 #ifndef SERVICES_DEVICE_SERIAL_SERIAL_DEVICE_ENUMERATOR_WIN_H_
 #define SERVICES_DEVICE_SERIAL_SERIAL_DEVICE_ENUMERATOR_WIN_H_
 
+#include <vector>
+
 #include "base/macros.h"
+#include "base/optional.h"
 #include "services/device/serial/serial_device_enumerator.h"
 
 namespace device {
@@ -19,7 +22,16 @@ class SerialDeviceEnumeratorWin : public SerialDeviceEnumerator {
   // Implementation for SerialDeviceEnumerator.
   std::vector<mojom::SerialPortInfoPtr> GetDevices() override;
 
+  // Searches for the COM port in the device's friendly name and returns the
+  // appropriate device path or nullopt if the input did not contain a valid
+  // name.
+  static base::Optional<base::FilePath> GetPath(
+      const std::string& friendly_name);
+
  private:
+  std::vector<mojom::SerialPortInfoPtr> GetDevicesNew();
+  std::vector<mojom::SerialPortInfoPtr> GetDevicesOld();
+
   DISALLOW_COPY_AND_ASSIGN(SerialDeviceEnumeratorWin);
 };
 

@@ -16,6 +16,10 @@
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_skia_operations.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/demo_mode/demo_session.h"
+#endif
+
 namespace {
 
 AppListControllerDelegate* g_controller_for_test = nullptr;
@@ -92,6 +96,11 @@ ash::mojom::AppListItemMetadataPtr ChromeAppListItem::CloneMetadata() const {
 }
 
 void ChromeAppListItem::PerformActivate(int event_flags) {
+#if defined(OS_CHROMEOS)
+  // Handle recording app launch source from the AppList in Demo Mode.
+  chromeos::DemoSession::RecordAppLaunchSourceIfInDemoMode(
+      chromeos::DemoSession::AppLaunchSource::kAppList);
+#endif
   Activate(event_flags);
   MaybeDismissAppList();
 }
@@ -125,8 +134,9 @@ void ChromeAppListItem::MaybeDismissAppList() {
 
 void ChromeAppListItem::ContextMenuItemSelected(int command_id,
                                                 int event_flags) {
-  if (GetAppContextMenu())
-    GetAppContextMenu()->ExecuteCommand(command_id, event_flags);
+  app_list::AppContextMenu* menu = GetAppContextMenu();
+  if (menu)
+    menu->ExecuteCommand(command_id, event_flags);
 }
 
 extensions::AppSorting* ChromeAppListItem::GetAppSorting() {

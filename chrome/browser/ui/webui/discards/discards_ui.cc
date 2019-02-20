@@ -7,12 +7,14 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/containers/flat_map.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/engagement/site_engagement_service.h"
+#include "chrome/browser/performance_manager/performance_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/lifecycle_unit.h"
 #include "chrome/browser/resource_coordinator/lifecycle_unit_state.mojom.h"
@@ -32,10 +34,8 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "content/public/common/service_manager_connection.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "services/resource_coordinator/public/mojom/service_constants.mojom.h"
-#include "services/service_manager/public/cpp/connector.h"
 #include "ui/resources/grit/ui_resources.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -450,12 +450,10 @@ void DiscardsUI::BindDiscardsDetailsProvider(
 
 void DiscardsUI::BindWebUIGraphDumpProvider(
     resource_coordinator::mojom::WebUIGraphDumpRequest request) {
-  service_manager::Connector* connector =
-      content::ServiceManagerConnection::GetForProcess()->GetConnector();
-
-  if (connector) {
+  performance_manager::PerformanceManager* performance_manager =
+      performance_manager::PerformanceManager::GetInstance();
+  if (performance_manager) {
     // Forward the interface request directly to the service.
-    connector->BindInterface(resource_coordinator::mojom::kServiceName,
-                             std::move(request));
+    performance_manager->BindInterface(std::move(request));
   }
 }

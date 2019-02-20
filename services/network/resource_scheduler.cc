@@ -20,6 +20,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/supports_user_data.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/tick_clock.h"
 #include "base/trace_event/trace_event.h"
@@ -688,7 +689,8 @@ class ResourceScheduler::Client : public net::EffectiveConnectionTypeObserver {
         base::TimeTicks::Now() - request->url_request()->creation_time();
     base::UmaHistogramMediumTimes(
         "ResourceScheduler.RequestQueuingDuration.Priority" +
-            base::IntToString(request->get_request_priority_params().priority),
+            base::NumberToString(
+                request->get_request_priority_params().priority),
         queuing_duration);
 
     InsertInFlightRequest(request);
@@ -1000,9 +1002,7 @@ void ResourceScheduler::OnClientDeleted(int child_id, int route_id) {
   Client* client = it->second.get();
   // TODO(crbug.com/873959): Remove this CHECK once the investigation is done.
   CHECK(client);
-  DCHECK(!base::FeatureList::IsEnabled(
-             features::kUnthrottleRequestsAfterLongQueuingDelay) ||
-         client->HasNoPendingRequests() ||
+  DCHECK(client->HasNoPendingRequests() ||
          IsLongQueuedRequestsDispatchTimerRunning());
   // ResourceDispatcherHost cancels all requests except for cross-renderer
   // navigations, async revalidations and detachable requests after
@@ -1026,11 +1026,6 @@ ResourceScheduler::Client* ResourceScheduler::GetClient(int child_id,
 }
 
 void ResourceScheduler::StartLongQueuedRequestsDispatchTimerIfNeeded() {
-  if (!base::FeatureList::IsEnabled(
-          features::kUnthrottleRequestsAfterLongQueuingDelay)) {
-    return;
-  }
-
   bool pending_request_found = false;
   for (const auto& client : client_map_) {
     if (!client.second->HasNoPendingRequests()) {

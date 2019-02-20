@@ -15,7 +15,7 @@
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_candidate_init.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_gather_options.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_ice_event.h"
-#include "third_party/webrtc/pc/webrtcsdp.h"
+#include "third_party/webrtc/pc/webrtc_sdp.h"
 
 namespace blink {
 namespace {
@@ -56,6 +56,7 @@ RTCIceCandidate* RTCIceCandidateFromString(V8TestingScope& scope,
                                            const String& candidate_str) {
   RTCIceCandidateInit* init = RTCIceCandidateInit::Create();
   init->setCandidate(candidate_str);
+  init->setSdpMid(String(""));
   return RTCIceCandidate::Create(scope.GetExecutionContext(), init,
                                  ASSERT_NO_EXCEPTION);
 }

@@ -574,9 +574,9 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       return error
 
     key_update_request = msg.device_state_key_update_request
-    if len(key_update_request.server_backed_state_key) > 0:
+    if len(key_update_request.server_backed_state_keys) > 0:
       self.server.UpdateStateKeys(token_info['device_token'],
-                                  key_update_request.server_backed_state_key)
+                                  key_update_request.server_backed_state_keys)
 
     # See whether the |username| for the client is known. During policy
     # validation, the client verifies that the policy blob is bound to the
@@ -590,23 +590,25 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     # If this is a |publicaccount| request, use the |settings_entity_id| from
     # the request as the |username|. This is required to validate policy for
     # extensions in device-local accounts.
-    for request in msg.policy_request.request:
+    for request in msg.policy_request.requests:
       if request.policy_type == 'google/chromeos/publicaccount':
         username = request.settings_entity_id
 
     response = dm.DeviceManagementResponse()
-    for request in msg.policy_request.request:
+    for request in msg.policy_request.requests:
       if (request.policy_type in
              ('google/android/user',
               'google/chromeos/device',
               'google/chromeos/publicaccount',
               'google/chromeos/user',
-              'google/chrome/user')):
-        fetch_response = response.policy_response.response.add()
+              'google/chrome/user',
+              'google/chrome/machine-level-user')):
+        fetch_response = response.policy_response.responses.add()
         self.ProcessCloudPolicy(request, token_info, fetch_response, username)
       elif (request.policy_type in
              ('google/chrome/extension',
-              'google/chromeos/signinextension')):
+              'google/chromeos/signinextension',
+              'google/chrome/machine-level-extension')):
         self.ProcessCloudPolicyForExtensions(
             request, response.policy_response, token_info, username)
       else:
@@ -638,7 +640,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     auto_enrollment_response = dm.DeviceAutoEnrollmentResponse()
 
     if msg.modulus == 1:
-      auto_enrollment_response.hash.extend(
+      auto_enrollment_response.hashes.extend(
           self.server.GetMatchingStateKeyHashes(msg.modulus, msg.remainder))
     elif msg.modulus == 2:
       auto_enrollment_response.expected_modulus = 4
@@ -737,7 +739,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       available_licenses = policy['available_licenses']
       selection_mode = dm.CheckDeviceLicenseResponse.USER_SELECTION
       for license_type in available_licenses:
-        license = license_response.license_availability.add()
+        license = license_response.license_availabilities.add()
         license.license_type.license_type = LICENSE_TYPES[license_type]
         license.available_licenses = available_licenses[license_type]
     license_response.license_selection_mode = (selection_mode)
@@ -806,9 +808,12 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     if enrollment_token == INVALID_ENROLLMENT_TOKEN:
       return (401, 'Invalid enrollment token')
 
+    dm_token = 'fake_device_management_token'
     response = dm.DeviceManagementResponse()
     response.register_response.device_management_token = (
-        'fake_device_management_token')
+        dm_token)
+    self.server.RegisterBrowser(dm_token, device_id, msg.machine_name)
+
     return (200, response)
 
   def ProcessChromeDesktopReportUploadRequest(self, chrome_desktop_report):
@@ -994,7 +999,7 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       # Reuse the extension policy request, to trigger the same signature
       # type in the response.
       request.settings_entity_id = settings_entity_id
-      fetch_response = response.response.add()
+      fetch_response = response.responses.add()
       self.ProcessCloudPolicy(request, token_info, fetch_response, username)
       # Don't do key rotations for these messages.
       fetch_response.ClearField('new_public_key')
@@ -1028,7 +1033,8 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
       if msg.policy_type in ('google/android/user',
                              'google/chromeos/publicaccount',
                              'google/chromeos/user',
-                             'google/chrome/user'):
+                             'google/chrome/user',
+                             'google/chrome/machine-level-user'):
         settings = cp.CloudPolicySettings()
         payload = self.server.ReadPolicyFromDataDir(policy_key, settings)
         if payload is None:
@@ -1041,7 +1047,8 @@ class PolicyRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
           self.GatherDevicePolicySettings(settings, policy.get(policy_key, {}))
           payload = settings.SerializeToString()
       elif msg.policy_type in ('google/chrome/extension',
-                               'google/chromeos/signinextension'):
+                               'google/chromeos/signinextension',
+                               'google/chrome/machine-level-extension'):
         settings = ep.ExternalPolicyData()
         payload = self.server.ReadPolicyFromDataDir(policy_key, settings)
         if payload is None:
@@ -1414,6 +1421,16 @@ class PolicyTestServer(testserver_base.BrokenPipeHandlerMixIn,
     }
     self.WriteClientState()
     return self._registered_tokens[dmtoken]
+
+  def RegisterBrowser(self, dm_token, device_id, machine_name):
+    self._registered_tokens[dm_token] = {
+      'device_id': device_id,
+      'device_token': dm_token,
+      'allowed_policy_types': ['google/chrome/machine-level-user',
+                               'google/chrome/machine-level-extension'],
+      'machine_name': machine_name
+    }
+    self.WriteClientState()
 
   def UpdateStateKeys(self, dmtoken, state_keys):
     """Updates the state keys for a given client.

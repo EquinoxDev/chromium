@@ -7,7 +7,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/browsing_data/counters/cache_counter.h"
-#include "chrome/browser/browsing_data/counters/media_licenses_counter.h"
 #include "chrome/browser/browsing_data/counters/signin_data_counter.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
@@ -55,13 +54,7 @@ bool ShouldShowCookieException(Profile* profile) {
   }
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   if (AccountConsistencyModeManager::IsDiceEnabledForProfile(profile)) {
-    // TODO(http://crbug.com/890796): Migrate this part once sync_ui_util has
-    // been migrated to the IdentityManager.
-    sync_ui_util::MessageType sync_status = sync_ui_util::GetStatus(
-        profile,
-        ProfileSyncServiceFactory::GetSyncServiceForBrowserContext(profile),
-        IdentityManagerFactory::GetForProfile(profile));
-    return sync_status == sync_ui_util::SYNCED;
+    return sync_ui_util::GetStatus(profile) == sync_ui_util::SYNCED;
   }
 #endif
   return false;
@@ -123,19 +116,6 @@ base::string16 GetChromeCounterTextFromResult(
             : IDS_DEL_COOKIES_COUNTER_ADVANCED;
 
     return l10n_util::GetPluralStringFUTF16(del_cookie_counter_msg_id, origins);
-  }
-
-  // TODO(crbug.com/901993): Remove this when Media Licenses removed on desktop.
-  if (pref_name == browsing_data::prefs::kDeleteMediaLicenses) {
-    const MediaLicensesCounter::MediaLicenseResult* media_license_result =
-        static_cast<const MediaLicensesCounter::MediaLicenseResult*>(result);
-    if (media_license_result->Value() > 0) {
-     return l10n_util::GetStringFUTF16(
-          IDS_DEL_MEDIA_LICENSES_COUNTER_SITE_COMMENT,
-          base::UTF8ToUTF16(media_license_result->GetOneOrigin()));
-    }
-    return l10n_util::GetStringUTF16(
-        IDS_DEL_MEDIA_LICENSES_COUNTER_GENERAL_COMMENT);
   }
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)

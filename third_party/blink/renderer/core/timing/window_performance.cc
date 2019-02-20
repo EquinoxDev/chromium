@@ -172,10 +172,6 @@ MemoryInfo* WindowPerformance::memory() const {
                                 : MemoryInfo::Precision::Bucketized);
 }
 
-bool WindowPerformance::shouldYield() const {
-  return ThreadScheduler::Current()->ShouldYieldForHighPriorityWork();
-}
-
 PerformanceNavigationTiming*
 WindowPerformance::CreateNavigationTimingInstance() {
   if (!GetFrame())
@@ -327,9 +323,9 @@ void WindowPerformance::ReportLongTask(
   }
 }
 
-// We buffer long-latency events until onload, i.e., LoadEventStart is not
-// reached yet.
-bool WindowPerformance::ShouldBufferEventTiming() {
+// We buffer Element Timing and Event Timing (long-latency events) entries until
+// onload, i.e., LoadEventStart is not reached yet.
+bool WindowPerformance::ShouldBufferEntries() {
   return !timing() || !timing()->loadEventStart();
 }
 
@@ -395,7 +391,7 @@ void WindowPerformance::ReportEventTimings(WebLayerTreeView::SwapResult result,
       NotifyObserversOfEntry(*entry);
     }
 
-    if (ShouldBufferEventTiming() && !IsEventTimingBufferFull())
+    if (ShouldBufferEntries() && !IsEventTimingBufferFull())
       AddEventTimingBuffer(*entry);
   }
   event_timings_.clear();
@@ -404,10 +400,16 @@ void WindowPerformance::ReportEventTimings(WebLayerTreeView::SwapResult result,
 void WindowPerformance::AddElementTiming(const AtomicString& name,
                                          const IntRect& rect,
                                          TimeTicks timestamp) {
-  DCHECK(RuntimeEnabledFeatures::ElementTimingEnabled());
-  PerformanceEntry* entry = PerformanceElementTiming::Create(
+  DCHECK(origin_trials::ElementTimingEnabled(GetExecutionContext()));
+  PerformanceElementTiming* entry = PerformanceElementTiming::Create(
       name, rect, MonotonicTimeToDOMHighResTimeStamp(timestamp));
-  NotifyObserversOfEntry(*entry);
+  if (HasObserverFor(PerformanceEntry::kElement)) {
+    UseCounter::Count(GetFrame(),
+                      WebFeature::kElementTimingExplicitlyRequested);
+    NotifyObserversOfEntry(*entry);
+  }
+  if (ShouldBufferEntries() && !IsElementTimingBufferFull())
+    AddElementTimingBuffer(*entry);
 }
 
 void WindowPerformance::DispatchFirstInputTiming(
@@ -427,9 +429,12 @@ void WindowPerformance::DispatchFirstInputTiming(
 }
 
 void WindowPerformance::AddLayoutJankFraction(double jank_fraction) {
-  DCHECK(RuntimeEnabledFeatures::LayoutJankAPIEnabled());
-  PerformanceEntry* entry = PerformanceLayoutJank::Create(jank_fraction);
-  NotifyObserversOfEntry(*entry);
+  DCHECK(origin_trials::LayoutJankAPIEnabled(GetExecutionContext()));
+  PerformanceLayoutJank* entry = PerformanceLayoutJank::Create(jank_fraction);
+  if (HasObserverFor(PerformanceEntry::kLayoutJank))
+    NotifyObserversOfEntry(*entry);
+  if (ShouldBufferEntries())
+    AddLayoutJankBuffer(*entry);
 }
 
 }  // namespace blink

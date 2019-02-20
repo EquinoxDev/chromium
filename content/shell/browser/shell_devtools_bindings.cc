@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/guid.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -160,10 +161,10 @@ void ShellDevToolsBindings::ReadyToCommitNavigation(
 #if !defined(OS_ANDROID)
   content::RenderFrameHost* frame = navigation_handle->GetRenderFrameHost();
   if (navigation_handle->IsInMainFrame()) {
-    frontend_host_.reset(DevToolsFrontendHost::Create(
+    frontend_host_ = DevToolsFrontendHost::Create(
         frame,
         base::Bind(&ShellDevToolsBindings::HandleMessageFromDevToolsFrontend,
-                   base::Unretained(this))));
+                   base::Unretained(this)));
     return;
   }
   std::string origin = navigation_handle->GetURL().GetOrigin().spec();
@@ -201,7 +202,8 @@ void ShellDevToolsBindings::HandleMessageFromDevToolsFrontend(
   std::string method;
   base::ListValue* params = nullptr;
   base::DictionaryValue* dict = nullptr;
-  std::unique_ptr<base::Value> parsed_message = base::JSONReader::Read(message);
+  std::unique_ptr<base::Value> parsed_message =
+      base::JSONReader::ReadDeprecated(message);
   if (!parsed_message || !parsed_message->GetAsDictionary(&dict) ||
       !dict->GetString("method", &method)) {
     return;
@@ -264,6 +266,9 @@ void ShellDevToolsBindings::HandleMessageFromDevToolsFrontend(
 
     auto resource_request = std::make_unique<network::ResourceRequest>();
     resource_request->url = gurl;
+    // TODO(caseq): this preserves behavior of URLFetcher-based implementation.
+    // We really need to pass proper first party origin from the front-end.
+    resource_request->site_for_cookies = gurl;
     resource_request->headers.AddHeadersFromString(headers);
 
     auto* partition = content::BrowserContext::GetStoragePartitionForSite(

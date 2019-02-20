@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/debugger.h"
@@ -48,7 +49,6 @@
 #include "content/shell/renderer/web_test/web_test_render_thread_observer.h"
 #include "content/shell/test_runner/app_banner_service.h"
 #include "content/shell/test_runner/gamepad_controller.h"
-#include "content/shell/test_runner/layout_and_paint_async_then.h"
 #include "content/shell/test_runner/pixel_dump.h"
 #include "content/shell/test_runner/web_test_interfaces.h"
 #include "content/shell/test_runner/web_test_runner.h"
@@ -158,7 +158,7 @@ class MockAudioCapturerSource : public media::AudioCapturerSource {
   void Stop() override {}
   void SetVolume(double volume) override {}
   void SetAutomaticGainControl(bool enable) override {}
-  void SetOutputDeviceForAec(const std::string& output_device_id) override{};
+  void SetOutputDeviceForAec(const std::string& output_device_id) override {}
 
  protected:
   ~MockAudioCapturerSource() override {}
@@ -325,15 +325,15 @@ float BlinkTestRunner::GetWindowToViewportScale() {
 
 std::unique_ptr<blink::WebInputEvent>
 BlinkTestRunner::TransformScreenToWidgetCoordinates(
-    test_runner::WebWidgetTestProxyBase* web_widget_test_proxy_base,
+    test_runner::WebWidgetTestProxy* web_widget_test_proxy,
     const blink::WebInputEvent& event) {
-  return content::TransformScreenToWidgetCoordinates(web_widget_test_proxy_base,
+  return content::TransformScreenToWidgetCoordinates(web_widget_test_proxy,
                                                      event);
 }
 
-test_runner::WebWidgetTestProxyBase* BlinkTestRunner::GetWebWidgetTestProxyBase(
+test_runner::WebWidgetTestProxy* BlinkTestRunner::GetWebWidgetTestProxy(
     blink::WebLocalFrame* frame) {
-  return content::GetWebWidgetTestProxyBase(frame);
+  return content::GetWebWidgetTestProxy(frame);
 }
 
 void BlinkTestRunner::EnableUseZoomForDSF() {
@@ -516,11 +516,6 @@ bool BlinkTestRunner::CaptureLocalPixelsDump() {
     return false;
   }
 
-  CHECK(render_view()
-            ->GetWebView()
-            ->MainFrameWidget()
-            ->IsAcceleratedCompositingActive());
-
   // Test finish should only be processed in the BlinkTestRunner associated
   // with the current, non-swapped-out RenderView.
   DCHECK(render_view()->GetWebView()->MainFrame()->IsWebLocalFrame());
@@ -679,11 +674,6 @@ void BlinkTestRunner::ForceTextInputStateUpdate(WebLocalFrame* frame) {
   ForceTextInputStateUpdateForRenderFrame(RenderFrame::FromWebFrame(frame));
 }
 
-bool BlinkTestRunner::IsNavigationInitiatedByRenderer(
-    const WebURLRequest& request) {
-  return content::IsNavigationInitiatedByRenderer(request);
-}
-
 bool BlinkTestRunner::AddMediaStreamVideoSourceAndTrack(
     blink::WebMediaStream* stream) {
   DCHECK(stream);
@@ -731,6 +721,11 @@ void BlinkTestRunner::Navigate(const GURL& url) {
 
 void BlinkTestRunner::DidCommitProvisionalLoad(WebLocalFrame* frame,
                                                bool is_new_navigation) {
+  if (waiting_for_reset_ && frame == render_view()->GetWebView()->MainFrame() &&
+      GURL(frame->GetDocumentLoader()->GetUrl()).IsAboutBlank()) {
+    waiting_for_reset_ = false;
+    Send(new ShellViewHostMsg_ResetDone(routing_id()));
+  }
   if (!focus_on_next_commit_)
     return;
   focus_on_next_commit_ = false;
@@ -746,6 +741,7 @@ void BlinkTestRunner::DidFailProvisionalLoad(WebLocalFrame* frame,
 
 void BlinkTestRunner::Reset(bool for_new_test) {
   prefs_.Reset();
+  waiting_for_reset_ = false;
 
   render_view()->ClearEditCommands();
   if (for_new_test) {
@@ -843,10 +839,9 @@ void BlinkTestRunner::OnReset() {
   WebTestRenderThreadObserver::GetInstance()->test_interfaces()->ResetAll();
   Reset(true /* for_new_test */);
   // Navigating to about:blank will make sure that no new loads are initiated
-  // by the renderer. We know that about:blank navigation will finish
-  // without going to the network.
+  // by the renderer.
+  waiting_for_reset_ = true;
   main_frame->StartNavigation(WebURLRequest(GURL(url::kAboutBlankURL)));
-  Send(new ShellViewHostMsg_ResetDone(routing_id()));
 }
 
 void BlinkTestRunner::OnTestFinishedInSecondaryRenderer() {

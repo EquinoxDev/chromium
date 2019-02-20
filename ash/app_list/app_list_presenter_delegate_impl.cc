@@ -7,7 +7,6 @@
 #include "ash/app_list/app_list_controller_impl.h"
 #include "ash/app_list/presenter/app_list_presenter_impl.h"
 #include "ash/app_list/views/app_list_view.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/app_list/app_list_switches.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/shelf_types.h"
@@ -22,7 +21,6 @@
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
-#include "ash/wm/window_state.h"
 #include "base/command_line.h"
 #include "chromeos/constants/chromeos_switches.h"
 #include "ui/aura/window.h"
@@ -91,12 +89,9 @@ void AppListPresenterDelegateImpl::Init(app_list::AppListView* view,
   params.initial_apps_page = current_apps_page;
   params.is_tablet_mode = is_tablet_mode;
   params.is_side_shelf = IsSideShelf(root_window);
-
   view->Initialize(params);
 
   SnapAppListBoundsToDisplayEdge();
-  wm::GetWindowState(view->GetWidget()->GetNativeWindow())
-      ->set_ignored_by_shelf(true);
   Shell::Get()->AddPreTargetHandler(this);
 
   // By setting us as DnD recipient, the app list knows that we can
@@ -168,18 +163,13 @@ aura::Window* AppListPresenterDelegateImpl::GetRootWindowForDisplayId(
   return ash::Shell::Get()->GetRootWindowForDisplayId(display_id);
 }
 
-void AppListPresenterDelegateImpl::OnVisibilityChanged(
-    bool visible,
-    aura::Window* root_window) {
-  // Notify Chrome the visibility change.
-  controller_->OnVisibilityChanged(visible);
-  // Notify Ash the visibility change
-  ash::Shell::Get()->NotifyAppListVisibilityChanged(visible, root_window);
+void AppListPresenterDelegateImpl::OnVisibilityChanged(bool visible,
+                                                       int64_t display_id) {
+  controller_->NotifyAppListVisibilityChanged(visible, display_id);
 }
 
 void AppListPresenterDelegateImpl::OnTargetVisibilityChanged(bool visible) {
-  // Notify Chrome the target visibility change.
-  controller_->OnTargetVisibilityChanged(visible);
+  controller_->NotifyAppListTargetVisibilityChanged(visible);
 }
 
 void AppListPresenterDelegateImpl::OnDisplayMetricsChanged(

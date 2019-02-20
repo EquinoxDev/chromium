@@ -10,6 +10,7 @@
 #include <algorithm>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -3412,10 +3413,6 @@ class LayerTreeHostTestDeviceScaleFactorScalesViewportAndLayers
     FakePictureLayerImpl* child = static_cast<FakePictureLayerImpl*>(
         impl->active_tree()->LayerById(child_layer_->id()));
 
-    // Positions remain in layout pixels.
-    EXPECT_EQ(gfx::PointF(), root->position());
-    EXPECT_EQ(gfx::PointF(2.f, 2.f), child->position());
-
     // Compute all the layer transforms for the frame.
     LayerTreeHostImpl::FrameData frame_data;
     impl->PrepareToDraw(&frame_data);
@@ -4114,7 +4111,7 @@ class OnDrawLayerTreeFrameSink : public viz::TestLayerTreeFrameSink {
       base::SingleThreadTaskRunner* task_runner,
       bool synchronous_composite,
       double refresh_rate,
-      base::Closure invalidate_callback)
+      base::RepeatingClosure invalidate_callback)
       : TestLayerTreeFrameSink(std::move(compositor_context_provider),
                                std::move(worker_context_provider),
                                gpu_memory_buffer_manager,
@@ -4135,7 +4132,7 @@ class OnDrawLayerTreeFrameSink : public viz::TestLayerTreeFrameSink {
   }
 
  private:
-  const base::Closure invalidate_callback_;
+  const base::RepeatingClosure invalidate_callback_;
 };
 
 class LayerTreeHostTestAbortedCommitDoesntStallSynchronousCompositor
@@ -4152,7 +4149,7 @@ class LayerTreeHostTestAbortedCommitDoesntStallSynchronousCompositor
       scoped_refptr<viz::ContextProvider> compositor_context_provider,
       scoped_refptr<viz::RasterContextProvider> worker_context_provider)
       override {
-    auto on_draw_callback = base::Bind(
+    auto on_draw_callback = base::BindRepeating(
         &LayerTreeHostTestAbortedCommitDoesntStallSynchronousCompositor::
             CallOnDraw,
         base::Unretained(this));
@@ -5352,10 +5349,10 @@ class LayerTreeHostTestTreeActivationCallback : public LayerTreeHostTest {
   void SetCallback(LayerTreeHostImpl* host_impl, bool enable) {
     host_impl->SetTreeActivationCallback(
         enable
-            ? base::Bind(
+            ? base::BindRepeating(
                   &LayerTreeHostTestTreeActivationCallback::ActivationCallback,
                   base::Unretained(this))
-            : base::Closure());
+            : base::RepeatingClosure());
   }
 
   void ActivationCallback() { ++callback_count_; }
@@ -5899,10 +5896,10 @@ class LayerTreeHostTestKeepSwapPromise : public LayerTreeHostTest {
 
   void SetCallback(LayerTreeHostImpl* host_impl, bool enable) {
     host_impl->SetTreeActivationCallback(
-        enable
-            ? base::Bind(&LayerTreeHostTestKeepSwapPromise::ActivationCallback,
-                         base::Unretained(this))
-            : base::Closure());
+        enable ? base::BindRepeating(
+                     &LayerTreeHostTestKeepSwapPromise::ActivationCallback,
+                     base::Unretained(this))
+               : base::RepeatingClosure());
   }
 
   void DisplayDidDrawAndSwapOnThread() override {
@@ -6016,10 +6013,10 @@ class LayerTreeHostTestKeepSwapPromiseMFBA : public LayerTreeHostTest {
 
   void SetCallback(LayerTreeHostImpl* host_impl, bool enable) {
     host_impl->SetTreeActivationCallback(
-        enable ? base::Bind(
+        enable ? base::BindRepeating(
                      &LayerTreeHostTestKeepSwapPromiseMFBA::ActivationCallback,
                      base::Unretained(this))
-               : base::Closure());
+               : base::RepeatingClosure());
   }
 
   void DisplayDidDrawAndSwapOnThread() override {
@@ -7929,15 +7926,8 @@ class LayerTreeHostTestLocalSurfaceIdSkipChildNum : public LayerTreeHostTest {
         allocator_.GetCurrentLocalSurfaceIdAllocation();
     EXPECT_TRUE(child_allocator_.UpdateFromParent(
         allocator_.GetCurrentLocalSurfaceIdAllocation()));
-    child_allocator_.GenerateId();
-    child_local_surface_id_allocation_ =
-        child_allocator_.GetCurrentLocalSurfaceIdAllocation();
-    EXPECT_NE(expected_local_surface_id_allocation_,
-              child_local_surface_id_allocation_);
     PostSetLocalSurfaceIdAllocationToMainThread(
         expected_local_surface_id_allocation_);
-    PostSetLocalSurfaceIdAllocationToMainThread(
-        child_local_surface_id_allocation_);
   }
 
   DrawResult PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
@@ -7948,6 +7938,26 @@ class LayerTreeHostTestLocalSurfaceIdSkipChildNum : public LayerTreeHostTest {
     EXPECT_EQ(
         expected_local_surface_id_allocation_,
         host_impl->active_tree()->local_surface_id_allocation_from_parent());
+
+    // This initial test setup triggers a commit and subsequent draw. Upon the
+    // first draw, enqueue the second portion of the test. The newly pushed id,
+    // with an advanced child sequence number, but no change in parent sequence,
+    // should not trigger a commit. If it does, then PrepareToDrawOnThread will
+    // be called a second time, and the expectation upon viz::LocalSurfaceId
+    // will fail. We do not assert on frame number, as that interferes with
+    // returning from this method. We do not just have an expectation either,
+    // as then we would continuously increment that child sequence until the
+    // test times out.
+    if (!host_impl->active_tree()->source_frame_number()) {
+      child_allocator_.GenerateId();
+      child_local_surface_id_allocation_ =
+          child_allocator_.GetCurrentLocalSurfaceIdAllocation();
+      EXPECT_NE(expected_local_surface_id_allocation_,
+                child_local_surface_id_allocation_);
+      PostSetLocalSurfaceIdAllocationToMainThread(
+          child_local_surface_id_allocation_);
+    }
+
     return draw_result;
   }
 
@@ -8303,9 +8313,9 @@ class LayerTreeHostTestQueueImageDecode : public LayerTreeHostTest {
     image_ = DrawImage(CreateDiscardablePaintImage(gfx::Size(400, 400)),
                        SkIRect::MakeWH(400, 400), kNone_SkFilterQuality,
                        SkMatrix::I(), PaintImage::kDefaultFrameIndex);
-    auto callback =
-        base::Bind(&LayerTreeHostTestQueueImageDecode::ImageDecodeFinished,
-                   base::Unretained(this));
+    auto callback = base::BindRepeating(
+        &LayerTreeHostTestQueueImageDecode::ImageDecodeFinished,
+        base::Unretained(this));
     // Schedule the decode twice for the same image.
     layer_tree_host()->QueueImageDecode(image_.paint_image(), callback);
     layer_tree_host()->QueueImageDecode(image_.paint_image(), callback);
@@ -8360,10 +8370,10 @@ class LayerTreeHostTestQueueImageDecodeNonLazy : public LayerTreeHostTest {
                            .set_image(SkImage::MakeFromBitmap(bitmap_),
                                       PaintImage::GetNextContentId())
                            .TakePaintImage();
-    auto callback = base::Bind(
+    auto callback = base::BindOnce(
         &LayerTreeHostTestQueueImageDecodeNonLazy::ImageDecodeFinished,
         base::Unretained(this));
-    layer_tree_host()->QueueImageDecode(image, callback);
+    layer_tree_host()->QueueImageDecode(image, std::move(callback));
   }
 
   void ImageDecodeFinished(bool decode_succeeded) {
@@ -8435,9 +8445,9 @@ class LayerTreeHostTestDiscardAckAfterRelease : public LayerTreeHostTest {
     // that WillReceiveCompositorFrameAck which we PostTask below will be called
     // before DidReceiveCompositorFrameAck.
     MainThreadTaskRunner()->PostTask(
-        FROM_HERE, base::Bind(&LayerTreeHostTestDiscardAckAfterRelease::
-                                  WillReceiveCompositorFrameAck,
-                              base::Unretained(this)));
+        FROM_HERE, base::BindOnce(&LayerTreeHostTestDiscardAckAfterRelease::
+                                      WillReceiveCompositorFrameAck,
+                                  base::Unretained(this)));
   }
 
   void WillReceiveCompositorFrameAck() {
@@ -8464,8 +8474,8 @@ class LayerTreeHostTestDiscardAckAfterRelease : public LayerTreeHostTest {
     // before we are in CheckFrameAck.
     MainThreadTaskRunner()->PostTask(
         FROM_HERE,
-        base::Bind(&LayerTreeHostTestDiscardAckAfterRelease::CheckFrameAck,
-                   base::Unretained(this)));
+        base::BindOnce(&LayerTreeHostTestDiscardAckAfterRelease::CheckFrameAck,
+                       base::Unretained(this)));
   }
 
   void DidReceiveCompositorFrameAck() override { received_ack_ = true; }
@@ -8654,9 +8664,8 @@ class LayerTreeHostTestImageAnimationSynchronousSchedulingSoftwareDraw
   }
 };
 
-// TODO(crbug.com/851231): Disabled this test due to flakiness.
-// MULTI_THREAD_TEST_F(
-//    LayerTreeHostTestImageAnimationSynchronousSchedulingSoftwareDraw);
+MULTI_THREAD_TEST_F(
+    LayerTreeHostTestImageAnimationSynchronousSchedulingSoftwareDraw);
 
 class LayerTreeHostTestImageDecodingHints : public LayerTreeHostTest {
  public:
@@ -9023,6 +9032,66 @@ class LayerTreeHostTestRequestForceSendMetadata
 };
 
 SINGLE_AND_MULTI_THREAD_TEST_F(LayerTreeHostTestRequestForceSendMetadata);
+
+class LayerTreeHostTestPartialTileDamage : public LayerTreeHostTest {
+ public:
+  LayerTreeHostTestPartialTileDamage()
+      : partial_damage_(20, 20, 45, 60), layer_size_(512, 512) {}
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+  void AfterTest() override {}
+
+  void InitializeSettings(LayerTreeSettings* settings) override {
+    settings->default_tile_size = gfx::Size(256, 256);
+  }
+
+  void SetupTree() override {
+    content_layer_client_.set_bounds(layer_size_);
+    content_layer_client_.set_fill_with_nonsolid_color(true);
+    layer_tree_host()->SetRootLayer(
+        FakePictureLayer::Create(&content_layer_client_));
+    layer_tree_host()->root_layer()->SetBounds(layer_size_);
+    LayerTreeTest::SetupTree();
+  }
+
+  void DoPartialTileInvalidation() {
+    layer_tree_host()->root_layer()->SetNeedsDisplayRect(partial_damage_);
+  }
+
+  void DisplayReceivedCompositorFrameOnThread(
+      const viz::CompositorFrame& frame) override {
+    frame_count_on_impl_thread_++;
+    gfx::Rect frame_damage = frame.render_pass_list.back()->damage_rect;
+
+    switch (frame_count_on_impl_thread_) {
+      case 1:
+        // We have the first frame, which should damage everything. Schedule
+        // another which partially damages one of tiles.
+        MainThreadTaskRunner()->PostTask(
+            FROM_HERE,
+            base::BindOnce(
+                &LayerTreeHostTestPartialTileDamage::DoPartialTileInvalidation,
+                base::Unretained(this)));
+        EXPECT_EQ(frame_damage, gfx::Rect(layer_size_));
+        break;
+      case 2:
+        EXPECT_EQ(frame_damage, partial_damage_);
+        EndTest();
+    }
+  }
+
+ protected:
+  const gfx::Rect partial_damage_;
+  const gfx::Size layer_size_;
+
+  // Main thread.
+  FakeContentLayerClient content_layer_client_;
+
+  // Impl thread.
+  int frame_count_on_impl_thread_ = 0;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostTestPartialTileDamage);
 
 }  // namespace
 }  // namespace cc

@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
@@ -17,6 +18,7 @@
 #include "base/strings/safe_sprintf.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/post_task.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -84,25 +86,34 @@ content::OpenURLParams MakeOpenURLParams(content::NavigationHandle* handle,
   content::OpenURLParams url_params(
       url, handle->GetReferrer(), WindowOpenDisposition::CURRENT_TAB,
       handle->GetPageTransition(), handle->IsRendererInitiated());
+  url_params.initiator_origin = handle->GetInitiatorOrigin();
+  // crbug.com/916892: When a client redirect occurs on a site before the page
+  // has finished loading, it is not considered a new NavigationEntry and so
+  // clicking "Back" on the redirected page returns to the previous loaded page.
+  // However, all browser-initiated navigations are assumed to be new
+  // NavigationEntries (see NavigationControllerImpl::NavigateWithoutEntry). So
+  // if the canceled navigation was a client redirect, and there is a previous
+  // entry to go to, set |should_replace_current_entry|.
+  url_params.should_replace_current_entry =
+      (handle->GetPageTransition() & ui::PAGE_TRANSITION_CLIENT_REDIRECT) &&
+      handle->IsRendererInitiated() &&
+      handle->GetWebContents()->GetController().GetLastCommittedEntry();
   url_params.extra_headers = headers;
   url_params.redirect_chain = handle->GetRedirectChain();
   url_params.frame_tree_node_id = handle->GetFrameTreeNodeId();
   url_params.user_gesture = handle->HasUserGesture();
   url_params.started_from_context_menu = handle->WasStartedFromContextMenu();
-
-  if (previews::IsLitePageRedirectPreviewDomain(handle->GetReferrer().url))
-    url_params.referrer = content::Referrer();
-
+  url_params.reload_type = handle->GetReloadType();
   return url_params;
 }
 
 }  // namespace
 
-class WebContentsLifetimeHelper
+class PreviewsWebContentsLifetimeHelper
     : public content::WebContentsObserver,
-      public content::WebContentsUserData<WebContentsLifetimeHelper> {
+      public content::WebContentsUserData<PreviewsWebContentsLifetimeHelper> {
  public:
-  explicit WebContentsLifetimeHelper(content::WebContents* web_contents)
+  explicit PreviewsWebContentsLifetimeHelper(content::WebContents* web_contents)
       : content::WebContentsObserver(web_contents),
         web_contents_(web_contents),
         weak_factory_(this) {}
@@ -155,6 +166,38 @@ class WebContentsLifetimeHelper
     if (navigations_.find(handle) != navigations_.end()) {
       navigations_.erase(handle);
     }
+
+    // If this navigation is committing here, it has passed the Navigation
+    // Throttle checks. Record time penalty UMA about the final state of the
+    // navigation.
+    PreviewsUITabHelper* ui_tab_helper =
+        PreviewsUITabHelper::FromWebContents(web_contents());
+    previews::PreviewsUserData* previews_data =
+        ui_tab_helper->GetPreviewsUserData(handle);
+    if (!handle->HasCommitted() || !previews_data ||
+        !previews_data->server_lite_page_info()) {
+      return;
+    }
+
+    previews::PreviewsUserData::ServerLitePageInfo* info =
+        previews_data->server_lite_page_info();
+
+    // Don't record this UMA for an unknown or control group status.
+    if (info->status == previews::ServerLitePageStatus::kUnknown ||
+        info->status == previews::ServerLitePageStatus::kControl) {
+      return;
+    }
+
+    base::TimeDelta penalty =
+        handle->NavigationStart() - info->original_navigation_start;
+
+    base::LinearHistogram::FactoryTimeGet(
+        base::StringPrintf(
+            "Previews.ServerLitePage.Penalty.%s",
+            previews::ServerLitePageStatusToString(info->status).c_str()),
+        base::TimeDelta(), base::TimeDelta::FromMinutes(3), 50,
+        base::HistogramBase::kUmaTargetedHistogramFlag)
+        ->Add(penalty.InMilliseconds());
   }
 
   // This method should be called after some delay to cancel an ongoing previews
@@ -177,7 +220,7 @@ class WebContentsLifetimeHelper
     std::move(fallback_callback).Run();
   }
 
-  base::WeakPtr<WebContentsLifetimeHelper> GetWeakPtr() {
+  base::WeakPtr<PreviewsWebContentsLifetimeHelper> GetWeakPtr() {
     return weak_factory_.GetWeakPtr();
   }
 
@@ -191,12 +234,14 @@ class WebContentsLifetimeHelper
     // synchronous.
     restarted_navigation_url_ = url_params.url;
     info_ = std::move(info);
+    if (info_)
+      info_->restart_count++;
 
     web_contents_->OpenURL(url_params);
   }
 
  private:
-  friend class content::WebContentsUserData<WebContentsLifetimeHelper>;
+  friend class content::WebContentsUserData<PreviewsWebContentsLifetimeHelper>;
   // The url to monitor for. When it is seen, |info_| will be attached to that
   // navigation.
   GURL restarted_navigation_url_;
@@ -207,11 +252,11 @@ class WebContentsLifetimeHelper
 
   content::WebContents* web_contents_;
   std::unordered_set<content::NavigationHandle*> navigations_;
-  base::WeakPtrFactory<WebContentsLifetimeHelper> weak_factory_;
+  base::WeakPtrFactory<PreviewsWebContentsLifetimeHelper> weak_factory_;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(WebContentsLifetimeHelper)
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PreviewsWebContentsLifetimeHelper)
 
 bool HandlePreviewsLitePageURLRewrite(
     GURL* url,
@@ -250,18 +295,32 @@ bool PreviewsLitePageNavigationThrottle::IsEligibleForPreview() const {
   DCHECK(navigation_handle()->IsInMainFrame());
   DCHECK_NE(navigation_handle()->GetReloadType(),
             content::ReloadType::ORIGINAL_REQUEST_URL);
-
-  // Check if the parameters of the navigation are not eligible for the preview.
+  // TODO(crbug.com/921755): Move all eligibility reasons to PreviewsState
+  // decision code and remove |ineligible_reasons|.
   std::vector<IneligibleReason> ineligible_reasons;
+
+  PreviewsUITabHelper* tab_helper = PreviewsUITabHelper::FromWebContents(
+      navigation_handle()->GetWebContents());
+  previews::PreviewsUserData* previews_data =
+      tab_helper ? tab_helper->GetPreviewsUserData(navigation_handle())
+                 : nullptr;
+  if (!previews_data || !(previews_data->allowed_previews_state() &
+                          content::LITE_PAGE_REDIRECT_ON)) {
+    ineligible_reasons.push_back(IneligibleReason::kPreviewsState);
+  }
+
   const GURL& url = navigation_handle()->GetURL();
   if (!url.SchemeIs(url::kHttpsScheme))
     ineligible_reasons.push_back(IneligibleReason::kNonHttpsScheme);
 
-  if (navigation_handle()->IsPost())
-    ineligible_reasons.push_back(IneligibleReason::kHttpPost);
-
   if (manager_->IsServerUnavailable())
     ineligible_reasons.push_back(IneligibleReason::kServerUnavailable);
+
+  if (g_browser_process->network_quality_tracker()
+          ->GetEffectiveConnectionType() ==
+      net::EFFECTIVE_CONNECTION_TYPE_UNKNOWN) {
+    ineligible_reasons.push_back(IneligibleReason::kECTUnknown);
+  }
 
   if (g_browser_process->network_quality_tracker()
           ->GetEffectiveConnectionType() >
@@ -281,6 +340,15 @@ bool PreviewsLitePageNavigationThrottle::IsEligibleForPreview() const {
                                     &setting);
   if (!content_settings::CookieSettingsBase::IsAllowed(setting)) {
     ineligible_reasons.push_back(IneligibleReason::kCookiesBlocked);
+  }
+
+  if (data_reduction_proxy::HasURLRedirectCycle(
+          navigation_handle()->GetRedirectChain()) ||
+      (GetServerLitePageInfo() &&
+       GetServerLitePageInfo()->restart_count >=
+           previews::params::LitePageRedirectPreviewMaxNavigationRestarts())) {
+    ineligible_reasons.push_back(
+        IneligibleReason::kExceededMaxNavigationRestarts);
   }
 
   // Record UMA.
@@ -351,19 +419,25 @@ GURL PreviewsLitePageNavigationThrottle::GetPreviewsURLForURL(
     experiment_query =
         "&x=" + net::EscapeQueryParamValue(experiment_id, true /* use_plus */);
   }
+  std::string fragment;
+  if (original_url.has_ref()) {
+    fragment = "#" + original_url.ref();
+  }
 
+  // Strip out the fragment so that it is not sent to the server.
   std::string origin_hash = base::ToLowerASCII(base32::Base32Encode(
       crypto::SHA256HashString(
           original_url.scheme() + "://" + original_url.host() + ":" +
-          base::IntToString(original_url.EffectiveIntPort())),
+          base::NumberToString(original_url.EffectiveIntPort())),
       base32::Base32EncodePolicy::OMIT_PADDING));
   GURL previews_host = previews::params::GetLitePagePreviewsDomainURL();
   GURL previews_url = GURL(
       previews_host.scheme() + "://" + origin_hash + "." +
       previews_host.host() +
       (previews_host.has_port() ? (":" + previews_host.port()) : "") + "/p?u=" +
-      net::EscapeQueryParamValue(original_url.spec(), true /* use_plus */) +
-      experiment_query);
+      net::EscapeQueryParamValue(original_url.GetAsReferrer().spec(),
+                                 true /* use_plus */) +
+      experiment_query + fragment);
   DCHECK(previews_url.is_valid());
   DCHECK_EQ(previews_host.scheme(), previews_url.scheme());
   return previews_url;
@@ -387,9 +461,9 @@ void PreviewsLitePageNavigationThrottle::LoadAndBypass(
 
   manager->AddSingleBypass(params.url.spec());
 
-  WebContentsLifetimeHelper::CreateForWebContents(web_contents);
-  WebContentsLifetimeHelper* helper =
-      WebContentsLifetimeHelper::FromWebContents(web_contents);
+  PreviewsWebContentsLifetimeHelper::CreateForWebContents(web_contents);
+  PreviewsWebContentsLifetimeHelper* helper =
+      PreviewsWebContentsLifetimeHelper::FromWebContents(web_contents);
 
   if (!use_post_task) {
     helper->PostNewNavigation(params, std::move(info));
@@ -398,7 +472,7 @@ void PreviewsLitePageNavigationThrottle::LoadAndBypass(
 
   base::PostTaskWithTraits(
       FROM_HERE, {content::BrowserThread::UI},
-      base::BindOnce(&WebContentsLifetimeHelper::PostNewNavigation,
+      base::BindOnce(&PreviewsWebContentsLifetimeHelper::PostNewNavigation,
                      helper->GetWeakPtr(), params, std::move(info)));
 }
 
@@ -438,9 +512,9 @@ PreviewsLitePageNavigationThrottle::TriggerPreview() const {
   }
 
   content::WebContents* web_contents = navigation_handle()->GetWebContents();
-  WebContentsLifetimeHelper::CreateForWebContents(web_contents);
-  WebContentsLifetimeHelper* helper =
-      WebContentsLifetimeHelper::FromWebContents(web_contents);
+  PreviewsWebContentsLifetimeHelper::CreateForWebContents(web_contents);
+  PreviewsWebContentsLifetimeHelper* helper =
+      PreviewsWebContentsLifetimeHelper::FromWebContents(web_contents);
 
   // Post a delayed task to the WebContents helper. This task will check after a
   // timeout whether the previews navigation has finished (either in success or
@@ -455,7 +529,7 @@ PreviewsLitePageNavigationThrottle::TriggerPreview() const {
     base::PostDelayedTaskWithTraits(
         FROM_HERE, {content::BrowserThread::UI},
         base::BindOnce(
-            &WebContentsLifetimeHelper::CheckForHungNavigation,
+            &PreviewsWebContentsLifetimeHelper::CheckForHungNavigation,
             helper->GetWeakPtr(), GetPreviewsURL(),
             base::BindOnce(
                 &PreviewsLitePageNavigationThrottle::LoadAndBypass,
@@ -472,7 +546,7 @@ PreviewsLitePageNavigationThrottle::TriggerPreview() const {
   // destroyed when the WebContents is and the task will not be executed.
   base::PostTaskWithTraits(
       FROM_HERE, {content::BrowserThread::UI},
-      base::BindOnce(&WebContentsLifetimeHelper::PostNewNavigation,
+      base::BindOnce(&PreviewsWebContentsLifetimeHelper::PostNewNavigation,
                      helper->GetWeakPtr(),
                      MakeOpenURLParams(navigation_handle(), GetPreviewsURL(),
                                        request_headers.ToString()),
@@ -501,17 +575,18 @@ PreviewsLitePageNavigationThrottle::WillStartRequest() {
   std::string original_url;
   if (previews::ExtractOriginalURLFromLitePageRedirectURL(
           navigation_handle()->GetURL(), &original_url) &&
-      navigation_handle()->GetReloadType() == content::ReloadType::NORMAL) {
+      navigation_handle()->GetReloadType() != content::ReloadType::NONE &&
+      !GetServerLitePageInfo()) {
     // Don't use |LoadAndBypass| because we might not want to bypass.
-    WebContentsLifetimeHelper::CreateForWebContents(
+    PreviewsWebContentsLifetimeHelper::CreateForWebContents(
         navigation_handle()->GetWebContents());
-    WebContentsLifetimeHelper* helper =
-        WebContentsLifetimeHelper::FromWebContents(
+    PreviewsWebContentsLifetimeHelper* helper =
+        PreviewsWebContentsLifetimeHelper::FromWebContents(
             navigation_handle()->GetWebContents());
 
     base::PostTaskWithTraits(
         FROM_HERE, {content::BrowserThread::UI},
-        base::BindOnce(&WebContentsLifetimeHelper::PostNewNavigation,
+        base::BindOnce(&PreviewsWebContentsLifetimeHelper::PostNewNavigation,
                        helper->GetWeakPtr(),
                        MakeOpenURLParams(navigation_handle(),
                                          GURL(original_url), std::string()),
@@ -547,9 +622,6 @@ PreviewsLitePageNavigationThrottle::WillRedirectRequest() {
     if (GURL(original_url) == navigation_handle()->GetURL()) {
       SetServerLitePageInfoStatus(previews::ServerLitePageStatus::kBypass);
       manager_->AddSingleBypass(navigation_handle()->GetURL().spec());
-      UMA_HISTOGRAM_MEDIUM_TIMES(
-          "Previews.ServerLitePage.HttpOnlyFallbackPenalty",
-          base::TimeTicks::Now() - navigation_handle()->NavigationStart());
       UMA_HISTOGRAM_ENUMERATION("Previews.ServerLitePage.ServerResponse",
                                 ServerResponse::kPreviewUnavailable);
 
@@ -643,11 +715,6 @@ PreviewsLitePageNavigationThrottle::WillProcessResponse() {
 
     return content::NavigationThrottle::PROCEED;
   }
-
-  const base::TimeDelta penalty =
-      base::TimeTicks::Now() - navigation_handle()->NavigationStart();
-  UMA_HISTOGRAM_MEDIUM_TIMES("Previews.ServerLitePage.HttpOnlyFallbackPenalty",
-                             penalty);
 
   if (response_code == net::HTTP_SERVICE_UNAVAILABLE) {
     std::string retry_after_header;

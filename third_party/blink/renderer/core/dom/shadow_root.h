@@ -118,7 +118,7 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
   // For Internals, don't use this.
   unsigned ChildShadowRootCount() const { return child_shadow_root_count_; }
 
-  void RecalcStyle(StyleRecalcChange);
+  void RecalcStyle(const StyleRecalcChange);
   void RebuildLayoutTree(WhitespaceAttacher&);
 
   void RegisterScopedHTMLStyleChild();
@@ -171,7 +171,7 @@ class CORE_EXPORT ShadowRoot final : public DocumentFragment, public TreeScope {
     style_sheet_list_ = style_sheet_list;
   }
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
  private:
   ~ShadowRoot() override;

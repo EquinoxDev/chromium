@@ -24,6 +24,7 @@ import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsStatics;
 import org.chromium.android_webview.AwCookieManager;
+import org.chromium.android_webview.AwDrawFnImpl;
 import org.chromium.android_webview.AwNetworkChangeNotifierRegistrationPolicy;
 import org.chromium.android_webview.AwProxyController;
 import org.chromium.android_webview.AwQuotaManagerBridge;
@@ -47,6 +48,8 @@ import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.base.metrics.CachedMetrics;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.AsyncTask;
+import org.chromium.base.task.PostTask;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.net.NetworkChangeNotifier;
 
 /**
@@ -279,7 +282,7 @@ public class WebViewChromiumAwInit {
 
         // We must post to the UI thread to cover the case that the user has invoked Chromium
         // startup by using the (thread-safe) CookieManager rather than creating a WebView.
-        ThreadUtils.postOnUiThread(new Runnable() {
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, new Runnable() {
             @Override
             public void run() {
                 synchronized (mLock) {
@@ -300,6 +303,9 @@ public class WebViewChromiumAwInit {
     private void initPlatSupportLibrary() {
         try (ScopedSysTraceEvent e = ScopedSysTraceEvent.scoped(
                      "WebViewChromiumAwInit.initPlatSupportLibrary")) {
+            if (BuildInfo.isAtLeastQ()) {
+                AwDrawFnImpl.setDrawFnFunctionTable(DrawFunctor.getDrawFnFunctionTable());
+            }
             DrawGLFunctor.setChromiumAwDrawGLFunction(AwContents.getAwDrawGLFunction());
             AwContents.setAwDrawSWFunctionTable(GraphicsUtils.getDrawSWFunctionTable());
             AwContents.setAwDrawGLFunctionTable(GraphicsUtils.getDrawGLFunctionTable());
@@ -453,7 +459,7 @@ public class WebViewChromiumAwInit {
                 return;
             }
 
-            ThreadUtils.postOnUiThread(() -> FieldTrialList.logActiveTrials());
+            PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> FieldTrialList.logActiveTrials());
         });
     }
 

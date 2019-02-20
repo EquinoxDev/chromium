@@ -46,8 +46,11 @@
 #include "third_party/blink/renderer/platform/graphics/graphics_layer_client.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 
-namespace blink {
+namespace cc {
+class AnimationHost;
+}
 
+namespace blink {
 class EffectPaintPropertyNode;
 class GraphicsContext;
 class GraphicsLayer;
@@ -224,7 +227,7 @@ class CORE_EXPORT VisualViewport final
   GraphicsLayer* LayerForHorizontalScrollbar() const override;
   GraphicsLayer* LayerForVerticalScrollbar() const override;
   bool ScheduleAnimation() override;
-  CompositorAnimationHost* GetCompositorAnimationHost() const override;
+  cc::AnimationHost* GetCompositorAnimationHost() const override;
   CompositorAnimationTimeline* GetCompositorAnimationTimeline() const override;
   IntRect VisibleContentRect(
       IncludeScrollbarsInRect = kExcludeScrollbars) const override;
@@ -258,6 +261,7 @@ class CORE_EXPORT VisualViewport final
   ScrollbarTheme& GetPageScrollbarTheme() const override;
   bool VisualViewportSuppliesScrollbars() const override;
 
+  TransformPaintPropertyNode* GetDeviceEmulationTransformNode() const;
   TransformPaintPropertyNode* GetOverscrollElasticityTransformNode() const;
   TransformPaintPropertyNode* GetPageScaleNode() const;
   TransformPaintPropertyNode* GetScrollTranslationNode() const;
@@ -296,10 +300,15 @@ class CORE_EXPORT VisualViewport final
                      GraphicsLayerPaintingPhase,
                      const IntRect&) const override;
   void SetOverlayScrollbarsHidden(bool) override;
+  void SetPaintArtifactCompositorNeedsUpdate() const override;
   String DebugName(const GraphicsLayer*) const override;
 
   const ScrollableArea* GetScrollableAreaForTesting(
       const GraphicsLayer*) const override;
+
+  int ScrollbarThickness() const;
+  IntSize ScrollbarSize(ScrollbarOrientation) const;
+  IntPoint ScrollbarOffset(ScrollbarOrientation) const;
 
   void SetupScrollbar(ScrollbarOrientation);
 
@@ -337,6 +346,7 @@ class CORE_EXPORT VisualViewport final
   std::unique_ptr<GraphicsLayer> overlay_scrollbar_horizontal_;
   std::unique_ptr<GraphicsLayer> overlay_scrollbar_vertical_;
 
+  scoped_refptr<TransformPaintPropertyNode> device_emulation_transform_node_;
   scoped_refptr<TransformPaintPropertyNode>
       overscroll_elasticity_transform_node_;
   scoped_refptr<TransformPaintPropertyNode> scale_transform_node_;

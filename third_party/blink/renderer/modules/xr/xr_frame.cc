@@ -15,28 +15,30 @@ namespace blink {
 
 XRFrame::XRFrame(XRSession* session) : session_(session) {}
 
-const HeapVector<Member<XRView>>& XRFrame::views() const {
-  return session_->views();
-}
-
 XRViewerPose* XRFrame::getViewerPose(XRReferenceSpace* reference_space) const {
   session_->LogGetPose();
 
-  // If we don't have a valid base pose return null. Most common when tracking
-  // is lost.
-  if (!base_pose_matrix_ || !reference_space) {
+  // Must use a reference space created from the same session.
+  if (!reference_space || reference_space->session() != session_) {
     return nullptr;
   }
 
-  // Must use a coordinate system created from the same session.
-  if (reference_space->session() != session_) {
-    return nullptr;
-  }
+  std::unique_ptr<TransformationMatrix> pose;
 
-  std::unique_ptr<TransformationMatrix> pose =
-      reference_space->TransformBasePose(*base_pose_matrix_);
+  // If we don't have a valid base pose request the reference space's default
+  // pose. Most common when tracking is lost.
+  if (base_pose_matrix_) {
+    pose = reference_space->TransformBasePose(*base_pose_matrix_);
+  } else {
+    pose = reference_space->DefaultPose();
+  }
 
   if (!pose) {
+    return nullptr;
+  }
+
+  // Can only update an XRViewerPose's views with an invertible matrix.
+  if (!pose->IsInvertible()) {
     return nullptr;
   }
 

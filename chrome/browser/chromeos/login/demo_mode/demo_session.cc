@@ -14,6 +14,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -29,21 +30,23 @@
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/system_tray_client.h"
+#include "chrome/browser/ui/ash/wallpaper_controller_client.h"
 #include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/settings/install_attributes.h"
+#include "chromeos/tpm/install_attributes.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/user_manager/user.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/network_service_instance.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
-#include "net/base/network_change_notifier.h"
+#include "services/network/public/cpp/network_connection_tracker.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace chromeos {
@@ -63,6 +66,11 @@ constexpr char kHighlightsAppPath[] = "chrome_apps/highlights";
 // Path relative to the path at which offline demo resources are loaded that
 // contains sample photos.
 constexpr char kPhotosPath[] = "media/photos";
+
+// The absolute path of the splash image that covers the login screen.
+// TODO(crbug.com/894270): Replace this placeholder image.
+constexpr char kSplashImagePath[] =
+    "/usr/share/chromeos-assets/wallpaper/guest_large.jpg";
 
 bool IsDemoModeOfflineEnrolled() {
   DCHECK(DemoSession::IsDeviceInDemoMode());
@@ -333,13 +341,19 @@ void DemoSession::EnsureOfflineResourcesLoaded(
   demo_resources_->EnsureLoaded(std::move(load_callback));
 }
 
+// static
+void DemoSession::RecordAppLaunchSourceIfInDemoMode(AppLaunchSource source) {
+  if (IsDeviceInDemoMode())
+    UMA_HISTOGRAM_ENUMERATION("DemoMode.AppLaunchSource", source);
+}
+
 bool DemoSession::ShouldIgnorePinPolicy(const std::string& app_id_or_package) {
   if (!g_demo_session || !g_demo_session->started())
     return false;
 
   // TODO(michaelpg): Update shelf when network status changes.
   // TODO(michaelpg): Also check for captive portal.
-  if (!net::NetworkChangeNotifier::IsOffline())
+  if (!content::GetNetworkConnectionTracker()->IsOffline())
     return false;
 
   return base::ContainsValue(ignore_pin_policy_offline_apps_,
@@ -435,26 +449,38 @@ void DemoSession::InstallAppFromUpdateUrl(const std::string& id) {
 }
 
 void DemoSession::OnSessionStateChanged() {
-  if (session_manager::SessionManager::Get()->session_state() !=
-      session_manager::SessionState::ACTIVE) {
-    return;
-  }
-  // SystemTrayClient may not exist in unit tests.
-  if (SystemTrayClient::Get() &&
-      base::FeatureList::IsEnabled(switches::kShowLanguageToggleInDemoMode)) {
-    const std::string current_locale_iso_code =
-        ProfileManager::GetActiveUserProfile()->GetPrefs()->GetString(
-            language::prefs::kApplicationLocale);
-    SystemTrayClient::Get()->SetLocaleList(GetSupportedLocales(),
-                                           current_locale_iso_code);
-  }
-  RestoreDefaultLocaleForNextSession();
+  switch (session_manager::SessionManager::Get()->session_state()) {
+    case session_manager::SessionState::LOGIN_PRIMARY:
+      if (base::FeatureList::IsEnabled(switches::kShowSplashScreenInDemoMode)) {
+        WallpaperControllerClient::Get()->ShowAlwaysOnTopWallpaper(
+            base::FilePath(kSplashImagePath));
+      }
+      break;
+    case session_manager::SessionState::ACTIVE:
+      if (base::FeatureList::IsEnabled(switches::kShowSplashScreenInDemoMode))
+        WallpaperControllerClient::Get()->RemoveAlwaysOnTopWallpaper();
 
-  if (!offline_enrolled_)
-    InstallAppFromUpdateUrl(GetHighlightsAppId());
+      // SystemTrayClient may not exist in unit tests.
+      if (SystemTrayClient::Get() &&
+          base::FeatureList::IsEnabled(
+              switches::kShowLanguageToggleInDemoMode)) {
+        const std::string current_locale_iso_code =
+            ProfileManager::GetActiveUserProfile()->GetPrefs()->GetString(
+                language::prefs::kApplicationLocale);
+        SystemTrayClient::Get()->SetLocaleList(GetSupportedLocales(),
+                                               current_locale_iso_code);
+      }
+      RestoreDefaultLocaleForNextSession();
 
-  EnsureOfflineResourcesLoaded(base::BindOnce(
-      &DemoSession::InstallDemoResources, weak_ptr_factory_.GetWeakPtr()));
+      if (!offline_enrolled_)
+        InstallAppFromUpdateUrl(GetHighlightsAppId());
+
+      EnsureOfflineResourcesLoaded(base::BindOnce(
+          &DemoSession::InstallDemoResources, weak_ptr_factory_.GetWeakPtr()));
+      break;
+    default:
+      break;
+  }
 }
 
 void DemoSession::OnExtensionInstalled(content::BrowserContext* browser_context,

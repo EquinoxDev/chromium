@@ -18,7 +18,6 @@ namespace blink {
 class CoreProbeSink;
 class Resource;
 class SubresourceFilter;
-class WebURLLoader;
 class WebWorkerFetchContext;
 class WorkerContentSettingsClient;
 class WorkerSettings;
@@ -27,16 +26,22 @@ enum class ResourceType : uint8_t;
 
 // The WorkerFetchContext is a FetchContext for workers (dedicated, shared and
 // service workers) and threaded worklets (animation and audio worklets).
+//
+// Separate WorkerFetchContext objects (and separate ResourceFetcher objects)
+// are used for each of insideSettings fetch and outsideSettings fetches.
+// For more details, see core/workers/README.md.
 class WorkerFetchContext final : public BaseFetchContext {
  public:
   WorkerFetchContext(WorkerOrWorkletGlobalScope&,
                      scoped_refptr<WebWorkerFetchContext>,
                      SubresourceFilter*,
-                     FetchClientSettingsObject&);
+                     ContentSecurityPolicy&);
   ~WorkerFetchContext() override;
 
   // BaseFetchContext implementation:
   KURL GetSiteForCookies() const override;
+  scoped_refptr<const SecurityOrigin> GetTopFrameOrigin() const override;
+
   SubresourceFilter* GetSubresourceFilter() const override;
   PreviewsResourceLoadingHints* GetPreviewsResourceLoadingHints()
       const override;
@@ -61,25 +66,20 @@ class WorkerFetchContext final : public BaseFetchContext {
       SecurityViolationReportingPolicy) const override;
   bool ShouldBlockFetchAsCredentialedSubresource(const ResourceRequest&,
                                                  const KURL&) const override;
-  bool ShouldLoadNewResource(ResourceType) const override { return true; }
   const KURL& Url() const override;
   const SecurityOrigin* GetParentSecurityOrigin() const override;
-  base::Optional<mojom::IPAddressSpace> GetAddressSpace() const override;
   const ContentSecurityPolicy* GetContentSecurityPolicy() const override;
   void AddConsoleMessage(ConsoleMessage*) const override;
 
   // FetchContext implementation:
-  std::unique_ptr<WebURLLoader> CreateURLLoader(
-      const ResourceRequest&,
-      const ResourceLoaderOptions&) override;
-  std::unique_ptr<CodeCacheLoader> CreateCodeCacheLoader() override;
-  void PrepareRequest(ResourceRequest&, RedirectType) override;
-  blink::mojom::ControllerServiceWorkerMode IsControlledByServiceWorker()
-      const override;
-  void AddAdditionalRequestHeaders(ResourceRequest&,
-                                   FetchResourceType) override;
+  void PrepareRequest(ResourceRequest&,
+                      const FetchInitiatorInfo&,
+                      WebScopedVirtualTimePauser&,
+                      RedirectType,
+                      ResourceType) override;
+  void AddAdditionalRequestHeaders(ResourceRequest&) override;
   void DispatchWillSendRequest(unsigned long,
-                               ResourceRequest&,
+                               const ResourceRequest&,
                                const ResourceResponse&,
                                ResourceType,
                                const FetchInitiatorInfo&) override;
@@ -90,7 +90,7 @@ class WorkerFetchContext final : public BaseFetchContext {
                                   ResourceResponseType) override;
   void DispatchDidReceiveData(unsigned long identifier,
                               const char* data,
-                              size_t data_length) override;
+                              uint64_t data_length) override;
   void DispatchDidReceiveEncodedData(unsigned long identifier,
                                      size_t encoded_data_length) override;
   void DispatchDidFinishLoading(unsigned long identifier,
@@ -108,10 +108,6 @@ class WorkerFetchContext final : public BaseFetchContext {
                                const ClientHintsPreferences&,
                                const FetchParameters::ResourceWidth&,
                                ResourceRequest&) override;
-  bool DefersLoading() const override;
-
-  std::unique_ptr<scheduler::WebResourceLoadingTaskRunnerHandle>
-  CreateResourceLoadingTaskRunnerHandle() override;
 
   SecurityContext& GetSecurityContext() const;
   WorkerSettings* GetWorkerSettings() const;
@@ -131,6 +127,14 @@ class WorkerFetchContext final : public BaseFetchContext {
 
   const scoped_refptr<WebWorkerFetchContext> web_context_;
   Member<SubresourceFilter> subresource_filter_;
+
+  // In case of insideSettings fetch (=subresource fetch), this is
+  // WorkerGlobalScope::GetContentSecurityPolicy().
+  // In case of outsideSettings fetch (=off-the-main-thread top-level script
+  // fetch), this is a ContentSecurityPolicy different from
+  // WorkerGlobalScope::GetContentSecurityPolicy(), not bound to
+  // WorkerGlobalScope and owned by this WorkerFetchContext.
+  const Member<ContentSecurityPolicy> content_security_policy_;
 
   // The value of |save_data_enabled_| is read once per frame from
   // NetworkStateNotifier, which is guarded by a mutex lock, and cached locally

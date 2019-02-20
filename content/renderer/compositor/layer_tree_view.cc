@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
 #include "base/location.h"
@@ -209,15 +210,7 @@ void LayerTreeView::Initialize(
   }
 }
 
-void LayerTreeView::SetNeverVisible() {
-  DCHECK(!layer_tree_host_->IsVisible());
-  never_visible_ = true;
-}
-
 void LayerTreeView::SetVisible(bool visible) {
-  if (never_visible_)
-    return;
-
   layer_tree_host_->SetVisible(visible);
 
   if (visible && layer_tree_frame_sink_request_failed_while_invisible_)
@@ -311,20 +304,9 @@ viz::FrameSinkId LayerTreeView::GetFrameSinkId() {
   return frame_sink_id_;
 }
 
-void LayerTreeView::SetRootLayer(scoped_refptr<cc::Layer> layer) {
-  layer_tree_host_->SetRootLayer(std::move(layer));
-}
-
-void LayerTreeView::ClearRootLayer() {
-  layer_tree_host_->SetRootLayer(nullptr);
-}
-
-cc::AnimationHost* LayerTreeView::CompositorAnimationHost() {
-  return animation_host_.get();
-}
-
-gfx::Size LayerTreeView::GetViewportSize() const {
-  return layer_tree_host_->device_viewport_size();
+void LayerTreeView::SetNonBlinkManagedRootLayer(
+    scoped_refptr<cc::Layer> layer) {
+  layer_tree_host_->SetNonBlinkManagedRootLayer(std::move(layer));
 }
 
 void LayerTreeView::SetBackgroundColor(SkColor color) {
@@ -428,22 +410,6 @@ bool LayerTreeView::CompositeIsSynchronous() const {
   return false;
 }
 
-void LayerTreeView::LayoutAndPaintAsync(base::OnceClosure callback) {
-  DCHECK(layout_and_paint_async_callback_.is_null());
-  layout_and_paint_async_callback_ = std::move(callback);
-
-  if (CompositeIsSynchronous()) {
-    // The LayoutAndPaintAsyncCallback is invoked in WillCommit, which is
-    // dispatched after layout and paint for all compositing modes.
-    const bool raster = false;
-    layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner()->PostTask(
-        FROM_HERE, base::BindOnce(&LayerTreeView::SynchronouslyComposite,
-                                  weak_factory_.GetWeakPtr(), raster, nullptr));
-  } else {
-    layer_tree_host_->SetNeedsCommit();
-  }
-}
-
 void LayerTreeView::SetLayerTreeFrameSink(
     std::unique_ptr<cc::LayerTreeFrameSink> layer_tree_frame_sink) {
   if (!layer_tree_frame_sink) {
@@ -453,14 +419,8 @@ void LayerTreeView::SetLayerTreeFrameSink(
   layer_tree_host_->SetLayerTreeFrameSink(std::move(layer_tree_frame_sink));
 }
 
-void LayerTreeView::InvokeLayoutAndPaintCallback() {
-  if (!layout_and_paint_async_callback_.is_null())
-    std::move(layout_and_paint_async_callback_).Run();
-}
-
 void LayerTreeView::CompositeAndReadbackAsync(
     base::OnceCallback<void(const SkBitmap&)> callback) {
-  DCHECK(layout_and_paint_async_callback_.is_null());
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner =
       layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner();
   std::unique_ptr<viz::CopyOutputRequest> request =
@@ -516,7 +476,7 @@ void LayerTreeView::SynchronouslyComposite(
     // frame, but the compositor does not support this. In this case, we only
     // run blink's lifecycle updates.
     delegate_->BeginMainFrame(base::TimeTicks::Now());
-    delegate_->UpdateVisualState(false /* record_main_frame_metrics */);
+    delegate_->UpdateVisualState();
     return;
   }
 
@@ -538,43 +498,16 @@ LayerTreeView::DeferMainFrameUpdate() {
   return layer_tree_host_->DeferMainFrameUpdate();
 }
 
+void LayerTreeView::StartDeferringCommits() {
+  layer_tree_host_->StartDeferringCommits();
+}
+
+void LayerTreeView::StopDeferringCommits() {
+  layer_tree_host_->StopDeferringCommits();
+}
+
 int LayerTreeView::LayerTreeId() const {
   return layer_tree_host_->GetId();
-}
-
-void LayerTreeView::SetShowFPSCounter(bool show) {
-  cc::LayerTreeDebugState debug_state = layer_tree_host_->GetDebugState();
-  debug_state.show_fps_counter = show;
-  layer_tree_host_->SetDebugState(debug_state);
-}
-
-void LayerTreeView::SetShowPaintRects(bool show) {
-  cc::LayerTreeDebugState debug_state = layer_tree_host_->GetDebugState();
-  debug_state.show_paint_rects = show;
-  layer_tree_host_->SetDebugState(debug_state);
-}
-
-void LayerTreeView::SetShowDebugBorders(bool show) {
-  cc::LayerTreeDebugState debug_state = layer_tree_host_->GetDebugState();
-  if (show)
-    debug_state.show_debug_borders.set();
-  else
-    debug_state.show_debug_borders.reset();
-  layer_tree_host_->SetDebugState(debug_state);
-}
-
-void LayerTreeView::SetShowScrollBottleneckRects(bool show) {
-  cc::LayerTreeDebugState debug_state = layer_tree_host_->GetDebugState();
-  debug_state.show_touch_event_handler_rects = show;
-  debug_state.show_wheel_event_handler_rects = show;
-  debug_state.show_non_fast_scrollable_rects = show;
-  layer_tree_host_->SetDebugState(debug_state);
-}
-
-void LayerTreeView::SetShowHitTestBorders(bool show) {
-  cc::LayerTreeDebugState debug_state = layer_tree_host_->GetDebugState();
-  debug_state.show_hit_test_borders = show;
-  layer_tree_host_->SetDebugState(debug_state);
 }
 
 void LayerTreeView::UpdateBrowserControlsState(
@@ -640,6 +573,16 @@ void LayerTreeView::WillBeginMainFrame() {
 
 void LayerTreeView::DidBeginMainFrame() {}
 
+void LayerTreeView::DidUpdateLayers() {
+  // Dump property trees and layers if run with:
+  //   --vmodule=layer_tree_view=3
+  VLOG(3) << "After updating layers:\n"
+          << "property trees:\n"
+          << layer_tree_host_->property_trees()->ToString() << "\n"
+          << "cc::Layers:\n"
+          << layer_tree_host_->LayersAsString();
+}
+
 void LayerTreeView::BeginMainFrame(const viz::BeginFrameArgs& args) {
   web_main_thread_scheduler_->WillBeginFrame(args);
   delegate_->BeginMainFrame(args.frame_time);
@@ -653,8 +596,8 @@ void LayerTreeView::BeginMainFrameNotExpectedUntil(base::TimeTicks time) {
   web_main_thread_scheduler_->BeginMainFrameNotExpectedUntil(time);
 }
 
-void LayerTreeView::UpdateLayerTreeHost(bool record_main_frame_metrics) {
-  delegate_->UpdateVisualState(record_main_frame_metrics);
+void LayerTreeView::UpdateLayerTreeHost() {
+  delegate_->UpdateVisualState();
 }
 
 void LayerTreeView::ApplyViewportChanges(
@@ -667,6 +610,18 @@ void LayerTreeView::RecordWheelAndTouchScrollingCount(
     bool has_scrolled_by_touch) {
   delegate_->RecordWheelAndTouchScrollingCount(has_scrolled_by_wheel,
                                                has_scrolled_by_touch);
+}
+
+void LayerTreeView::SendOverscrollEventFromImplSide(
+    const gfx::Vector2dF& overscroll_delta,
+    cc::ElementId scroll_latched_element_id) {
+  delegate_->SendOverscrollEventFromImplSide(overscroll_delta,
+                                             scroll_latched_element_id);
+}
+
+void LayerTreeView::SendScrollEndEventFromImplSide(
+    cc::ElementId scroll_latched_element_id) {
+  delegate_->SendScrollEndEventFromImplSide(scroll_latched_element_id);
 }
 
 void LayerTreeView::RequestNewLayerTreeFrameSink() {
@@ -712,9 +667,7 @@ void LayerTreeView::DidFailToInitializeLayerTreeFrameSink() {
                                 weak_factory_.GetWeakPtr()));
 }
 
-void LayerTreeView::WillCommit() {
-  InvokeLayoutAndPaintCallback();
-}
+void LayerTreeView::WillCommit() {}
 
 void LayerTreeView::DidCommit() {
   delegate_->DidCommitCompositorFrame();
@@ -743,6 +696,10 @@ void LayerTreeView::DidPresentCompositorFrame(
       std::move(callback).Run(feedback.timestamp);
     presentation_callbacks_.erase(front);
   }
+}
+
+void LayerTreeView::RecordStartOfFrameMetrics() {
+  delegate_->RecordStartOfFrameMetrics();
 }
 
 void LayerTreeView::RecordEndOfFrameMetrics(base::TimeTicks frame_begin_time) {

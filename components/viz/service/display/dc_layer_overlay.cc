@@ -13,6 +13,7 @@
 #include "components/viz/service/display/display_resource_provider.h"
 #include "components/viz/service/display/output_surface.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/config/gpu_finch_features.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gl/gl_switches.h"
 
@@ -20,19 +21,56 @@ namespace viz {
 
 namespace {
 
-DCLayerOverlay FromYUVQuad(const YUVVideoDrawQuad* quad,
-                           const gfx::Transform& transform_to_root_target) {
-  DCLayerOverlay dc_layer;
+// This is used for a histogram to determine why overlays are or aren't used,
+// so don't remove entries and make sure to update enums.xml if it changes.
+enum DCLayerResult {
+  DC_LAYER_SUCCESS,
+  DC_LAYER_FAILED_UNSUPPORTED_QUAD,
+  DC_LAYER_FAILED_QUAD_BLEND_MODE,
+  DC_LAYER_FAILED_TEXTURE_NOT_CANDIDATE,
+  DC_LAYER_FAILED_OCCLUDED,
+  DC_LAYER_FAILED_COMPLEX_TRANSFORM,
+  DC_LAYER_FAILED_TRANSPARENT,
+  DC_LAYER_FAILED_NON_ROOT,
+  DC_LAYER_FAILED_TOO_MANY_OVERLAYS,
+  DC_LAYER_FAILED_NO_HW_OVERLAY_SUPPORT,
+  kMaxValue = DC_LAYER_FAILED_NO_HW_OVERLAY_SUPPORT,
+};
+
+DCLayerResult FromYUVQuad(const YUVVideoDrawQuad* quad,
+                          const gfx::Transform& transform_to_root_target,
+                          bool has_hw_overlay_support,
+                          DisplayResourceProvider* resource_provider,
+                          DCLayerOverlay* dc_layer) {
+  // Check that resources are overlay compatible first so that subsequent
+  // assumptions are valid.
+  for (const auto& resource : quad->resources) {
+    if (!resource_provider->IsOverlayCandidate(resource))
+      return DC_LAYER_FAILED_TEXTURE_NOT_CANDIDATE;
+  }
+  // Hardware protected video must use Direct Composition Overlay
+  if (quad->shared_quad_state->blend_mode != SkBlendMode::kSrcOver &&
+      quad->protected_video_type !=
+          ui::ProtectedVideoType::kHardwareProtected) {
+    return DC_LAYER_FAILED_QUAD_BLEND_MODE;
+  }
+  // To support software protected video on machines without hardware overlay
+  // capability. Don't do dc layer overlay if no hardware support.
+  if (!has_hw_overlay_support &&
+      quad->protected_video_type !=
+          ui::ProtectedVideoType::kSoftwareProtected) {
+    return DC_LAYER_FAILED_NO_HW_OVERLAY_SUPPORT;
+  }
   // Direct composition path only supports single NV12 buffer, or two buffers
   // one each for Y and UV planes.
   DCHECK(quad->y_plane_resource_id() && quad->u_plane_resource_id());
   DCHECK_EQ(quad->u_plane_resource_id(), quad->v_plane_resource_id());
-  dc_layer.y_resource_id = quad->y_plane_resource_id();
-  dc_layer.uv_resource_id = quad->u_plane_resource_id();
+  dc_layer->y_resource_id = quad->y_plane_resource_id();
+  dc_layer->uv_resource_id = quad->u_plane_resource_id();
 
-  dc_layer.z_order = 1;
-  dc_layer.content_rect = gfx::ToNearestRect(quad->ya_tex_coord_rect);
-  dc_layer.quad_rect = quad->rect;
+  dc_layer->z_order = 1;
+  dc_layer->content_rect = gfx::ToNearestRect(quad->ya_tex_coord_rect);
+  dc_layer->quad_rect = quad->rect;
   // Quad rect is in quad content space so both quad to target, and target to
   // root transforms must be applied to it.
   gfx::Transform quad_to_root_transform(
@@ -41,20 +79,20 @@ DCLayerOverlay FromYUVQuad(const YUVVideoDrawQuad* quad,
   // Flatten transform to 2D since DirectComposition doesn't support 3D
   // transforms.
   quad_to_root_transform.FlattenTo2d();
-  dc_layer.transform = quad_to_root_transform;
+  dc_layer->transform = quad_to_root_transform;
 
-  dc_layer.is_clipped = quad->shared_quad_state->is_clipped;
-  if (dc_layer.is_clipped) {
+  dc_layer->is_clipped = quad->shared_quad_state->is_clipped;
+  if (dc_layer->is_clipped) {
     // Clip rect is in quad target space, and must be transformed to root target
     // space.
     gfx::RectF clip_rect = gfx::RectF(quad->shared_quad_state->clip_rect);
     transform_to_root_target.TransformRect(&clip_rect);
-    dc_layer.clip_rect = gfx::ToEnclosingRect(clip_rect);
+    dc_layer->clip_rect = gfx::ToEnclosingRect(clip_rect);
   }
-  dc_layer.color_space = quad->video_color_space;
-  dc_layer.protected_video_type = quad->protected_video_type;
+  dc_layer->color_space = quad->video_color_space;
+  dc_layer->protected_video_type = quad->protected_video_type;
 
-  return dc_layer;
+  return DC_LAYER_SUCCESS;
 }
 
 // This returns the smallest rectangle in target space that contains the quad.
@@ -67,12 +105,15 @@ gfx::RectF ClippedQuadRectangle(const DrawQuad* quad) {
   return quad_rect;
 }
 
-// Find a rectangle containing all the quads in a list that occlude the area
-// in target_quad.
+// GetOcclusionBounds() - Find a rectangle containing all the quads in a list
+// that occlude the area in target_quad.
+// |has_occluding_surface_damage| - used for underlay power optimization.
 gfx::RectF GetOcclusionBounds(const gfx::RectF& target_quad,
                               QuadList::ConstIterator quad_list_begin,
-                              QuadList::ConstIterator quad_list_end) {
+                              QuadList::ConstIterator quad_list_end,
+                              bool* has_occluding_surface_damage) {
   gfx::RectF occlusion_bounding_box;
+  *has_occluding_surface_damage = false;
   for (auto overlap_iter = quad_list_begin; overlap_iter != quad_list_end;
        ++overlap_iter) {
     float opacity = overlap_iter->shared_quad_state->opacity;
@@ -90,12 +131,14 @@ gfx::RectF GetOcclusionBounds(const gfx::RectF& target_quad,
     overlap_rect.Intersect(target_quad);
     if (!overlap_rect.IsEmpty()) {
       occlusion_bounding_box.Union(overlap_rect);
+      *has_occluding_surface_damage |=
+          overlap_iter->shared_quad_state->has_surface_damage;
     }
   }
   return occlusion_bounding_box;
 }
 
-void RecordDCLayerResult(DCLayerOverlayProcessor::DCLayerResult result,
+void RecordDCLayerResult(DCLayerResult result,
                          ui::ProtectedVideoType protected_video_type) {
   switch (protected_video_type) {
     case ui::ProtectedVideoType::kClear:
@@ -134,40 +177,6 @@ DCLayerOverlayProcessor::DCLayerOverlayProcessor(OutputSurface* surface) {
 }
 
 DCLayerOverlayProcessor::~DCLayerOverlayProcessor() = default;
-
-DCLayerOverlayProcessor::DCLayerResult DCLayerOverlayProcessor::FromDrawQuad(
-    DisplayResourceProvider* resource_provider,
-    QuadList::ConstIterator quad_list_begin,
-    QuadList::ConstIterator quad,
-    const gfx::Transform& transform_to_root_target,
-    DCLayerOverlay* dc_layer_overlay) {
-  switch (quad->material) {
-    case DrawQuad::YUV_VIDEO_CONTENT:
-      *dc_layer_overlay = FromYUVQuad(YUVVideoDrawQuad::MaterialCast(*quad),
-                                      transform_to_root_target);
-      break;
-    default:
-      return DC_LAYER_FAILED_UNSUPPORTED_QUAD;
-  }
-  // Hardware protected video must use Direct Composition Overlay
-  if (quad->shared_quad_state->blend_mode != SkBlendMode::kSrcOver &&
-      dc_layer_overlay->protected_video_type !=
-          ui::ProtectedVideoType::kHardwareProtected)
-    return DC_LAYER_FAILED_QUAD_BLEND_MODE;
-
-  for (const auto& resource : quad->resources) {
-    if (!resource_provider->IsOverlayCandidate(resource))
-      return DC_LAYER_FAILED_TEXTURE_NOT_CANDIDATE;
-  }
-  // To support software protected video on machines without hardware overlay
-  // capability. Don't do dc layer overlay if no hardware support.
-  if (!has_hw_overlay_support_ &&
-      dc_layer_overlay->protected_video_type !=
-          ui::ProtectedVideoType::kSoftwareProtected) {
-    return DC_LAYER_FAILED_NO_HW_OVERLAY_SUPPORT;
-  }
-  return DC_LAYER_SUCCESS;
-}
 
 void DCLayerOverlayProcessor::Process(
     DisplayResourceProvider* resource_provider,
@@ -294,10 +303,10 @@ void DCLayerOverlayProcessor::ProcessRenderPass(
   QuadList* quad_list = &render_pass->quad_list;
   auto next_it = quad_list->begin();
   for (auto it = quad_list->begin(); it != quad_list->end(); it = next_it) {
-    next_it = it;
-    ++next_it;
     // next_it may be modified inside the loop if methods modify the quad list
     // and invalidate iterators to it.
+    next_it = it;
+    ++next_it;
 
     if (it->material == DrawQuad::RENDER_PASS) {
       next_it = ProcessRenderPassDrawQuad(render_pass, damage_rect, it);
@@ -305,11 +314,23 @@ void DCLayerOverlayProcessor::ProcessRenderPass(
     }
 
     DCLayerOverlay dc_layer;
-    DCLayerResult result =
-        FromDrawQuad(resource_provider, quad_list->begin(), it,
-                     render_pass->transform_to_root_target, &dc_layer);
+    DCLayerResult result;
+    auto uma_protected_video_type = ui::ProtectedVideoType::kClear;
+    switch (it->material) {
+      case DrawQuad::YUV_VIDEO_CONTENT:
+        result =
+            FromYUVQuad(YUVVideoDrawQuad::MaterialCast(*it),
+                        render_pass->transform_to_root_target,
+                        has_hw_overlay_support_, resource_provider, &dc_layer);
+        uma_protected_video_type =
+            YUVVideoDrawQuad::MaterialCast(*it)->protected_video_type;
+        break;
+      default:
+        result = DC_LAYER_FAILED_UNSUPPORTED_QUAD;
+    }
+
     if (result != DC_LAYER_SUCCESS) {
-      RecordDCLayerResult(result, dc_layer.protected_video_type);
+      RecordDCLayerResult(result, uma_protected_video_type);
       continue;
     }
 
@@ -325,8 +346,11 @@ void DCLayerOverlayProcessor::ProcessRenderPass(
 
     // These rects are in quad target space.
     gfx::Rect quad_rectangle = gfx::ToEnclosingRect(ClippedQuadRectangle(*it));
+    bool has_occluding_surface_damage = false;
     gfx::RectF occlusion_bounding_box =
-        GetOcclusionBounds(gfx::RectF(quad_rectangle), quad_list->begin(), it);
+        GetOcclusionBounds(gfx::RectF(quad_rectangle), quad_list->begin(), it,
+                           &has_occluding_surface_damage);
+
     bool processed_overlay = false;
 
     // Underlays are less efficient, so attempt regular overlays first. Only
@@ -347,7 +371,8 @@ void DCLayerOverlayProcessor::ProcessRenderPass(
       processed_overlay = true;
     } else if (ProcessForUnderlay(display_rect, render_pass, quad_rectangle,
                                   occlusion_bounding_box, it, is_root,
-                                  damage_rect, &this_frame_underlay_rect,
+                                  has_occluding_surface_damage, damage_rect,
+                                  &this_frame_underlay_rect,
                                   &this_frame_underlay_occlusion, &dc_layer)) {
       processed_overlay = true;
     }
@@ -403,6 +428,7 @@ bool DCLayerOverlayProcessor::ProcessForUnderlay(
     const gfx::RectF& occlusion_bounding_box,
     const QuadList::Iterator& it,
     bool is_root,
+    bool has_occluding_surface_damage,
     gfx::Rect* damage_rect,
     gfx::Rect* this_frame_underlay_rect,
     gfx::Rect* this_frame_underlay_occlusion,
@@ -488,13 +514,21 @@ bool DCLayerOverlayProcessor::ProcessForUnderlay(
     gfx::Rect occluding_damage_rect = *damage_rect;
     damage_rect->Subtract(quad_rectangle);
 
-    gfx::Rect occlusion = gfx::ToEnclosingRect(occlusion_bounding_box);
-    occlusion.Union(previous_frame_underlay_occlusion_);
+    // If none of the quads on top give any damage, we can skip compositing
+    // these quads when the incoming damage rect is smaller or equal to the
+    // video quad. After subtraction, the resulting output damage rect for GL
+    // compositor will be empty. If the incoming damage rect is bigger than the
+    // video quad, we don't have an oppertunity for power optimization even if
+    // no damage on top. The output damage rect will not be empty in this case.
+    if (has_occluding_surface_damage) {
+      gfx::Rect occlusion = gfx::ToEnclosingRect(occlusion_bounding_box);
+      occlusion.Union(previous_frame_underlay_occlusion_);
 
-    occluding_damage_rect.Intersect(quad_rectangle);
-    occluding_damage_rect.Intersect(occlusion);
+      occluding_damage_rect.Intersect(quad_rectangle);
+      occluding_damage_rect.Intersect(occlusion);
 
-    damage_rect->Union(occluding_damage_rect);
+      damage_rect->Union(occluding_damage_rect);
+    }
   } else {
     // Entire replacement quad must be redrawn.
     // TODO(sunnyps): We should avoid this extra damage if we knew that the

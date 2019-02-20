@@ -42,6 +42,7 @@ import org.chromium.chrome.browser.metrics.UmaUtils;
 import org.chromium.chrome.browser.preferences.ChromePreferenceManager;
 import org.chromium.chrome.browser.vr.OnExitVrRequestListener;
 import org.chromium.chrome.browser.vr.VrModuleProvider;
+import org.chromium.components.embedder_support.application.FontPreloadingWorkaround;
 import org.chromium.components.module_installer.ModuleInstaller;
 
 /**
@@ -56,6 +57,12 @@ public class ChromeApplication extends Application {
 
     @Nullable
     private static ChromeAppComponent sComponent;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        FontPreloadingWorkaround.maybeInstallWorkaround(this);
+    }
 
     // Called by the framework for ALL processes. Runs before ContentProviders are created.
     // Quirk: context.getApplicationContext() returns null during this method.

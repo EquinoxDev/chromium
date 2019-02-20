@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/task/post_task.h"
 #include "base/test/scoped_feature_list.h"
@@ -32,6 +33,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/test/test_navigation_url_loader_delegate.h"
 #include "net/base/load_flags.h"
+#include "net/base/mock_network_change_notifier.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request_context.h"
@@ -97,7 +99,7 @@ class TestNavigationLoaderInterceptor : public NavigationLoaderInterceptor {
   }
 
   bool MaybeCreateLoaderForResponse(
-      const GURL& request_url,
+      const network::ResourceRequest& request,
       const network::ResourceResponseHead& response,
       network::mojom::URLLoaderPtr* loader,
       network::mojom::URLLoaderClientRequest* client_request,
@@ -223,7 +225,7 @@ class NavigationURLLoaderImplTest : public testing::Test {
                            redirect_url.GetOrigin().spec().c_str()),
         request_method, &delegate);
     delegate.WaitForRequestRedirected();
-    loader->FollowRedirect(base::nullopt, base::nullopt);
+    loader->FollowRedirect({}, {}, PREVIEWS_OFF);
 
     EXPECT_EQ(expected_redirect_method, delegate.redirect_info().new_method);
 
@@ -264,7 +266,7 @@ class NavigationURLLoaderImplTest : public testing::Test {
                            url.GetOrigin().spec().c_str()),
         "GET", &delegate, NavigationDownloadPolicy::kAllow, is_main_frame);
     delegate.WaitForRequestRedirected();
-    loader->FollowRedirect(base::nullopt, base::nullopt);
+    loader->FollowRedirect({}, {}, PREVIEWS_OFF);
     delegate.WaitForResponseStarted();
 
     return most_recent_resource_request_.value().priority;
@@ -281,7 +283,7 @@ class NavigationURLLoaderImplTest : public testing::Test {
         "GET", &delegate, NavigationDownloadPolicy::kAllow,
         true /*is_main_frame*/, upgrade_if_insecure);
     delegate.WaitForRequestRedirected();
-    loader->FollowRedirect(base::nullopt, base::nullopt);
+    loader->FollowRedirect({}, {}, PREVIEWS_OFF);
     if (expect_request_fail) {
       delegate.WaitForRequestFailed();
     } else {
@@ -294,6 +296,7 @@ class NavigationURLLoaderImplTest : public testing::Test {
   base::test::ScopedFeatureList feature_list_;
   TestBrowserThreadBundle thread_bundle_;
   std::unique_ptr<TestBrowserContext> browser_context_;
+  net::test::MockNetworkChangeNotifier network_change_notifier_;
   net::EmbeddedTestServer http_test_server_;
   base::Optional<network::ResourceRequest> most_recent_resource_request_;
 };
@@ -436,7 +439,7 @@ TEST_F(NavigationURLLoaderImplTest, RedirectModifiedHeaders) {
   net::HttpRequestHeaders redirect_headers;
   redirect_headers.SetHeader("Header2", "");
   redirect_headers.SetHeader("Header3", "Value3");
-  loader->FollowRedirect(base::nullopt, redirect_headers);
+  loader->FollowRedirect({}, redirect_headers, PREVIEWS_OFF);
   delegate.WaitForResponseStarted();
 
   // Redirected request should also have modified headers.

@@ -27,7 +27,7 @@
 #include "ash/keyboard/ash_keyboard_controller.h"
 #include "ash/login/login_screen_controller.h"
 #include "ash/magnifier/docked_magnifier_controller.h"
-#include "ash/media_controller.h"
+#include "ash/media/media_controller.h"
 #include "ash/metrics/time_to_first_present_recorder.h"
 #include "ash/new_window_controller.h"
 #include "ash/note_taking_controller.h"
@@ -316,11 +316,9 @@ void RegisterInterfaces(
   registry->AddInterface(
       base::BindRepeating(&BindDisplayOutputProtectionRequestOnMainThread),
       main_thread_task_runner);
-  if (features::IsDockedMagnifierEnabled()) {
-    registry->AddInterface(
-        base::BindRepeating(&BindDockedMagnifierControllerRequestOnMainThread),
-        main_thread_task_runner);
-  }
+  registry->AddInterface(
+      base::BindRepeating(&BindDockedMagnifierControllerRequestOnMainThread),
+      main_thread_task_runner);
   registry->AddInterface(
       base::BindRepeating(&BindEventRewriterControllerRequestOnMainThread),
       main_thread_task_runner);
@@ -348,11 +346,9 @@ void RegisterInterfaces(
   registry->AddInterface(
       base::BindRepeating(&BindNewWindowControllerRequestOnMainThread),
       main_thread_task_runner);
-  if (features::IsNightLightEnabled()) {
     registry->AddInterface(
         base::BindRepeating(&BindNightLightControllerRequestOnMainThread),
         main_thread_task_runner);
-  }
   registry->AddInterface(
       base::BindRepeating(&BindNoteTakingControllerRequestOnMainThread),
       main_thread_task_runner);

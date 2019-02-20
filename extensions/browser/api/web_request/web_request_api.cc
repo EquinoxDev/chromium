@@ -13,7 +13,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/feature_list.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram_macros.h"
@@ -73,6 +72,7 @@
 #include "extensions/common/error_utils.h"
 #include "extensions/common/event_filtering_info.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
 #include "extensions/common/permissions/permissions_data.h"
@@ -143,6 +143,14 @@ const char* const kWebRequestEvents[] = {
     keys::kOnAuthRequiredEvent,
     keys::kOnResponseStartedEvent,
     keys::kOnHeadersReceivedEvent,
+};
+
+// List of all webRequest events that support extraHeaders in the extraInfoSpec.
+const char* const kWebRequestExtraHeadersEventNames[] = {
+    keys::kOnBeforeSendHeadersEvent, keys::kOnSendHeadersEvent,
+    keys::kOnHeadersReceivedEvent,   keys::kOnAuthRequiredEvent,
+    keys::kOnResponseStartedEvent,   keys::kOnBeforeRedirectEvent,
+    keys::kOnCompletedEvent,
 };
 
 // User data key for WebRequestAPI::ProxySet.
@@ -703,6 +711,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
 }
 
 bool WebRequestAPI::MaybeProxyAuthRequest(
+    content::BrowserContext* browser_context,
     net::AuthChallengeInfo* auth_info,
     scoped_refptr<net::HttpResponseHeaders> response_headers,
     const content::GlobalRequestID& request_id,
@@ -714,10 +723,18 @@ bool WebRequestAPI::MaybeProxyAuthRequest(
   content::GlobalRequestID proxied_request_id = request_id;
   if (is_main_frame)
     proxied_request_id.child_id = -1;
+
+  // NOTE: This request may be proxied on behalf of an incognito frame, but
+  // |this| will always be bound to a regular profile (see
+  // |BrowserContextKeyedAPI::kServiceRedirectedInIncognito|).
+  DCHECK(browser_context == browser_context_ ||
+         (browser_context->IsOffTheRecord() &&
+          ExtensionsBrowserClient::Get()->GetOriginalContext(browser_context) ==
+              browser_context_));
   base::PostTaskWithTraits(
       FROM_HERE, {BrowserThread::IO},
       base::BindOnce(&MaybeProxyAuthRequestOnIO,
-                     browser_context_->GetResourceContext(),
+                     browser_context->GetResourceContext(),
                      base::RetainedRef(auth_info), std::move(response_headers),
                      proxied_request_id, std::move(callback)));
   return true;
@@ -757,6 +774,11 @@ bool WebRequestAPI::MayHaveProxies() const {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
     return false;
+
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kForceWebRequestProxyForTest)) {
+    return true;
+  }
 
   return web_request_extension_count_ > 0;
 }
@@ -984,7 +1006,8 @@ int ExtensionWebRequestEventRouter::OnBeforeRequest(
   }
   request_time_tracker_->LogRequestStartTime(
       request->id, base::TimeTicks::Now(), has_listener,
-      HasExtraHeadersListener(browser_context, extension_info_map, request));
+      HasExtraHeadersListenerForRequest(browser_context, extension_info_map,
+                                        request));
 
   const bool is_incognito_context = IsIncognitoBrowserContext(browser_context);
 
@@ -1398,6 +1421,7 @@ void ExtensionWebRequestEventRouter::OnRequestWillBeDestroyed(
   ClearPendingCallbacks(*request);
   signaled_requests_.erase(request->id);
   request_time_tracker_->LogRequestEndTime(request->id, base::TimeTicks::Now());
+  pending_requests_for_frame_data_.erase(request);
 }
 
 void ExtensionWebRequestEventRouter::ClearPendingCallbacks(
@@ -1446,9 +1470,12 @@ bool ExtensionWebRequestEventRouter::DispatchEvent(
     // We don't have FrameData available yet, so fetch it asynchronously. This
     // event will be dispatched once that operation completes. Unretained is
     // safe here because the ExtensionWebRequestEventRouter singleton is leaked.
-    event_details.release()->DetermineFrameDataOnIO(
-        base::Bind(&ExtensionWebRequestEventRouter::DispatchEventToListeners,
-                   base::Unretained(this), browser_context,
+    pending_requests_for_frame_data_.insert(request);
+    ExtensionApiFrameIdMap::Get()->GetFrameDataOnIO(
+        request->render_process_id, request->frame_id,
+        base::Bind(&ExtensionWebRequestEventRouter::OnFrameDataReceived,
+                   base::Unretained(this), browser_context, request,
+                   base::Passed(&event_details),
                    base::RetainedRef(extension_info_map),
                    base::Passed(&listeners_to_dispatch)));
   }
@@ -1463,6 +1490,31 @@ bool ExtensionWebRequestEventRouter::DispatchEvent(
   }
 
   return false;
+}
+
+void ExtensionWebRequestEventRouter::OnFrameDataReceived(
+    void* browser_context,
+    const WebRequestInfo* request,
+    std::unique_ptr<WebRequestEventDetails> event_details,
+    const InfoMap* extension_info_map,
+    std::unique_ptr<ListenerIDs> listeners_to_dispatch,
+    const ExtensionApiFrameIdMap::FrameData& frame_data) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+
+  // Store the |frame_data| in |request| so that the same frame_data can be
+  // persisted across the request lifetime. Requesting id every time isn't
+  // working if the frame host gets deleted during a request; see
+  // https://crbug.com/914232.
+  // Check with |pending_requests_for_frame_data_| to ensure that |request| is
+  // still alive.
+  if (pending_requests_for_frame_data_.count(request) > 0) {
+    request->frame_data = frame_data;
+    pending_requests_for_frame_data_.erase(request);
+  }
+  event_details->SetFrameData(frame_data);
+  DispatchEventToListeners(browser_context, extension_info_map,
+                           std::move(listeners_to_dispatch),
+                           std::move(event_details));
 }
 
 void ExtensionWebRequestEventRouter::DispatchEventToListeners(
@@ -1697,22 +1749,40 @@ void ExtensionWebRequestEventRouter::AddCallbackForPageLoad(
   callbacks_for_page_load_.push_back(callback);
 }
 
-bool ExtensionWebRequestEventRouter::HasExtraHeadersListener(
+bool ExtensionWebRequestEventRouter::HasExtraHeadersListenerForRequest(
     void* browser_context,
     const extensions::InfoMap* extension_info_map,
     const WebRequestInfo* request) {
-  static const char* kEventNames[] = {
-      keys::kOnBeforeSendHeadersEvent, keys::kOnSendHeadersEvent,
-      keys::kOnHeadersReceivedEvent,   keys::kOnAuthRequiredEvent,
-      keys::kOnResponseStartedEvent,   keys::kOnBeforeRedirectEvent,
-      keys::kOnCompletedEvent,
-  };
   int extra_info_spec = 0;
-  for (const char* name : kEventNames) {
+  for (const char* name : kWebRequestExtraHeadersEventNames) {
     GetMatchingListeners(browser_context, extension_info_map, name, request,
                          &extra_info_spec);
     if (extra_info_spec & ExtraInfoSpec::EXTRA_HEADERS)
       return true;
+  }
+  return false;
+}
+
+bool ExtensionWebRequestEventRouter::HasAnyExtraHeadersListener(
+    void* browser_context) {
+  if (HasAnyExtraHeadersListenerImpl(browser_context))
+    return true;
+
+  void* cross_browser_context = GetCrossBrowserContext(browser_context);
+  if (cross_browser_context)
+    return HasAnyExtraHeadersListenerImpl(cross_browser_context);
+
+  return false;
+}
+
+bool ExtensionWebRequestEventRouter::HasAnyExtraHeadersListenerImpl(
+    void* browser_context) {
+  for (const char* name : kWebRequestExtraHeadersEventNames) {
+    const Listeners& listeners = listeners_[browser_context][name];
+    for (const auto& listener : listeners) {
+      if (listener->extra_info_spec & ExtraInfoSpec::EXTRA_HEADERS)
+        return true;
+    }
   }
   return false;
 }
@@ -1821,7 +1891,7 @@ void ExtensionWebRequestEventRouter::GetMatchingListenersImpl(
               crosses_incognito,
               WebRequestPermissions::
                   REQUIRE_HOST_PERMISSION_FOR_URL_AND_INITIATOR,
-              request->initiator);
+              request->initiator, request->type);
 
       if (access != PermissionsData::PageAccess::kAllowed) {
         if (access == PermissionsData::PageAccess::kWithheld) {

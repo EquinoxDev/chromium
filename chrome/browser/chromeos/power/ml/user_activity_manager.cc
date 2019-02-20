@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "ash/public/cpp/ash_pref_names.h"
+#include "base/bind.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -19,9 +20,9 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chromeos/constants/chromeos_features.h"
+#include "chromeos/constants/devicetype.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager/power_supply_properties.pb.h"
-#include "chromeos/system/devicetype.h"
 #include "components/ukm/content/source_url_recorder.h"
 #include "content/public/common/page_importance_signals.h"
 
@@ -607,8 +608,6 @@ void UserActivityManager::ResetAfterLogging() {
 }
 
 void UserActivityManager::CancelDimDecisionRequest() {
-  // TODO(crbug.com/893425): Add a unit-test to verify UMA logging of
-  // cancellation time.
   LOG(WARNING) << "Cancelling pending Smart Dim decision request.";
   smart_dim_model_->CancelPreviousRequest();
   waiting_for_model_decision_ = false;

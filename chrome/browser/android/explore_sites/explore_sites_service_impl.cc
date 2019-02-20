@@ -4,6 +4,7 @@
 
 #include "chrome/browser/android/explore_sites/explore_sites_service_impl.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
@@ -11,6 +12,7 @@
 #include "chrome/browser/android/chrome_feature_list.h"
 #include "chrome/browser/android/explore_sites/blacklist_site_task.h"
 #include "chrome/browser/android/explore_sites/catalog.pb.h"
+#include "chrome/browser/android/explore_sites/clear_activities_task.h"
 #include "chrome/browser/android/explore_sites/clear_catalog_task.h"
 #include "chrome/browser/android/explore_sites/explore_sites_bridge.h"
 #include "chrome/browser/android/explore_sites/explore_sites_feature.h"
@@ -21,6 +23,8 @@
 #include "chrome/browser/android/explore_sites/get_version_task.h"
 #include "chrome/browser/android/explore_sites/image_helper.h"
 #include "chrome/browser/android/explore_sites/import_catalog_task.h"
+#include "chrome/browser/android/explore_sites/increment_shown_count_task.h"
+#include "chrome/browser/android/explore_sites/record_site_click_task.h"
 #include "chrome/browser/browser_process.h"
 #include "components/offline_pages/task/task.h"
 #include "components/variations/service/variations_service.h"
@@ -66,7 +70,9 @@ ExploreSitesServiceImpl::~ExploreSitesServiceImpl() {}
 
 // static
 bool ExploreSitesServiceImpl::IsExploreSitesEnabled() {
-  return GetExploreSitesVariation() == ExploreSitesVariation::ENABLED;
+  ExploreSitesVariation variation = GetExploreSitesVariation();
+  return variation == ExploreSitesVariation::ENABLED ||
+         variation == ExploreSitesVariation::PERSONALIZED;
 }
 
 void ExploreSitesServiceImpl::GetCatalog(CatalogCallback callback) {
@@ -125,12 +131,34 @@ void ExploreSitesServiceImpl::UpdateCatalogFromNetwork(
                      accept_languages)));
 }
 
+void ExploreSitesServiceImpl::RecordClick(const std::string& url,
+                                          int category_type) {
+  // Record the activity in the activity table.
+  task_queue_.AddTask(std::make_unique<RecordSiteClickTask>(
+      explore_sites_store_.get(), url, category_type));
+}
+
 void ExploreSitesServiceImpl::BlacklistSite(const std::string& url) {
   // Add the url to the blacklist table in the database.
   task_queue_.AddTask(
       std::make_unique<BlacklistSiteTask>(explore_sites_store_.get(), url));
 
   // TODO(https://crbug.com/893845): Remove cached category icon if affected.
+}
+
+void ExploreSitesServiceImpl::ClearActivities(base::Time begin,
+                                              base::Time end,
+                                              base::OnceClosure callback) {
+  task_queue_.AddTask(std::make_unique<ClearActivitiesTask>(
+      explore_sites_store_.get(), begin, end,
+      base::BindOnce(
+          [](base::OnceClosure callback, bool) { std::move(callback).Run(); },
+          std::move(callback))));
+}
+
+void ExploreSitesServiceImpl::IncrementNtpShownCount(int category_id) {
+  task_queue_.AddTask(std::make_unique<IncrementShownCountTask>(
+      explore_sites_store_.get(), category_id));
 }
 
 void ExploreSitesServiceImpl::ClearCachedCatalogsForDebugging() {

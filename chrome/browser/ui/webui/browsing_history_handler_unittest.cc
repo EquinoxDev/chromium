@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -54,9 +55,7 @@ class TestSyncService : public browser_sync::TestProfileSyncService {
   explicit TestSyncService(Profile* profile)
       : browser_sync::TestProfileSyncService(
             CreateProfileSyncServiceParamsForTest(profile)),
-        state_(TransportState::ACTIVE) {
-    GetUserSettings()->SetFirstSetupComplete();
-  }
+        state_(TransportState::ACTIVE) {}
 
   TransportState GetTransportState() const override { return state_; }
 
@@ -65,6 +64,11 @@ class TestSyncService : public browser_sync::TestProfileSyncService {
   syncer::ModelTypeSet GetActiveDataTypes() const override {
     return syncer::ModelTypeSet::All();
   }
+
+  // Overridden to be empty, to prevent the Sync machinery from actually
+  // starting up (which would fail, since not everything is properly set up,
+  // e.g. we're missing an authenticated account).
+  void StartUpSlowEngineComponents() override {}
 
   void SetTransportState(TransportState state) {
     state_ = state;
@@ -134,8 +138,11 @@ class BrowsingHistoryHandlerTest : public ChromeRenderViewHostTestHarness {
  private:
   static std::unique_ptr<KeyedService> BuildFakeSyncService(
       content::BrowserContext* context) {
-    return std::make_unique<TestSyncService>(
+    auto service = std::make_unique<TestSyncService>(
         static_cast<TestingProfile*>(context));
+    service->Initialize();
+    service->GetUserSettings()->SetFirstSetupComplete();
+    return service;
   }
 
   static std::unique_ptr<KeyedService> BuildFakeWebHistoryService(
@@ -143,11 +150,11 @@ class BrowsingHistoryHandlerTest : public ChromeRenderViewHostTestHarness {
     std::unique_ptr<history::FakeWebHistoryService> service =
         std::make_unique<history::FakeWebHistoryService>();
     service->SetupFakeResponse(true /* success */, net::HTTP_OK);
-    return std::move(service);
+    return service;
   }
 
-  TestSyncService* sync_service_;
-  history::FakeWebHistoryService* web_history_service_;
+  TestSyncService* sync_service_ = nullptr;
+  history::FakeWebHistoryService* web_history_service_ = nullptr;
   std::unique_ptr<content::TestWebUI> web_ui_;
 };
 

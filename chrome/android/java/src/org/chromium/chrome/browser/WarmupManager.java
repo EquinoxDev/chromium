@@ -42,7 +42,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 /**
  * This class is a singleton that holds utilities for warming up Chrome and prerendering urls
@@ -50,7 +49,7 @@ import java.util.concurrent.TimeUnit;
  *
  * This class is not thread-safe and must only be used on the UI thread.
  */
-public final class WarmupManager {
+public class WarmupManager {
     private static final String TAG = "WarmupManager";
 
     @VisibleForTesting
@@ -80,7 +79,7 @@ public final class WarmupManager {
         public void renderProcessGone(boolean wasOomProtected) {
             long elapsed = SystemClock.elapsedRealtime() - mWebContentsCreationTimeMs;
             RecordHistogram.recordLongTimesHistogram(
-                    "CustomTabs.SpareWebContents.TimeBeforeDeath", elapsed, TimeUnit.MILLISECONDS);
+                    "CustomTabs.SpareWebContents.TimeBeforeDeath", elapsed);
             recordWebContentsStatus(WebContentsStatus.KILLED);
             destroySpareWebContentsInternal();
         }
@@ -335,7 +334,7 @@ public final class WarmupManager {
                 || SysUtils.isLowEndDevice()) {
             return;
         }
-        mSpareWebContents = WebContentsFactory.createWebContentsWithWarmRenderer(
+        mSpareWebContents = new WebContentsFactory().createWebContentsWithWarmRenderer(
                 false /* incognito */, true /* initiallyHidden */);
         mObserver = new RenderProcessGoneObserver();
         mSpareWebContents.addObserver(mObserver);

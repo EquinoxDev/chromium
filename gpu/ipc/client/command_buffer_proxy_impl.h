@@ -17,7 +17,6 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/flat_map.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory_mapping.h"
@@ -72,9 +71,6 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
    protected:
     virtual ~DeletionObserver() = default;
   };
-
-  typedef base::Callback<void(const std::string& msg, int id)>
-      GpuConsoleMessageCallback;
 
   CommandBufferProxyImpl(
       scoped_refptr<GpuChannelHost> channel,
@@ -142,7 +138,8 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
   bool EnsureBackbuffer();
 
   using UpdateVSyncParametersCallback =
-      base::Callback<void(base::TimeTicks timebase, base::TimeDelta interval)>;
+      base::RepeatingCallback<void(base::TimeTicks timebase,
+                                   base::TimeDelta interval)>;
   void SetUpdateVSyncParametersCallback(
       const UpdateVSyncParametersCallback& callback);
 
@@ -262,8 +259,6 @@ class GPU_EXPORT CommandBufferProxyImpl : public gpu::CommandBuffer,
 
   // Sync token waits that haven't been flushed yet.
   std::vector<SyncToken> pending_sync_token_fences_;
-
-  GpuConsoleMessageCallback console_message_callback_;
 
   // Tasks to be invoked in SignalSyncPoint responses.
   uint32_t next_signal_id_ = 0;

@@ -44,7 +44,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_status.h"
 #include "third_party/blink/renderer/platform/loader/fetch/text_resource_decoder_options.h"
 #include "third_party/blink/renderer/platform/loader/subresource_integrity.h"
-#include "third_party/blink/renderer/platform/memory_coordinator.h"
+#include "third_party/blink/renderer/platform/memory_pressure_listener.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
@@ -65,13 +65,14 @@ class ResourceFetcher;
 class ResourceFinishObserver;
 class ResourceTimingInfo;
 class ResourceLoader;
+class ResponseBodyLoaderDrainableInterface;
 class SecurityOrigin;
 
 // |ResourceType| enum values are used in UMAs, so do not change the values of
 // existing types. When adding a new type, append it at the end.
 enum class ResourceType : uint8_t {
-  kMainResource,
-  kImage,
+  // We do not have kMainResource anymore, which used to have zero value.
+  kImage = 1,
   kCSSStyleSheet,
   kScript,
   kFont,
@@ -84,19 +85,8 @@ enum class ResourceType : uint8_t {
   kAudio,
   kVideo,
   kManifest,
-  kMock  // Only for testing
-};
-
-// A callback for sending the serialized data of cached metadata back to the
-// platform.
-class CachedMetadataSender {
- public:
-  virtual ~CachedMetadataSender() = default;
-  virtual void Send(const uint8_t*, size_t) = 0;
-
-  // IsServedFromCacheStorage is used to alter caching strategy to be more
-  // aggressive. See ScriptController.cpp CacheOptions() for an example.
-  virtual bool IsServedFromCacheStorage() = 0;
+  kMock,  // Only for testing
+  kLast = kMock
 };
 
 // A resource that is held in the cache. Classes who want to use this object
@@ -104,9 +94,8 @@ class CachedMetadataSender {
 // requested data has arrived. This class also does the actual communication
 // with the loader to obtain the resource from the network.
 class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
-                                 public MemoryCoordinatorClient {
+                                 public MemoryPressureListener {
   USING_GARBAGE_COLLECTED_MIXIN(Resource);
-  WTF_MAKE_NONCOPYABLE(Resource);
 
  public:
   // An enum representing whether a resource match with another resource.
@@ -273,8 +262,9 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   // been made to not follow it.
   virtual void WillNotFollowRedirect() {}
 
-  virtual void ResponseReceived(const ResourceResponse&,
-                                std::unique_ptr<WebDataConsumerHandle>);
+  virtual void ResponseReceived(const ResourceResponse&);
+  virtual void ResponseBodyReceived(
+      ResponseBodyLoaderDrainableInterface& body_loader) {}
   void SetResponse(const ResourceResponse&);
   const ResourceResponse& GetResponse() const { return response_; }
 
@@ -351,7 +341,7 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   virtual void DidSendData(unsigned long long /* bytesSent */,
                            unsigned long long /* totalBytesToBeSent */) {}
-  virtual void DidDownloadData(int) {}
+  virtual void DidDownloadData(unsigned long long) {}
   virtual void DidDownloadToBlob(scoped_refptr<BlobDataHandle>) {}
 
   TimeTicks LoadFinishTime() const { return load_finish_time_; }
@@ -427,14 +417,6 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   WebScopedVirtualTimePauser& VirtualTimePauser() {
     return virtual_time_pauser_;
-  }
-
-  // See WebURLLoaderClient.
-  base::OnceClosure TakeContinueNavigationRequestCallback() {
-    return std::move(continue_navigation_request_callback_);
-  }
-  void SetContinueNavigationRequestCallback(base::OnceClosure closure) {
-    continue_navigation_request_callback_ = std::move(closure);
   }
 
  protected:
@@ -533,15 +515,11 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
 
   String ReasonNotDeletable() const;
 
-  // MemoryCoordinatorClient overrides:
+  // MemoryPressureListener overrides:
   void OnPurgeMemory() override;
 
   void CheckResourceIntegrity();
   void TriggerNotificationForFinishObservers(base::SingleThreadTaskRunner*);
-
-  // Helper for creating the send callback function for the cached metadata
-  // handler.
-  std::unique_ptr<CachedMetadataSender> CreateCachedMetadataSender() const;
 
   ResourceType type_;
   ResourceStatus status_;
@@ -599,7 +577,8 @@ class PLATFORM_EXPORT Resource : public GarbageCollectedFinalized<Resource>,
   scoped_refptr<SharedBuffer> data_;
 
   WebScopedVirtualTimePauser virtual_time_pauser_;
-  base::OnceClosure continue_navigation_request_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(Resource);
 };
 
 class ResourceFactory {
@@ -642,7 +621,7 @@ class NonTextResourceFactory : public ResourceFactory {
 #define DEFINE_RESOURCE_TYPE_CASTS(typeName)                          \
   DEFINE_TYPE_CASTS(typeName##Resource, Resource, resource,           \
                     resource->GetType() == ResourceType::k##typeName, \
-                    resource.GetType() == ResourceType::k##typeName);
+                    resource.GetType() == ResourceType::k##typeName)
 
 }  // namespace blink
 

@@ -13,7 +13,6 @@
 #import "ios/chrome/browser/ui/settings/cells/account_sign_in_item.h"
 #import "ios/chrome/browser/ui/settings/cells/autofill_data_item.h"
 #import "ios/chrome/browser/ui/settings/cells/copied_to_chrome_item.h"
-#import "ios/chrome/browser/ui/settings/cells/encryption_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_detail_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_image_detail_text_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_item.h"
@@ -27,6 +26,10 @@
 #import "ios/chrome/browser/ui/table_view/cells/table_view_url_item.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/browser/ui/table_view/table_view_model.h"
+#include "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/browser/ui/util/uikit_ui_util.h"
+#import "ios/public/provider/chrome/browser/chrome_browser_provider.h"
+#import "ios/public/provider/chrome/browser/signin/signin_resources_provider.h"
 #include "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -56,7 +59,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypeURLWithSupplementalText,
   ItemTypeURLWithBadgeImage,
   ItemTypeTextSettingsDetail,
-  ItemTypeEncryption,
   ItemTypeLinkFooter,
   ItemTypeDetailText,
   ItemTypeAccountSignInItem,
@@ -73,11 +75,11 @@ typedef NS_ENUM(NSInteger, ItemType) {
 @implementation TableCellCatalogViewController
 
 - (instancetype)init {
-  if ((self = [super
-           initWithTableViewStyle:UITableViewStyleGrouped
-                      appBarStyle:ChromeTableViewControllerStyleNoAppBar])) {
-  }
-  return self;
+  UITableViewStyle style = base::FeatureList::IsEnabled(kSettingsRefresh)
+                               ? UITableViewStylePlain
+                               : UITableViewStyleGrouped;
+  return [super initWithTableViewStyle:style
+                           appBarStyle:ChromeTableViewControllerStyleNoAppBar];
 }
 
 - (void)viewDidLoad {
@@ -221,25 +223,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
       @"This is more detail about the sync error description";
   imageDetailTextItem.image = [ChromeIcon infoIcon];
   [model addItem:imageDetailTextItem
-      toSectionWithIdentifier:SectionIdentifierSettings];
-
-  EncryptionItem* encryptionChecked =
-      [[EncryptionItem alloc] initWithType:ItemTypeEncryption];
-  encryptionChecked.text =
-      @"These two cells have exactly the same text, but one has a checkmark "
-      @"and the other does not.  They should lay out identically, and the "
-      @"presence of the checkmark should not cause the text to reflow.";
-  encryptionChecked.accessoryType = UITableViewCellAccessoryCheckmark;
-  [model addItem:encryptionChecked
-      toSectionWithIdentifier:SectionIdentifierSettings];
-
-  EncryptionItem* encryptionUnchecked =
-      [[EncryptionItem alloc] initWithType:ItemTypeEncryption];
-  encryptionUnchecked.text =
-      @"These two cells have exactly the same text, but one has a checkmark "
-      @"and the other does not.  They should lay out identically, and the "
-      @"presence of the checkmark should not cause the text to reflow.";
-  [model addItem:encryptionUnchecked
       toSectionWithIdentifier:SectionIdentifierSettings];
 
   TableViewLinkHeaderFooterItem* linkFooter =

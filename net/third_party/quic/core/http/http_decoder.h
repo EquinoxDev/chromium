@@ -9,12 +9,29 @@
 
 #include "net/third_party/quic/core/http/http_frames.h"
 #include "net/third_party/quic/core/quic_error_codes.h"
+#include "net/third_party/quic/core/quic_types.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
 namespace quic {
 
 class QuicDataReader;
+
+// Struct that stores meta data of a data frame.
+// |header_length| stores number of bytes header occupies.
+// |payload_length| stores number of bytes payload occupies.
+struct QUIC_EXPORT_PRIVATE Http3FrameLengths {
+  Http3FrameLengths(QuicByteCount header, QuicByteCount payload)
+      : header_length(header), payload_length(payload) {}
+
+  bool operator==(const Http3FrameLengths& other) const {
+    return (header_length == other.header_length) &&
+           (payload_length == other.payload_length);
+  }
+
+  QuicByteCount header_length;
+  QuicByteCount payload_length;
+};
 
 // A class for decoding the HTTP frames that are exchanged in an HTTP over QUIC
 // session.
@@ -42,8 +59,12 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
     // Called when a SETTINGS frame has been successfully parsed.
     virtual void OnSettingsFrame(const SettingsFrame& frame) = 0;
 
-    // Called when a DATA frame has been recevied.
-    virtual void OnDataFrameStart() = 0;
+    // Called when a DUPLICATE_PUSH frame has been successfully parsed.
+    virtual void OnDuplicatePushFrame(const DuplicatePushFrame& frame) = 0;
+
+    // Called when a DATA frame has been received, |frame_lengths| will be
+    // passed to inform header length and payload length of the frame.
+    virtual void OnDataFrameStart(Http3FrameLengths frame_length) = 0;
     // Called when the payload of a DATA frame has read. May be called
     // multiple times for a single frame.
     virtual void OnDataFramePayload(QuicStringPiece payload) = 0;
@@ -56,7 +77,8 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
     // multiple times for a single frame.
     virtual void OnHeadersFramePayload(QuicStringPiece payload) = 0;
     // Called when a HEADERS frame has been completely processed.
-    virtual void OnHeadersFrameEnd() = 0;
+    // |frame_len| is the length of the HEADERS frame payload.
+    virtual void OnHeadersFrameEnd(QuicByteCount frame_len) = 0;
 
     // Called when a PUSH_PROMISE frame has been recevied for |push_id|.
     virtual void OnPushPromiseFrameStart(PushId push_id) = 0;
@@ -84,7 +106,9 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   // Processes the input and invokes the visitor for any frames.
   // Returns the number of bytes consumed, or 0 if there was an error, in which
   // case error() should be consulted.
-  size_t ProcessInput(const char* data, size_t len);
+  QuicByteCount ProcessInput(const char* data, QuicByteCount len);
+
+  bool has_payload() { return has_payload_; }
 
   QuicErrorCode error() const { return error_; }
   const QuicString& error_detail() const { return error_detail_; }
@@ -136,17 +160,20 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   // Type of the frame currently being parsed.
   uint8_t current_frame_type_;
   // Size of the frame's length field.
-  uint64_t current_length_field_size_;
+  QuicByteCount current_length_field_size_;
   // Remaining length that's needed for the frame's length field.
-  uint64_t remaining_length_field_length_;
+  QuicByteCount remaining_length_field_length_;
   // Length of the payload of the frame currently being parsed.
-  uint64_t current_frame_length_;
+  QuicByteCount current_frame_length_;
   // Remaining payload bytes to be parsed.
-  uint64_t remaining_frame_length_;
+  QuicByteCount remaining_frame_length_;
   // Last error.
   QuicErrorCode error_;
   // The issue which caused |error_|
   QuicString error_detail_;
+  // True if the call to ProcessInput() generates any payload. Flushed every
+  // time ProcessInput() is called.
+  bool has_payload_;
   // Remaining unparsed data.
   QuicString buffer_;
   // Remaining unparsed length field data.

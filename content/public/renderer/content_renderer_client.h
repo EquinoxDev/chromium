@@ -46,6 +46,7 @@ class WebPlugin;
 class WebPrescientNetworking;
 class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
+class WebMediaStreamRendererFactory;
 class WebThemeEngine;
 class WebURL;
 class WebURLRequest;
@@ -60,7 +61,6 @@ class KeySystemProperties;
 
 namespace content {
 class BrowserPluginDelegate;
-class MediaStreamRendererFactory;
 class RenderFrame;
 class RenderView;
 struct WebPluginInfo;
@@ -137,6 +137,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Note that |error_html| may be not written to in certain cases
   // (lack of information on the error code) so the caller should take care to
   // initialize it with a safe default before the call.
+  // TODO(dgozman): |ignoring_cache| is always false in these two methods.
   virtual void PrepareErrorPage(content::RenderFrame* render_frame,
                                 const blink::WebURLError& error,
                                 const std::string& http_method,
@@ -258,8 +259,8 @@ class CONTENT_EXPORT ContentRendererClient {
   // language.
   virtual bool IsOriginIsolatedPepperPlugin(const base::FilePath& plugin_path);
 
-  // Allows an embedder to provide a MediaStreamRendererFactory.
-  virtual std::unique_ptr<MediaStreamRendererFactory>
+  // Allows an embedder to provide a blink::WebMediaStreamRendererFactory.
+  virtual std::unique_ptr<blink::WebMediaStreamRendererFactory>
   CreateMediaStreamRendererFactory();
 
   // Allows embedder to register the key system(s) it supports by populating
@@ -294,9 +295,6 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if the page at |url| can use Pepper CameraDevice APIs.
   virtual bool IsPluginAllowedToUseCameraDeviceAPI(const GURL& url);
-
-  // Returns true if the page at |url| can use Pepper Compositor APIs.
-  virtual bool IsPluginAllowedToUseCompositorAPI(const GURL& url);
 
   // Returns true if dev channel APIs are available for plugins.
   virtual bool IsPluginAllowedToUseDevChannelAPIs();
@@ -393,16 +391,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // Whether the renderer allows idle media players to be automatically
   // suspended after a period of inactivity.
   virtual bool IsIdleMediaSuspendEnabled();
-
-  // Called when a resource at |url| is loaded using an otherwise-valid legacy
-  // Symantec certificate that will be distrusted in future. Allows the embedder
-  // to override the message that is added to the console to inform developers
-  // that their certificate will be distrusted in future. If the method returns
-  // true, then |*console_message| will be printed to the console; otherwise a
-  // generic mesage will be used.
-  virtual bool OverrideLegacySymantecCertConsoleMessage(
-      const GURL& url,
-      std::string* console_messsage);
 
   // Returns true to suppress the warning for deprecated TLS versions.
   //

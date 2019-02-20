@@ -31,6 +31,7 @@ namespace content {
 
 class AppCacheNavigationHandleCore;
 class BrowserContext;
+class ResourceContext;
 class ServiceWorkerContextWrapper;
 class StoragePartitionImpl;
 class URLLoaderFactoryGetter;
@@ -42,7 +43,7 @@ struct SubresourceLoaderParams;
 class WorkerScriptFetchInitiator {
  public:
   using CompletionCallback = base::OnceCallback<void(
-      blink::mojom::ServiceWorkerProviderInfoForSharedWorkerPtr,
+      blink::mojom::ServiceWorkerProviderInfoForWorkerPtr,
       network::mojom::URLLoaderFactoryAssociatedPtrInfo,
       std::unique_ptr<blink::URLLoaderFactoryBundleInfo>,
       blink::mojom::WorkerMainScriptLoadParamsPtr,
@@ -63,13 +64,18 @@ class WorkerScriptFetchInitiator {
       CompletionCallback callback);
 
  private:
+  // Creates a loader factory bundle. Must be called on the UI thread.
   static std::unique_ptr<blink::URLLoaderFactoryBundleInfo> CreateFactoryBundle(
       int process_id,
       StoragePartitionImpl* storage_partition,
       bool file_support);
+
+  // Adds additional request headers to |resource_request|. Must be called on
+  // the UI thread.
   static void AddAdditionalRequestHeaders(
       network::ResourceRequest* resource_request,
       BrowserContext* browser_context);
+
   static void CreateScriptLoaderOnIO(
       int process_id,
       std::unique_ptr<network::ResourceRequest> resource_request,
@@ -78,14 +84,15 @@ class WorkerScriptFetchInitiator {
           factory_bundle_for_browser_info,
       std::unique_ptr<blink::URLLoaderFactoryBundleInfo>
           subresource_loader_factories,
-      scoped_refptr<ServiceWorkerContextWrapper> context,
+      ResourceContext* resource_context,
+      scoped_refptr<ServiceWorkerContextWrapper> service_worker_context,
       AppCacheNavigationHandleCore* appcache_handle_core,
       std::unique_ptr<network::SharedURLLoaderFactoryInfo>
           blob_url_loader_factory_info,
       CompletionCallback callback);
   static void DidCreateScriptLoaderOnIO(
       CompletionCallback callback,
-      blink::mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
+      blink::mojom::ServiceWorkerProviderInfoForWorkerPtr
           service_worker_provider_info,
       network::mojom::URLLoaderFactoryAssociatedPtrInfo
           main_script_loader_factory,

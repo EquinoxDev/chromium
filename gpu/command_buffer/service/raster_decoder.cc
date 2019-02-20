@@ -9,9 +9,11 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/atomic_sequence_num.h"
+#include "base/bind.h"
 #include "base/containers/flat_map.h"
 #include "base/debug/crash_logging.h"
 #include "base/logging.h"
@@ -36,7 +38,6 @@
 #include "gpu/command_buffer/common/raster_cmd_ids.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
-#include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/context_state.h"
 #include "gpu/command_buffer/service/decoder_client.h"
 #include "gpu/command_buffer/service/error_state.h"
@@ -50,9 +51,10 @@
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/raster_cmd_validation.h"
-#include "gpu/command_buffer/service/raster_decoder_context_state.h"
 #include "gpu/command_buffer/service/service_font_manager.h"
 #include "gpu/command_buffer/service/service_transfer_cache.h"
+#include "gpu/command_buffer/service/service_utils.h"
+#include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/command_buffer/service/shared_image_factory.h"
 #include "gpu/command_buffer/service/shared_image_representation.h"
 #include "gpu/command_buffer/service/skia_utils.h"
@@ -95,42 +97,6 @@ namespace {
 
 base::AtomicSequenceNumber g_raster_decoder_id;
 
-class TextureMetadata {
- public:
-  TextureMetadata(bool use_buffer,
-                  gfx::BufferUsage buffer_usage,
-                  viz::ResourceFormat format,
-                  const Capabilities& caps)
-      : use_buffer_(use_buffer),
-        buffer_usage_(buffer_usage),
-        format_(format),
-        target_(CalcTarget(use_buffer, buffer_usage, format, caps)) {}
-  TextureMetadata(const TextureMetadata& other) = default;
-
-  bool use_buffer() const { return use_buffer_; }
-  gfx::BufferUsage buffer_usage() const { return buffer_usage_; }
-  viz::ResourceFormat format() const { return format_; }
-  GLenum target() const { return target_; }
-
- private:
-  static GLenum CalcTarget(bool use_buffer,
-                           gfx::BufferUsage buffer_usage,
-                           viz::ResourceFormat format,
-                           const Capabilities& caps) {
-    if (use_buffer) {
-      gfx::BufferFormat buffer_format = viz::BufferFormat(format);
-      return GetBufferTextureTarget(buffer_usage, buffer_format, caps);
-    } else {
-      return GL_TEXTURE_2D;
-    }
-  }
-
-  bool use_buffer_;
-  gfx::BufferUsage buffer_usage_;
-  viz::ResourceFormat format_;
-  GLenum target_;
-};
-
 // This class prevents any GL errors that occur when it is in scope from
 // being reported to the client.
 class ScopedGLErrorSuppressor {
@@ -158,9 +124,8 @@ class ScopedTextureBinder {
   ScopedTextureBinder(gles2::ContextState* state,
                       GLenum target,
                       GLuint texture,
-                      GrContext* gr_context,
-                      bool state_is_dirty)
-      : state_(state), target_(target), state_is_dirty_(state_is_dirty) {
+                      GrContext* gr_context)
+      : state_(state), target_(target) {
     auto* api = state->api();
     api->glActiveTextureFn(GL_TEXTURE0);
     api->glBindTextureFn(target_, texture);
@@ -168,33 +133,11 @@ class ScopedTextureBinder {
       gr_context->resetContext(kTextureBinding_GrGLBackendState);
   }
 
-  ScopedTextureBinder(gles2::ContextState* state,
-                      gles2::TextureManager* texture_manager,
-                      gles2::TextureRef* texture_ref,
-                      GLenum target,
-                      GrContext* gr_context,
-                      bool state_is_dirty)
-      : ScopedTextureBinder(state,
-                            target,
-                            texture_ref->texture()->service_id(),
-                            gr_context,
-                            state_is_dirty) {
-    auto* texture = texture_ref->texture();
-    if (!texture->target())
-      texture_manager->SetTarget(texture_ref, target);
-    DCHECK_EQ(texture->target(), target_)
-        << "Texture bound to more than 1 target.";
-  }
-
-  ~ScopedTextureBinder() {
-    if (!state_is_dirty_)
-      state_->api()->glBindTextureFn(target_, 0);
-  }
+  ~ScopedTextureBinder() { state_->api()->glBindTextureFn(target_, 0); }
 
  private:
   gles2::ContextState* state_;
   GLenum target_;
-  const bool state_is_dirty_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedTextureBinder);
 };
@@ -259,12 +202,14 @@ class RasterDecoderImpl final : public RasterDecoder,
                                 public gles2::ErrorStateClient,
                                 public ServiceFontManager::Client {
  public:
-  RasterDecoderImpl(
-      DecoderClient* client,
-      CommandBufferServiceBase* command_buffer_service,
-      gles2::Outputter* outputter,
-      gles2::ContextGroup* group,
-      scoped_refptr<RasterDecoderContextState> raster_decoder_context_state);
+  RasterDecoderImpl(DecoderClient* client,
+                    CommandBufferServiceBase* command_buffer_service,
+                    gles2::Outputter* outputter,
+                    const GpuFeatureInfo& gpu_feature_info,
+                    const GpuPreferences& gpu_preferences,
+                    MemoryTracker* memory_tracker,
+                    SharedImageManager* shared_image_manager,
+                    scoped_refptr<SharedContextState> shared_context_state);
   ~RasterDecoderImpl() override;
 
   gles2::GLES2Util* GetGLES2Util() override { return &util_; }
@@ -282,7 +227,7 @@ class RasterDecoderImpl final : public RasterDecoder,
   gl::GLContext* GetGLContext() override;
   gl::GLSurface* GetGLSurface() override;
   const gles2::FeatureInfo* GetFeatureInfo() const override {
-    return feature_info_.get();
+    return feature_info();
   }
   Capabilities GetCapabilities() override;
   const gles2::ContextState* GetContextState() override;
@@ -301,7 +246,7 @@ class RasterDecoderImpl final : public RasterDecoder,
   void RestoreFramebufferBindings() const override;
   void RestoreRenderbufferBindings() override;
   void RestoreProgramBindings() const override;
-  void RestoreTextureState(unsigned service_id) const override;
+  void RestoreTextureState(unsigned service_id) override;
   void RestoreTextureUnitBindings(unsigned unit) const override;
   void RestoreVertexAttribArray(unsigned index) override;
   void RestoreAllExternalTextureBindingsIfNeeded() override;
@@ -380,10 +325,12 @@ class RasterDecoderImpl final : public RasterDecoder,
     NOTIMPLEMENTED();
     return false;
   }
+  int GetRasterDecoderId() const override;
   int DecoderIdForTest() override;
   ServiceTransferCache* GetTransferCacheForTest() override;
   void SetUpForRasterCHROMIUMForTest() override;
   void SetOOMErrorForTest() override;
+  void DisableFlushWorkaroundForTest() override;
 
   // ErrorClientState implementation.
   void OnContextLostError() override;
@@ -402,73 +349,52 @@ class RasterDecoderImpl final : public RasterDecoder,
   scoped_refptr<Buffer> GetShmBuffer(uint32_t shm_id) override;
 
  private:
-  base::flat_map<GLuint, TextureMetadata> texture_metadata_;
-  TextureMetadata* GetTextureMetadata(GLuint client_id) {
-    auto it = texture_metadata_.find(client_id);
-    DCHECK(it != texture_metadata_.end()) << "Undefined texture id";
-    return &it->second;
+  gles2::ContextState* state() const {
+    if (use_passthrough_) {
+      NOTREACHED();
+      return nullptr;
+    }
+    return shared_context_state_->context_state();
+  }
+  gl::GLApi* api() const { return api_; }
+  GrContext* gr_context() const { return shared_context_state_->gr_context(); }
+  ServiceTransferCache* transfer_cache() {
+    return shared_context_state_->transfer_cache();
   }
 
-  gles2::ContextState* state() const {
-    return raster_decoder_context_state_->context_state();
-  }
-  gl::GLApi* api() const { return state()->api(); }
-  GrContext* gr_context() const {
-    return raster_decoder_context_state_->gr_context;
-  }
-  ServiceTransferCache* transfer_cache() {
-    return raster_decoder_context_state_->transfer_cache.get();
+  const gles2::FeatureInfo* feature_info() const {
+    return shared_context_state_->feature_info();
   }
 
   const gles2::FeatureInfo::FeatureFlags& features() const {
-    return feature_info_->feature_flags();
+    return feature_info()->feature_flags();
   }
 
   const GpuDriverBugWorkarounds& workarounds() const {
-    return feature_info_->workarounds();
+    return feature_info()->workarounds();
+  }
+
+  void FlushToWorkAroundMacCrashes() {
+#if defined(OS_MACOSX)
+    // This function does aggressive flushes to work around crashes in the
+    // macOS OpenGL driver.
+    // https://crbug.com/906453
+    if (!flush_workaround_disabled_for_test_) {
+      if (gr_context())
+        gr_context()->flush();
+      api()->glFlushFn();
+    }
+#endif
   }
 
   bool IsRobustnessSupported() {
     return has_robustness_extension_ &&
-           raster_decoder_context_state_->context()
+           shared_context_state_->context()
                ->WasAllocatedUsingRobustnessExtension();
   }
 
   const gl::GLVersionInfo& gl_version_info() {
-    return feature_info_->gl_version_info();
-  }
-
-  MemoryTracker* memory_tracker() { return group_->memory_tracker(); }
-
-  gles2::BufferManager* buffer_manager() { return group_->buffer_manager(); }
-
-  const gles2::TextureManager* texture_manager() const {
-    return group_->texture_manager();
-  }
-
-  gles2::TextureManager* texture_manager() { return group_->texture_manager(); }
-
-  gles2::ImageManager* image_manager() { return group_->image_manager(); }
-
-  // Creates a Texture for the given texture.
-  gles2::TextureRef* CreateTexture(GLuint client_id, GLuint service_id) {
-    return texture_manager()->CreateTexture(client_id, service_id);
-  }
-
-  // Gets the texture info for the given texture. Returns nullptr if none
-  // exists.
-  gles2::TextureRef* GetTexture(GLuint client_id) const {
-    return texture_manager()->GetTexture(client_id);
-  }
-
-  // Deletes the texture info for the given texture.
-  void RemoveTexture(GLuint client_id) {
-    texture_manager()->RemoveTexture(client_id);
-
-    auto texture_iter = texture_metadata_.find(client_id);
-    DCHECK(texture_iter != texture_metadata_.end());
-
-    texture_metadata_.erase(texture_iter);
+    return feature_info()->gl_version_info();
   }
 
   // Set remaining commands to process to 0 to force DoCommands to return
@@ -482,12 +408,6 @@ class RasterDecoderImpl final : public RasterDecoder,
                               int num_entries,
                               int* entries_processed);
 
-  void DoCreateAndConsumeTextureINTERNAL(GLuint client_id,
-                                         bool use_buffer,
-                                         gfx::BufferUsage buffer_usage,
-                                         viz::ResourceFormat resource_format,
-                                         const volatile GLbyte* key);
-  void DeleteTexturesHelper(GLsizei n, const volatile GLuint* client_ids);
   bool GenQueriesEXTHelper(GLsizei n, const GLuint* client_ids);
   void DeleteQueriesEXTHelper(GLsizei n, const volatile GLuint* client_ids);
   void DoFinish();
@@ -496,18 +416,13 @@ class RasterDecoderImpl final : public RasterDecoder,
   void DoTraceEndCHROMIUM();
   bool InitializeCopyTexImageBlitter();
   bool InitializeCopyTextureCHROMIUM();
-  void DoCopySubTexture(GLuint source_id,
-                        GLuint dest_id,
-                        GLint xoffset,
-                        GLint yoffset,
-                        GLint x,
-                        GLint y,
-                        GLsizei width,
-                        GLsizei height);
-  // If the texture has an image but that image is not bound or copied to the
-  // texture, this will first attempt to bind it, and if that fails
-  // CopyTexImage on it.
-  void DoBindOrCopyTexImageIfNeeded(gles2::Texture* texture, GLenum textarget);
+  void DoCopySubTextureINTERNAL(GLint xoffset,
+                                GLint yoffset,
+                                GLint x,
+                                GLint y,
+                                GLsizei width,
+                                GLsizei height,
+                                const volatile GLbyte* mailboxes);
   void DoLoseContextCHROMIUM(GLenum current, GLenum other) { NOTIMPLEMENTED(); }
   void DoBeginRasterCHROMIUM(GLuint sk_color,
                              GLuint msaa_sample_count,
@@ -516,10 +431,10 @@ class RasterDecoderImpl final : public RasterDecoder,
                              const volatile GLbyte* key);
   void DoRasterCHROMIUM(GLuint raster_shm_id,
                         GLuint raster_shm_offset,
-                        GLsizeiptr raster_shm_size,
+                        GLuint raster_shm_size,
                         GLuint font_shm_id,
                         GLuint font_shm_offset,
-                        GLsizeiptr font_shm_size);
+                        GLuint font_shm_size);
   void DoEndRasterCHROMIUM();
   void DoCreateTransferCacheEntryINTERNAL(GLuint entry_type,
                                           GLuint entry_id,
@@ -551,7 +466,7 @@ class RasterDecoderImpl final : public RasterDecoder,
   void LogClientServiceMapping(const char* function_name,
                                GLuint client_id,
                                GLuint service_id) {
-    if (service_logging_) {
+    if (gpu_preferences_.enable_gpu_service_logging_gpu) {
       VLOG(1) << "[" << logger_.GetLogPrefix() << "] " << function_name
               << ": client_id = " << client_id
               << ", service_id = " << service_id;
@@ -595,7 +510,9 @@ class RasterDecoderImpl final : public RasterDecoder,
   // Number of commands remaining to be processed in DoCommands().
   int commands_to_process_ = 0;
 
+  bool supports_gpu_raster_ = false;
   bool supports_oop_raster_ = false;
+  bool use_passthrough_ = false;
   bool use_ddl_ = false;
 
   bool has_robustness_extension_ = false;
@@ -610,26 +527,23 @@ class RasterDecoderImpl final : public RasterDecoder,
 
   DecoderClient* client_;
 
+  GpuPreferences gpu_preferences_;
+
   gles2::DebugMarkerManager debug_marker_manager_;
   gles2::Logger logger_;
   std::unique_ptr<gles2::ErrorState> error_state_;
   bool context_lost_ = false;
 
-  // The ContextGroup for this decoder uses to track resources.
-  scoped_refptr<gles2::ContextGroup> group_;
-  scoped_refptr<RasterDecoderContextState> raster_decoder_context_state_;
+  scoped_refptr<SharedContextState> shared_context_state_;
   std::unique_ptr<Validators> validators_;
-  scoped_refptr<gles2::FeatureInfo> feature_info_;
 
+  SharedImageRepresentationFactory shared_image_representation_factory_;
   std::unique_ptr<QueryManager> query_manager_;
 
   gles2::GLES2Util util_;
 
-  // An optional behaviour to lose the context and group when OOM.
+  // An optional behaviour to lose the context when OOM.
   bool lose_context_when_out_of_memory_ = false;
-
-  // Log extra info.
-  bool service_logging_;
 
   std::unique_ptr<gles2::CopyTexImageResourceManager> copy_tex_image_blit_;
   std::unique_ptr<gles2::CopyTextureCHROMIUMResourceManager>
@@ -655,6 +569,14 @@ class RasterDecoderImpl final : public RasterDecoder,
   // Tracing helpers.
   int raster_chromium_id_ = 0;
 
+  // Workaround for https://crbug.com/906453
+  bool flush_workaround_disabled_for_test_ = false;
+
+  bool in_copy_sub_texture_ = false;
+  bool reset_texture_state_ = false;
+
+  gl::GLApi* api_ = nullptr;
+
   base::WeakPtrFactory<DecoderContext> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RasterDecoderImpl);
@@ -677,10 +599,15 @@ RasterDecoder* RasterDecoder::Create(
     DecoderClient* client,
     CommandBufferServiceBase* command_buffer_service,
     gles2::Outputter* outputter,
-    gles2::ContextGroup* group,
-    scoped_refptr<RasterDecoderContextState> raster_decoder_context_state) {
-  return new RasterDecoderImpl(client, command_buffer_service, outputter, group,
-                               std::move(raster_decoder_context_state));
+    const GpuFeatureInfo& gpu_feature_info,
+    const GpuPreferences& gpu_preferences,
+    MemoryTracker* memory_tracker,
+    SharedImageManager* shared_image_manager,
+    scoped_refptr<SharedContextState> shared_context_state) {
+  return new RasterDecoderImpl(client, command_buffer_service, outputter,
+                               gpu_feature_info, gpu_preferences,
+                               memory_tracker, shared_image_manager,
+                               std::move(shared_context_state));
 }
 
 RasterDecoder::RasterDecoder(CommandBufferServiceBase* command_buffer_service,
@@ -727,28 +654,35 @@ RasterDecoderImpl::RasterDecoderImpl(
     DecoderClient* client,
     CommandBufferServiceBase* command_buffer_service,
     gles2::Outputter* outputter,
-    gles2::ContextGroup* group,
-    scoped_refptr<RasterDecoderContextState> raster_decoder_context_state)
+    const GpuFeatureInfo& gpu_feature_info,
+    const GpuPreferences& gpu_preferences,
+    MemoryTracker* memory_tracker,
+    SharedImageManager* shared_image_manager,
+    scoped_refptr<SharedContextState> shared_context_state)
     : RasterDecoder(command_buffer_service, outputter),
       raster_decoder_id_(g_raster_decoder_id.GetNext() + 1),
+      supports_gpu_raster_(
+          gpu_feature_info.status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] ==
+          kGpuFeatureStatusEnabled),
+      use_passthrough_(gles2::PassthroughCommandDecoderSupported() &&
+                       gpu_preferences.use_passthrough_cmd_decoder),
       client_(client),
+      gpu_preferences_(gpu_preferences),
       logger_(&debug_marker_manager_,
               base::BindRepeating(&DecoderClient::OnConsoleMessage,
                                   base::Unretained(client_),
                                   0),
-              group->gpu_preferences().disable_gl_error_limit),
+              gpu_preferences_.disable_gl_error_limit),
       error_state_(gles2::ErrorState::Create(this, &logger_)),
-      group_(group),
-      raster_decoder_context_state_(std::move(raster_decoder_context_state)),
+      shared_context_state_(std::move(shared_context_state)),
       validators_(new Validators),
-      feature_info_(group_->feature_info()),
-      service_logging_(
-          group_->gpu_preferences().enable_gpu_service_logging_gpu),
+      shared_image_representation_factory_(shared_image_manager,
+                                           memory_tracker),
       gpu_decoder_category_(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
           TRACE_DISABLED_BY_DEFAULT("gpu.decoder"))),
       font_manager_(base::MakeRefCounted<ServiceFontManager>(this)),
       weak_ptr_factory_(this) {
-  DCHECK(raster_decoder_context_state_);
+  DCHECK(shared_context_state_);
 }
 
 RasterDecoderImpl::~RasterDecoderImpl() {
@@ -767,8 +701,10 @@ ContextResult RasterDecoderImpl::Initialize(
     const gles2::DisallowedFeatures& disallowed_features,
     const ContextCreationAttribs& attrib_helper) {
   TRACE_EVENT0("gpu", "RasterDecoderImpl::Initialize");
-  DCHECK(raster_decoder_context_state_->IsCurrent(surface.get()));
+  DCHECK(shared_context_state_->IsCurrent(surface.get()));
   DCHECK(!context_.get());
+
+  api_ = gl::g_current_gl_context;
 
   set_initialized();
 
@@ -776,14 +712,14 @@ ContextResult RasterDecoderImpl::Initialize(
     return ContextResult::kFatalFailure;
   }
 
-  if (group_->gpu_preferences().enable_gpu_debugging)
+  if (gpu_preferences_.enable_gpu_debugging)
     set_debug(true);
 
-  if (group_->gpu_preferences().enable_gpu_command_logging)
+  if (gpu_preferences_.enable_gpu_command_logging)
     SetLogCommands(true);
 
-  DCHECK_EQ(surface.get(), raster_decoder_context_state_->surface());
-  DCHECK_EQ(context.get(), raster_decoder_context_state_->context());
+  DCHECK_EQ(surface.get(), shared_context_state_->surface());
+  DCHECK_EQ(context.get(), shared_context_state_->context());
   context_ = context;
 
   // Create GPU Tracer for timing values.
@@ -792,15 +728,6 @@ ContextResult RasterDecoderImpl::Initialize(
   // Save the loseContextWhenOutOfMemory context creation attribute.
   lose_context_when_out_of_memory_ =
       attrib_helper.lose_context_when_out_of_memory;
-
-  auto result =
-      group_->Initialize(this, attrib_helper.context_type, disallowed_features);
-  if (result != ContextResult::kSuccess) {
-    group_ =
-        nullptr;  // Must not destroy ContextGroup if it is not initialized.
-    Destroy(true);
-    return result;
-  }
 
   CHECK_GL_ERROR();
 
@@ -818,10 +745,10 @@ ContextResult RasterDecoderImpl::Initialize(
       return ContextResult::kFatalFailure;
     }
 
-    supports_oop_raster_ = !!raster_decoder_context_state_->gr_context;
+    supports_oop_raster_ = !!shared_context_state_->gr_context();
     if (supports_oop_raster_)
       paint_cache_ = std::make_unique<cc::ServicePaintCache>();
-    use_ddl_ = group_->gpu_preferences().enable_oop_rasterization_ddl;
+    use_ddl_ = gpu_preferences_.enable_oop_rasterization_ddl;
   }
 
   return ContextResult::kSuccess;
@@ -831,8 +758,7 @@ void RasterDecoderImpl::Destroy(bool have_context) {
   if (!initialized())
     return;
 
-  DCHECK(!have_context ||
-         raster_decoder_context_state_->context()->IsCurrent(nullptr));
+  DCHECK(!have_context || shared_context_state_->context()->IsCurrent(nullptr));
 
   if (have_context) {
     if (copy_tex_image_blit_.get()) {
@@ -853,10 +779,6 @@ void RasterDecoderImpl::Destroy(bool have_context) {
     if (gr_context()) {
       gr_context()->flush();
     }
-  } else {
-    if (group_ && group_->texture_manager()) {
-      group_->texture_manager()->MarkContextLost();
-    }
   }
 
   copy_tex_image_blit_.reset();
@@ -865,11 +787,6 @@ void RasterDecoderImpl::Destroy(bool have_context) {
   if (query_manager_.get()) {
     query_manager_->Destroy(have_context);
     query_manager_.reset();
-  }
-
-  if (group_.get()) {
-    group_->Destroy(this, have_context);
-    group_ = nullptr;
   }
 
   // Destroy the surface before the context, some surface destructors make GL
@@ -885,7 +802,7 @@ void RasterDecoderImpl::Destroy(bool have_context) {
 
 // Make this decoder's GL context current.
 bool RasterDecoderImpl::MakeCurrent() {
-  if (raster_decoder_context_state_->use_vulkan_gr_context)
+  if (shared_context_state_->use_vulkan_gr_context())
     return true;
 
   if (!context_.get())
@@ -896,11 +813,10 @@ bool RasterDecoderImpl::MakeCurrent() {
     return false;
   }
 
-  if (raster_decoder_context_state_->context_lost() ||
-      !raster_decoder_context_state_->MakeCurrent(nullptr)) {
+  if (shared_context_state_->context_lost() ||
+      !shared_context_state_->MakeCurrent(nullptr)) {
     LOG(ERROR) << "  RasterDecoderImpl: Context lost during MakeCurrent.";
     MarkContextLost(error::kMakeCurrentFailed);
-    group_->LoseContexts(error::kUnknown);
     return false;
   }
 
@@ -909,7 +825,6 @@ bool RasterDecoderImpl::MakeCurrent() {
   if (CheckResetStatus()) {
     LOG(ERROR)
         << "  RasterDecoderImpl: Context reset detected after MakeCurrent.";
-    group_->LoseContexts(error::kUnknown);
     return false;
   }
 
@@ -924,33 +839,34 @@ gl::GLContext* RasterDecoderImpl::GetGLContext() {
 }
 
 gl::GLSurface* RasterDecoderImpl::GetGLSurface() {
-  return raster_decoder_context_state_->surface();
+  return shared_context_state_->surface();
 }
 
 Capabilities RasterDecoderImpl::GetCapabilities() {
   Capabilities caps;
-  caps.gpu_rasterization =
-      group_->gpu_feature_info()
-          .status_values[GPU_FEATURE_TYPE_GPU_RASTERIZATION] ==
-      kGpuFeatureStatusEnabled;
+  caps.gpu_rasterization = supports_gpu_raster_;
   caps.supports_oop_raster = supports_oop_raster_;
   caps.gpu_memory_buffer_formats =
-      feature_info_->feature_flags().gpu_memory_buffer_formats;
+      feature_info()->feature_flags().gpu_memory_buffer_formats;
   caps.texture_target_exception_list =
-      group_->gpu_preferences().texture_target_exception_list;
+      gpu_preferences_.texture_target_exception_list;
   caps.texture_format_bgra8888 =
-      feature_info_->feature_flags().ext_texture_format_bgra8888;
+      feature_info()->feature_flags().ext_texture_format_bgra8888;
   caps.texture_storage_image =
-      feature_info_->feature_flags().chromium_texture_storage_image;
-  caps.texture_storage = feature_info_->feature_flags().ext_texture_storage;
-  caps.max_texture_size = texture_manager()->MaxSizeForTarget(GL_TEXTURE_2D);
-  caps.sync_query = feature_info_->feature_flags().chromium_sync_query;
+      feature_info()->feature_flags().chromium_texture_storage_image;
+  caps.texture_storage = feature_info()->feature_flags().ext_texture_storage;
+  api()->glGetIntegervFn(GL_MAX_TEXTURE_SIZE, &caps.max_texture_size);
+  if (feature_info()->workarounds().max_texture_size) {
+    caps.max_texture_size = std::min(
+        caps.max_texture_size, feature_info()->workarounds().max_texture_size);
+  }
+  caps.sync_query = feature_info()->feature_flags().chromium_sync_query;
 
   if (gr_context()) {
     caps.context_supports_distance_field_text =
         gr_context()->supportsDistanceFieldText();
     caps.glyph_cache_max_texture_bytes =
-        raster_decoder_context_state_->glyph_cache_max_texture_bytes;
+        shared_context_state_->glyph_cache_max_texture_bytes();
   }
   return caps;
 }
@@ -961,83 +877,71 @@ const gles2::ContextState* RasterDecoderImpl::GetContextState() {
 }
 
 void RasterDecoderImpl::RestoreGlobalState() const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  // We mark the context state is dirty instead of restoring global
+  // state, and the global state will be restored by the next context.
+  shared_context_state_->set_need_context_state_reset(true);
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::ClearAllAttributes() const {}
 
 void RasterDecoderImpl::RestoreAllAttributes() const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreState(const gles2::ContextState* prev_state) {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreActiveTexture() const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreAllTextureUnitAndSamplerBindings(
     const gles2::ContextState* prev_state) const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreActiveTextureUnitBinding(
     unsigned int target) const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreBufferBinding(unsigned int target) {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreBufferBindings() const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreFramebufferBindings() const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreRenderbufferBindings() {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreProgramBindings() const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
-void RasterDecoderImpl::RestoreTextureState(unsigned service_id) const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
-  gles2::Texture* texture =
-      texture_manager()->GetTextureForServiceId(service_id);
-  if (texture) {
-    GLenum target = texture->target();
-    api()->glBindTextureFn(target, service_id);
-    api()->glTexParameteriFn(target, GL_TEXTURE_WRAP_S, texture->wrap_s());
-    api()->glTexParameteriFn(target, GL_TEXTURE_WRAP_T, texture->wrap_t());
-    api()->glTexParameteriFn(target, GL_TEXTURE_MIN_FILTER,
-                             texture->min_filter());
-    api()->glTexParameteriFn(target, GL_TEXTURE_MAG_FILTER,
-                             texture->mag_filter());
-    if (feature_info_->IsWebGL2OrES3Context()) {
-      api()->glTexParameteriFn(target, GL_TEXTURE_BASE_LEVEL,
-                               texture->base_level());
-    }
-  }
+void RasterDecoderImpl::RestoreTextureState(unsigned service_id) {
+  DCHECK(in_copy_sub_texture_);
+  reset_texture_state_ = true;
 }
 
 void RasterDecoderImpl::RestoreTextureUnitBindings(unsigned unit) const {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreVertexAttribArray(unsigned index) {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 void RasterDecoderImpl::RestoreAllExternalTextureBindingsIfNeeded() {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 QueryManager* RasterDecoderImpl::GetQueryManager() {
@@ -1122,7 +1026,7 @@ void RasterDecoderImpl::MarkContextLost(error::ContextLostReason reason) {
 
 bool RasterDecoderImpl::CheckResetStatus() {
   DCHECK(!WasContextLost());
-  DCHECK(raster_decoder_context_state_->context()->IsCurrent(nullptr));
+  DCHECK(shared_context_state_->context()->IsCurrent(nullptr));
 
   if (IsRobustnessSupported()) {
     // If the reason for the call was a GL error, we can try to determine the
@@ -1164,11 +1068,14 @@ gles2::Logger* RasterDecoderImpl::GetLogger() {
 }
 
 void RasterDecoderImpl::SetIgnoreCachedStateForTest(bool ignore) {
+  if (use_passthrough_)
+    return;
   state()->SetIgnoreCachedStateForTest(ignore);
 }
 
 gles2::ImageManager* RasterDecoderImpl::GetImageManagerForTest() {
-  return group_->image_manager();
+  NOTREACHED();
+  return nullptr;
 }
 
 void RasterDecoderImpl::SetCopyTextureResourceManagerForTest(
@@ -1288,6 +1195,11 @@ error::Error RasterDecoderImpl::DoCommandsImpl(unsigned int num_commands,
       process_pos += size;
       cmd_data += size;
     }
+
+    // Workaround for https://crbug.com/906453: Flush after every command that
+    // is not between a BeginRaster and EndRaster.
+    if (!sk_surface_)
+      FlushToWorkAroundMacCrashes();
   }
 
   *entries_processed = process_pos;
@@ -1328,7 +1240,7 @@ void RasterDecoderImpl::BindImage(uint32_t client_texture_id,
 }
 
 gles2::ContextGroup* RasterDecoderImpl::GetContextGroup() {
-  return group_.get();
+  return nullptr;
 }
 
 gles2::ErrorState* RasterDecoderImpl::GetErrorState() {
@@ -1348,7 +1260,8 @@ RasterDecoderImpl::CreateAbstractTexture(GLenum target,
 }
 
 bool RasterDecoderImpl::IsCompressedTextureFormat(unsigned format) {
-  return feature_info_->validators()->compressed_texture_format.IsValid(format);
+  return feature_info()->validators()->compressed_texture_format.IsValid(
+      format);
 }
 
 bool RasterDecoderImpl::ClearLevel(gles2::Texture* texture,
@@ -1401,14 +1314,11 @@ bool RasterDecoderImpl::ClearLevel(gles2::Texture* texture,
   }
 
   {
-    const bool state_is_dirty =
-        raster_decoder_context_state_->need_context_state_reset;
     ScopedTextureBinder binder(state(), texture->target(),
-                               texture->service_id(), gr_context(),
-                               state_is_dirty);
+                               texture->service_id(), gr_context());
     base::Optional<ScopedPixelUnpackState> pixel_unpack_state;
-    if (raster_decoder_context_state_->need_context_state_reset) {
-      pixel_unpack_state.emplace(state(), gr_context(), group_->feature_info());
+    if (shared_context_state_->need_context_state_reset()) {
+      pixel_unpack_state.emplace(state(), gr_context(), feature_info());
     }
     // Add extra scope to destroy zero and the object it owns right
     // after its usage.
@@ -1420,8 +1330,8 @@ bool RasterDecoderImpl::ClearLevel(gles2::Texture* texture,
       GLint h = y + tile_height > height ? height - y : tile_height;
       api()->glTexSubImage2DFn(
           target, level, xoffset, yoffset + y, width, h,
-          gles2::TextureManager::AdjustTexFormat(feature_info_.get(), format),
-          type, zero.get());
+          gles2::TextureManager::AdjustTexFormat(feature_info(), format), type,
+          zero.get());
       y += tile_height;
     }
   }
@@ -1439,12 +1349,16 @@ bool RasterDecoderImpl::ClearCompressedTextureLevel(gles2::Texture* texture,
   return false;
 }
 
+int RasterDecoderImpl::GetRasterDecoderId() const {
+  return raster_decoder_id_;
+}
+
 int RasterDecoderImpl::DecoderIdForTest() {
   return raster_decoder_id_;
 }
 
 ServiceTransferCache* RasterDecoderImpl::GetTransferCacheForTest() {
-  return raster_decoder_context_state_->transfer_cache.get();
+  return shared_context_state_->transfer_cache();
 }
 
 void RasterDecoderImpl::SetUpForRasterCHROMIUMForTest() {
@@ -1460,25 +1374,23 @@ void RasterDecoderImpl::SetOOMErrorForTest() {
                      "synthetic out of memory");
 }
 
+void RasterDecoderImpl::DisableFlushWorkaroundForTest() {
+  flush_workaround_disabled_for_test_ = true;
+}
+
 void RasterDecoderImpl::OnContextLostError() {
   if (!WasContextLost()) {
     // Need to lose current context before broadcasting!
     CheckResetStatus();
-    group_->LoseContexts(error::kUnknown);
     reset_by_robustness_extension_ = true;
   }
 }
 
 void RasterDecoderImpl::OnOutOfMemoryError() {
   if (lose_context_when_out_of_memory_ && !WasContextLost()) {
-    error::ContextLostReason other = error::kOutOfMemory;
-    if (CheckResetStatus()) {
-      other = error::kUnknown;
-    } else {
-      // Need to lose current context before broadcasting!
+    if (!CheckResetStatus()) {
       MarkContextLost(error::kOutOfMemory);
     }
-    group_->LoseContexts(other);
   }
 }
 
@@ -1588,83 +1500,15 @@ error::Error RasterDecoderImpl::HandleInsertFenceSyncCHROMIUM(
 }
 
 void RasterDecoderImpl::DoFinish() {
-  if (!raster_decoder_context_state_->use_vulkan_gr_context)
+  if (!shared_context_state_->use_vulkan_gr_context())
     api()->glFinishFn();
   ProcessPendingQueries(true);
 }
 
 void RasterDecoderImpl::DoFlush() {
-  if (!raster_decoder_context_state_->use_vulkan_gr_context)
+  if (!shared_context_state_->use_vulkan_gr_context())
     api()->glFlushFn();
   ProcessPendingQueries(false);
-}
-
-void RasterDecoderImpl::DoCreateAndConsumeTextureINTERNAL(
-    GLuint client_id,
-    bool use_buffer,
-    gfx::BufferUsage buffer_usage,
-    viz::ResourceFormat resource_format,
-    const volatile GLbyte* key) {
-  TRACE_EVENT2("gpu", "RasterDecoderImpl::DoCreateAndConsumeTextureINTERNAL",
-               "context", logger_.GetLogPrefix(), "key[0]",
-               static_cast<unsigned char>(key[0]));
-  Mailbox mailbox =
-      Mailbox::FromVolatile(*reinterpret_cast<const volatile Mailbox*>(key));
-  DLOG_IF(ERROR, !mailbox.Verify()) << "CreateAndConsumeTexture was "
-                                       "passed a mailbox that was not "
-                                       "generated by ProduceTextureCHROMIUM.";
-  if (!client_id) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glCreateAndConsumeTextureCHROMIUM",
-                       "invalid client id");
-    return;
-  }
-
-  gles2::TextureRef* texture_ref = GetTexture(client_id);
-  if (texture_ref) {
-    // No need to create texture here, the client_id already has an associated
-    // texture.
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glCreateAndConsumeTextureCHROMIUM",
-                       "client id already in use");
-    return;
-  }
-
-  texture_metadata_.emplace(
-      client_id, TextureMetadata(use_buffer, buffer_usage, resource_format,
-                                 GetCapabilities()));
-
-  gles2::Texture* texture = gles2::Texture::CheckedCast(
-      group_->mailbox_manager()->ConsumeTexture(mailbox));
-  if (!texture) {
-    // Create texture to handle invalid mailbox (see http://crbug.com/472465).
-    GLuint service_id = 0;
-    api()->glGenTexturesFn(1, &service_id);
-    DCHECK(service_id);
-    texture_manager()->CreateTexture(client_id, service_id);
-
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION,
-                       "glCreateAndConsumeTextureCHROMIUM",
-                       "invalid mailbox name");
-    return;
-  }
-
-  texture_ref = texture_manager()->Consume(client_id, texture);
-
-  // TODO(backer): Validate that the consumed texture is consistent with
-  // TextureMetadata.
-}
-
-void RasterDecoderImpl::DeleteTexturesHelper(
-    GLsizei n,
-    const volatile GLuint* client_ids) {
-  for (GLsizei ii = 0; ii < n; ++ii) {
-    GLuint client_id = client_ids[ii];
-    gles2::TextureRef* texture_ref = GetTexture(client_id);
-    if (texture_ref) {
-      RemoveTexture(client_id);
-    }
-  }
 }
 
 bool RasterDecoderImpl::GenQueriesEXTHelper(GLsizei n,
@@ -1752,7 +1596,7 @@ bool RasterDecoderImpl::InitializeCopyTexImageBlitter() {
   if (!copy_tex_image_blit_.get()) {
     LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("glCopySubTexture");
     copy_tex_image_blit_.reset(
-        new gles2::CopyTexImageResourceManager(feature_info_.get()));
+        new gles2::CopyTexImageResourceManager(feature_info()));
     copy_tex_image_blit_->Initialize(this);
     if (LOCAL_PEEK_GL_ERROR("glCopySubTexture") != GL_NO_ERROR)
       return false;
@@ -1775,7 +1619,7 @@ bool RasterDecoderImpl::InitializeCopyTextureCHROMIUM() {
     // CopyTex{Sub}Image2D for luminance, alpha, and luminance_alpha
     // textures.
     if (gles2::CopyTexImageResourceManager::CopyTexImageRequiresBlit(
-            feature_info_.get(), GL_LUMINANCE)) {
+            feature_info(), GL_LUMINANCE)) {
       if (!InitializeCopyTexImageBlitter())
         return false;
     }
@@ -1783,133 +1627,141 @@ bool RasterDecoderImpl::InitializeCopyTextureCHROMIUM() {
   return true;
 }
 
-void RasterDecoderImpl::DoCopySubTexture(GLuint source_id,
-                                         GLuint dest_id,
-                                         GLint xoffset,
-                                         GLint yoffset,
-                                         GLint x,
-                                         GLint y,
-                                         GLsizei width,
-                                         GLsizei height) {
-  gles2::TextureRef* source_texture_ref = GetTexture(source_id);
-  gles2::TextureRef* dest_texture_ref = GetTexture(dest_id);
-  if (!source_texture_ref || !dest_texture_ref) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                       "unknown texture id");
-    return;
-  }
+void RasterDecoderImpl::DoCopySubTextureINTERNAL(
+    GLint xoffset,
+    GLint yoffset,
+    GLint x,
+    GLint y,
+    GLsizei width,
+    GLsizei height,
+    const volatile GLbyte* mailboxes) {
+  Mailbox source_mailbox = Mailbox::FromVolatile(
+      reinterpret_cast<const volatile Mailbox*>(mailboxes)[0]);
+  DLOG_IF(ERROR, !source_mailbox.Verify())
+      << "CopySubTexture was passed an invalid mailbox";
+  Mailbox dest_mailbox = Mailbox::FromVolatile(
+      reinterpret_cast<const volatile Mailbox*>(mailboxes)[1]);
+  DLOG_IF(ERROR, !dest_mailbox.Verify())
+      << "CopySubTexture was passed an invalid mailbox";
 
-  gles2::Texture* source_texture = source_texture_ref->texture();
-  gles2::Texture* dest_texture = dest_texture_ref->texture();
-  if (source_texture == dest_texture) {
+  if (source_mailbox == dest_mailbox) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glCopySubTexture",
-                       "source and destination textures are the same");
+                       "source and destination mailboxes are the same");
     return;
   }
 
-  TextureMetadata* source_texture_metadata = GetTextureMetadata(source_id);
-  if (!source_texture_metadata) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture", "unknown texture");
+  if (use_passthrough_) {
+    std::unique_ptr<SharedImageRepresentationGLTexturePassthrough>
+        source_shared_image =
+            shared_image_representation_factory_.ProduceGLTexturePassthrough(
+                source_mailbox);
+    std::unique_ptr<SharedImageRepresentationGLTexturePassthrough>
+        dest_shared_image =
+            shared_image_representation_factory_.ProduceGLTexturePassthrough(
+                dest_mailbox);
+    if (!source_shared_image || !dest_shared_image) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                         "unknown mailbox");
+      return;
+    }
+
+    SharedImageRepresentationGLTexturePassthrough::ScopedAccess source_access(
+        source_shared_image.get(), GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM);
+    if (!source_access.success()) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                         "unable to access source for read");
+      return;
+    }
+
+    SharedImageRepresentationGLTexturePassthrough::ScopedAccess dest_access(
+        dest_shared_image.get(),
+        GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM);
+    if (!dest_access.success()) {
+      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                         "unable to access destination for write");
+      return;
+    }
+
+    gles2::TexturePassthrough* source_texture =
+        source_shared_image->GetTexturePassthrough().get();
+    gles2::TexturePassthrough* dest_texture =
+        dest_shared_image->GetTexturePassthrough().get();
+    DCHECK(!source_texture->is_bind_pending());
+    DCHECK_NE(source_texture->service_id(), dest_texture->service_id());
+
+    api()->glCopySubTextureCHROMIUMFn(
+        source_texture->service_id(), /*source_level=*/0,
+        dest_texture->target(), dest_texture->service_id(),
+        /*dest_level=*/0, xoffset, yoffset, x, y, width, height,
+        /*unpack_flip_y=*/false, /*unpack_premultiply_alpha=*/false,
+        /*unpack_unmultiply_alpha=*/false);
     return;
   }
 
-  TextureMetadata* dest_texture_metadata = GetTextureMetadata(dest_id);
-  if (!dest_texture_metadata) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture", "unknown texture");
+  std::unique_ptr<SharedImageRepresentationGLTexture> source_shared_image =
+      shared_image_representation_factory_.ProduceGLTexture(source_mailbox);
+  std::unique_ptr<SharedImageRepresentationGLTexture> dest_shared_image =
+      shared_image_representation_factory_.ProduceGLTexture(dest_mailbox);
+  if (!source_shared_image || !dest_shared_image) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture", "unknown mailbox");
     return;
   }
 
-  GLenum source_target = source_texture_metadata->target();
+  SharedImageRepresentationGLTexture::ScopedAccess source_access(
+      source_shared_image.get(), GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM);
+  if (!source_access.success()) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                       "unable to access source for read");
+    return;
+  }
+
+  gles2::Texture* source_texture = source_shared_image->GetTexture();
+  GLenum source_target = source_texture->target();
+  DCHECK(source_target);
   GLint source_level = 0;
-  GLenum dest_target = dest_texture_metadata->target();
-  GLint dest_level = 0;
-
-  ScopedTextureBinder binder(
-      state(), texture_manager(), dest_texture_ref, dest_target, gr_context(),
-      raster_decoder_context_state_->need_context_state_reset);
-  base::Optional<ScopedPixelUnpackState> pixel_unpack_state;
-
-  int source_width = 0;
-  int source_height = 0;
-  gl::GLImage* image =
-      source_texture->GetLevelImage(source_target, 0 /* level */);
-  if (image) {
-    gfx::Size size = image->GetSize();
-    source_width = size.width();
-    source_height = size.height();
-    if (source_width <= 0 || source_height <= 0) {
-      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                         "invalid image size");
-      return;
-    }
-
-    // Ideally we should not need to check that the sub-texture copy rectangle
-    // is valid in two different ways, here and below. However currently there
-    // is no guarantee that a texture backed by a GLImage will have sensible
-    // level info. If this synchronization were to be enforced then this and
-    // other functions in this file could be cleaned up.
-    // See: https://crbug.com/586476
-    int32_t max_x;
-    int32_t max_y;
-    if (!gles2::SafeAddInt32(x, width, &max_x) ||
-        !gles2::SafeAddInt32(y, height, &max_y) || x < 0 || y < 0 ||
-        max_x > source_width || max_y > source_height) {
-      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                         "source texture bad dimensions");
-      return;
-    }
-
-    if (image->GetType() == gl::GLImage::Type::MEMORY &&
-        raster_decoder_context_state_->need_context_state_reset) {
-      // If the image is in shared memory, we may need upload the pixel data
-      // with SubTexImage2D, so we need reset pixel unpack state if gl context
-      // state has been touched by skia.
-      pixel_unpack_state.emplace(state(), gr_context(), group_->feature_info());
-    }
-  } else {
-    if (!source_texture->GetLevelSize(source_target, 0 /* level */,
-                                      &source_width, &source_height, nullptr)) {
-      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                         "source texture has no data for level");
-      return;
-    }
-
-    // Check that this type of texture is allowed.
-    if (!texture_manager()->ValidForTarget(source_target, 0 /* level */,
-                                           source_width, source_height, 1)) {
-      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                         "source texture bad dimensions");
-      return;
-    }
-
-    if (!source_texture->ValidForTexture(source_target, 0 /* level */, x, y, 0,
-                                         width, height, 1)) {
-      LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                         "source texture bad dimensions.");
-      return;
-    }
+  gfx::Size source_size = source_shared_image->size();
+  gfx::Rect source_rect(x, y, width, height);
+  if (!gfx::Rect(source_size).Contains(source_rect)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                       "source texture bad dimensions.");
+    return;
   }
+
+  SharedImageRepresentationGLTexture::ScopedAccess dest_access(
+      dest_shared_image.get(), GL_SHARED_IMAGE_ACCESS_MODE_READWRITE_CHROMIUM);
+  if (!dest_access.success()) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                       "unable to access destination for write");
+    return;
+  }
+
+  gles2::Texture* dest_texture = dest_shared_image->GetTexture();
+  GLenum dest_target = dest_texture->target();
+  DCHECK(dest_target);
+  GLint dest_level = 0;
+  gfx::Size dest_size = dest_shared_image->size();
+  gfx::Rect dest_rect(xoffset, yoffset, width, height);
+  if (!gfx::Rect(dest_size).Contains(dest_rect)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
+                       "destination texture bad dimensions.");
+    return;
+  }
+
+  DCHECK_NE(source_texture->service_id(), dest_texture->service_id());
 
   GLenum source_type = 0;
   GLenum source_internal_format = 0;
-  source_texture->GetLevelType(source_target, 0 /* level */, &source_type,
+  source_texture->GetLevelType(source_target, source_level, &source_type,
                                &source_internal_format);
 
   GLenum dest_type = 0;
   GLenum dest_internal_format = 0;
   bool dest_level_defined = dest_texture->GetLevelType(
-      dest_target, 0 /* level */, &dest_type, &dest_internal_format);
-  if (!dest_level_defined) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glCopySubTexture",
-                       "destination texture is not defined");
-    return;
-  }
-  if (!dest_texture->ValidForTexture(dest_target, 0 /* level */, xoffset,
-                                     yoffset, 0, width, height, 1)) {
-    LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glCopySubTexture",
-                       "destination texture bad dimensions.");
-    return;
-  }
+      dest_target, dest_level, &dest_type, &dest_internal_format);
+  DCHECK(dest_level_defined);
+
+  // TODO(piman): Do we need this check? It might always be true by
+  // construction.
   std::string output_error_msg;
   if (!ValidateCopyTextureCHROMIUMInternalFormats(
           GetFeatureInfo(), source_internal_format, dest_internal_format,
@@ -1919,67 +1771,79 @@ void RasterDecoderImpl::DoCopySubTexture(GLuint source_id,
     return;
   }
 
-  if (feature_info_->feature_flags().desktop_srgb_support) {
-    bool enable_framebuffer_srgb =
-        gles2::GLES2Util::GetColorEncodingFromInternalFormat(
-            source_internal_format) == GL_SRGB ||
-        gles2::GLES2Util::GetColorEncodingFromInternalFormat(
-            dest_internal_format) == GL_SRGB;
-    state()->EnableDisableFramebufferSRGB(enable_framebuffer_srgb);
-  }
-
   // Clear the source texture if necessary.
-  if (!texture_manager()->ClearTextureLevel(this, source_texture_ref,
-                                            source_target, 0 /* level */)) {
+  if (!gles2::TextureManager::ClearTextureLevel(this, source_texture,
+                                                source_target, 0 /* level */)) {
     LOCAL_SET_GL_ERROR(GL_OUT_OF_MEMORY, "glCopySubTexture",
                        "source texture dimensions too big");
     return;
   }
 
-  int dest_width = 0;
-  int dest_height = 0;
-  bool ok = dest_texture->GetLevelSize(dest_target, dest_level, &dest_width,
-                                       &dest_height, nullptr);
-  DCHECK(ok);
-  if (xoffset != 0 || yoffset != 0 || width != dest_width ||
-      height != dest_height) {
-    gfx::Rect cleared_rect;
-    if (gles2::TextureManager::CombineAdjacentRects(
-            dest_texture->GetLevelClearedRect(dest_target, dest_level),
-            gfx::Rect(xoffset, yoffset, width, height), &cleared_rect)) {
-      DCHECK_GE(cleared_rect.size().GetArea(),
-                dest_texture->GetLevelClearedRect(dest_target, dest_level)
-                    .size()
-                    .GetArea());
-      texture_manager()->SetLevelClearedRect(dest_texture_ref, dest_target,
-                                             dest_level, cleared_rect);
-    } else {
-      // Otherwise clear part of texture level that is not already cleared.
-      if (!texture_manager()->ClearTextureLevel(this, dest_texture_ref,
-                                                dest_target, dest_level)) {
-        LOCAL_SET_GL_ERROR(GL_OUT_OF_MEMORY, "glCopySubTexture",
-                           "destination texture dimensions too big");
+  gfx::Rect new_cleared_rect;
+  gfx::Rect old_cleared_rect =
+      dest_texture->GetLevelClearedRect(dest_target, dest_level);
+  if (gles2::TextureManager::CombineAdjacentRects(
+          dest_texture->GetLevelClearedRect(dest_target, dest_level), dest_rect,
+          &new_cleared_rect)) {
+    DCHECK(old_cleared_rect.IsEmpty() ||
+           new_cleared_rect.Contains(old_cleared_rect));
+  } else {
+    // Otherwise clear part of texture level that is not already cleared.
+    if (!gles2::TextureManager::ClearTextureLevel(this, dest_texture,
+                                                  dest_target, dest_level)) {
+      LOCAL_SET_GL_ERROR(GL_OUT_OF_MEMORY, "glCopySubTexture",
+                         "destination texture dimensions too big");
+      return;
+    }
+    new_cleared_rect = gfx::Rect(dest_size);
+  }
+
+  ScopedTextureBinder binder(state(), dest_target, dest_texture->service_id(),
+                             gr_context());
+
+  gles2::Texture::ImageState image_state;
+  gl::GLImage* image =
+      source_texture->GetLevelImage(source_target, 0, &image_state);
+  if (image) {
+    base::Optional<ScopedPixelUnpackState> pixel_unpack_state;
+    if (image->GetType() == gl::GLImage::Type::MEMORY &&
+        shared_context_state_->need_context_state_reset()) {
+      // If the image is in shared memory, we may need upload the pixel data
+      // with SubTexImage2D, so we need reset pixel unpack state if gl context
+      // state has been touched by skia.
+      pixel_unpack_state.emplace(state(), gr_context(), feature_info());
+    }
+
+    // Try to copy by uploading to the destination texture.
+    if (dest_internal_format == source_internal_format) {
+      if (image->CopyTexSubImage(dest_target, gfx::Point(xoffset, yoffset),
+                                 gfx::Rect(x, y, width, height))) {
+        dest_texture->SetLevelClearedRect(dest_target, dest_level,
+                                          new_cleared_rect);
         return;
       }
     }
-  } else {
-    texture_manager()->SetLevelCleared(dest_texture_ref, dest_target,
-                                       dest_level, true);
-  }
 
-  // TODO(qiankun.miao@intel.com): Support level > 0 for CopyTexSubImage.
-  if (image && dest_internal_format == source_internal_format &&
-      dest_level == 0) {
-    if (image->CopyTexSubImage(dest_target, gfx::Point(xoffset, yoffset),
-                               gfx::Rect(x, y, width, height))) {
-      return;
+    // Otherwise, update the source if needed.
+    if (image_state == gles2::Texture::UNBOUND) {
+      ScopedGLErrorSuppressor suppressor(
+          "RasterDecoderImpl::DoCopySubTextureINTERNAL", error_state_.get());
+      api()->glBindTextureFn(source_target, source_texture->service_id());
+      if (image->ShouldBindOrCopy() == gl::GLImage::BIND) {
+        bool rv = image->BindTexImage(source_target);
+        DCHECK(rv) << "BindTexImage() failed";
+        image_state = gles2::Texture::BOUND;
+      } else {
+        bool rv = image->CopyTexImage(source_target);
+        DCHECK(rv) << "CopyTexImage() failed";
+        image_state = gles2::Texture::COPIED;
+      }
+      source_texture->SetLevelImageState(source_target, 0, image_state);
     }
   }
 
   if (!InitializeCopyTextureCHROMIUM())
     return;
-
-  DoBindOrCopyTexImageIfNeeded(source_texture, source_target);
 
   // GL_TEXTURE_EXTERNAL_OES texture requires apply a transform matrix
   // before presenting.
@@ -1994,10 +1858,13 @@ void RasterDecoderImpl::DoCopySubTexture(GLuint source_id,
           this, source_target, source_texture->service_id(), source_level,
           source_internal_format, dest_target, dest_texture->service_id(),
           dest_level, dest_internal_format, xoffset, yoffset, x, y, width,
-          height, dest_width, dest_height, source_width, source_height,
-          false /* unpack_flip_y */, false /* unpack_premultiply_alpha */,
+          height, dest_size.width(), dest_size.height(), source_size.width(),
+          source_size.height(), false /* unpack_flip_y */,
+          false /* unpack_premultiply_alpha */,
           false /* unpack_unmultiply_alpha */, false /* dither */,
           transform_matrix, copy_tex_image_blit_.get());
+      dest_texture->SetLevelClearedRect(dest_target, dest_level,
+                                        new_cleared_rect);
       return;
     }
   }
@@ -2020,37 +1887,30 @@ void RasterDecoderImpl::DoCopySubTexture(GLuint source_id,
   }
 #endif
 
+  in_copy_sub_texture_ = true;
   copy_texture_chromium_->DoCopySubTexture(
       this, source_target, source_texture->service_id(), source_level,
       source_internal_format, dest_target, dest_texture->service_id(),
       dest_level, dest_internal_format, xoffset, yoffset, x, y, width, height,
-      dest_width, dest_height, source_width, source_height,
-      false /* unpack_flip_y */, false /* unpack_premultiply_alpha */,
-      false /* unpack_unmultiply_alpha */, false /* dither */, method,
-      copy_tex_image_blit_.get());
-}
-
-void RasterDecoderImpl::DoBindOrCopyTexImageIfNeeded(gles2::Texture* texture,
-                                                     GLenum textarget) {
-  // Image is already in use if texture is attached to a framebuffer.
-  if (texture && !texture->IsAttachedToFramebuffer()) {
-    gles2::Texture::ImageState image_state;
-    gl::GLImage* image = texture->GetLevelImage(textarget, 0, &image_state);
-    if (image && image_state == gles2::Texture::UNBOUND) {
-      ScopedGLErrorSuppressor suppressor(
-          "RasterDecoderImpl::DoBindOrCopyTexImageIfNeeded",
-          error_state_.get());
-      api()->glBindTextureFn(textarget, texture->service_id());
-      if (!image->BindTexImage(textarget)) {
-        // Note: We update the state to COPIED prior to calling CopyTexImage()
-        // as that allows the GLImage implemenatation to set it back to
-        // UNBOUND and ensure that CopyTexImage() is called each time the
-        // texture is used.
-        texture->SetLevelImageState(textarget, 0, gles2::Texture::COPIED);
-        bool rv = image->CopyTexImage(textarget);
-        DCHECK(rv) << "CopyTexImage() failed";
-      }
+      dest_size.width(), dest_size.height(), source_size.width(),
+      source_size.height(), false /* unpack_flip_y */,
+      false /* unpack_premultiply_alpha */, false /* unpack_unmultiply_alpha */,
+      false /* dither */, method, copy_tex_image_blit_.get());
+  dest_texture->SetLevelClearedRect(dest_target, dest_level, new_cleared_rect);
+  in_copy_sub_texture_ = false;
+  if (reset_texture_state_) {
+    reset_texture_state_ = false;
+    for (auto* texture : {source_texture, dest_texture}) {
+      GLenum target = texture->target();
+      api()->glBindTextureFn(target, texture->service_id());
+      api()->glTexParameteriFn(target, GL_TEXTURE_WRAP_S, texture->wrap_s());
+      api()->glTexParameteriFn(target, GL_TEXTURE_WRAP_T, texture->wrap_t());
+      api()->glTexParameteriFn(target, GL_TEXTURE_MIN_FILTER,
+                               texture->min_filter());
+      api()->glTexParameteriFn(target, GL_TEXTURE_MAG_FILTER,
+                               texture->mag_filter());
     }
+    shared_context_state_->PessimisticallyResetGrContext();
   }
 }
 
@@ -2135,6 +1995,10 @@ void RasterDecoderImpl::DoBeginRasterCHROMIUM(
     GLboolean can_use_lcd_text,
     GLuint color_space_transfer_cache_id,
     const volatile GLbyte* key) {
+  // Workaround for https://crbug.com/906453: Flush before BeginRaster (the
+  // commands between BeginRaster and EndRaster will not flush).
+  FlushToWorkAroundMacCrashes();
+
   if (!gr_context()) {
     LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glBeginRasterCHROMIUM",
                        "chromium_raster_transport not enabled via attribs");
@@ -2153,8 +2017,7 @@ void RasterDecoderImpl::DoBeginRasterCHROMIUM(
                                        "generated by ProduceTextureCHROMIUM.";
 
   DCHECK(!shared_image_);
-  shared_image_ =
-      group_->shared_image_representation_factory()->ProduceSkia(mailbox);
+  shared_image_ = shared_image_representation_factory_.ProduceSkia(mailbox);
   if (!shared_image_) {
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, "glBeginRasterCHROMIUM",
                        "passed invalid mailbox.");
@@ -2163,7 +2026,7 @@ void RasterDecoderImpl::DoBeginRasterCHROMIUM(
 
   DCHECK(locked_handles_.empty());
   DCHECK(!raster_canvas_);
-  raster_decoder_context_state_->need_context_state_reset = true;
+  shared_context_state_->set_need_context_state_reset(true);
 
   // Use unknown pixel geometry to disable LCD text.
   uint32_t flags = 0;
@@ -2239,10 +2102,10 @@ scoped_refptr<Buffer> RasterDecoderImpl::GetShmBuffer(uint32_t shm_id) {
 
 void RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
                                          GLuint raster_shm_offset,
-                                         GLsizeiptr raster_shm_size,
+                                         GLuint raster_shm_size,
                                          GLuint font_shm_id,
                                          GLuint font_shm_offset,
-                                         GLsizeiptr font_shm_size) {
+                                         GLuint font_shm_size) {
   TRACE_EVENT1("gpu", "RasterDecoderImpl::DoRasterCHROMIUM", "raster_id",
                ++raster_chromium_id_);
 
@@ -2252,7 +2115,7 @@ void RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
     return;
   }
   DCHECK(transfer_cache());
-  raster_decoder_context_state_->need_context_state_reset = true;
+  shared_context_state_->set_need_context_state_reset(true);
 
   if (font_shm_size > 0) {
     // Deserialize fonts before raster.
@@ -2289,8 +2152,9 @@ void RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
   SkCanvas* canvas = raster_canvas_.get();
   cc::PlaybackParams playback_params(nullptr, SkMatrix::I());
   TransferCacheDeserializeHelperImpl impl(raster_decoder_id_, transfer_cache());
-  cc::PaintOp::DeserializeOptions options(&impl, paint_cache_.get(),
-                                          font_manager_->strike_client());
+  cc::PaintOp::DeserializeOptions options(
+      &impl, paint_cache_.get(), font_manager_->strike_client(),
+      shared_context_state_->scratch_deserialization_buffer());
   options.crash_dump_on_failure = true;
 
   size_t paint_buffer_size = raster_shm_size;
@@ -2305,30 +2169,8 @@ void RasterDecoderImpl::DoRasterCHROMIUM(GLuint raster_shm_id,
       return;
     }
 
-#if defined(OS_MACOSX)
-    // Flush before and after the raster op. Add crash instrumentation to dump
-    // the current raster op.
-    // TODO(ccameron): Harvest this data to see if there is a pattern to the ops
-    // that cause crashes.
-    // https://crbug.com/906453
-    if (gr_context())
-      gr_context()->flush();
-    api()->glFlushFn();
-    static auto* crash_key = base::debug::AllocateCrashKeyString(
-        "mac_paint_op_in_flush", base::debug::CrashKeySize::Size32);
-    base::debug::SetCrashKeyString(
-        crash_key, cc::PaintOpTypeToString(deserialized_op->GetType()));
-#endif
-
     deserialized_op->Raster(canvas, playback_params);
     deserialized_op->DestroyThis();
-
-#if defined(OS_MACOSX)
-    if (gr_context())
-      gr_context()->flush();
-    api()->glFlushFn();
-    base::debug::ClearCrashKeyString(crash_key);
-#endif
 
     paint_buffer_size -= skip;
     paint_buffer_memory += skip;
@@ -2343,7 +2185,7 @@ void RasterDecoderImpl::DoEndRasterCHROMIUM() {
     return;
   }
 
-  raster_decoder_context_state_->need_context_state_reset = true;
+  shared_context_state_->set_need_context_state_reset(true);
 
   raster_canvas_.reset();
 
@@ -2429,7 +2271,7 @@ void RasterDecoderImpl::DoCreateTransferCacheEntryINTERNAL(
       cc::ServiceTransferCacheEntry::UsesGrContext(entry_type) ? gr_context()
                                                                : nullptr;
   if (context_for_entry)
-    raster_decoder_context_state_->need_context_state_reset = true;
+    shared_context_state_->set_need_context_state_reset(true);
 
   if (!transfer_cache()->CreateLockedEntry(
           ServiceTransferCache::EntryKey(raster_decoder_id_, entry_type,
@@ -2495,7 +2337,7 @@ void RasterDecoderImpl::DoDeleteTransferCacheEntryINTERNAL(
 
 void RasterDecoderImpl::RestoreStateForAttrib(GLuint attrib_index,
                                               bool restore_array_binding) {
-  raster_decoder_context_state_->PessimisticallyResetGrContext();
+  shared_context_state_->PessimisticallyResetGrContext();
 }
 
 // Include the auto-generated part of this file. We split this because it means

@@ -36,6 +36,7 @@
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
+#include "net/socket/transport_connect_job.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/spdy/spdy_session_test_util.h"
@@ -46,7 +47,7 @@
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
 #include "net/test/test_with_scoped_task_environment.h"
-#include "net/third_party/spdy/core/spdy_test_utils.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_test_utils.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/platform_test.h"
@@ -133,8 +134,8 @@ class SpdySessionTest : public PlatformTest, public WithScopedTaskEnvironment {
 
  protected:
   SpdySessionTest()
-      : SpdySessionTest(
-            base::test::ScopedTaskEnvironment::MainThreadType::IO){};
+      : SpdySessionTest(base::test::ScopedTaskEnvironment::MainThreadType::IO) {
+  }
 
   explicit SpdySessionTest(
       base::test::ScopedTaskEnvironment::MainThreadType type)
@@ -367,7 +368,7 @@ class SpdySessionTestWithMockTime : public SpdySessionTest {
  protected:
   SpdySessionTestWithMockTime()
       : SpdySessionTest(
-            base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME){};
+            base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME) {}
 };
 
 // Try to create a SPDY session that will fail during
@@ -946,6 +947,71 @@ TEST_F(SpdySessionTest, HeadersAfterGoAway) {
   histogram_tester.ExpectBucketCount(
       "Net.SpdyPushedStreamFate",
       static_cast<int>(SpdyPushedStreamFate::kGoingAway), 1);
+  histogram_tester.ExpectTotalCount("Net.SpdyPushedStreamFate", 1);
+}
+
+// Regression test for https://crbug.com/903737: pushed response with status
+// code different from 2xx or 3xx or 416 should be rejected.
+TEST_F(SpdySessionTest, UnsupportedPushedStatusCode) {
+  base::HistogramTester histogram_tester;
+
+  spdy::SpdyHeaderBlock push_promise_header_block;
+  push_promise_header_block[spdy::kHttp2MethodHeader] = "GET";
+  spdy_util_.AddUrlToHeaderBlock(kPushedUrl, &push_promise_header_block);
+  spdy::SpdySerializedFrame push_promise_frame(
+      spdy_util_.ConstructSpdyPushPromise(
+          1, 2, std::move(push_promise_header_block)));
+
+  spdy::SpdyHeaderBlock response_header_block;
+  response_header_block[spdy::kHttp2StatusHeader] = "401";
+  spdy::SpdySerializedFrame response_headers_frame(
+      spdy_util_.ConstructSpdyResponseHeaders(
+          2, std::move(response_header_block), false));
+
+  MockRead reads[] = {
+      MockRead(ASYNC, ERR_IO_PENDING, 1), CreateMockRead(push_promise_frame, 2),
+      CreateMockRead(response_headers_frame, 4), MockRead(ASYNC, 0, 6)};
+
+  spdy::SpdySerializedFrame req(
+      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, MEDIUM));
+  spdy::SpdySerializedFrame priority(
+      spdy_util_.ConstructSpdyPriority(2, 1, IDLE, true));
+  spdy::SpdySerializedFrame rst(
+      spdy_util_.ConstructSpdyRstStream(2, spdy::ERROR_CODE_REFUSED_STREAM));
+
+  MockWrite writes[] = {CreateMockWrite(req, 0), CreateMockWrite(priority, 3),
+                        CreateMockWrite(rst, 5)};
+
+  SequencedSocketData data(reads, writes);
+  session_deps_.socket_factory->AddSocketDataProvider(&data);
+
+  AddSSLSocketData();
+
+  CreateNetworkSession();
+  CreateSpdySession();
+
+  base::WeakPtr<SpdyStream> spdy_stream =
+      CreateStreamSynchronously(SPDY_REQUEST_RESPONSE_STREAM, session_,
+                                test_url_, MEDIUM, NetLogWithSource());
+  test::StreamDelegateDoNothing delegate(spdy_stream);
+  spdy_stream->SetDelegate(&delegate);
+
+  spdy::SpdyHeaderBlock headers(
+      spdy_util_.ConstructGetHeaderBlock(kDefaultUrl));
+  spdy_stream->SendRequestHeaders(std::move(headers), NO_MORE_DATA_TO_SEND);
+
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_EQ(1u, spdy_stream->stream_id());
+  EXPECT_TRUE(HasSpdySession(spdy_session_pool_, key_));
+
+  // Read the PUSH_PROMISE and HEADERS frames.
+  data.Resume();
+  base::RunLoop().RunUntilIdle();
+
+  histogram_tester.ExpectBucketCount(
+      "Net.SpdyPushedStreamFate",
+      static_cast<int>(SpdyPushedStreamFate::kUnsupportedStatusCode), 1);
   histogram_tester.ExpectTotalCount("Net.SpdyPushedStreamFate", 1);
 }
 
@@ -3484,11 +3550,13 @@ TEST_F(SpdySessionTest, CloseOneIdleConnection) {
   scoped_refptr<TransportSocketParams> params2(
       new TransportSocketParams(host_port2, false, OnHostResolutionCallback()));
   auto connection2 = std::make_unique<ClientSocketHandle>();
-  EXPECT_EQ(
-      ERR_IO_PENDING,
-      connection2->Init(host_port2.ToString(), params2, DEFAULT_PRIORITY,
-                        SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
-                        callback2.callback(), pool, NetLogWithSource()));
+  EXPECT_EQ(ERR_IO_PENDING,
+            connection2->Init(host_port2.ToString(),
+                              TransportClientSocketPool::SocketParams::
+                                  CreateFromTransportSocketParams(params2),
+                              DEFAULT_PRIORITY, SocketTag(),
+                              ClientSocketPool::RespectLimits::ENABLED,
+                              callback2.callback(), pool, NetLogWithSource()));
   EXPECT_TRUE(pool->IsStalled());
 
   // The socket pool should close the connection asynchronously and establish a
@@ -3568,11 +3636,13 @@ TEST_F(SpdySessionTest, CloseOneIdleConnectionWithAlias) {
   scoped_refptr<TransportSocketParams> params3(
       new TransportSocketParams(host_port3, false, OnHostResolutionCallback()));
   auto connection3 = std::make_unique<ClientSocketHandle>();
-  EXPECT_EQ(
-      ERR_IO_PENDING,
-      connection3->Init(host_port3.ToString(), params3, DEFAULT_PRIORITY,
-                        SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
-                        callback3.callback(), pool, NetLogWithSource()));
+  EXPECT_EQ(ERR_IO_PENDING,
+            connection3->Init(host_port3.ToString(),
+                              TransportClientSocketPool::SocketParams::
+                                  CreateFromTransportSocketParams(params3),
+                              DEFAULT_PRIORITY, SocketTag(),
+                              ClientSocketPool::RespectLimits::ENABLED,
+                              callback3.callback(), pool, NetLogWithSource()));
   EXPECT_TRUE(pool->IsStalled());
 
   // The socket pool should close the connection asynchronously and establish a
@@ -3646,11 +3716,13 @@ TEST_F(SpdySessionTest, CloseSessionOnIdleWhenPoolStalled) {
   scoped_refptr<TransportSocketParams> params2(
       new TransportSocketParams(host_port2, false, OnHostResolutionCallback()));
   auto connection2 = std::make_unique<ClientSocketHandle>();
-  EXPECT_EQ(
-      ERR_IO_PENDING,
-      connection2->Init(host_port2.ToString(), params2, DEFAULT_PRIORITY,
-                        SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
-                        callback2.callback(), pool, NetLogWithSource()));
+  EXPECT_EQ(ERR_IO_PENDING,
+            connection2->Init(host_port2.ToString(),
+                              TransportClientSocketPool::SocketParams::
+                                  CreateFromTransportSocketParams(params2),
+                              DEFAULT_PRIORITY, SocketTag(),
+                              ClientSocketPool::RespectLimits::ENABLED,
+                              callback2.callback(), pool, NetLogWithSource()));
   EXPECT_TRUE(pool->IsStalled());
 
   // Running the message loop should cause the socket pool to ask the SPDY
@@ -6059,11 +6131,11 @@ class SpdySessionReadIfReadyTest
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        SpdySessionReadIfReadyTest,
-                        testing::Values(READ_IF_READY_ENABLED_SUPPORTED,
-                                        READ_IF_READY_ENABLED_NOT_SUPPORTED,
-                                        READ_IF_READY_DISABLED));
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         SpdySessionReadIfReadyTest,
+                         testing::Values(READ_IF_READY_ENABLED_SUPPORTED,
+                                         READ_IF_READY_ENABLED_NOT_SUPPORTED,
+                                         READ_IF_READY_DISABLED));
 
 // Tests basic functionality of ReadIfReady() when it is enabled or disabled.
 TEST_P(SpdySessionReadIfReadyTest, ReadIfReady) {

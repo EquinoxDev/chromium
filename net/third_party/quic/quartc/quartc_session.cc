@@ -4,175 +4,36 @@
 
 #include "net/third_party/quic/quartc/quartc_session.h"
 
+#include "net/third_party/quic/core/quic_utils.h"
 #include "net/third_party/quic/core/tls_client_handshaker.h"
 #include "net/third_party/quic/core/tls_server_handshaker.h"
+#include "net/third_party/quic/platform/api/quic_mem_slice_storage.h"
 #include "net/third_party/quic/platform/api/quic_ptr_util.h"
 
 namespace quic {
-
 namespace {
 
 // Arbitrary server port number for net::QuicCryptoClientConfig.
 const int kQuicServerPort = 0;
 
-// Length of HKDF input keying material, equal to its number of bytes.
-// https://tools.ietf.org/html/rfc5869#section-2.2.
-// TODO(zhihuang): Verify that input keying material length is correct.
-const size_t kInputKeyingMaterialLength = 32;
-
-// Used by QuicCryptoServerConfig to provide dummy proof credentials.
-// TODO(zhihuang): Remove when secure P2P QUIC handshake is possible.
-class DummyProofSource : public ProofSource {
- public:
-  DummyProofSource() {}
-  ~DummyProofSource() override {}
-
-  // ProofSource override.
-  void GetProof(const QuicSocketAddress& server_address,
-                const QuicString& hostname,
-                const QuicString& server_config,
-                QuicTransportVersion transport_version,
-                QuicStringPiece chlo_hash,
-                std::unique_ptr<Callback> callback) override {
-    QuicReferenceCountedPointer<ProofSource::Chain> chain =
-        GetCertChain(server_address, hostname);
-    QuicCryptoProof proof;
-    proof.signature = "Dummy signature";
-    proof.leaf_cert_scts = "Dummy timestamp";
-    callback->Run(true, chain, proof, nullptr /* details */);
-  }
-
-  QuicReferenceCountedPointer<Chain> GetCertChain(
-      const QuicSocketAddress& server_address,
-      const QuicString& hostname) override {
-    std::vector<QuicString> certs;
-    certs.push_back("Dummy cert");
-    return QuicReferenceCountedPointer<ProofSource::Chain>(
-        new ProofSource::Chain(certs));
-  }
-
-  void ComputeTlsSignature(
-      const QuicSocketAddress& server_address,
-      const QuicString& hostname,
-      uint16_t signature_algorithm,
-      QuicStringPiece in,
-      std::unique_ptr<SignatureCallback> callback) override {
-    callback->Run(true, "Dummy signature");
-  }
-};
-
-// Used by QuicCryptoClientConfig to ignore the peer's credentials
-// and establish an insecure QUIC connection.
-// TODO(zhihuang): Remove when secure P2P QUIC handshake is possible.
-class InsecureProofVerifier : public ProofVerifier {
- public:
-  InsecureProofVerifier() {}
-  ~InsecureProofVerifier() override {}
-
-  // ProofVerifier override.
-  QuicAsyncStatus VerifyProof(
-      const QuicString& hostname,
-      const uint16_t port,
-      const QuicString& server_config,
-      QuicTransportVersion transport_version,
-      QuicStringPiece chlo_hash,
-      const std::vector<QuicString>& certs,
-      const QuicString& cert_sct,
-      const QuicString& signature,
-      const ProofVerifyContext* context,
-      QuicString* error_details,
-      std::unique_ptr<ProofVerifyDetails>* verify_details,
-      std::unique_ptr<ProofVerifierCallback> callback) override {
-    return QUIC_SUCCESS;
-  }
-
-  QuicAsyncStatus VerifyCertChain(
-      const QuicString& hostname,
-      const std::vector<QuicString>& certs,
-      const ProofVerifyContext* context,
-      QuicString* error_details,
-      std::unique_ptr<ProofVerifyDetails>* details,
-      std::unique_ptr<ProofVerifierCallback> callback) override {
-    return QUIC_SUCCESS;
-  }
-
-  std::unique_ptr<ProofVerifyContext> CreateDefaultContext() override {
-    return nullptr;
-  }
-};
-
 }  // namespace
-
-QuicConnectionId QuartcCryptoServerStreamHelper::GenerateConnectionIdForReject(
-    QuicConnectionId connection_id) const {
-  return EmptyQuicConnectionId();
-}
-
-bool QuartcCryptoServerStreamHelper::CanAcceptClientHello(
-    const CryptoHandshakeMessage& message,
-    const QuicSocketAddress& client_address,
-    const QuicSocketAddress& peer_address,
-    const QuicSocketAddress& self_address,
-    QuicString* error_details) const {
-  return true;
-}
 
 QuartcSession::QuartcSession(std::unique_ptr<QuicConnection> connection,
                              const QuicConfig& config,
                              const ParsedQuicVersionVector& supported_versions,
-                             const QuicString& unique_remote_server_id,
-                             Perspective perspective,
-                             QuicConnectionHelperInterface* helper,
-                             const QuicClock* clock,
-                             std::unique_ptr<QuartcPacketWriter> packet_writer)
+                             const QuicClock* clock)
     : QuicSession(connection.get(),
                   nullptr /*visitor*/,
                   config,
                   supported_versions),
-      unique_remote_server_id_(unique_remote_server_id),
-      perspective_(perspective),
-      packet_writer_(std::move(packet_writer)),
       connection_(std::move(connection)),
-      helper_(helper),
-      clock_(clock) {
-  packet_writer_->set_connection(connection_.get());
-
-  // Initialization with default crypto configuration.
-  if (perspective_ == Perspective::IS_CLIENT) {
-    std::unique_ptr<ProofVerifier> proof_verifier(new InsecureProofVerifier);
-    quic_crypto_client_config_ = QuicMakeUnique<QuicCryptoClientConfig>(
-        std::move(proof_verifier), TlsClientHandshaker::CreateSslCtx());
-  } else {
-    std::unique_ptr<ProofSource> proof_source(new DummyProofSource);
-    // Generate a random source address token secret. For long-running servers
-    // it's better to not regenerate it for each connection to enable zero-RTT
-    // handshakes, but for transient clients it does not matter.
-    char source_address_token_secret[kInputKeyingMaterialLength];
-    helper_->GetRandomGenerator()->RandBytes(source_address_token_secret,
-                                             kInputKeyingMaterialLength);
-    quic_crypto_server_config_ = QuicMakeUnique<QuicCryptoServerConfig>(
-        QuicString(source_address_token_secret, kInputKeyingMaterialLength),
-        helper_->GetRandomGenerator(), std::move(proof_source),
-        KeyExchangeSource::Default(), TlsServerHandshaker::CreateSslCtx());
-    // Provide server with serialized config string to prove ownership.
-    QuicCryptoServerConfig::ConfigOptions options;
-    // The |message| is used to handle the return value of AddDefaultConfig
-    // which is raw pointer of the CryptoHandshakeMessage.
-    std::unique_ptr<CryptoHandshakeMessage> message(
-        quic_crypto_server_config_->AddDefaultConfig(
-            helper_->GetRandomGenerator(), helper_->GetClock(), options));
-  }
+      clock_(clock),
+      per_packet_options_(QuicMakeUnique<QuartcPerPacketOptions>()) {
+  per_packet_options_->connection = connection_.get();
+  connection_->set_per_packet_options(per_packet_options_.get());
 }
 
 QuartcSession::~QuartcSession() {}
-
-const QuicCryptoStream* QuartcSession::GetCryptoStream() const {
-  return crypto_stream_.get();
-}
-
-QuicCryptoStream* QuartcSession::GetMutableCryptoStream() {
-  return crypto_stream_.get();
-}
 
 QuartcStream* QuartcSession::CreateOutgoingBidirectionalStream() {
   // Use default priority for incoming QUIC streams.
@@ -205,7 +66,12 @@ bool QuartcSession::SendOrQueueMessage(QuicString message) {
 
 void QuartcSession::ProcessSendMessageQueue() {
   while (!send_message_queue_.empty()) {
-    MessageResult result = SendMessage(send_message_queue_.front());
+    struct iovec iov = {const_cast<char*>(send_message_queue_.front().data()),
+                        send_message_queue_.front().length()};
+    QuicMemSliceStorage storage(
+        &iov, 1, connection()->helper()->GetStreamSendBufferAllocator(),
+        send_message_queue_.front().length());
+    MessageResult result = SendMessage(storage.ToSpan());
 
     const size_t message_size = send_message_queue_.front().size();
 
@@ -257,12 +123,25 @@ void QuartcSession::OnCanWrite() {
 
 void QuartcSession::OnCryptoHandshakeEvent(CryptoHandshakeEvent event) {
   QuicSession::OnCryptoHandshakeEvent(event);
-  if (event == HANDSHAKE_CONFIRMED) {
-    DCHECK(IsEncryptionEstablished());
-    DCHECK(IsCryptoHandshakeConfirmed());
+  switch (event) {
+    case ENCRYPTION_FIRST_ESTABLISHED:
+    case ENCRYPTION_REESTABLISHED:
+      // 1-rtt setup triggers 'ENCRYPTION_REESTABLISHED' (after REJ, when the
+      // CHLO is sent).
+      DCHECK(IsEncryptionEstablished());
+      DCHECK(session_delegate_);
+      session_delegate_->OnConnectionWritable();
+      break;
+    case HANDSHAKE_CONFIRMED:
+      // On the server, handshake confirmed is the first time when you can start
+      // writing packets.
+      DCHECK(IsEncryptionEstablished());
+      DCHECK(IsCryptoHandshakeConfirmed());
 
-    DCHECK(session_delegate_);
-    session_delegate_->OnCryptoHandshakeComplete();
+      DCHECK(session_delegate_);
+      session_delegate_->OnConnectionWritable();
+      session_delegate_->OnCryptoHandshakeComplete();
+      break;
   }
 }
 
@@ -304,45 +183,6 @@ void QuartcSession::OnConnectionClosed(QuicErrorCode error,
   QuicSession::OnConnectionClosed(error, error_details, source);
   DCHECK(session_delegate_);
   session_delegate_->OnConnectionClosed(error, error_details, source);
-
-  // The session may be deleted after OnConnectionClosed(), so |this| must be
-  // removed from the packet transport's delegate before it is deleted.
-  packet_writer_->SetPacketTransportDelegate(nullptr);
-}
-
-void QuartcSession::SetPreSharedKey(QuicStringPiece key) {
-  if (perspective_ == Perspective::IS_CLIENT) {
-    quic_crypto_client_config_->set_pre_shared_key(key);
-  } else {
-    quic_crypto_server_config_->set_pre_shared_key(key);
-  }
-}
-
-void QuartcSession::StartCryptoHandshake() {
-  if (perspective_ == Perspective::IS_CLIENT) {
-    QuicServerId server_id(unique_remote_server_id_, kQuicServerPort,
-                           /*privacy_mode_enabled=*/false);
-    QuicCryptoClientStream* crypto_stream = new QuicCryptoClientStream(
-        server_id, this,
-        quic_crypto_client_config_->proof_verifier()->CreateDefaultContext(),
-        quic_crypto_client_config_.get(), this);
-    crypto_stream_.reset(crypto_stream);
-    QuicSession::Initialize();
-    crypto_stream->CryptoConnect();
-  } else {
-    quic_compressed_certs_cache_.reset(new QuicCompressedCertsCache(
-        QuicCompressedCertsCache::kQuicCompressedCertsCacheSize));
-    bool use_stateless_rejects_if_peer_supported = false;
-    QuicCryptoServerStream* crypto_stream = new QuicCryptoServerStream(
-        quic_crypto_server_config_.get(), quic_compressed_certs_cache_.get(),
-        use_stateless_rejects_if_peer_supported, this, &stream_helper_);
-    crypto_stream_.reset(crypto_stream);
-    QuicSession::Initialize();
-  }
-
-  // QUIC is ready to process incoming packets after QuicSession::Initialize().
-  // Set the packet transport delegate to begin receiving packets.
-  packet_writer_->SetPacketTransportDelegate(this);
 }
 
 void QuartcSession::CloseConnection(const QuicString& details) {
@@ -376,16 +216,6 @@ void QuartcSession::OnMessageReceived(QuicStringPiece message) {
   session_delegate_->OnMessageReceived(message);
 }
 
-void QuartcSession::OnProofValid(
-    const QuicCryptoClientConfig::CachedState& cached) {
-  // TODO(zhihuang): Handle the proof verification.
-}
-
-void QuartcSession::OnProofVerifyDetailsAvailable(
-    const ProofVerifyDetails& verify_details) {
-  // TODO(zhihuang): Handle the proof verification.
-}
-
 QuicStream* QuartcSession::CreateIncomingStream(QuicStreamId id) {
   return ActivateDataStream(CreateDataStream(id, QuicStream::kDefaultPriority));
 }
@@ -398,7 +228,8 @@ QuicStream* QuartcSession::CreateIncomingStream(PendingStream pending) {
 std::unique_ptr<QuartcStream> QuartcSession::CreateDataStream(
     QuicStreamId id,
     spdy::SpdyPriority priority) {
-  if (crypto_stream_ == nullptr || !crypto_stream_->encryption_established()) {
+  if (GetCryptoStream() == nullptr ||
+      !GetCryptoStream()->encryption_established()) {
     // Encryption not active so no stream created
     return nullptr;
   }
@@ -437,6 +268,94 @@ QuartcStream* QuartcSession::ActivateDataStream(
     ActivateStream(std::unique_ptr<QuicStream>(raw));
   }
   return raw;
+}
+
+QuartcClientSession::QuartcClientSession(
+    std::unique_ptr<QuicConnection> connection,
+    const QuicConfig& config,
+    const ParsedQuicVersionVector& supported_versions,
+    const QuicClock* clock,
+    std::unique_ptr<QuartcPacketWriter> packet_writer,
+    std::unique_ptr<QuicCryptoClientConfig> client_crypto_config)
+    : QuartcSession(std::move(connection), config, supported_versions, clock),
+      packet_writer_(std::move(packet_writer)),
+      client_crypto_config_(std::move(client_crypto_config)) {
+  DCHECK_EQ(QuartcSession::connection()->perspective(), Perspective::IS_CLIENT);
+}
+
+QuartcClientSession::~QuartcClientSession() {
+  // The client session is the packet transport delegate, so it must be unset
+  // before the session is deleted.
+  packet_writer_->SetPacketTransportDelegate(nullptr);
+}
+
+void QuartcClientSession::Initialize() {
+  DCHECK(crypto_stream_) << "Do not call QuartcSession::Initialize(), call "
+                            "StartCryptoHandshake() instead.";
+  QuartcSession::Initialize();
+
+  // QUIC is ready to process incoming packets after Initialize().
+  // Set the packet transport delegate to begin receiving packets.
+  packet_writer_->SetPacketTransportDelegate(this);
+}
+
+const QuicCryptoStream* QuartcClientSession::GetCryptoStream() const {
+  return crypto_stream_.get();
+}
+
+QuicCryptoStream* QuartcClientSession::GetMutableCryptoStream() {
+  return crypto_stream_.get();
+}
+
+void QuartcClientSession::StartCryptoHandshake() {
+  QuicServerId server_id(/*host=*/"", kQuicServerPort,
+                         /*privacy_mode_enabled=*/false);
+  crypto_stream_ = QuicMakeUnique<QuicCryptoClientStream>(
+      server_id, this,
+      client_crypto_config_->proof_verifier()->CreateDefaultContext(),
+      client_crypto_config_.get(), this);
+  Initialize();
+  crypto_stream_->CryptoConnect();
+}
+
+void QuartcClientSession::OnProofValid(
+    const QuicCryptoClientConfig::CachedState& cached) {
+  // TODO(zhihuang): Handle the proof verification.
+}
+
+void QuartcClientSession::OnProofVerifyDetailsAvailable(
+    const ProofVerifyDetails& verify_details) {
+  // TODO(zhihuang): Handle the proof verification.
+}
+
+QuartcServerSession::QuartcServerSession(
+    std::unique_ptr<QuicConnection> connection,
+    const QuicConfig& config,
+    const ParsedQuicVersionVector& supported_versions,
+    const QuicClock* clock,
+    const QuicCryptoServerConfig* server_crypto_config,
+    QuicCompressedCertsCache* const compressed_certs_cache,
+    QuicCryptoServerStream::Helper* const stream_helper)
+    : QuartcSession(std::move(connection), config, supported_versions, clock),
+      server_crypto_config_(server_crypto_config),
+      compressed_certs_cache_(compressed_certs_cache),
+      stream_helper_(stream_helper) {
+  DCHECK_EQ(QuartcSession::connection()->perspective(), Perspective::IS_SERVER);
+}
+
+const QuicCryptoStream* QuartcServerSession::GetCryptoStream() const {
+  return crypto_stream_.get();
+}
+
+QuicCryptoStream* QuartcServerSession::GetMutableCryptoStream() {
+  return crypto_stream_.get();
+}
+
+void QuartcServerSession::StartCryptoHandshake() {
+  crypto_stream_ = QuicMakeUnique<QuicCryptoServerStream>(
+      server_crypto_config_, compressed_certs_cache_,
+      /*use_stateless_rejects_if_peer_supported=*/false, this, stream_helper_);
+  Initialize();
 }
 
 }  // namespace quic

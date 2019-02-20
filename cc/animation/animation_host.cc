@@ -135,16 +135,12 @@ void AnimationHost::RegisterKeyframeEffectForElement(
   scoped_refptr<ElementAnimations> element_animations =
       GetElementAnimationsForElementId(element_id);
   if (!element_animations) {
-    element_animations = ElementAnimations::Create();
-    element_animations->SetElementId(element_id);
+    element_animations = ElementAnimations::Create(this, element_id);
     element_to_animations_map_[element_animations->element_id()] =
         element_animations;
   }
 
-  if (element_animations->animation_host() != this) {
-    element_animations->SetAnimationHost(this);
-    element_animations->InitAffectedElementTypes();
-  }
+  DCHECK(element_animations->AnimationHostIs(this));
 
   element_animations->AddKeyframeEffect(keyframe_effect);
 }
@@ -158,12 +154,19 @@ void AnimationHost::UnregisterKeyframeEffectForElement(
   scoped_refptr<ElementAnimations> element_animations =
       GetElementAnimationsForElementId(element_id);
   DCHECK(element_animations);
+
+  // |ClearAffectedElementTypes| requires an ElementId map in order to update
+  // the property trees. Generating that map requires walking the keyframe
+  // effects, so we have to do it before removing this one.
+  PropertyToElementIdMap element_id_map =
+      element_animations->GetPropertyToElementIdMap();
+
   element_animations->RemoveKeyframeEffect(keyframe_effect);
 
   if (element_animations->IsEmpty()) {
-    element_animations->ClearAffectedElementTypes();
+    element_animations->ClearAffectedElementTypes(element_id_map);
     element_to_animations_map_.erase(element_animations->element_id());
-    element_animations->SetAnimationHost(nullptr);
+    element_animations->ClearAnimationHost();
   }
 }
 
@@ -303,13 +306,17 @@ bool AnimationHost::ActivateAnimations() {
   return true;
 }
 
-void TickAnimationsIf(AnimationHost::AnimationsList animations,
+bool TickAnimationsIf(AnimationHost::AnimationsList animations,
                       base::TimeTicks monotonic_time,
                       bool (*predicate)(const Animation&)) {
+  bool did_tick = false;
   for (auto& it : animations) {
-    if (predicate(*it))
+    if (predicate(*it)) {
       it->Tick(monotonic_time);
+      did_tick = true;
+    }
   }
+  return did_tick;
 }
 
 bool AnimationHost::TickAnimations(base::TimeTicks monotonic_time,
@@ -322,10 +329,9 @@ bool AnimationHost::TickAnimations(base::TimeTicks monotonic_time,
   // Mutator may depend on scroll offset as its time input e.g., when there is
   // a worklet animation attached to a scroll timeline.
   // This ordering ensures we use the latest scroll offset as the input to the
-  // mutator even if there are active scroll animations. Furthermore ticking
-  // worklet animations at the end gaurantees that mutator output takes effect
-  // in the same impl frame that it was mutated.
-
+  // mutator even if there are active scroll animations.
+  // The ticking of worklet animations is deferred until draw to ensure that
+  // mutator output takes effect in the same impl frame that it was mutated.
   if (!NeedsTickAnimations())
     return false;
 
@@ -333,25 +339,21 @@ bool AnimationHost::TickAnimations(base::TimeTicks monotonic_time,
 
   // Worklet animations are ticked at a later stage. See above comment for
   // details.
-  TickAnimationsIf(ticking_animations_, monotonic_time,
-                   [](const Animation& animation) {
-                     return !animation.IsWorkletAnimation();
-                   });
+  bool animated = TickAnimationsIf(ticking_animations_, monotonic_time,
+                                   [](const Animation& animation) {
+                                     return !animation.IsWorkletAnimation();
+                                   });
 
   // TODO(majidvp): At the moment we call this for both active and pending
   // trees similar to other animations. However our final goal is to only call
   // it once, ideally after activation, and only when the input
   // to an active timeline has changed. http://crbug.com/767210
-  TickMutator(monotonic_time, scroll_tree, is_active_tree);
+  // TODO(kevers): A return value of true signals that an impl frame and redraw
+  // are required.  Once worklet animations become asynchronous, we need to
+  // defer these requests until the update is complete.
+  animated |= TickMutator(monotonic_time, scroll_tree, is_active_tree);
 
-  // TODO(crbug.com/834452): This works because at the moment the above call is
-  // synchronous. We will need a different approach once it becomes asynchronous
-  // but until then this simple ordering is sufficient.
-  TickAnimationsIf(ticking_animations_, monotonic_time,
-                   [](const Animation& animation) {
-                     return animation.IsWorkletAnimation();
-                   });
-  return true;
+  return animated;
 }
 
 void AnimationHost::TickScrollAnimations(base::TimeTicks monotonic_time,
@@ -359,6 +361,13 @@ void AnimationHost::TickScrollAnimations(base::TimeTicks monotonic_time,
   // TODO(majidvp): We need to return a boolean here so that LTHI knows
   // whether it needs to schedule another frame.
   TickMutator(monotonic_time, scroll_tree, true /* is_active_tree */);
+}
+
+void AnimationHost::TickWorkletAnimations(base::TimeTicks monotonic_time) {
+  TickAnimationsIf(ticking_animations_, monotonic_time,
+                   [](const Animation& animation) {
+                     return animation.IsWorkletAnimation();
+                   });
 }
 
 std::unique_ptr<MutatorInputState> AnimationHost::CollectWorkletAnimationsState(

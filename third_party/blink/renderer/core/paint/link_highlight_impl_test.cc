@@ -115,7 +115,7 @@ class LinkHighlightImplTest : public testing::Test,
   frame_test_helpers::WebViewHelper web_view_helper_;
 };
 
-INSTANTIATE_PAINT_TEST_CASE_P(LinkHighlightImplTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(LinkHighlightImplTest);
 
 TEST_P(LinkHighlightImplTest, verifyWebViewImplIntegration) {
   WebViewImpl* web_view_impl = web_view_helper_.GetWebView();
@@ -248,6 +248,44 @@ TEST_P(LinkHighlightImplTest, resetLayerTreeView) {
   }
 }
 
+TEST_P(LinkHighlightImplTest, HighlightInvalidation) {
+  // This test requires GraphicsLayers which are not used in
+  // CompositeAfterPaint.
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
+    return;
+
+  WebViewImpl* web_view_impl = web_view_helper_.GetWebView();
+  web_view_impl->MainFrameWidget()->Resize(WebSize(640, 480));
+  UpdateAllLifecyclePhases();
+
+  WebGestureEvent touch_event(WebInputEvent::kGestureShowPress,
+                              WebInputEvent::kNoModifiers,
+                              WebInputEvent::GetStaticTimeStampForTests(),
+                              kWebGestureDeviceTouchscreen);
+  touch_event.SetPositionInWidget(WebFloatPoint(20, 20));
+  GestureEventWithHitTestResults targeted_event = GetTargetedEvent(touch_event);
+  auto* touch_element = ToElement(web_view_impl->BestTapNode(targeted_event));
+  web_view_impl->EnableTapHighlightAtPoint(targeted_event);
+
+  web_view_helper_.LocalMainFrame()
+      ->GetFrameView()
+      ->SetTracksPaintInvalidations(true);
+
+  // Change the touched element's height to 12px.
+  auto& style = touch_element->getAttribute(html_names::kStyleAttr);
+  String new_style = style.GetString();
+  new_style.append("height: 12px;");
+  touch_element->setAttribute(html_names::kStyleAttr, AtomicString(new_style));
+  UpdateAllLifecyclePhases();
+
+  const auto& highlights =
+      web_view_impl->GetPage()->GetLinkHighlights().link_highlights_;
+  auto* highlight_layer = highlights.at(0)->CurrentGraphicsLayerForTesting();
+  const auto* tracking = highlight_layer->GetRasterInvalidationTracking();
+  // The invalidation rect should fully cover the layer.
+  EXPECT_EQ(tracking->Invalidations().back().rect, IntRect(0, 0, 200, 12));
+}
+
 TEST_P(LinkHighlightImplTest, HighlightLayerEffectNode) {
   // This is testing the blink->cc layer integration.
   if (!RuntimeEnabledFeatures::BlinkGenPropertyTreesEnabled() &&
@@ -293,9 +331,9 @@ TEST_P(LinkHighlightImplTest, HighlightLayerEffectNode) {
       property_trees->element_id_to_effect_node_index[highlight->element_id()]);
   // The link highlight cc effect node should correspond to the blink effect
   // node.
-  EXPECT_EQ(highlight->effect()->GetCompositorElementId(),
+  EXPECT_EQ(highlight->Effect().GetCompositorElementId(),
             highlight->element_id());
-  EXPECT_TRUE(highlight->effect()->RequiresCompositingForAnimation());
+  EXPECT_TRUE(highlight->Effect().RequiresCompositingForAnimation());
 
   touch_node->remove(IGNORE_EXCEPTION_FOR_TESTING);
   UpdateAllLifecyclePhases();
@@ -340,16 +378,13 @@ TEST_P(LinkHighlightImplTest, MultiColumn) {
 
   // The link highlight cc effect node should correspond to the blink effect
   // node.
-  const auto* effect = highlight->effect();
-  ASSERT_TRUE(effect);
-  EXPECT_EQ(effect->GetCompositorElementId(), highlight->element_id());
-  EXPECT_TRUE(effect->RequiresCompositingForAnimation());
+  const auto& effect = highlight->Effect();
+  EXPECT_EQ(effect.GetCompositorElementId(), highlight->element_id());
+  EXPECT_TRUE(effect.RequiresCompositingForAnimation());
 
   const auto& first_fragment = touch_node->GetLayoutObject()->FirstFragment();
-  EXPECT_EQ(effect, first_fragment.PaintProperties()->LinkHighlightEffect());
   const auto* second_fragment = first_fragment.NextFragment();
   ASSERT_TRUE(second_fragment);
-  EXPECT_EQ(effect, second_fragment->PaintProperties()->LinkHighlightEffect());
   EXPECT_FALSE(second_fragment->NextFragment());
 
   auto check_layer = [&](const cc::PictureLayer* layer) {

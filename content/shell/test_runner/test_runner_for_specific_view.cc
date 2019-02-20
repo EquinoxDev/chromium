@@ -8,6 +8,7 @@
 #include <limits>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
@@ -16,7 +17,6 @@
 #include "build/build_config.h"
 #include "cc/paint/paint_canvas.h"
 #include "content/renderer/compositor/layer_tree_view.h"
-#include "content/shell/test_runner/layout_and_paint_async_then.h"
 #include "content/shell/test_runner/layout_dump.h"
 #include "content/shell/test_runner/mock_content_settings_client.h"
 #include "content/shell/test_runner/mock_screen_orientation_client.h"
@@ -35,6 +35,7 @@
 #include "gin/wrappable.h"
 #include "third_party/blink/public/mojom/frame/find_in_page.mojom.h"
 #include "third_party/blink/public/platform/web_data.h"
+#include "third_party/blink/public/platform/web_isolated_world_info.h"
 #include "third_party/blink/public/platform/web_point.h"
 #include "third_party/blink/public/platform/web_url_response.h"
 #include "third_party/blink/public/web/blink.h"
@@ -215,26 +216,6 @@ void TestRunnerForSpecificView::UpdateAllLifecyclePhasesAndCompositeThen(
   TestRunnerForSpecificView::UpdateAllLifecyclePhasesAndComposite();
   InvokeV8Callback(
       v8::UniquePersistent<v8::Function>(blink::MainThreadIsolate(), callback));
-}
-
-void TestRunnerForSpecificView::LayoutAndPaintAsync() {
-  // TODO(lfg, lukasza): TestRunnerForSpecificView assumes that there's a single
-  // WebWidget for the entire view, but with out-of-process iframes there may be
-  // multiple WebWidgets, one for each local root. We should look into making
-  // this structure more generic. Also the PagePopup for an OOPIF would be
-  // attached to a WebView without a main frame, which should be handled.
-  test_runner::LayoutAndPaintAsyncThen(
-      web_view()->GetPagePopup(),
-      web_view()->MainFrame()->ToWebLocalFrame()->FrameWidget(),
-      base::DoNothing());
-}
-
-void TestRunnerForSpecificView::LayoutAndPaintAsyncThen(
-    v8::Local<v8::Function> callback) {
-  test_runner::LayoutAndPaintAsyncThen(
-      web_view()->GetPagePopup(),
-      web_view()->MainFrame()->ToWebLocalFrame()->FrameWidget(),
-      CreateClosureThatPostsV8Callback(callback));
 }
 
 void TestRunnerForSpecificView::CapturePixelsAsyncThen(
@@ -524,6 +505,10 @@ void TestRunnerForSpecificView::RemoveWebPageOverlay() {
   web_view()->SetMainFrameOverlayColor(SK_ColorTRANSPARENT);
 }
 
+void TestRunnerForSpecificView::SetHighlightAds(bool enabled) {
+  web_view()->GetSettings()->SetHighlightAds(enabled);
+}
+
 void TestRunnerForSpecificView::ForceNextWebGLContextCreationToFail() {
   web_view()->ForceNextWebGLContextCreationToFail();
 }
@@ -610,26 +595,31 @@ void TestRunnerForSpecificView::EvaluateScriptInIsolatedWorld(
   web_view()->FocusedFrame()->ExecuteScriptInIsolatedWorld(world_id, source);
 }
 
-void TestRunnerForSpecificView::SetIsolatedWorldSecurityOrigin(
+void TestRunnerForSpecificView::SetIsolatedWorldInfo(
     int world_id,
-    v8::Local<v8::Value> origin) {
-  if (!(origin->IsString() || !origin->IsNull()))
-    return;
+    v8::Local<v8::Value> security_origin,
+    v8::Local<v8::Value> content_security_policy) {
+  CHECK(security_origin->IsString() || security_origin->IsNull());
+  CHECK(content_security_policy->IsString() ||
+        content_security_policy->IsNull());
 
-  blink::WebSecurityOrigin web_origin;
-  if (origin->IsString()) {
-    web_origin = blink::WebSecurityOrigin::CreateFromString(V8StringToWebString(
-        blink::MainThreadIsolate(), origin.As<v8::String>()));
+  // If |content_security_policy| is specified, |security_origin| must also be
+  // specified.
+  CHECK(content_security_policy->IsNull() || security_origin->IsString());
+
+  blink::WebIsolatedWorldInfo info;
+  if (security_origin->IsString()) {
+    info.security_origin =
+        blink::WebSecurityOrigin::CreateFromString(V8StringToWebString(
+            blink::MainThreadIsolate(), security_origin.As<v8::String>()));
   }
-  web_view()->FocusedFrame()->SetIsolatedWorldSecurityOrigin(world_id,
-                                                             web_origin);
-}
 
-void TestRunnerForSpecificView::SetIsolatedWorldContentSecurityPolicy(
-    int world_id,
-    const std::string& policy) {
-  web_view()->FocusedFrame()->SetIsolatedWorldContentSecurityPolicy(
-      world_id, blink::WebString::FromUTF8(policy));
+  if (content_security_policy->IsString()) {
+    info.content_security_policy = V8StringToWebString(
+        blink::MainThreadIsolate(), content_security_policy.As<v8::String>());
+  }
+
+  web_view()->FocusedFrame()->SetIsolatedWorldInfo(world_id, info);
 }
 
 void TestRunner::InsertStyleSheet(const std::string& source_code) {
@@ -693,8 +683,7 @@ content::RenderWidget* TestRunnerForSpecificView::main_frame_render_widget() {
 }
 
 blink::WebView* TestRunnerForSpecificView::web_view() {
-  // TODO(danakj): This could grab the GetWebView() off RenderViewImpl instead.
-  return web_view_test_proxy_->web_view();
+  return web_view_test_proxy_->webview();
 }
 
 WebTestDelegate* TestRunnerForSpecificView::delegate() {

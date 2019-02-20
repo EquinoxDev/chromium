@@ -6,9 +6,11 @@
 #define COMPONENTS_CDM_BROWSER_MEDIA_DRM_STORAGE_IMPL_H_
 
 #include <set>
+#include <string>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
@@ -35,6 +37,12 @@ namespace cdm {
 class MediaDrmStorageImpl final
     : public content::FrameServiceBase<media::mojom::MediaDrmStorage> {
  public:
+  // |success| is true if an origin ID was obtained and |origin_id| is
+  // specified, false otherwise.
+  using OriginIdObtainedCB =
+      base::OnceCallback<void(bool success, const base::UnguessableToken&)>;
+  using GetOriginIdCB = base::RepeatingCallback<void(OriginIdObtainedCB)>;
+
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
   // Get a list of origins that have persistent storage on the device.
@@ -61,6 +69,7 @@ class MediaDrmStorageImpl final
 
   MediaDrmStorageImpl(content::RenderFrameHost* render_frame_host,
                       PrefService* pref_service,
+                      GetOriginIdCB get_origin_id_cb,
                       media::mojom::MediaDrmStorageRequest request);
 
   // media::mojom::MediaDrmStorage implementation.
@@ -74,17 +83,31 @@ class MediaDrmStorageImpl final
   void RemovePersistentSession(const std::string& session_id,
                                RemovePersistentSessionCallback callback) final;
 
-  bool IsInitialized() const { return !!origin_id_; }
-
  private:
   // |this| can only be destructed as a FrameServiceBase.
   ~MediaDrmStorageImpl() final;
 
-  PrefService* const pref_service_ = nullptr;
+  // Called when |get_origin_id_cb_| asynchronously returns a origin ID as part
+  // of Initialize().
+  void OnOriginIdObtained(bool success,
+                          const base::UnguessableToken& origin_id);
+
+  PrefService* const pref_service_;
+  GetOriginIdCB get_origin_id_cb_;
 
   // ID for the current origin. Per EME spec on individualization,
   // implementation should not expose application-specific information.
   base::UnguessableToken origin_id_;
+
+  // As Initialize() may be asynchronous, save the InitializeCallback when
+  // necessary.
+  InitializeCallback init_cb_;
+
+  // Set when initialized.
+  bool is_initialized_ = false;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<MediaDrmStorageImpl> weak_factory_;
 };
 
 }  // namespace cdm

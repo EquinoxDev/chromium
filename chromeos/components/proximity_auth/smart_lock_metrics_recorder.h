@@ -30,7 +30,7 @@ class SmartLockMetricsRecorder {
   // or deleted. Only additions possible.
   enum class SmartLockAuthResultFailureReason {
     kUnlockNotAllowed = 0,
-    kAlreadyAttemptingAuth = 1,
+    kDeprecatedAlreadyAttemptingAuth = 1,
     kEmptyUserAccount = 2,
     kInvalidAccoundId = 3,
     kAuthAttemptCannotStart = 4,
@@ -71,7 +71,7 @@ class SmartLockMetricsRecorder {
     kNoScreenlockStateHandler = 14,
     kPhoneLockedAndRssiTooLow = 15,
     kForcedReauth = 16,
-    kRequiredForLogin = 17,
+    kLoginWithSmartLockDisabled = 17,
     kPhoneNotLockable = 18,
     kMaxValue = kPhoneNotLockable
   };

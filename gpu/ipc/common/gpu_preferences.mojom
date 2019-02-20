@@ -17,8 +17,6 @@ enum VpxDecodeVendors {
 
 // gpu::GpuPreferences
 struct GpuPreferences {
-  bool single_process;
-  bool in_process_gpu;
   bool disable_accelerated_video_decode;
   bool disable_accelerated_video_encode;
   bool gpu_startup_dialog;
@@ -65,6 +63,7 @@ struct GpuPreferences {
   bool disable_oop_rasterization;
   bool enable_oop_rasterization_ddl;
   bool enable_raster_to_sk_image;
+  bool enable_passthrough_raster_decoder;
   bool watchdog_starts_backgrounded;
   bool enable_vulkan;
   bool enable_gpu_benchmarking_extension;

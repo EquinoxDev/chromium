@@ -19,7 +19,6 @@
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
-#include "content/browser/indexed_db/indexed_db_transaction_coordinator.h"
 #include "third_party/blink/public/platform/modules/indexeddb/web_idb_database_exception.h"
 #include "third_party/leveldatabase/env_chromium.h"
 
@@ -199,6 +198,7 @@ void IndexedDBTransaction::ForcePendingCommit() {
 void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
   DCHECK(!processing_event_queue_);
   DCHECK(!is_commit_pending_);
+
   if (state_ == FINISHED)
     return;
 
@@ -232,10 +232,7 @@ void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
   // Transactions must also be marked as completed before the
   // front-end is notified, as the transaction completion unblocks
   // operations like closing connections.
-  database_->transaction_coordinator().DidFinishTransaction(this);
-#ifndef NDEBUG
-  DCHECK(!database_->transaction_coordinator().IsActive(this));
-#endif
+  locks_.clear();
 
   if (callbacks_.get())
     callbacks_->OnAbort(*this, error);
@@ -265,10 +262,11 @@ void IndexedDBTransaction::UnregisterOpenCursor(IndexedDBCursor* cursor) {
   open_cursors_.erase(cursor);
 }
 
-void IndexedDBTransaction::Start() {
+void IndexedDBTransaction::Start(std::vector<ScopeLock> locks) {
   // TransactionCoordinator has started this transaction.
   DCHECK_EQ(CREATED, state_);
   state_ = STARTED;
+  locks_ = std::move(locks);
   diagnostics_.start_time = base::Time::Now();
 
   if (!used_) {
@@ -360,6 +358,16 @@ leveldb::Status IndexedDBTransaction::Commit() {
   if (HasPendingTasks())
     return leveldb::Status::OK();
 
+  // If a transaction is being committed but it has sent more errors to the
+  // front end than have been handled at this point, the transaction should be
+  // aborted as it is unknown whether or not any errors unaccounted for will be
+  // properly handled.
+  if (num_errors_sent_ != num_errors_handled_) {
+    is_commit_pending_ = false;
+    Abort(IndexedDBDatabaseError(blink::kWebIDBDatabaseExceptionUnknownError));
+    return leveldb::Status::OK();
+  }
+
   state_ = COMMITTING;
 
   leveldb::Status s;
@@ -432,7 +440,7 @@ leveldb::Status IndexedDBTransaction::CommitPhaseTwo() {
   // Transactions must also be marked as completed before the
   // front-end is notified, as the transaction completion unblocks
   // operations like closing connections.
-  database_->transaction_coordinator().DidFinishTransaction(this);
+  locks_.clear();
 
   if (committed) {
     abort_task_stack_.clear();

@@ -1219,7 +1219,7 @@ error::Error GLES2DecoderPassthroughImpl::DoFlushMappedBufferRange(
 
   base::CheckedNumeric<size_t> range_start(offset);
   base::CheckedNumeric<size_t> range_end = offset + size;
-  if (!range_end.IsValid() && range_end.ValueOrDefault(0) > map_info.size) {
+  if (!range_end.IsValid() || range_end.ValueOrDefault(0) > map_info.size) {
     InsertError(GL_INVALID_OPERATION,
                 "Flush range is not within the original mapping size.");
     return error::kNoError;
@@ -1705,6 +1705,82 @@ error::Error GLES2DecoderPassthroughImpl::DoGetProgramInfoLog(
   return error::kNoError;
 }
 
+error::Error GLES2DecoderPassthroughImpl::DoGetProgramInterfaceiv(
+    GLuint program,
+    GLenum program_interface,
+    GLenum pname,
+    GLsizei bufsize,
+    GLsizei* length,
+    GLint* params) {
+  // glGetProgramInterfaceivRobustANGLE remains to be implemented in ANGLE.
+  if (bufsize < 1) {
+    return error::kOutOfBounds;
+  }
+  *length = 1;
+  api()->glGetProgramInterfaceivFn(GetProgramServiceID(program, resources_),
+                                   program_interface, pname, params);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoGetProgramResourceiv(
+    GLuint program,
+    GLenum program_interface,
+    GLuint index,
+    GLsizei prop_count,
+    const GLenum* props,
+    GLsizei bufsize,
+    GLsizei* length,
+    GLint* params) {
+  api()->glGetProgramResourceivFn(GetProgramServiceID(program, resources_),
+                                  program_interface, index, prop_count, props,
+                                  bufsize, length, params);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoGetProgramResourceIndex(
+    GLuint program,
+    GLenum program_interface,
+    const char* name,
+    GLuint* index) {
+  *index = api()->glGetProgramResourceIndexFn(
+      GetProgramServiceID(program, resources_), program_interface, name);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoGetProgramResourceLocation(
+    GLuint program,
+    GLenum program_interface,
+    const char* name,
+    GLint* location) {
+  *location = api()->glGetProgramResourceLocationFn(
+      GetProgramServiceID(program, resources_), program_interface, name);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoGetProgramResourceName(
+    GLuint program,
+    GLenum program_interface,
+    GLuint index,
+    std::string* name) {
+  CheckErrorCallbackState();
+
+  GLuint service_id = GetProgramServiceID(program, resources_);
+  GLint max_name_length = 0;
+  api()->glGetProgramInterfaceivFn(service_id, program_interface,
+                                   GL_MAX_NAME_LENGTH, &max_name_length);
+  if (CheckErrorCallbackState()) {
+    return error::kNoError;
+  }
+
+  std::vector<GLchar> buffer(max_name_length, 0);
+  GLsizei length = 0;
+  api()->glGetProgramResourceNameFn(service_id, program_interface, index,
+                                    max_name_length, &length, buffer.data());
+  DCHECK_LE(length, max_name_length);
+  *name = length > 0 ? std::string(buffer.data(), length) : std::string();
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::DoGetRenderbufferParameteriv(
     GLenum target,
     GLenum pname,
@@ -2175,9 +2251,8 @@ error::Error GLES2DecoderPassthroughImpl::DoMultiDrawBeginCHROMIUM(
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoMultiDrawEndCHROMIUM() {
-  bool success;
-  MultiDrawManager::ResultData result = multi_draw_manager_->End(&success);
-  if (!success) {
+  MultiDrawManager::ResultData result;
+  if (!multi_draw_manager_->End(&result)) {
     return error::kInvalidArguments;
   }
   switch (result.draw_function) {
@@ -3107,6 +3182,20 @@ GLES2DecoderPassthroughImpl::DoRenderbufferStorageMultisampleCHROMIUM(
   return error::kNoError;
 }
 
+error::Error
+GLES2DecoderPassthroughImpl::DoRenderbufferStorageMultisampleAdvancedAMD(
+    GLenum target,
+    GLsizei samples,
+    GLsizei storageSamples,
+    GLenum internalformat,
+    GLsizei width,
+    GLsizei height) {
+  DCHECK(feature_info_->feature_flags().amd_framebuffer_multisample_advanced);
+  api()->glRenderbufferStorageMultisampleAdvancedAMDFn(
+      target, samples, storageSamples, internalformat, width, height);
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderPassthroughImpl::DoRenderbufferStorageMultisampleEXT(
     GLenum target,
     GLsizei samples,
@@ -3775,7 +3864,7 @@ error::Error GLES2DecoderPassthroughImpl::DoGetProgramInfoCHROMIUM(
     if (size > 1 || parsed_service_name.IsArrayName()) {
       for (GLint location_index = 1; location_index < size; location_index++) {
         std::string array_element_name = parsed_service_name.base_name() + "[" +
-                                         base::IntToString(location_index) +
+                                         base::NumberToString(location_index) +
                                          "]";
         int32_t element_location = api()->glGetUniformLocationFn(
             service_program, array_element_name.c_str());
@@ -5052,7 +5141,13 @@ error::Error GLES2DecoderPassthroughImpl::DoUnlockDiscardableTextureCHROMIUM(
 error::Error
 GLES2DecoderPassthroughImpl::DoCreateAndTexStorage2DSharedImageINTERNAL(
     GLuint texture_client_id,
-    const volatile GLbyte* mailbox) {
+    const volatile GLbyte* mailbox,
+    GLenum internalformat) {
+  if (internalformat != GL_NONE) {
+    InsertError(GL_INVALID_OPERATION, "internal format not supported.");
+    return error::kNoError;
+  }
+
   if (!texture_client_id ||
       resources_->texture_id_map.HasClientID(texture_client_id)) {
     InsertError(GL_INVALID_OPERATION, "invalid client ID");

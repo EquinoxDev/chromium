@@ -54,6 +54,8 @@ source_set("dns") {
       "host_cache.cc",
       "host_resolver.cc",
       "host_resolver_impl.cc",
+      "host_resolver_mdns_listener_impl.cc",
+      "host_resolver_mdns_listener_impl.h",
       "host_resolver_mdns_task.cc",
       "host_resolver_mdns_task.h",
       "host_resolver_proc.cc",
@@ -208,7 +210,7 @@ source_set("host_resolver_impl") {
   # Whitelist-only access so we can keep track of all usage external to the
   # network stack.
   friend = [
-    # chromeos/network/network_change_notifier_chromeos.cc
+    # chromeos/network/network_change_notifier_posix.cc
     # ChromeOS-specific change notifier with some overrides for DnsConfigService
     # TODO(crbug.com/882610): Remove/cleanup once we figure out servicification.
     "//chromeos/network",
@@ -289,6 +291,7 @@ source_set("dns_client") {
       "dns_client.h",
       "dns_response.h",
       "dns_transaction.h",
+      "dns_util.h",
       "record_parsed.h",
       "record_rdata.h",
     ]

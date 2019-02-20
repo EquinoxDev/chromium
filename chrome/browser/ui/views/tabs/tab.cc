@@ -45,6 +45,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/theme_resources.h"
 #include "components/grit/components_scaled_resources.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
 #include "ui/accessibility/ax_node_data.h"
@@ -54,7 +55,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/compositor/clip_recorder.h"
-#include "ui/gfx/animation/animation_container.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_analysis.h"
@@ -62,7 +62,6 @@
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/gfx/path.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/resources/grit/ui_resources.h"
@@ -92,9 +91,6 @@ namespace {
 // transitioning a tab from normal to pinned tab.
 constexpr int kPinnedTabExtraWidthToRenderAsNormal = 30;
 
-// Opacity of the active tab background painted over inactive selected tabs.
-constexpr float kSelectedTabOpacity = 0.75f;
-
 // Helper functions ------------------------------------------------------------
 
 // Returns the coordinate for an object of size |item_size| centered in a region
@@ -119,16 +115,13 @@ int Center(int size, int item_size) {
 // static
 const char Tab::kViewClassName[] = "Tab";
 
-Tab::Tab(TabController* controller, gfx::AnimationContainer* container)
+Tab::Tab(TabController* controller)
     : controller_(controller),
-      pulse_animation_(this),
-      animation_container_(container),
       title_(new views::Label()),
-      title_animation_(this),
-      hover_controller_(this) {
+      title_animation_(this) {
   DCHECK(controller);
 
-  tab_style_.reset(TabStyle::CreateForTab(this));
+  tab_style_ = TabStyle::CreateForTab(this);
 
   // So we get don't get enter/exit on children and don't prematurely stop the
   // hover.
@@ -164,14 +157,7 @@ Tab::Tab(TabController* controller, gfx::AnimationContainer* container)
 
   set_context_menu_controller(this);
 
-  constexpr int kPulseDurationMs = 200;
-  pulse_animation_.SetSlideDuration(kPulseDurationMs);
-  pulse_animation_.SetContainer(animation_container_.get());
-
   title_animation_.SetDuration(base::TimeDelta::FromMilliseconds(100));
-  title_animation_.SetContainer(animation_container_.get());
-
-  hover_controller_.SetAnimationContainer(animation_container_.get());
 
   // Enable keyboard focus.
   SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
@@ -181,31 +167,16 @@ Tab::Tab(TabController* controller, gfx::AnimationContainer* container)
 Tab::~Tab() = default;
 
 void Tab::AnimationEnded(const gfx::Animation* animation) {
-  if (animation == &title_animation_)
-    title_->SetBoundsRect(target_title_bounds_);
-  else
-    SchedulePaint();
+  DCHECK_EQ(animation, &title_animation_);
+  title_->SetBoundsRect(target_title_bounds_);
 }
 
 void Tab::AnimationProgressed(const gfx::Animation* animation) {
-  if (animation == &title_animation_) {
-    title_->SetBoundsRect(gfx::Tween::RectValueBetween(
-        gfx::Tween::CalculateValue(gfx::Tween::FAST_OUT_SLOW_IN,
-                                   animation->GetCurrentValue()),
-        start_title_bounds_, target_title_bounds_));
-    return;
-  }
-
-  // Ignore if the pulse animation is being performed on active tab because
-  // it repaints the same image. See PaintTab().
-  if (animation == &pulse_animation_ && IsActive())
-    return;
-
-  SchedulePaint();
-}
-
-void Tab::AnimationCanceled(const gfx::Animation* animation) {
-  SchedulePaint();
+  DCHECK_EQ(animation, &title_animation_);
+  title_->SetBoundsRect(gfx::Tween::RectValueBetween(
+      gfx::Tween::CalculateValue(gfx::Tween::FAST_OUT_SLOW_IN,
+                                 animation->GetCurrentValue()),
+      start_title_bounds_, target_title_bounds_));
 }
 
 void Tab::ButtonPressed(views::Button* sender, const ui::Event& event) {
@@ -233,7 +204,7 @@ void Tab::ShowContextMenuForView(views::View* source,
     controller_->ShowContextMenuForTab(this, point, source_type);
 }
 
-bool Tab::GetHitTestMask(gfx::Path* mask) const {
+bool Tab::GetHitTestMask(SkPath* mask) const {
   // When the window is maximized we don't want to shave off the edges or top
   // shadow of the tab, such that the user can click anywhere along the top
   // edge of the screen to select a tab. Ditto for immersive fullscreen.
@@ -264,9 +235,6 @@ void Tab::Layout() {
     // to pop out of the bottom.
     favicon_bounds.set_y(contents_rect.y() +
                          Center(contents_rect.height(), gfx::kFaviconSize));
-    favicon_bounds.set_size(
-        gfx::Size(icon_->GetPreferredSize().width(),
-                  contents_rect.height() - favicon_bounds.y()));
     if (center_icon_) {
       // When centering the favicon, the favicon is allowed to escape the normal
       // contents rect.
@@ -274,6 +242,11 @@ void Tab::Layout() {
     } else {
       MaybeAdjustLeftForPinnedTab(&favicon_bounds, gfx::kFaviconSize);
     }
+    // Add space for insets outside the favicon bounds.
+    favicon_bounds.Inset(-icon_->GetInsets());
+    favicon_bounds.set_size(
+        gfx::Size(icon_->GetPreferredSize().width(),
+                  contents_rect.height() - favicon_bounds.y()));
   }
   icon_->SetBoundsRect(favicon_bounds);
   icon_->SetVisible(showing_icon_);
@@ -350,7 +323,8 @@ void Tab::Layout() {
       // icon view width (which will include extra room for the alert
       // indicator), but rather the normal favicon width which is what it will
       // look like.
-      const int after_favicon = favicon_bounds.x() + gfx::kFaviconSize +
+      const int after_favicon = favicon_bounds.x() + icon_->GetInsets().left() +
+                                gfx::kFaviconSize +
                                 GetLayoutConstant(TAB_PRE_TITLE_PADDING);
       title_left = std::max(title_left, after_favicon);
     }
@@ -503,15 +477,13 @@ void Tab::OnMouseCaptureLost() {
 }
 
 void Tab::OnMouseMoved(const ui::MouseEvent& event) {
-  hover_controller_.SetLocation(event.location());
+  tab_style_->SetHoverLocation(event.location());
   controller_->OnMouseEventInTab(this, event);
 }
 
 void Tab::OnMouseEntered(const ui::MouseEvent& event) {
   mouse_hovered_ = true;
-  hover_controller_.SetSubtleOpacityScale(
-      controller_->GetHoverOpacityForRadialHighlight());
-  hover_controller_.Show(GlowHoverController::SUBTLE);
+  tab_style_->ShowHover(GlowHoverController::ShowStyle::kSubtle);
   UpdateForegroundColors();
   Layout();
   controller_->UpdateHoverCard(this, true);
@@ -519,7 +491,7 @@ void Tab::OnMouseEntered(const ui::MouseEvent& event) {
 
 void Tab::OnMouseExited(const ui::MouseEvent& event) {
   mouse_hovered_ = false;
-  hover_controller_.Hide();
+  tab_style_->HideHover(GlowHoverController::HideStyle::kGradual);
   UpdateForegroundColors();
   Layout();
 }
@@ -606,7 +578,7 @@ void Tab::PaintChildren(const views::PaintInfo& info) {
   // The paint recording scale for tabs is consistent along the x and y axis.
   const float paint_recording_scale = info.paint_recording_scale_x();
 
-  const gfx::Path clip_path = tab_style()->GetPath(
+  const SkPath clip_path = tab_style()->GetPath(
       TabStyle::PathType::kInteriorClip, paint_recording_scale);
 
   clip_recorder.ClipPathWithAntiAliasing(clip_path);
@@ -614,7 +586,7 @@ void Tab::PaintChildren(const views::PaintInfo& info) {
 }
 
 void Tab::OnPaint(gfx::Canvas* canvas) {
-  gfx::Path clip;
+  SkPath clip;
   if (!controller_->ShouldPaintTab(this, canvas->image_scale(), &clip))
     return;
 
@@ -643,7 +615,6 @@ void Tab::SetClosing(bool closing) {
 }
 
 SkColor Tab::GetAlertIndicatorColor(TabAlertState state) const {
-  const bool touch_ui = MD::touch_ui();
   // If theme provider is not yet available, return the default button
   // color.
   const ui::ThemeProvider* theme_provider = GetThemeProvider();
@@ -653,9 +624,7 @@ SkColor Tab::GetAlertIndicatorColor(TabAlertState state) const {
   switch (state) {
     case TabAlertState::AUDIO_PLAYING:
     case TabAlertState::AUDIO_MUTING:
-      return touch_ui ? theme_provider->GetColor(
-                            ThemeProperties::COLOR_TAB_ALERT_AUDIO)
-                      : button_color_;
+      return theme_provider->GetColor(ThemeProperties::COLOR_TAB_ALERT_AUDIO);
     case TabAlertState::MEDIA_RECORDING:
     case TabAlertState::DESKTOP_CAPTURING:
       return theme_provider->GetColor(
@@ -668,6 +637,7 @@ SkColor Tab::GetAlertIndicatorColor(TabAlertState state) const {
     case TabAlertState::BLUETOOTH_CONNECTED:
     case TabAlertState::USB_CONNECTED:
     case TabAlertState::NONE:
+    case TabAlertState::VR_PRESENTING_IN_HEADSET:
       return button_color_;
     default:
       NOTREACHED();
@@ -752,18 +722,6 @@ void Tab::StepLoadingAnimation(const base::TimeDelta& elapsed_time) {
   icon_->SetCanPaintToLayer(controller_->CanPaintThrobberToLayer());
 }
 
-bool Tab::ShowingLoadingAnimation() const {
-  return icon_->ShowingLoadingAnimation();
-}
-
-void Tab::StartPulse() {
-  pulse_animation_.StartThrobbing(std::numeric_limits<int>::max());
-}
-
-void Tab::StopPulse() {
-  pulse_animation_.Stop();
-}
-
 void Tab::SetTabNeedsAttention(bool attention) {
   icon_->SetAttention(TabIcon::AttentionType::kTabWantsAttentionStatus,
                       attention);
@@ -812,6 +770,10 @@ base::string16 Tab::GetTooltipText(const base::string16& title,
       result.append(l10n_util::GetStringUTF16(
           IDS_TOOLTIP_TAB_ALERT_STATE_DESKTOP_CAPTURING));
       break;
+    case TabAlertState::VR_PRESENTING_IN_HEADSET:
+      result.append(
+          l10n_util::GetStringUTF16(IDS_TOOLTIP_TAB_ALERT_STATE_VR_PRESENTING));
+      break;
     case TabAlertState::NONE:
       NOTREACHED();
       break;
@@ -834,25 +796,6 @@ void Tab::MaybeAdjustLeftForPinnedTab(gfx::Rect* bounds,
           (1 - static_cast<float>(ideal_delta) /
                    static_cast<float>(kPinnedTabExtraWidthToRenderAsNormal)) *
           (ideal_x - bounds->x())));
-}
-
-float Tab::GetThrobValue() const {
-  const bool is_selected = IsSelected();
-  double val = is_selected ? kSelectedTabOpacity : 0;
-
-  // Wrapping in closure to only compute offset when needed (animate or hover).
-  const auto offset = [=] {
-    constexpr float kSelectedTabThrobScale = 0.95f - kSelectedTabOpacity;
-    const float opacity = GetHoverOpacity();
-    return is_selected ? (kSelectedTabThrobScale * opacity) : opacity;
-  };
-
-  if (pulse_animation_.is_animating())
-    val += pulse_animation_.GetCurrentValue() * offset();
-  else if (hover_controller_.ShouldDraw())
-    val += hover_controller_.GetAnimationValue() * offset();
-
-  return val;
 }
 
 void Tab::UpdateIconVisibility() {
@@ -964,17 +907,6 @@ bool Tab::ShouldRenderAsNormalTab() const {
                                         kPinnedTabExtraWidthToRenderAsNormal));
 }
 
-float Tab::GetHoverOpacity() const {
-  // Opacity boost varies on tab width.  The interpolation is nonlinear so
-  // that most tabs will fall on the low end of the opacity range, but very
-  // narrow tabs will still stand out on the high end.
-  const float range_start = float{TabStyle::GetStandardWidth()};
-  const float range_end = float{TabStyle::GetMinimumInactiveWidth()};
-  const float value_in_range = float{width()};
-  const float t = (value_in_range - range_start) / (range_end - range_start);
-  return controller_->GetHoverOpacityForTab(t * t);
-}
-
 void Tab::UpdateTabIconNeedsAttentionBlocked() {
   // Only show the blocked attention indicator on non-active tabs. For active
   // tabs, the user sees the dialog blocking the tab, so there's no point to it
@@ -988,81 +920,18 @@ void Tab::UpdateTabIconNeedsAttentionBlocked() {
 }
 
 void Tab::UpdateForegroundColors() {
-  // The theme provider may be null if we're not currently in a widget
-  // hierarchy.
-  const ui::ThemeProvider* theme_provider = GetThemeProvider();
-  if (!theme_provider)
-    return;
+  TabStyle::TabColors colors = tab_style_->CalculateColors();
 
-  // These ratios are calculated from the default Chrome theme colors.
-  // Active/inactive are the contrast ratios of the close X against the tab
-  // background. Hovered/pressed are the contrast ratios of the highlight circle
-  // against the tab background.
-  constexpr float kMinimumActiveContrastRatio = 6.05f;
-  constexpr float kMinimumInactiveContrastRatio = 4.61f;
-  constexpr float kMinimumHoveredContrastRatio = 5.02f;
-  constexpr float kMinimumPressedContrastRatio = 4.41f;
+  icon_->SetBackgroundColor(colors.background_color);
+  title_->SetEnabledColor(colors.title_color);
 
-  // In some cases, inactive tabs may have background more like active tabs than
-  // inactive tabs, so colors should be adapted to ensure appropriate contrast.
-  // In particular, text should have plenty of contrast in all cases, so switch
-  // to using foreground color designed for active tabs if the tab looks more
-  // like an active tab than an inactive tab.
-  float expected_opacity = 0.0f;
-  if (IsActive()) {
-    expected_opacity = 1.0f;
-  } else if (IsSelected()) {
-    expected_opacity = kSelectedTabOpacity;
-  } else if (mouse_hovered_) {
-    expected_opacity = GetHoverOpacity();
-  }
-  const SkColor tab_bg_color = color_utils::AlphaBlend(
-      controller_->GetTabBackgroundColor(TAB_ACTIVE),
-      controller_->GetTabBackgroundColor(TAB_INACTIVE),
-      gfx::ToRoundedInt(expected_opacity * SK_AlphaOPAQUE));
-  SkColor tab_title_color = controller_->GetTabForegroundColor(
-      expected_opacity > 0.5f ? TAB_ACTIVE : TAB_INACTIVE, tab_bg_color);
-  tab_title_color =
-      color_utils::GetColorWithMinimumContrast(tab_title_color, tab_bg_color);
-
-  icon_->SetBackgroundColor(tab_bg_color);
-
-  title_->SetEnabledColor(tab_title_color);
-
-  const SkColor base_hovered_color = theme_provider->GetColor(
-      ThemeProperties::COLOR_TAB_CLOSE_BUTTON_BACKGROUND_HOVER);
-  const SkColor base_pressed_color = theme_provider->GetColor(
-      ThemeProperties::COLOR_TAB_CLOSE_BUTTON_BACKGROUND_PRESSED);
-
-  const auto get_color_for_contrast_ratio = [](SkColor fg_color,
-                                               SkColor bg_color,
-                                               float contrast_ratio) {
-    const SkAlpha blend_alpha = color_utils::GetBlendValueWithMinimumContrast(
-        bg_color, fg_color, bg_color, contrast_ratio);
-    return color_utils::AlphaBlend(fg_color, bg_color, blend_alpha);
-  };
-
-  const SkColor generated_icon_color = get_color_for_contrast_ratio(
-      tab_title_color, tab_bg_color,
-      IsActive() ? kMinimumActiveContrastRatio : kMinimumInactiveContrastRatio);
-  const SkColor generated_hovered_color = get_color_for_contrast_ratio(
-      base_hovered_color, tab_bg_color, kMinimumHoveredContrastRatio);
-  const SkColor generated_pressed_color = get_color_for_contrast_ratio(
-      base_pressed_color, tab_bg_color, kMinimumPressedContrastRatio);
-
-  const SkColor generated_hovered_icon_color =
-      color_utils::GetColorWithMinimumContrast(tab_title_color,
-                                               generated_hovered_color);
-  const SkColor generated_pressed_icon_color =
-      color_utils::GetColorWithMinimumContrast(tab_title_color,
-                                               generated_pressed_color);
   close_button_->SetIconColors(
-      generated_icon_color, generated_hovered_icon_color,
-      generated_pressed_icon_color, generated_hovered_color,
-      generated_pressed_color);
+      colors.button_icon_idle_color, colors.button_icon_hovered_color,
+      colors.button_icon_hovered_color, colors.button_background_hovered_color,
+      colors.button_background_pressed_color);
 
-  if (button_color_ != generated_icon_color) {
-    button_color_ = generated_icon_color;
+  if (button_color_ != colors.button_icon_idle_color) {
+    button_color_ = colors.button_icon_idle_color;
     alert_indicator_->OnParentTabButtonColorChanged();
   }
 

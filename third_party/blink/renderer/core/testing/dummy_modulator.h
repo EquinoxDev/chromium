@@ -32,6 +32,7 @@ class DummyModulator : public Modulator {
   ScriptModuleResolver* GetScriptModuleResolver() override;
   base::SingleThreadTaskRunner* TaskRunner() override;
   ScriptState* GetScriptState() override;
+  V8CacheOptions GetV8CacheOptions() const override;
   bool IsScriptingDisabled() const override;
 
   void FetchTree(const KURL&,
@@ -56,10 +57,13 @@ class DummyModulator : public Modulator {
                           const KURL&,
                           const ReferrerScriptInfo&,
                           ScriptPromiseResolver*) override;
+  void RegisterImportMap(const ImportMap*) override;
+  bool IsAcquiringImportMaps() const override;
+  void ClearIsAcquiringImportMaps() override;
   ModuleImportMeta HostGetImportMetaProperties(ScriptModule) const override;
   ScriptValue InstantiateModule(ScriptModule) override;
   Vector<ModuleRequest> ModuleRequestsFromScriptModule(ScriptModule) override;
-  ScriptValue ExecuteModule(const ModuleScript*, CaptureEvalErrorFlag) override;
+  ScriptValue ExecuteModule(ModuleScript*, CaptureEvalErrorFlag) override;
   ModuleScriptFetcher* CreateModuleScriptFetcher(
       ModuleScriptCustomFetchType) override;
 

@@ -60,19 +60,20 @@ namespace {
 
 void RecordDownloadMetrics(LocalFrame* frame) {
   if (frame->IsMainFrame()) {
-    bool has_gesture = LocalFrame::HasTransientUserActivation(frame);
-    DownloadStats::RecordMainFrameHasGesture(
-        has_gesture, frame->GetDocument()->UkmSourceID(),
+    DownloadStats::MainFrameDownloadFlags flags;
+    flags.has_sandbox = frame->GetDocument()->IsSandboxed(kSandboxDownloads);
+    flags.has_gesture = LocalFrame::HasTransientUserActivation(frame);
+    DownloadStats::RecordMainFrameDownloadFlags(
+        flags, frame->GetDocument()->UkmSourceID(),
         frame->GetDocument()->UkmRecorder());
     return;
   }
 
-  DownloadStats::DownloadFlags flags;
+  DownloadStats::SubframeDownloadFlags flags;
   flags.has_sandbox = frame->GetDocument()->IsSandboxed(kSandboxDownloads);
   flags.is_cross_origin = frame->IsCrossOriginSubframe();
   flags.is_ad_frame = frame->IsAdSubframe();
   flags.has_gesture = LocalFrame::HasTransientUserActivation(frame);
-
   DownloadStats::RecordSubframeDownloadFlags(
       flags, frame->GetDocument()->UkmSourceID(),
       frame->GetDocument()->UkmRecorder());
@@ -200,10 +201,11 @@ void HTMLAnchorElement::SetActive(bool down) {
   ContainerNode::SetActive(down);
 }
 
-const HashSet<AtomicString>& HTMLAnchorElement::GetCheckedAttributeNames()
+const AttrNameToTrustedType& HTMLAnchorElement::GetCheckedAttributeTypes()
     const {
-  DEFINE_STATIC_LOCAL(HashSet<AtomicString>, attribute_set, ({"href"}));
-  return attribute_set;
+  DEFINE_STATIC_LOCAL(AttrNameToTrustedType, attribute_map,
+                      ({{"href", SpecificTrustedType::kTrustedURL}}));
+  return attribute_map;
 }
 
 void HTMLAnchorElement::AttributeChanged(
@@ -416,11 +418,13 @@ void HTMLAnchorElement::HandleClick(Event& event) {
                             : WebFeature::kDownloadInAdFrameWithoutUserGesture);
     }
     if (GetDocument().IsSandboxed(kSandboxDownloads)) {
-      if (RuntimeEnabledFeatures::BlockingDownloadsInSandboxEnabled())
+      if (!LocalFrame::HasTransientUserActivation(frame) &&
+          RuntimeEnabledFeatures::
+              BlockingDownloadsInSandboxWithoutUserActivationEnabled())
         return;
       UseCounter::Count(
           GetDocument(),
-          UserGestureIndicator::ProcessingUserGesture()
+          LocalFrame::HasTransientUserActivation(frame)
               ? WebFeature::kHTMLAnchorElementDownloadInSandboxWithUserGesture
               : WebFeature::
                     kHTMLAnchorElementDownloadInSandboxWithoutUserGesture);
@@ -499,7 +503,7 @@ Node::InsertionNotificationRequest HTMLAnchorElement::InsertedInto(
   return request;
 }
 
-void HTMLAnchorElement::Trace(blink::Visitor* visitor) {
+void HTMLAnchorElement::Trace(Visitor* visitor) {
   visitor->Trace(rel_list_);
   HTMLElement::Trace(visitor);
 }

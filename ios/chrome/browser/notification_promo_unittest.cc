@@ -81,13 +81,9 @@ class NotificationPromoTest : public PlatformTest {
 
     std::string json_with_end_date(
         base::ReplaceStringPlaceholders(json, replacements, NULL));
-    base::Value* value(base::JSONReader::Read(json_with_end_date).release());
-    ASSERT_TRUE(value);
-
-    base::DictionaryValue* dict = NULL;
-    value->GetAsDictionary(&dict);
-    ASSERT_TRUE(dict);
-    test_json_.reset(dict);
+    test_json_ = base::DictionaryValue::From(
+        base::JSONReader::ReadDeprecated(json_with_end_date));
+    ASSERT_TRUE(test_json_);
 
     std::map<std::string, std::string> field_trial_params;
     std::string start_param;
@@ -95,9 +91,9 @@ class NotificationPromoTest : public PlatformTest {
     field_trial_params["start"] = start_param;
     field_trial_params["end"] = year_from_now_string;
     field_trial_params["promo_text"] = promo_text;
-    field_trial_params["max_views"] = base::IntToString(max_views);
-    field_trial_params["max_seconds"] = base::IntToString(max_seconds);
-    field_trial_params["promo_id"] = base::IntToString(promo_id);
+    field_trial_params["max_views"] = base::NumberToString(max_views);
+    field_trial_params["max_seconds"] = base::NumberToString(max_seconds);
+    field_trial_params["promo_id"] = base::NumberToString(promo_id);
     // Payload parameters.
     base::DictionaryValue* payload;
     test_json_->GetDictionary("payload", &payload);

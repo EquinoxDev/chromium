@@ -42,6 +42,7 @@ class DesktopCapturerProxy::Core : public webrtc::DesktopCapturer::Callback {
   void Start();
   void SetSharedMemoryFactory(
       std::unique_ptr<webrtc::SharedMemoryFactory> shared_memory_factory);
+  void SelectSource(SourceId id);
   void CaptureFrame();
 
  private:
@@ -96,6 +97,13 @@ void DesktopCapturerProxy::Core::SetSharedMemoryFactory(
   }
 }
 
+void DesktopCapturerProxy::Core::SelectSource(SourceId id) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (capturer_) {
+    capturer_->SelectSource(id);
+  }
+}
+
 void DesktopCapturerProxy::Core::CaptureFrame() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (capturer_) {
@@ -111,8 +119,8 @@ void DesktopCapturerProxy::Core::OnCaptureResult(
   DCHECK(thread_checker_.CalledOnValidThread());
 
   caller_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&DesktopCapturerProxy::OnFrameCaptured, proxy_,
-                            result, base::Passed(&frame)));
+      FROM_HERE, base::BindOnce(&DesktopCapturerProxy::OnFrameCaptured, proxy_,
+                                result, std::move(frame)));
 }
 
 DesktopCapturerProxy::DesktopCapturerProxy(
@@ -129,8 +137,8 @@ void DesktopCapturerProxy::CreateCapturer(
     const webrtc::DesktopCaptureOptions& options) {
   DCHECK(thread_checker_.CalledOnValidThread());
   capture_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&Core::CreateCapturer,
-                            base::Unretained(core_.get()), options));
+      FROM_HERE, base::BindOnce(&Core::CreateCapturer,
+                                base::Unretained(core_.get()), options));
 }
 
 void DesktopCapturerProxy::set_capturer(
@@ -144,7 +152,7 @@ void DesktopCapturerProxy::Start(Callback* callback) {
   callback_ = callback;
 
   capture_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&Core::Start, base::Unretained(core_.get())));
+      FROM_HERE, base::BindOnce(&Core::Start, base::Unretained(core_.get())));
 }
 
 void DesktopCapturerProxy::SetSharedMemoryFactory(
@@ -153,7 +161,7 @@ void DesktopCapturerProxy::SetSharedMemoryFactory(
 
   capture_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(
+      base::BindOnce(
           &Core::SetSharedMemoryFactory, base::Unretained(core_.get()),
           base::Passed(base::WrapUnique(shared_memory_factory.release()))));
 }
@@ -166,7 +174,7 @@ void DesktopCapturerProxy::CaptureFrame() {
 
   capture_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&Core::CaptureFrame, base::Unretained(core_.get())));
+      base::BindOnce(&Core::CaptureFrame, base::Unretained(core_.get())));
 }
 
 bool DesktopCapturerProxy::GetSourceList(SourceList* sources) {
@@ -175,7 +183,10 @@ bool DesktopCapturerProxy::GetSourceList(SourceList* sources) {
 }
 
 bool DesktopCapturerProxy::SelectSource(SourceId id) {
-  NOTIMPLEMENTED();
+  DCHECK(thread_checker_.CalledOnValidThread());
+  capture_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&Core::SelectSource, base::Unretained(core_.get()), id));
   return false;
 }
 

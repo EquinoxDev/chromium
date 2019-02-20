@@ -8,7 +8,7 @@
 
 namespace android_webview {
 
-AwGLSurface::AwGLSurface() {}
+AwGLSurface::AwGLSurface() : size_(1, 1) {}
 
 AwGLSurface::~AwGLSurface() {}
 
@@ -23,13 +23,13 @@ unsigned int AwGLSurface::GetBackingFramebufferObject() {
   return ScopedAppGLStateRestore::Current()->framebuffer_binding_ext();
 }
 
-gfx::SwapResult AwGLSurface::SwapBuffers(const PresentationCallback& callback) {
+gfx::SwapResult AwGLSurface::SwapBuffers(PresentationCallback callback) {
   // TODO(penghuang): Provide presentation feedback. https://crbug.com/776877
   return gfx::SwapResult::SWAP_ACK;
 }
 
 gfx::Size AwGLSurface::GetSize() {
-  return gfx::Size(1, 1);
+  return size_;
 }
 
 void* AwGLSurface::GetHandle() {
@@ -42,6 +42,14 @@ void* AwGLSurface::GetDisplay() {
 
 gl::GLSurfaceFormat AwGLSurface::GetFormat() {
   return gl::GLSurfaceFormat();
+}
+
+bool AwGLSurface::Resize(const gfx::Size& size,
+                         float scale_factor,
+                         ColorSpace color_space,
+                         bool has_alpha) {
+  size_ = size;
+  return true;
 }
 
 }  // namespace android_webview

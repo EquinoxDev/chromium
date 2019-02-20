@@ -50,6 +50,7 @@
 #include "third_party/blink/public/platform/web_rtc_peer_connection_handler.h"
 #include "third_party/blink/public/platform/web_storage_namespace.h"
 #include "third_party/blink/public/platform/websocket_handshake_throttle.h"
+#include "third_party/blink/renderer/platform/bindings/parkable_string_manager.h"
 #include "third_party/blink/renderer/platform/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache_memory_dump_provider.h"
@@ -60,14 +61,15 @@
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/renderer_resource_coordinator.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/memory_cache_dump_provider.h"
 #include "third_party/blink/renderer/platform/language.h"
-#include "third_party/blink/renderer/platform/memory_coordinator.h"
+#include "third_party/blink/renderer/platform/memory_pressure_listener.h"
 #include "third_party/blink/renderer/platform/partition_alloc_memory_dump_provider.h"
 #include "third_party/blink/renderer/platform/scheduler/common/simple_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
-#include "third_party/webrtc/api/rtpparameters.h"
-#include "third_party/webrtc/p2p/base/portallocator.h"
+#include "third_party/webrtc/api/async_resolver_factory.h"
+#include "third_party/webrtc/api/rtp_parameters.h"
+#include "third_party/webrtc/p2p/base/port_allocator.h"
 
 namespace blink {
 
@@ -184,7 +186,7 @@ void Platform::InitializeCommon(Platform* platform,
   Thread::SetMainThread(std::move(main_thread));
 
   ProcessHeap::Init();
-  MemoryCoordinator::Initialize();
+  MemoryPressureListenerRegistry::Initialize();
   if (base::ThreadTaskRunnerHandle::IsSet()) {
     base::trace_event::MemoryDumpProvider::Options options;
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
@@ -213,6 +215,9 @@ void Platform::InitializeCommon(Platform* platform,
       base::ThreadTaskRunnerHandle::Get());
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       InstanceCountersMemoryDumpProvider::Instance(), "BlinkObjectCounters",
+      base::ThreadTaskRunnerHandle::Get());
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      ParkableStringManagerDumpProvider::Instance(), "ParkableStrings",
       base::ThreadTaskRunnerHandle::Get());
 
   RendererResourceCoordinator::Initialize();
@@ -246,14 +251,6 @@ Platform* Platform::Current() {
   return g_platform;
 }
 
-Thread* Platform::MainThread() {
-  return Thread::MainThread();
-}
-
-Thread* Platform::CurrentThread() {
-  return Thread::Current();
-}
-
 service_manager::Connector* Platform::GetConnector() {
   DEFINE_STATIC_LOCAL(DefaultConnector, connector, ());
   return connector.Get();
@@ -277,21 +274,13 @@ std::unique_ptr<Thread> Platform::CreateThread(
   return Thread::CreateThread(params);
 }
 
-std::unique_ptr<Thread> Platform::CreateWebAudioThread() {
-  return Thread::CreateWebAudioThread();
-}
-
 void Platform::CreateAndSetCompositorThread() {
   Thread::CreateAndSetCompositorThread();
 }
 
-Thread* Platform::CompositorThread() {
-  return Thread::CompositorThread();
-}
-
 scoped_refptr<base::SingleThreadTaskRunner>
 Platform::CompositorThreadTaskRunner() {
-  if (Thread* compositor_thread = CompositorThread())
+  if (Thread* compositor_thread = Thread::CompositorThread())
     return compositor_thread->GetTaskRunner();
   return nullptr;
 }
@@ -324,6 +313,11 @@ Platform::CreateRTCPeerConnectionHandler(
 
 std::unique_ptr<cricket::PortAllocator> Platform::CreateWebRtcPortAllocator(
     WebLocalFrame* frame) {
+  return nullptr;
+}
+
+std::unique_ptr<webrtc::AsyncResolverFactory>
+Platform::CreateWebRtcAsyncResolverFactory() {
   return nullptr;
 }
 

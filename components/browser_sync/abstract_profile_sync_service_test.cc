@@ -22,8 +22,8 @@
 #include "components/sync/syncable/test_user_share.h"
 #include "services/network/test/test_network_connection_tracker.h"
 
-using syncer::SyncBackendHostImpl;
 using syncer::ModelType;
+using syncer::SyncEngineImpl;
 using testing::_;
 using testing::ByMove;
 using testing::Return;
@@ -37,11 +37,10 @@ std::unique_ptr<syncer::HttpPostProviderFactory> GetHttpPostProviderFactory(
   return std::make_unique<TestHttpBridgeFactory>();
 }
 
-class SyncEngineForProfileSyncTest : public SyncBackendHostImpl {
+class SyncEngineForProfileSyncTest : public SyncEngineImpl {
  public:
   SyncEngineForProfileSyncTest(
       const base::FilePath& temp_dir,
-      syncer::SyncClient* sync_client,
       invalidation::InvalidationService* invalidator,
       const base::WeakPtr<syncer::SyncPrefs>& sync_prefs,
       base::OnceClosure callback);
@@ -62,13 +61,11 @@ class SyncEngineForProfileSyncTest : public SyncBackendHostImpl {
 
 SyncEngineForProfileSyncTest::SyncEngineForProfileSyncTest(
     const base::FilePath& temp_dir,
-    syncer::SyncClient* sync_client,
     invalidation::InvalidationService* invalidator,
     const base::WeakPtr<syncer::SyncPrefs>& sync_prefs,
     base::OnceClosure callback)
-    : SyncBackendHostImpl(
+    : SyncEngineImpl(
           "dummy_debug_name",
-          sync_client,
           invalidator,
           sync_prefs,
           temp_dir.Append(base::FilePath(FILE_PATH_LITERAL("test")))),
@@ -96,7 +93,7 @@ void SyncEngineForProfileSyncTest::Initialize(InitParams params) {
           factory_switches, syncer::EngineComponentsFactory::STORAGE_IN_MEMORY,
           nullptr);
 
-  SyncBackendHostImpl::Initialize(std::move(params));
+  SyncEngineImpl::Initialize(std::move(params));
 }
 
 void SyncEngineForProfileSyncTest::ConfigureDataTypes(ConfigureParams params) {
@@ -114,31 +111,6 @@ void SyncEngineForProfileSyncTest::ConfigureDataTypes(ConfigureParams params) {
 }
 
 }  // namespace
-
-/* static */
-syncer::ImmutableChangeRecordList
-ProfileSyncServiceTestHelper::MakeSingletonChangeRecordList(
-    int64_t node_id,
-    syncer::ChangeRecord::Action action) {
-  syncer::ChangeRecord record;
-  record.action = action;
-  record.id = node_id;
-  syncer::ChangeRecordList records(1, record);
-  return syncer::ImmutableChangeRecordList(&records);
-}
-
-/* static */
-syncer::ImmutableChangeRecordList
-ProfileSyncServiceTestHelper::MakeSingletonDeletionChangeRecordList(
-    int64_t node_id,
-    const sync_pb::EntitySpecifics& specifics) {
-  syncer::ChangeRecord record;
-  record.action = syncer::ChangeRecord::ACTION_DELETE;
-  record.id = node_id;
-  record.specifics = specifics;
-  syncer::ChangeRecordList records(1, record);
-  return syncer::ImmutableChangeRecordList(&records);
-}
 
 AbstractProfileSyncServiceTest::AbstractProfileSyncServiceTest()
     : data_type_thread_("Extra thread") {
@@ -167,14 +139,14 @@ void AbstractProfileSyncServiceTest::CreateSyncService(
   syncer::SyncApiComponentFactoryMock* components =
       profile_sync_service_bundle_.component_factory();
   auto engine = std::make_unique<SyncEngineForProfileSyncTest>(
-      temp_dir_.GetPath(), sync_service_->GetSyncClientForTest(),
+      temp_dir_.GetPath(),
       profile_sync_service_bundle_.fake_invalidation_service(),
       sync_service_->sync_prefs()->AsWeakPtr(),
       std::move(initialization_success_callback));
-  EXPECT_CALL(*components, CreateSyncEngine(_, _, _, _))
+  EXPECT_CALL(*components, CreateSyncEngine(_, _, _))
       .WillOnce(Return(ByMove(std::move(engine))));
 
-  sync_service_->GetUserSettings()->SetFirstSetupComplete();
+  sync_service_->sync_prefs()->SetFirstSetupComplete();
 }
 
 CreateRootHelper::CreateRootHelper(AbstractProfileSyncServiceTest* test,

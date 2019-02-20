@@ -67,7 +67,6 @@
 
 @synthesize browserState = _browserState;
 @synthesize suggestionsViewController = _suggestionsViewController;
-@synthesize URLLoader = _URLLoader;
 @synthesize visible = _visible;
 @synthesize contentSuggestionsMediator = _contentSuggestionsMediator;
 @synthesize headerCollectionInteractionHandler =
@@ -281,7 +280,11 @@
   [self.NTPMediator dismissModals];
 }
 
-- (CGPoint)scrollOffset {
+- (UIEdgeInsets)contentInset {
+  return self.suggestionsViewController.collectionView.contentInset;
+}
+
+- (CGPoint)contentOffset {
   CGPoint collectionOffset =
       self.suggestionsViewController.collectionView.contentOffset;
   collectionOffset.y -=

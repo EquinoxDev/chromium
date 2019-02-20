@@ -4,7 +4,9 @@
 
 #include "media/learning/impl/extra_trees_trainer.h"
 
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
+#include "base/test/scoped_task_environment.h"
 #include "media/learning/impl/fisher_iris_dataset.h"
 #include "media/learning/impl/test_random_number_generator.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -27,6 +29,21 @@ class ExtraTreesTest : public testing::TestWithParam<LearningTask::Ordering> {
     }
   }
 
+  std::unique_ptr<Model> Train(const LearningTask& task,
+                               const TrainingData& data) {
+    std::unique_ptr<Model> model;
+    trainer_.Train(
+        task_, data,
+        base::BindOnce(
+            [](std::unique_ptr<Model>* model_out,
+               std::unique_ptr<Model> model) { *model_out = std::move(model); },
+            &model));
+    scoped_task_environment_.RunUntilIdle();
+    return model;
+  }
+
+  base::test::ScopedTaskEnvironment scoped_task_environment_;
+
   TestRandomNumberGenerator rng_;
   ExtraTreesTrainer trainer_;
   LearningTask task_;
@@ -36,7 +53,7 @@ class ExtraTreesTest : public testing::TestWithParam<LearningTask::Ordering> {
 
 TEST_P(ExtraTreesTest, EmptyTrainingDataWorks) {
   TrainingData empty;
-  auto model = trainer_.Train(task_, empty);
+  auto model = Train(task_, empty);
   EXPECT_NE(model.get(), nullptr);
   EXPECT_EQ(model->PredictDistribution(FeatureVector()), TargetDistribution());
 }
@@ -45,11 +62,11 @@ TEST_P(ExtraTreesTest, FisherIrisDataset) {
   SetupFeatures(4);
   FisherIrisDataset iris;
   TrainingData training_data = iris.GetTrainingData();
-  auto model = trainer_.Train(task_, training_data);
+  auto model = Train(task_, training_data);
 
   // Verify predictions on the training set, just for sanity.
   size_t num_correct = 0;
-  for (const TrainingExample& example : training_data) {
+  for (const LabelledExample& example : training_data) {
     TargetDistribution distribution =
         model->PredictDistribution(example.features);
     TargetValue predicted_value;
@@ -68,8 +85,8 @@ TEST_P(ExtraTreesTest, WeightedTrainingSetIsSupported) {
   // Create a training set with unseparable data, but give one of them a large
   // weight.  See if that one wins.
   SetupFeatures(1);
-  TrainingExample example_1({FeatureValue(123)}, TargetValue(1));
-  TrainingExample example_2({FeatureValue(123)}, TargetValue(2));
+  LabelledExample example_1({FeatureValue(123)}, TargetValue(1));
+  LabelledExample example_2({FeatureValue(123)}, TargetValue(2));
   const size_t weight = 100;
   TrainingData training_data;
   example_1.weight = weight;
@@ -82,7 +99,7 @@ TEST_P(ExtraTreesTest, WeightedTrainingSetIsSupported) {
 
   // Create a weighed set with |weight| for each example's weight.
   EXPECT_FALSE(training_data.is_unweighted());
-  auto model = trainer_.Train(task_, training_data);
+  auto model = Train(task_, training_data);
 
   // The singular max should be example_1.
   TargetDistribution distribution =
@@ -96,13 +113,13 @@ TEST_P(ExtraTreesTest, RegressionWorks) {
   // Create a training set with unseparable data, but give one of them a large
   // weight.  See if that one wins.
   SetupFeatures(2);
-  TrainingExample example_1({FeatureValue(1), FeatureValue(123)},
+  LabelledExample example_1({FeatureValue(1), FeatureValue(123)},
                             TargetValue(1));
-  TrainingExample example_1_a({FeatureValue(1), FeatureValue(123)},
+  LabelledExample example_1_a({FeatureValue(1), FeatureValue(123)},
                               TargetValue(5));
-  TrainingExample example_2({FeatureValue(1), FeatureValue(456)},
+  LabelledExample example_2({FeatureValue(1), FeatureValue(456)},
                             TargetValue(20));
-  TrainingExample example_2_a({FeatureValue(1), FeatureValue(456)},
+  LabelledExample example_2_a({FeatureValue(1), FeatureValue(456)},
                               TargetValue(25));
   TrainingData training_data;
   example_1.weight = 100;
@@ -115,7 +132,7 @@ TEST_P(ExtraTreesTest, RegressionWorks) {
   task_.target_description.ordering = LearningTask::Ordering::kNumeric;
 
   // Create a weighed set with |weight| for each example's weight.
-  auto model = trainer_.Train(task_, training_data);
+  auto model = Train(task_, training_data);
 
   // Make sure that the results are in the right range.
   TargetDistribution distribution =
@@ -137,40 +154,41 @@ TEST_P(ExtraTreesTest, RegressionVsBinaryClassification) {
   SetupFeatures(3);
   TrainingData c_data, r_data;
 
-  std::set<TrainingExample> r_examples;
+  std::set<LabelledExample> r_examples;
   for (size_t i = 0; i < 4 * 4 * 4; i++) {
     FeatureValue f1(i & 3);
     FeatureValue f2((i >> 2) & 3);
     FeatureValue f3((i >> 4) & 3);
-    int pct = (100 * (f1.value() + f2.value() + f3.value())) / 9;
-    TrainingExample e({f1, f2, f3}, TargetValue(0));
+    int frac = (1.0 * (f1.value() + f2.value() + f3.value())) / 9;
+    LabelledExample e({f1, f2, f3}, TargetValue(0));
 
     // TODO(liberato): Consider adding noise, and verifying that the model
     // predictions are roughly the same as each other, rather than the same as
     // the currently noise-free target.
 
     // Push some number of false and some number of true instances that is in
-    // the right ratio for |pct|.  We add 100's instead of 1's so that it's
-    // scaled to the same range as the regression targets.
-    e.weight = 100 - pct;
+    // the right ratio for |frac|.
+    const int total_examples = 100;
+    const int positive_examples = total_examples * frac;
+    e.weight = total_examples - positive_examples;
     if (e.weight > 0)
       c_data.push_back(e);
-    e.target_value = TargetValue(100);
-    e.weight = pct;
+    e.target_value = TargetValue(1.0);
+    e.weight = positive_examples;
     if (e.weight > 0)
       c_data.push_back(e);
 
-    // For the regression data, add an example with |pct| directly.  Also save
+    // For the regression data, add an example with |frac| directly.  Also save
     // it so that we can look up the right answer below.
-    TrainingExample r_example(TrainingExample({f1, f2, f3}, TargetValue(pct)));
+    LabelledExample r_example(LabelledExample({f1, f2, f3}, TargetValue(frac)));
     r_examples.insert(r_example);
     r_data.push_back(r_example);
   }
 
   // Train a model on the binary classification task and the regression task.
-  auto c_model = trainer_.Train(task_, c_data);
+  auto c_model = Train(task_, c_data);
   task_.target_description.ordering = LearningTask::Ordering::kNumeric;
-  auto r_model = trainer_.Train(task_, r_data);
+  auto r_model = Train(task_, r_data);
 
   // Verify that, for all feature combinations, the models roughly agree.  Since
   // the data is separable, it probably should be exact.
@@ -185,10 +203,10 @@ TEST_P(ExtraTreesTest, RegressionVsBinaryClassification) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(ExtraTreesTest,
-                        ExtraTreesTest,
-                        testing::ValuesIn({LearningTask::Ordering::kUnordered,
-                                           LearningTask::Ordering::kNumeric}));
+INSTANTIATE_TEST_SUITE_P(ExtraTreesTest,
+                         ExtraTreesTest,
+                         testing::ValuesIn({LearningTask::Ordering::kUnordered,
+                                            LearningTask::Ordering::kNumeric}));
 
 }  // namespace learning
 }  // namespace media

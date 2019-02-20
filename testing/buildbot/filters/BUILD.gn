@@ -22,8 +22,6 @@ source_set("browser_tests_filters") {
   data = [
     "//testing/buildbot/filters/chromeos.mash.browser_tests.filter",
     "//testing/buildbot/filters/chromeos.mash.fyi.browser_tests.filter",
-    "//testing/buildbot/filters/mojo.fyi.chromeos.network_browser_tests.filter",
-    "//testing/buildbot/filters/mojo.fyi.network_browser_tests.filter",
     "//testing/buildbot/filters/webui_polymer2_browser_tests.filter",
     "//testing/buildbot/filters/webrtc_functional.browser_tests.filter",
   ]
@@ -64,9 +62,10 @@ source_set("content_browsertests_filters") {
 
 source_set("fuchsia_filters") {
   data = [
+    "//testing/buildbot/filters/fuchsia.base_perftests.filter",
     "//testing/buildbot/filters/fuchsia.content_unittests.filter",
-    "//testing/buildbot/filters/fuchsia.ipc_tests.filter",
     "//testing/buildbot/filters/fuchsia.mojo_unittests.filter",
+    "//testing/buildbot/filters/fuchsia.net_perftests.filter",
     "//testing/buildbot/filters/fuchsia.net_unittests.filter",
     "//testing/buildbot/filters/fuchsia.ui_base_unittests.filter",
   ]
@@ -77,8 +76,15 @@ source_set("interactive_ui_tests_filters") {
 
   data = [
     "//testing/buildbot/filters/chromeos.mash.fyi.interactive_ui_tests.filter",
-    "//testing/buildbot/filters/mojo.fyi.chromeos.network_interactive_ui_tests.filter",
     "//testing/buildbot/filters/webui_polymer2_interactive_ui_tests.filter",
+  ]
+}
+
+source_set("webview_cts_tests_filters") {
+  testonly = true
+
+  data = [
+    "//testing/buildbot/filters/mojo.fyi.network_webview_CTS_test.filter",
   ]
 }
 

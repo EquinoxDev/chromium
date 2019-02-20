@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/i18n/number_formatting.h"
 #include "base/metrics/user_metrics.h"
@@ -20,7 +21,6 @@
 #include "chrome/browser/media/router/media_router_feature.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_properties.h"
-#include "chrome/browser/ui/bookmarks/bookmark_bubble_sign_in_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -44,8 +44,6 @@
 #include "chrome/browser/ui/views/toolbar/home_button.h"
 #include "chrome/browser/ui/views/toolbar/reload_button.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
-#include "chrome/browser/ui/views/translate/translate_bubble_view.h"
-#include "chrome/browser/ui/views/translate/translate_icon_view.h"
 #include "chrome/browser/upgrade_detector/upgrade_detector.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
@@ -89,9 +87,10 @@
 #include "chrome/browser/ui/views/location_bar/intent_picker_view.h"
 #else
 #include "chrome/browser/signin/signin_global_error_factory.h"
+#include "chrome/browser/ui/bookmarks/bookmark_bubble_sign_in_delegate.h"
 #endif
 
-#if !defined(OS_CHROMEOS) && !defined(OS_MACOSX)
+#if !defined(OS_CHROMEOS)
 #include "chrome/browser/ui/views/outdated_upgrade_bubble_view.h"
 #endif
 
@@ -374,26 +373,13 @@ void ToolbarView::ShowBookmarkBubble(
   PageActionIconView* const star_view = location_bar()->star_view();
 
   std::unique_ptr<BubbleSyncPromoDelegate> delegate;
+#if !defined(OS_CHROMEOS)
+  // ChromeOS does not show the signin promo.
   delegate.reset(new BookmarkBubbleSignInDelegate(browser_));
+#endif
   BookmarkBubbleView::ShowBubble(anchor_view, star_view, gfx::Rect(), nullptr,
                                  observer, std::move(delegate),
                                  browser_->profile(), url, already_bookmarked);
-}
-
-void ToolbarView::ShowTranslateBubble(
-    content::WebContents* web_contents,
-    translate::TranslateStep step,
-    translate::TranslateErrors::Type error_type,
-    bool is_user_gesture) {
-  views::View* const anchor_view = location_bar();
-  PageActionIconView* translate_icon_view =
-      location_bar()->translate_icon_view();
-
-  TranslateBubbleView::ShowBubble(anchor_view, translate_icon_view,
-                                  gfx::Point(), web_contents, step, error_type,
-                                  is_user_gesture
-                                      ? TranslateBubbleView::USER_GESTURE
-                                      : TranslateBubbleView::AUTOMATIC);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -608,8 +594,8 @@ void ToolbarView::ChildPreferredSizeChanged(views::View* child) {
 // also so that it selects all content in the location bar.
 bool ToolbarView::SetPaneFocusAndFocusDefault() {
   if (!location_bar_->HasFocus()) {
+    location_bar_->FocusLocation();
     SetPaneFocus(location_bar_);
-    location_bar_->FocusLocation(true);
     return true;
   }
 
@@ -677,10 +663,8 @@ void ToolbarView::InitLayout() {
 void ToolbarView::LayoutCommon() {
   DCHECK(display_mode_ == DisplayMode::NORMAL);
 
-  constexpr gfx::Insets kToolbarInteriorMargin(4, 8, 5, 8);
-  const gfx::Insets interior_margin = ui::MaterialDesignController::touch_ui()
-                                          ? gfx::Insets()
-                                          : kToolbarInteriorMargin;
+  const gfx::Insets interior_margin =
+      GetLayoutInsets(LayoutInset::TOOLBAR_INTERIOR_MARGIN);
   layout_manager_->SetInteriorMargin(interior_margin);
 
   const bool maximized =
@@ -807,8 +791,7 @@ void ToolbarView::ShowCriticalNotification() {
 }
 
 void ToolbarView::ShowOutdatedInstallNotification(bool auto_update_enabled) {
-#if !defined(OS_CHROMEOS) && !defined(OS_MACOSX)
-  // TODO(tapted): Show this on Mac. See http://crbug.com/764111.
+#if !defined(OS_CHROMEOS)
   OutdatedUpgradeBubbleView::ShowBubble(app_menu_button_, browser_,
                                         auto_update_enabled);
 #endif

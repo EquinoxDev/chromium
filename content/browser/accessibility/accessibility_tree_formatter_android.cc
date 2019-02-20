@@ -72,6 +72,7 @@ class AccessibilityTreeFormatterAndroid
   const std::string GetAllowEmptyString() override;
   const std::string GetAllowString() override;
   const std::string GetDenyString() override;
+  const std::string GetDenyNodeString() override;
   void AddProperties(const BrowserAccessibility& node,
                      base::DictionaryValue* dict) override;
   base::string16 ProcessTreeForOutput(
@@ -172,7 +173,7 @@ base::string16 AccessibilityTreeFormatterAndroid::ProcessTreeForOutput(
   if (show_ids()) {
     int id_value;
     dict.GetInteger("id", &id_value);
-    WriteAttribute(true, base::IntToString16(id_value), &line);
+    WriteAttribute(true, base::NumberToString16(id_value), &line);
   }
 
   base::string16 class_value;
@@ -233,6 +234,10 @@ const std::string AccessibilityTreeFormatterAndroid::GetAllowString() {
 
 const std::string AccessibilityTreeFormatterAndroid::GetDenyString() {
   return "@ANDROID-DENY:";
+}
+
+const std::string AccessibilityTreeFormatterAndroid::GetDenyNodeString() {
+  return "@ANDROID-DENY-NODE:";
 }
 
 }  // namespace content

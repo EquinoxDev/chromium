@@ -18,8 +18,14 @@ Polymer({
   is: 'viewer-toolbar-dropdown',
 
   properties: {
-    /** String to be displayed at the top of the dropdown. */
+    /**
+     * String to be displayed at the top of the dropdown and for the tooltip
+     * of the button.
+      */
     header: String,
+
+    /** Whether to hide the header at the top of the dropdown. */
+    hideHeader: {type: Boolean, value: false},
 
     /** Icon to display when the dropdown is closed. */
     closedIcon: String,
@@ -35,6 +41,12 @@ Polymer({
 
     /** Whether the dropdown should be centered or right aligned. */
     dropdownCentered: {type: Boolean, reflectToAttribute: true, value: false},
+
+    /** Whether the dropdown is marked as selected. */
+    selected: {type: Boolean, reflectToAttribute: true, value: false},
+
+    /** Whether the dropdown must be selected before opening. */
+    openAfterSelect: {type: Boolean, reflectToAttribute: true, value: false},
 
     /** Toolbar icon currently being displayed. */
     dropdownIcon: {
@@ -69,6 +81,10 @@ Polymer({
   },
 
   toggleDropdown: function() {
+    if (!this.dropdownOpen && this.openAfterSelect && !this.selected) {
+      // The dropdown has `openAfterSelect` set, but is not yet selected.
+      return;
+    }
     this.dropdownOpen = !this.dropdownOpen;
     if (this.dropdownOpen) {
       this.$.dropdown.style.display = 'block';

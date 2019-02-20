@@ -11,6 +11,7 @@
 
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
+#include "base/macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
@@ -56,11 +57,14 @@ const char TranslatePrefs::kPrefTranslateTooOftenDeniedForLanguage[] =
 const char TranslatePrefs::kPrefTranslateRecentTarget[] =
     "translate_recent_target";
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
 const char TranslatePrefs::kPrefTranslateAutoAlwaysCount[] =
     "translate_auto_always_count";
 const char TranslatePrefs::kPrefTranslateAutoNeverCount[] =
     "translate_auto_never_count";
+#endif
+
+#if defined(OS_ANDROID)
 const char TranslatePrefs::kPrefExplicitLanguageAskShown[] =
     "translate_explicit_language_ask_shown";
 #endif
@@ -71,18 +75,6 @@ const char TranslatePrefs::kPrefExplicitLanguageAskShown[] =
 // * translate_last_denied_time
 // * translate_too_often_denied
 // * translate_language_blacklist
-
-namespace {
-
-// Extract a timestamp from a base::Value.
-// Will return base::Time() if no valid timestamp exists.
-base::Time GetTimeStamp(const base::Value& value) {
-  base::TimeDelta delta;
-  base::GetValueAsTimeDelta(value, &delta);
-  return base::Time::FromDeltaSinceWindowsEpoch(delta);
-}
-
-}  // namespace
 
 const base::Feature kRegionalLocalesAsDisplayUI{
     "RegionalLocalesAsDisplayUI", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -199,7 +191,7 @@ void TranslatePrefs::ResetToDefaults() {
   prefs_->ClearPref(kPrefTranslateIgnoredCount);
   prefs_->ClearPref(kPrefTranslateAcceptedCount);
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   prefs_->ClearPref(kPrefTranslateAutoAlwaysCount);
   prefs_->ClearPref(kPrefTranslateAutoNeverCount);
 #endif
@@ -481,8 +473,7 @@ void TranslatePrefs::BlacklistSite(const std::string& site) {
   BlacklistValue(kPrefTranslateSiteBlacklistDeprecated, site);
   DictionaryPrefUpdate update(prefs_, kPrefTranslateSiteBlacklistWithTime);
   base::DictionaryValue* dict = update.Get();
-  dict->SetKey(site, base::CreateTimeDeltaValue(
-                         base::Time::Now().ToDeltaSinceWindowsEpoch()));
+  dict->SetKey(site, base::CreateTimeValue(base::Time::Now()));
 }
 
 void TranslatePrefs::RemoveSiteFromBlacklist(const std::string& site) {
@@ -500,7 +491,9 @@ std::vector<std::string> TranslatePrefs::GetBlacklistedSitesBetween(
   auto* dict = prefs_->GetDictionary(kPrefTranslateSiteBlacklistWithTime);
   for (const auto& entry : *dict) {
     std::string site = entry.first;
-    base::Time time = GetTimeStamp(*entry.second);
+    base::Time time;
+    // TODO(crbug.com/928787): Handle base::GetValueAsTime() failure.
+    ignore_result(base::GetValueAsTime(*entry.second, &time));
     if (begin <= time && time < end)
       result.push_back(site);
   }
@@ -644,7 +637,7 @@ void TranslatePrefs::ResetTranslationAcceptedCount(
   update.Get()->SetInteger(language, 0);
 }
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
 int TranslatePrefs::GetTranslationAutoAlwaysCount(
     const std::string& language) const {
   const base::DictionaryValue* dict =
@@ -690,7 +683,9 @@ void TranslatePrefs::ResetTranslationAutoNeverCount(
   DictionaryPrefUpdate update(prefs_, kPrefTranslateAutoNeverCount);
   update.Get()->SetInteger(language, 0);
 }
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
+#if defined(OS_ANDROID)
 bool TranslatePrefs::GetExplicitLanguageAskPromptShown() const {
   return prefs_->GetBoolean(kPrefExplicitLanguageAskShown);
 }
@@ -843,13 +838,16 @@ void TranslatePrefs::RegisterProfilePrefs(
       kForceTriggerTranslateCount, 0,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   registry->RegisterDictionaryPref(
       kPrefTranslateAutoAlwaysCount,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterDictionaryPref(
       kPrefTranslateAutoNeverCount,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+#endif
+
+#if defined(OS_ANDROID)
   registry->RegisterBooleanPref(
       kPrefExplicitLanguageAskShown, false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
@@ -949,12 +947,9 @@ void TranslatePrefs::PurgeUnsupportedLanguagesInLanguageFamily(
                    languages_in_same_family.end(), [](const std::string& lang) {
                      return TranslateAcceptLanguages::CanBeAcceptLanguage(lang);
                    })) {
-    list->erase(
-        std::remove_if(list->begin(), list->end(),
-                       [&languages_in_same_family](const std::string& lang) {
-                         return languages_in_same_family.count(lang) > 0;
-                       }),
-        list->end());
+    base::EraseIf(*list, [&languages_in_same_family](const std::string& lang) {
+      return languages_in_same_family.count(lang) > 0;
+    });
   }
 }
 

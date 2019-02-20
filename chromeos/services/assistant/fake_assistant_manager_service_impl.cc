@@ -31,6 +31,8 @@ void FakeAssistantManagerServiceImpl::SetAccessToken(
 
 void FakeAssistantManagerServiceImpl::EnableListening(bool enable) {}
 
+void FakeAssistantManagerServiceImpl::EnableHotword(bool enable) {}
+
 AssistantManagerService::State FakeAssistantManagerServiceImpl::GetState()
     const {
   return state_;
@@ -74,8 +76,13 @@ void FakeAssistantManagerServiceImpl::CacheScreenContext(
   std::move(callback).Run();
 }
 
+void FakeAssistantManagerServiceImpl::ClearScreenContextCache() {}
+
 void FakeAssistantManagerServiceImpl::OnAccessibilityStatusChanged(
     bool spoken_feedback_enabled) {}
+
+void FakeAssistantManagerServiceImpl::SendAssistantFeedback(
+    mojom::AssistantFeedbackPtr feedback) {}
 
 }  // namespace assistant
 }  // namespace chromeos

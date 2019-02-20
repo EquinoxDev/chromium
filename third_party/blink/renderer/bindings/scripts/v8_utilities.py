@@ -206,21 +206,17 @@ def activity_logging_world_check(member):
 
 # [CallWith]
 CALL_WITH_ARGUMENTS = {
+    'Isolate': 'info.GetIsolate()',
     'ScriptState': 'script_state',
     'ExecutionContext': 'execution_context',
-    'ScriptArguments': 'script_arguments',
-    'CurrentWindow': 'CurrentDOMWindow(info.GetIsolate())',
-    'EnteredWindow': 'EnteredDOMWindow(info.GetIsolate())',
     'Document': 'document',
     'ThisValue': 'ScriptValue(script_state, info.Holder())',
 }
 # List because key order matters, as we want arguments in deterministic order
 CALL_WITH_VALUES = [
+    'Isolate',
     'ScriptState',
     'ExecutionContext',
-    'ScriptArguments',
-    'CurrentWindow',
-    'EnteredWindow',
     'Document',
     'ThisValue',
 ]

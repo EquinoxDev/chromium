@@ -10,6 +10,7 @@ js_type_check("closure_compile") {
     ":all_sites",
     ":category_default_setting",
     ":category_setting_exceptions",
+    ":chooser_exception_list",
     ":chooser_exception_list_entry",
     ":constants",
     ":cookie_info",
@@ -26,7 +27,6 @@ js_type_check("closure_compile") {
     ":site_list_entry",
     ":site_settings_behavior",
     ":site_settings_prefs_browser_proxy",
-    ":usb_devices",
     ":website_usage_private_api",
     ":zoom_levels",
   ]
@@ -71,6 +71,18 @@ js_library("category_setting_exceptions") {
     "../settings_page:settings_animated_pages",
     "//ui/webui/resources/js:assert",
     "//ui/webui/resources/js:cr",
+  ]
+  externs_list = [ "$externs_path/settings_private.js" ]
+}
+
+js_library("chooser_exception_list") {
+  deps = [
+    ":chooser_exception_list_entry",
+    ":constants",
+    ":site_settings_behavior",
+    "//ui/webui/resources/js:i18n_behavior",
+    "//ui/webui/resources/js:list_property_update_behavior",
+    "//ui/webui/resources/js:web_ui_listener_behavior",
   ]
   externs_list = [ "$externs_path/settings_private.js" ]
 }
@@ -120,14 +132,6 @@ js_library("protocol_handlers") {
   deps = [
     ":site_settings_behavior",
     "../android_apps_page:android_apps_browser_proxy",
-    "//ui/webui/resources/cr_elements/cr_action_menu:cr_action_menu",
-    "//ui/webui/resources/js:web_ui_listener_behavior",
-  ]
-}
-
-js_library("usb_devices") {
-  deps = [
-    ":site_settings_behavior",
     "//ui/webui/resources/cr_elements/cr_action_menu:cr_action_menu",
     "//ui/webui/resources/js:web_ui_listener_behavior",
   ]

@@ -47,15 +47,17 @@ class CHROMEOS_EXPORT AccountManager {
   // See |AccountManager::UpsertToken|.
   static const char kActiveDirectoryDummyToken[];
 
-  // A special token that marks an account in Account Manager as invalid, but
-  // does not remove the account. This is useful in scenarios where account
-  // names are imported from elsewhere (Chrome content area or ARC++) and their
-  // tokens are not yet known, but at the same time, these accounts need to be
-  // surfaced on the UI.
+  // A special token that is guaranteed to cheaply fail all network requests
+  // performed using it.
+  // Note that it neither marks an account in Account Manager as invalid, nor
+  // removes the account. This is useful in scenarios where account names are
+  // imported from elsewhere (Chrome content area or ARC++) and their tokens are
+  // not yet known, but at the same time, these accounts need to be surfaced on
+  // the UI.
   // Do not use this token for Active Directory accounts,
   // |kActiveDirectoryDummyToken| is meant for that.
   // See |AccountManager::UpsertToken|.
-  static const char kInvalidToken[];
+  static const char* const kInvalidToken;
 
   struct AccountKey {
     // |id| is obfuscated GAIA id for |AccountType::ACCOUNT_TYPE_GAIA|.
@@ -78,7 +80,7 @@ class CHROMEOS_EXPORT AccountManager {
   using AccountListCallback = base::OnceCallback<void(std::vector<AccountKey>)>;
 
   using DelayNetworkCallRunner =
-      base::RepeatingCallback<void(const base::RepeatingClosure&)>;
+      base::RepeatingCallback<void(base::OnceClosure)>;
 
   class Observer {
    public:
@@ -156,6 +158,10 @@ class CHROMEOS_EXPORT AccountManager {
   // Gets AccountManager's URL Loader Factory.
   scoped_refptr<network::SharedURLLoaderFactory> GetUrlLoaderFactory();
 
+  // Sets the provided URL Loader Factory. Used only by tests.
+  void SetUrlLoaderFactoryForTests(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+
   // Creates and returns an |OAuth2AccessTokenFetcher| using the refresh token
   // stored for |account_key|. |IsTokenAvailable| should be |true| for
   // |account_key|, otherwise a |nullptr| is returned.
@@ -164,11 +170,19 @@ class CHROMEOS_EXPORT AccountManager {
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       OAuth2AccessTokenConsumer* consumer) const;
 
-  // Returns |true| if an LST is available for |account_key|.
+  // Returns |true| if an LST is available for |account_key|. Note that
+  // "availability" does not guarantee "validity", i.e. this method will return
+  // true for LSTs that have expired / been invalidated.
   // Note: Always returns false for Active Directory accounts.
   // Note: This method will return |false| if |AccountManager| has not been
   // initialized yet.
   bool IsTokenAvailable(const AccountKey& account_key) const;
+
+  // Returns true if the token stored against |account_key| is a dummy Gaia
+  // token. This is meant to be used only by
+  // |ChromeOSOAuth2TokenServiceDelegate| to pre-emptively reject access token
+  // requests for |account_key|.
+  bool HasDummyGaiaToken(const AccountKey& account_key) const;
 
  private:
   enum InitializationState {

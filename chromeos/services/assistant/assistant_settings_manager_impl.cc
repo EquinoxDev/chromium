@@ -6,9 +6,12 @@
 
 #include <utility>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "chromeos/dbus/util/version_loader.h"
 #include "chromeos/services/assistant/assistant_manager_service_impl.h"
 #include "chromeos/services/assistant/constants.h"
+#include "chromeos/services/assistant/public/features.h"
 #include "chromeos/services/assistant/public/proto/assistant_device_settings_ui.pb.h"
 #include "chromeos/services/assistant/public/proto/settings_ui.pb.h"
 #include "chromeos/services/assistant/service.h"
@@ -40,6 +43,15 @@ void AssistantSettingsManagerImpl::GetSettings(const std::string& selector,
          AssistantManagerService::State::RUNNING);
   DCHECK(service_->main_task_runner()->RunsTasksInCurrentSequence());
 
+  // TODO(xiaohuic): libassistant could be restarting for various reasons. In
+  // this case the remote side may not know or care and continues to send
+  // requests that would need libassistant. We need a better approach to handle
+  // this and ideally libassistant should not need to restart.
+  if (!assistant_manager_service_->assistant_manager_internal()) {
+    std::move(callback).Run(std::string());
+    return;
+  }
+
   // Wraps the callback into a repeating callback since the server side
   // interface requires the callback to be copyable.
   std::string serialized_proto = SerializeGetSettingsUiRequest(selector);
@@ -53,15 +65,13 @@ void AssistantSettingsManagerImpl::GetSettings(const std::string& selector,
             // This callback may be called from server multiple times. We should
             // only process non-empty response.
             std::string settings = UnwrapGetSettingsUiResponse(response);
-            if (!settings.empty()) {
-              task_runner->PostTask(
-                  FROM_HERE,
-                  base::BindOnce(
-                      [](base::RepeatingCallback<void(const std::string&)>
-                             callback,
-                         const std::string& result) { callback.Run(result); },
-                      repeating_callback, settings));
-            }
+            task_runner->PostTask(
+                FROM_HERE,
+                base::BindOnce(
+                    [](base::RepeatingCallback<void(const std::string&)>
+                           callback,
+                       const std::string& result) { callback.Run(result); },
+                    repeating_callback, settings));
           });
 }
 
@@ -71,6 +81,12 @@ void AssistantSettingsManagerImpl::UpdateSettings(
   DCHECK(assistant_manager_service_->GetState() ==
          AssistantManagerService::State::RUNNING);
   DCHECK(service_->main_task_runner()->RunsTasksInCurrentSequence());
+
+  if (!assistant_manager_service_->assistant_manager_internal()) {
+    std::move(callback).Run(std::string());
+    return;
+  }
+
   // Wraps the callback into a repeating callback since the server side
   // interface requires the callback to be copyable.
   std::string serialized_proto = SerializeUpdateSettingsUiRequest(update);
@@ -84,15 +100,13 @@ void AssistantSettingsManagerImpl::UpdateSettings(
             // This callback may be called from server multiple times. We should
             // only process non-empty response.
             std::string update = UnwrapUpdateSettingsUiResponse(response);
-            if (!update.empty()) {
-              task_runner->PostTask(
-                  FROM_HERE,
-                  base::BindOnce(
-                      [](base::RepeatingCallback<void(const std::string&)>
-                             callback,
-                         const std::string& result) { callback.Run(result); },
-                      repeating_callback, update));
-            }
+            task_runner->PostTask(
+                FROM_HERE,
+                base::BindOnce(
+                    [](base::RepeatingCallback<void(const std::string&)>
+                           callback,
+                       const std::string& result) { callback.Run(result); },
+                    repeating_callback, update));
           });
 }
 
@@ -102,6 +116,9 @@ void AssistantSettingsManagerImpl::StartSpeakerIdEnrollment(
   DCHECK(assistant_manager_service_->GetState() ==
          AssistantManagerService::State::RUNNING);
   DCHECK(service_->main_task_runner()->RunsTasksInCurrentSequence());
+
+  if (!assistant_manager_service_->assistant_manager_internal())
+    return;
 
   speaker_id_enrollment_client_ = std::move(client);
 
@@ -127,6 +144,12 @@ void AssistantSettingsManagerImpl::StopSpeakerIdEnrollment(
   DCHECK(assistant_manager_service_->GetState() ==
          AssistantManagerService::State::RUNNING);
   DCHECK(service_->main_task_runner()->RunsTasksInCurrentSequence());
+
+  if (!assistant_manager_service_->assistant_manager_internal()) {
+    std::move(callback).Run();
+    return;
+  }
+
   assistant_manager_service_->assistant_manager_internal()
       ->StopSpeakerIdEnrollment([repeating_callback =
                                      base::AdaptCallbackForRepeating(
@@ -249,6 +272,12 @@ void AssistantSettingsManagerImpl::UpdateServerDeviceSettings() {
   device_settings_update->set_device_id(device_id);
   device_settings_update->set_assistant_device_type(
       assistant::AssistantDevice::CROS);
+
+  if (base::FeatureList::IsEnabled(assistant::features::kAssistantVoiceMatch) &&
+      service_->assistant_state()->hotword_enabled().value()) {
+    device_settings_update->mutable_device_settings()->set_speaker_id_enabled(
+        true);
+  }
 
   VLOG(1) << "Update assistant device locale: "
           << service_->assistant_state()->locale().value();

@@ -28,7 +28,7 @@ namespace content {
 class DetachableResourceHandler::Controller : public ResourceController {
  public:
   explicit Controller(DetachableResourceHandler* detachable_handler)
-      : detachable_handler_(detachable_handler){};
+      : detachable_handler_(detachable_handler) {}
 
   ~Controller() override {}
 
@@ -39,9 +39,8 @@ class DetachableResourceHandler::Controller : public ResourceController {
   }
 
   void ResumeForRedirect(
-      const base::Optional<std::vector<std::string>>& removed_headers,
-      const base::Optional<net::HttpRequestHeaders>& modified_headers)
-      override {
+      const std::vector<std::string>& removed_headers,
+      const net::HttpRequestHeaders& modified_headers) override {
     MarkAsUsed();
     detachable_handler_->ResumeForRedirect(removed_headers, modified_headers);
   }

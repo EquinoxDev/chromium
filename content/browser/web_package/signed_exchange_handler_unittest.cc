@@ -92,13 +92,13 @@ class MockSignedExchangeCertFetcherFactory
   std::unique_ptr<SignedExchangeCertFetcher> CreateFetcherAndStart(
       const GURL& cert_url,
       bool force_fetch,
-      SignedExchangeVersion version,
       SignedExchangeCertFetcher::CertificateCallback callback,
-      SignedExchangeDevToolsProxy* devtools_proxy) override {
+      SignedExchangeDevToolsProxy* devtools_proxy,
+      SignedExchangeReporter* reporter) override {
     EXPECT_EQ(cert_url, expected_cert_url_);
 
     auto cert_chain = SignedExchangeCertificateChain::Parse(
-        version, base::as_bytes(base::make_span(cert_str_)), devtools_proxy);
+        base::as_bytes(base::make_span(cert_str_)), devtools_proxy);
     EXPECT_TRUE(cert_chain);
 
     base::SequencedTaskRunnerHandle::Get()->PostTask(
@@ -169,7 +169,7 @@ class SignedExchangeHandlerTest
             url::Origin::Create(GURL("https://sxg.example.com/test.sxg"))) {}
 
   virtual std::string ContentType() {
-    return "application/signed-exchange;v=b2";
+    return "application/signed-exchange;v=b3";
   }
 
   void SetUp() override {
@@ -271,7 +271,8 @@ class SignedExchangeHandlerTest
         base::BindOnce(&SignedExchangeHandlerTest::OnHeaderFound,
                        base::Unretained(this)),
         std::move(cert_fetcher_factory_), net::LOAD_NORMAL,
-        nullptr /* devtools_proxy */, base::RepeatingCallback<int(void)>());
+        nullptr /* devtools_proxy */, nullptr /* reporter */,
+        base::RepeatingCallback<int(void)>());
   }
 
   void WaitForHeader() {
@@ -317,7 +318,6 @@ class SignedExchangeHandlerTest
   void OnHeaderFound(SignedExchangeLoadResult result,
                      net::Error error,
                      const GURL& url,
-                     const std::string&,
                      const network::ResourceResponseHead& resource_response,
                      std::unique_ptr<net::SourceStream> payload_stream) {
     read_header_ = true;
@@ -1045,9 +1045,9 @@ TEST_P(SignedExchangeHandlerTest, CTVerifierParams) {
   EXPECT_EQ(static_cast<int>(expected_payload.size()), rv);
 }
 
-INSTANTIATE_TEST_CASE_P(SignedExchangeHandlerTests,
-                        SignedExchangeHandlerTest,
-                        ::testing::Values(net::MockSourceStream::SYNC,
-                                          net::MockSourceStream::ASYNC));
+INSTANTIATE_TEST_SUITE_P(SignedExchangeHandlerTests,
+                         SignedExchangeHandlerTest,
+                         ::testing::Values(net::MockSourceStream::SYNC,
+                                           net::MockSourceStream::ASYNC));
 
 }  // namespace content

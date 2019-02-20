@@ -1533,10 +1533,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
       CreateClientRedirect("/prerender/prerender_embedded_content.html");
   base::StringPairs replacement_text;
   replacement_text.push_back(std::make_pair("REPLACE_WITH_URL", redirect_path));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_iframe.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_iframe.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 2);
   EXPECT_FALSE(
       UrlIsInPrerenderManager("/prerender/prerender_embedded_content.html"));
@@ -1583,10 +1581,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderServerRedirectInIframe) {
       CreateServerRedirect("//prerender/prerender_embedded_content.html");
   base::StringPairs replacement_text;
   replacement_text.push_back(std::make_pair("REPLACE_WITH_URL", redirect_path));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_iframe.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_iframe.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   EXPECT_FALSE(
       UrlIsInPrerenderManager("/prerender/prerender_embedded_content.html"));
@@ -2069,10 +2065,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorSubresource) {
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", https_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
 }
@@ -2090,10 +2084,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorIframe) {
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_URL", https_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_iframe.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_iframe.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
 }
@@ -2179,10 +2171,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", https_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SSL_CLIENT_CERTIFICATE_REQUESTED,
                    0);
@@ -2208,10 +2198,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLClientCertIframe) {
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_URL", https_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_iframe.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_iframe.html", replacement_text);
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SSL_CLIENT_CERTIFICATE_REQUESTED,
                    0);
@@ -2255,10 +2243,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSafeBrowsingSubresource) {
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", image_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SAFE_BROWSING,
                    0);
@@ -2273,10 +2259,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSafeBrowsingIframe) {
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_URL", iframe_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_iframe.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_iframe.html", replacement_text);
   PrerenderTestURL(replacement_path,
                    FINAL_STATUS_SAFE_BROWSING,
                    0);
@@ -2628,10 +2612,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", image_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   // Disable load event checks because they race with cancellation.
   DisableLoadEventCheck();
   PrerenderTestURL(replacement_path, FINAL_STATUS_UNSUPPORTED_SCHEME, 0);
@@ -2644,10 +2626,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", image_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
 }
@@ -2661,10 +2641,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", image_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   // Disable load event checks because they race with cancellation.
   DisableLoadEventCheck();
   PrerenderTestURL(replacement_path, FINAL_STATUS_UNSUPPORTED_SCHEME, 0);
@@ -2677,10 +2655,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", image_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
 }
@@ -2694,10 +2670,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   base::StringPairs replacement_text;
   replacement_text.push_back(
       std::make_pair("REPLACE_WITH_IMAGE_URL", image_url.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(
-      "/prerender/prerender_with_image.html", replacement_text,
-      &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      "/prerender/prerender_with_image.html", replacement_text);
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
 }
@@ -2904,8 +2878,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderReplaceCurrentEntry) {
   params.should_replace_current_entry = true;
   NavigateToURLWithParams(params, false);
 
-  const NavigationController& controller =
-      GetActiveWebContents()->GetController();
+  NavigationController& controller = GetActiveWebContents()->GetController();
   // First entry is about:blank, second is prerender_page.html.
   EXPECT_FALSE(controller.GetPendingEntry());
   ASSERT_EQ(2, controller.GetEntryCount());
@@ -3071,11 +3044,9 @@ class HangingURLLoader : public network::mojom::URLLoader {
       : client_(std::move(client)) {}
   ~HangingURLLoader() override {}
   // mojom::URLLoader implementation:
-  void FollowRedirect(
-      const base::Optional<std::vector<std::string>>&
-          to_be_removed_request_headers,
-      const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
-      const base::Optional<GURL>& new_url) override {}
+  void FollowRedirect(const std::vector<std::string>& removed_headers,
+                      const net::HttpRequestHeaders& modified_headers,
+                      const base::Optional<GURL>& new_url) override {}
   void ProceedWithResponse() override {}
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {
@@ -3487,7 +3458,7 @@ class TtsPlatformMock : public content::TtsPlatform {
     speaking_requested_ = true;
     // Dispatch the end of speaking back to the page.
     content::TtsController::GetInstance()->OnTtsEvent(
-        utterance_id, content::TTS_EVENT_END,
+        utterance_id, content::TTS_EVENT_END, 0,
         static_cast<int>(utterance.size()), std::string());
     return true;
   }

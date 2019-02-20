@@ -23,14 +23,15 @@
 #include "base/macros.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "services/ws/public/cpp/property_type_converters.h"
 #include "services/ws/public/mojom/window_manager.mojom.h"
 #include "services/ws/window_properties.h"
 #include "services/ws/window_service.h"
+#include "services/ws/window_utils.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree_id.h"
 #include "ui/accessibility/platform/aura_window_properties.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/mus/property_converter.h"
 #include "ui/aura/mus/property_utils.h"
 #include "ui/aura/mus/window_port_mus.h"
 #include "ui/aura/window.h"
@@ -43,14 +44,21 @@
 #include "ui/views/window/caption_button_layout_constants.h"
 #include "ui/wm/core/coordinate_conversion.h"
 
-DEFINE_UI_CLASS_PROPERTY_TYPE(ash::NonClientFrameController*);
+DEFINE_UI_CLASS_PROPERTY_TYPE(ash::NonClientFrameController*)
 
 namespace ash {
 namespace {
 
 DEFINE_UI_CLASS_PROPERTY_KEY(NonClientFrameController*,
                              kNonClientFrameControllerKey,
-                             nullptr);
+                             nullptr)
+
+bool DoesClientProvideFrame(
+    std::map<std::string, std::vector<uint8_t>>* properties) {
+  auto iter = properties->find(
+      ws::mojom::WindowManager::kClientProvidesFrame_InitProperty);
+  return iter != properties->end() && mojo::ConvertTo<bool>(iter->second);
+}
 
 // This class supports draggable app windows that paint their own custom frames.
 // It uses empty insets and doesn't paint anything.
@@ -66,9 +74,18 @@ class EmptyDraggableNonClientFrameView : public views::NonClientFrameView {
     return bounds();
   }
   int NonClientHitTest(const gfx::Point& point) override {
-    return FrameBorderNonClientHitTest(this, point);
+    int component = FrameBorderNonClientHitTest(this, point);
+
+    // For non-standard frame window, the located event in the non-client area
+    // in the window should be used for window dragging to allow dragging
+    // frameless app windows. See https://crbug.com/920469
+    if (component == HTCLIENT &&
+        ws::IsLocationInNonClientArea(GetWidget()->GetNativeWindow(), point)) {
+      return HTCAPTION;
+    }
+    return component;
   }
-  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {}
+  void GetWindowMask(const gfx::Size& size, SkPath* window_mask) override {}
   void ResetWindowControls() override {}
   void UpdateWindowIcon() override {}
   void UpdateWindowTitle() override {}
@@ -81,13 +98,13 @@ class EmptyDraggableNonClientFrameView : public views::NonClientFrameView {
 class WmNativeWidgetAura : public views::NativeWidgetAura {
  public:
   WmNativeWidgetAura(views::internal::NativeWidgetDelegate* delegate,
-                     bool remove_standard_frame)
+                     bool client_provides_frame)
       // The NativeWidget is mirroring the real Widget created in client code.
       // |is_parallel_widget_in_window_manager| is used to indicate this
       : views::NativeWidgetAura(delegate,
                                 true /* is_parallel_widget_in_window_manager */,
                                 Shell::Get()->aura_env()),
-        remove_standard_frame_(remove_standard_frame) {}
+        client_provides_frame_(client_provides_frame) {}
   ~WmNativeWidgetAura() override = default;
 
   void set_cursor(const ui::Cursor& cursor) { cursor_ = cursor; }
@@ -96,7 +113,7 @@ class WmNativeWidgetAura : public views::NativeWidgetAura {
   views::NonClientFrameView* CreateNonClientFrameView() override {
     // TODO(sky): investigate why we have this. Seems this should be the same
     // as not specifying client area insets.
-    if (remove_standard_frame_) {
+    if (client_provides_frame_) {
       wm::InstallResizeHandleWindowTargeterForWindow(GetNativeWindow());
       return new EmptyDraggableNonClientFrameView();
     }
@@ -122,8 +139,28 @@ class WmNativeWidgetAura : public views::NativeWidgetAura {
     return cursor_;
   }
 
+  gfx::Size GetMaximumSize() const override {
+    aura::Window* window = GetNativeWindow();
+    if (window && client_provides_frame_ &&
+        window->GetProperty(aura::client::kMaximumSize)) {
+      return *window->GetProperty(aura::client::kMaximumSize);
+    }
+    return views::NativeWidgetAura::GetMaximumSize();
+  }
+
+  gfx::Size GetMinimumSize() const override {
+    aura::Window* window = GetNativeWindow();
+    if (window && client_provides_frame_ &&
+        window->GetProperty(aura::client::kMinimumSize)) {
+      return *window->GetProperty(aura::client::kMinimumSize);
+    }
+    return views::NativeWidgetAura::GetMinimumSize();
+  }
+
  private:
-  const bool remove_standard_frame_;
+  // True if the client has asked to be responsible for the window's frame. In
+  // this case, Ash won't create a NonClientFrameViewAsh.
+  const bool client_provides_frame_;
 
   // The cursor for this widget. CompoundEventFilter will retrieve this cursor
   // via GetCursor and update the CursorManager's active cursor as appropriate
@@ -209,6 +246,7 @@ NonClientFrameController::NonClientFrameController(
   // MusClient.
   views::Widget::InitParams params(
       static_cast<views::Widget::InitParams::Type>(window_type));
+  DCHECK_EQ(ws::mojom::WindowType::WINDOW, window_type);
   DCHECK((parent && !context) || (!parent && context));
   params.parent = parent;
   params.context = context;
@@ -217,9 +255,9 @@ NonClientFrameController::NonClientFrameController(
   params.delegate = this;
   params.bounds = bounds;
   params.opacity = views::Widget::InitParams::OPAQUE_WINDOW;
-  params.layer_type = ui::LAYER_SOLID_COLOR;
+  params.layer_type = ui::LAYER_NOT_DRAWN;
   WmNativeWidgetAura* native_widget =
-      new WmNativeWidgetAura(widget_, ShouldRemoveStandardFrame(*properties));
+      new WmNativeWidgetAura(widget_, DoesClientProvideFrame(properties));
   window_ = native_widget->GetNativeView();
   window_->SetProperty(kNonClientFrameControllerKey, this);
   window_->SetProperty(kWidgetCreationTypeKey, WidgetCreationType::FOR_CLIENT);
@@ -237,14 +275,7 @@ NonClientFrameController::NonClientFrameController(
   widget_->Init(params);
   did_init_native_widget_ = true;
 
-  // Only the caption draws any content. So the caption has its own layer (see
-  // above in WmNativeWidgetAura::CreateNonClientFrameView()). The rest of the
-  // region needs to take part in occlusion in the compositor, but not generate
-  // any content to draw. So the layer is marked as opaque and to draw
-  // solid-color (but the color is transparent, so nothing is actually drawn).
-  ui::Layer* layer = widget_->GetNativeWindow()->layer();
-  layer->SetColor(SK_ColorTRANSPARENT);
-  layer->SetFillsBoundsOpaquely(true);
+  wm::MakeGestureDraggableInImmersiveMode(window_);
 }
 
 // static

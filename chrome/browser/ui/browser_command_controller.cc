@@ -8,6 +8,7 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/debugging_buildflags.h"
 #include "base/debug/profiler.h"
@@ -157,7 +158,8 @@ BrowserCommandController::BrowserCommandController(Browser* browser)
       TabRestoreServiceFactory::GetForProfile(profile());
   if (tab_restore_service) {
     tab_restore_service->AddObserver(this);
-    TabRestoreServiceChanged(tab_restore_service);
+    if (!tab_restore_service->IsLoaded())
+      tab_restore_service->LoadTabsFromLastSession();
   }
 }
 
@@ -666,10 +668,12 @@ bool BrowserCommandController::ExecuteCommandWithDisposition(
     case IDC_SHOW_BETA_FORUM:
       ShowBetaForum(browser_);
       break;
+#if !defined(OS_CHROMEOS)
     case IDC_SHOW_SIGNIN:
       ShowBrowserSigninOrSettings(
           browser_, signin_metrics::AccessPoint::ACCESS_POINT_MENU);
       break;
+#endif
     case IDC_DISTILL_PAGE:
       DistillCurrentPage(browser_);
       break;

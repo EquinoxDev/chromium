@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/no_destructor.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -155,7 +156,7 @@ void ActiveTabPermissionGranter::GrantIfRequested(const Extension* extension) {
     PermissionSet new_permissions(std::move(new_apis), ManifestPermissionSet(),
                                   new_hosts, new_hosts);
     permissions_data->UpdateTabSpecificPermissions(tab_id_, new_permissions);
-    const content::NavigationEntry* navigation_entry =
+    content::NavigationEntry* navigation_entry =
         web_contents()->GetController().GetVisibleEntry();
     if (navigation_entry) {
       // We update all extension render views with the new tab permissions, and
@@ -195,7 +196,7 @@ void ActiveTabPermissionGranter::DidFinishNavigation(
   // Only clear the granted permissions for cross-origin navigations.
   // TODO(devlin): We likely shouldn't be using the visible entry. Instead,
   // we should use WebContents::GetLastCommittedURL().
-  const content::NavigationEntry* navigation_entry =
+  content::NavigationEntry* navigation_entry =
       web_contents()->GetController().GetVisibleEntry();
   if (navigation_entry && navigation_entry->GetURL().GetOrigin() ==
                               navigation_handle->GetPreviousURL().GetOrigin()) {

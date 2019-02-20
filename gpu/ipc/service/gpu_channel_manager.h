@@ -24,9 +24,9 @@
 #include "gpu/command_buffer/service/gr_cache_controller.h"
 #include "gpu/command_buffer/service/gr_shader_cache.h"
 #include "gpu/command_buffer/service/passthrough_discardable_manager.h"
-#include "gpu/command_buffer/service/raster_decoder_context_state.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
+#include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/command_buffer/service/shared_image_manager.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_feature_info.h"
@@ -144,8 +144,6 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
 
   void OnApplicationBackgrounded();
 
-  bool is_exiting_for_lost_context() { return exiting_for_lost_context_; }
-
   MailboxManager* mailbox_manager() { return mailbox_manager_.get(); }
 
   gl::GLShareGroup* share_group() const { return share_group_.get(); }
@@ -158,7 +156,7 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
   void GetVideoMemoryUsageStats(
       VideoMemoryUsageStats* video_memory_usage_stats) const;
 
-  scoped_refptr<raster::RasterDecoderContextState> GetRasterDecoderContextState(
+  scoped_refptr<SharedContextState> GetSharedContextState(
       ContextResult* result);
   void ScheduleGrContextCleanup();
   raster::GrShaderCache* gr_shader_cache() {
@@ -183,7 +181,6 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 
   void LoseAllContexts();
-  void MaybeExitOnContextLost();
 
   // These objects manage channels to individual renderer processes. There is
   // one channel for each renderer process that has connected to this GPU
@@ -225,29 +222,25 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelManager
 
   ImageDecodeAcceleratorWorker* image_decode_accelerator_worker_ = nullptr;
 
-  // Set during intentional GPU process shutdown.
-  bool exiting_for_lost_context_;
-
   // Flags which indicate GPU process activity. Read by the browser process
   // on GPU process crash.
   GpuProcessActivityFlags activity_flags_;
 
   base::MemoryPressureListener memory_pressure_listener_;
 
-  // The RasterDecoderContextState is shared across all RasterDecoders. Note
+  // The SharedContextState is shared across all RasterDecoders. Note
   // that this class needs to be ref-counted to conveniently manage the lifetime
   // of the shared context in the case of a context loss. While the
   // GpuChannelManager strictly outlives the RasterDecoders, in the event of a
   // context loss the clients need to re-create the GpuChannel and command
   // buffers once notified. In this interim state we can have multiple instances
-  // of the RasterDecoderContextState, for the lost and recovered clients. In
+  // of the SharedContextState, for the lost and recovered clients. In
   // order to avoid having the GpuChannelManager keep the lost context state
   // alive until all clients have recovered, we use a ref-counted object and
   // allow the decoders to manage its lifetime.
   base::Optional<raster::GrShaderCache> gr_shader_cache_;
   base::Optional<raster::GrCacheController> gr_cache_controller_;
-  scoped_refptr<raster::RasterDecoderContextState>
-      raster_decoder_context_state_;
+  scoped_refptr<SharedContextState> shared_context_state_;
 
   // With --enable-vulkan, the vulkan_context_provider_ will be set from
   // viz::GpuServiceImpl. The raster decoders will use it for rasterization.

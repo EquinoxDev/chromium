@@ -16,6 +16,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/time/time.h"
+#include "content/browser/appcache/appcache_namespace.h"
 #include "content/common/appcache_interfaces.h"
 #include "content/common/content_export.h"
 #include "sql/statement_id.h"
@@ -46,6 +47,7 @@ FORWARD_DECLARE_TEST(AppCacheDatabaseTest, WasCorrutionDetected);
 class AppCacheDatabaseTest;
 class AppCacheStorageImplTest;
 
+// A wrapper around the SQLite database that serves one StoragePartition.
 class CONTENT_EXPORT AppCacheDatabase {
  public:
   struct CONTENT_EXPORT GroupRecord {

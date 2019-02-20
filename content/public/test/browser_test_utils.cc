@@ -41,8 +41,10 @@
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
+#include "content/browser/frame_host/navigation_handle_impl.h"
 #include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/browser/frame_host/render_widget_host_view_guest.h"
+#include "content/browser/renderer_host/input/synthetic_touchscreen_pinch_gesture.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_input_event_router.h"
@@ -112,8 +114,8 @@
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/clipboard/test/test_clipboard.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/test/test_clipboard.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/events/gesture_detection/gesture_configuration.h"
@@ -203,7 +205,7 @@ bool ExecuteScriptHelper(RenderFrameHost* render_frame_host,
     return true;
 
   base::JSONReader reader(base::JSON_ALLOW_TRAILING_COMMAS);
-  *result = reader.ReadToValue(json);
+  *result = reader.ReadToValueDeprecated(json);
   if (!*result) {
     DLOG(ERROR) << reader.GetErrorMessage();
     return false;
@@ -555,8 +557,8 @@ class CommitOriginInterceptor : public DidCommitProvisionalLoadInterceptor {
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     if (params->url == target_url_) {
       params->url = new_url_;
       params->origin = new_origin_;
@@ -920,6 +922,29 @@ void SimulateMouseWheelCtrlZoomEvent(WebContents* web_contents,
       web_contents->GetRenderViewHost()->GetWidget());
   widget_host->ForwardWheelEvent(wheel_event);
 }
+
+void SimulateTouchscreenPinch(WebContents* web_contents,
+                              const gfx::PointF& anchor,
+                              float scale_change,
+                              base::OnceClosure on_complete) {
+  SyntheticPinchGestureParams params;
+  params.gesture_source_type = SyntheticGestureParams::TOUCH_INPUT;
+  params.scale_factor = scale_change;
+  params.anchor = anchor;
+
+  auto pinch_gesture =
+      std::make_unique<SyntheticTouchscreenPinchGesture>(params);
+  RenderWidgetHostImpl* widget_host = RenderWidgetHostImpl::From(
+      web_contents->GetTopLevelRenderWidgetHostView()->GetRenderWidgetHost());
+  widget_host->QueueSyntheticGesture(
+      std::move(pinch_gesture),
+      base::BindOnce(
+          [](base::OnceClosure on_complete, SyntheticGesture::Result result) {
+            std::move(on_complete).Run();
+          },
+          std::move(on_complete)));
+}
+
 #endif  // !defined(OS_MACOSX)
 
 void SimulateGesturePinchSequence(WebContents* web_contents,
@@ -2343,7 +2368,7 @@ void RenderFrameSubmissionObserver::WaitForPageScaleFactor(
     const float tolerance) {
   while (std::abs(render_frame_metadata_provider_->LastRenderFrameMetadata()
                       .page_scale_factor -
-                  expected_page_scale_factor) < tolerance) {
+                  expected_page_scale_factor) > tolerance) {
     WaitForMetadataChange();
   }
 }
@@ -2353,7 +2378,7 @@ void RenderFrameSubmissionObserver::WaitForExternalPageScaleFactor(
     const float tolerance) {
   while (std::abs(render_frame_metadata_provider_->LastRenderFrameMetadata()
                       .external_page_scale_factor -
-                  expected_external_page_scale_factor) < tolerance) {
+                  expected_external_page_scale_factor) > tolerance) {
     WaitForMetadataChange();
   }
 }
@@ -2677,7 +2702,7 @@ void TestNavigationManager::DidStartNavigation(NavigationHandle* handle) {
   if (!ShouldMonitorNavigation(handle))
     return;
 
-  handle_ = handle;
+  handle_ = static_cast<NavigationHandleImpl*>(handle);
   std::unique_ptr<NavigationThrottle> throttle(
       new TestNavigationManagerThrottle(
           handle_, base::Bind(&TestNavigationManager::OnWillStartRequest,
@@ -2961,13 +2986,6 @@ void ContextMenuFilter::OnContextMenu(
 WebContents* GetEmbedderForGuest(content::WebContents* guest) {
   CHECK(guest);
   return static_cast<content::WebContentsImpl*>(guest)->GetOuterWebContents();
-}
-
-bool IsNetworkServiceRunningInProcess() {
-  return base::FeatureList::IsEnabled(network::features::kNetworkService) &&
-         (base::CommandLine::ForCurrentProcess()->HasSwitch(
-              switches::kSingleProcess) ||
-          base::FeatureList::IsEnabled(features::kNetworkServiceInProcess));
 }
 
 int LoadBasicRequest(network::mojom::NetworkContext* network_context,

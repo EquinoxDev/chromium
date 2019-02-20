@@ -29,13 +29,13 @@ import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.AccessorySheetTabModel.AccessorySheetDataPiece;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.AccessorySheetTabModel.AccessorySheetDataPiece.Type;
-import org.chromium.chrome.browser.modelutil.RecyclerViewAdapter;
-import org.chromium.chrome.browser.modelutil.SimpleRecyclerViewMcp;
 import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.content_public.browser.test.util.Criteria;
 import org.chromium.content_public.browser.test.util.CriteriaHelper;
 import org.chromium.ui.DeferredViewStubInflationProvider;
+import org.chromium.ui.modelutil.RecyclerViewAdapter;
+import org.chromium.ui.modelutil.SimpleRecyclerViewMcp;
 import org.chromium.ui.widget.TextViewWithLeading;
 
 import java.util.concurrent.ExecutionException;
@@ -68,7 +68,7 @@ public class AccessorySheetTabViewTest {
                             mActivityTestRule.getActivity().findViewById(
                                     R.id.keyboard_accessory_sheet_stub)));
             accessorySheet.addTab(new KeyboardAccessoryData.Tab(
-                    null, null, layout, AccessoryTabType.ALL, listener));
+                    "Passwords", null, null, layout, AccessoryTabType.ALL, listener));
             accessorySheet.setHeight(
                     mActivityTestRule.getActivity().getResources().getDimensionPixelSize(
                             R.dimen.keyboard_accessory_sheet_height));
@@ -129,7 +129,6 @@ public class AccessorySheetTabViewTest {
         final AtomicReference<Boolean> clicked = new AtomicReference<>(false);
         assertThat(mView.get().getChildCount(), is(0));
 
-        ManualFillingTestHelper.createTestCredentials();
         ThreadUtils.runOnUiThreadBlocking(() -> {
             mModel.add(new AccessorySheetDataPiece(
                     new KeyboardAccessoryData.FooterCommand(

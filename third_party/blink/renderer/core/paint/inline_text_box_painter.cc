@@ -20,6 +20,7 @@
 #include "third_party/blink/renderer/core/paint/decoration_info.h"
 #include "third_party/blink/renderer/core/paint/document_marker_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_info.h"
+#include "third_party/blink/renderer/core/paint/paint_timing_detector.h"
 #include "third_party/blink/renderer/core/paint/selection_painting_utils.h"
 #include "third_party/blink/renderer/core/paint/text_painter.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context_state_saver.h"
@@ -185,9 +186,10 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
     // capitalizing letters can change the length of the backing string.
     // That needs to be taken into account when computing the size of the box
     // or its painting.
-    length = std::min(length, first_line_string.length() -
-                                  std::min(inline_text_box_.Start(),
-                                           first_line_string.length()));
+    if (inline_text_box_.Start() >= first_line_string.length())
+      return;
+    length =
+        std::min(length, first_line_string.length() - inline_text_box_.Start());
 
     // TODO(szager): Figure out why this CHECK sometimes fails, it shouldn't.
     CHECK_LE(inline_text_box_.Start() + length, first_line_string.length());
@@ -411,6 +413,11 @@ void InlineTextBoxPainter::Paint(const PaintInfo& paint_info,
   if (should_rotate) {
     context.ConcatCTM(TextPainterBase::Rotation(
         box_rect, TextPainterBase::kCounterclockwise));
+  }
+  if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
+    PaintTimingDetector::NotifyTextPaint(
+        InlineLayoutObject(),
+        paint_info.context.GetPaintController().CurrentPaintChunkProperties());
   }
 }
 

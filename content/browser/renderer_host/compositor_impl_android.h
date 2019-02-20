@@ -15,6 +15,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
+#include "cc/trees/element_id.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
@@ -109,14 +110,20 @@ class CONTENT_EXPORT CompositorImpl
   // LayerTreeHostClient implementation.
   void WillBeginMainFrame() override {}
   void DidBeginMainFrame() override {}
+  void DidUpdateLayers() override;
   void BeginMainFrame(const viz::BeginFrameArgs& args) override {}
   void BeginMainFrameNotExpectedSoon() override {}
   void BeginMainFrameNotExpectedUntil(base::TimeTicks time) override {}
-  void UpdateLayerTreeHost(bool record_main_frame_metrics) override;
+  void UpdateLayerTreeHost() override;
   void ApplyViewportChanges(const cc::ApplyViewportChangesArgs& args) override {
   }
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
                                          bool has_scrolled_by_touch) override {}
+  void SendOverscrollEventFromImplSide(
+      const gfx::Vector2dF& overscroll_delta,
+      cc::ElementId scroll_latched_element_id) override {}
+  void SendScrollEndEventFromImplSide(
+      cc::ElementId scroll_latched_element_id) override {}
   void RequestNewLayerTreeFrameSink() override;
   void DidInitializeLayerTreeFrameSink() override;
   void DidFailToInitializeLayerTreeFrameSink() override;
@@ -128,7 +135,10 @@ class CONTENT_EXPORT CompositorImpl
   void DidPresentCompositorFrame(
       uint32_t frame_token,
       const gfx::PresentationFeedback& feedback) override {}
+  void RecordStartOfFrameMetrics() override {}
   void RecordEndOfFrameMetrics(base::TimeTicks frame_begin_time) override {}
+  void DidGenerateLocalSurfaceIdAllocation(
+      const viz::LocalSurfaceIdAllocation& allocation) override {}
 
   // LayerTreeHostSingleThreadClient implementation.
   void DidSubmitCompositorFrame() override;

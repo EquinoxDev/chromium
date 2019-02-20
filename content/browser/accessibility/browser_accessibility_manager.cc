@@ -158,9 +158,9 @@ void BrowserAccessibilityManager::Initialize(
     const ui::AXTreeUpdate& initial_tree) {
   if (!tree_->Unserialize(initial_tree)) {
     static auto* ax_tree_error = base::debug::AllocateCrashKeyString(
-        "ax_tree_error", base::debug::CrashKeySize::Size32);
+        "ax_tree_error", base::debug::CrashKeySize::Size64);
     static auto* ax_tree_update = base::debug::AllocateCrashKeyString(
-        "ax_tree_update", base::debug::CrashKeySize::Size64);
+        "ax_tree_update", base::debug::CrashKeySize::Size256);
     // Temporarily log some additional crash keys so we can try to
     // figure out why we're getting bad accessibility trees here.
     // http://crbug.com/765490
@@ -290,12 +290,12 @@ const ui::AXTreeData& BrowserAccessibilityManager::GetTreeData() {
 }
 
 void BrowserAccessibilityManager::OnWindowFocused() {
-  if (this == GetRootManager())
+  if (IsRootTree())
     FireFocusEventsIfNeeded();
 }
 
 void BrowserAccessibilityManager::OnWindowBlurred() {
-  if (this == GetRootManager()) {
+  if (IsRootTree()) {
     last_focused_node_ = nullptr;
     last_focused_manager_ = nullptr;
   }
@@ -390,7 +390,7 @@ void BrowserAccessibilityManager::OnAccessibilityEvents(
     // Fire the native event.
     BrowserAccessibility* event_target = GetFromID(event.id);
     if (!event_target || !event_target->CanFireEvents())
-      return;
+      continue;
 
     if (event.event_type == ax::mojom::Event::kHover)
       GetRootManager()->CacheHitTestResult(event_target);
@@ -667,7 +667,15 @@ void BrowserAccessibilityManager::SetValue(const BrowserAccessibility& node,
   delegate_->AccessibilityPerformAction(action_data);
 }
 
-void BrowserAccessibilityManager::SetSelection(AXPlatformRange range) {
+void BrowserAccessibilityManager::SetSelection(
+    const ui::AXActionData& action_data) {
+  if (!delegate_)
+    return;
+  delegate_->AccessibilityPerformAction(action_data);
+}
+
+void BrowserAccessibilityManager::SetSelection(
+    const BrowserAccessibilityRange& range) {
   if (!delegate_ || range.IsNull())
     return;
 
@@ -1151,7 +1159,7 @@ BrowserAccessibilityDelegate*
 }
 
 bool BrowserAccessibilityManager::IsRootTree() {
-  return delegate() && delegate()->AccessibilityGetAcceleratedWidget();
+  return GetRootManager() == this;
 }
 
 ui::AXTreeUpdate

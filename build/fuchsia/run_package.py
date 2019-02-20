@@ -30,6 +30,10 @@ _REPO_NAME = 'chrome_runner'
 # Amount of time to wait for the termination of the system log output thread.
 _JOIN_TIMEOUT_SECS = 5
 
+# Amount of time to wait for Amber to complete package installation, as a
+# mitigation against hangs due to amber/network-related failures.
+_INSTALL_TIMEOUT_SECS = 5 * 60
+
 
 def _AttachKernelLogReader(target):
   """Attaches a kernel log reader as a long-running SSH task."""
@@ -73,6 +77,10 @@ def _UnregisterAmberRepository(target):
   logging.debug('Unregistering Amber repository.')
   target.RunCommand(['amber_ctl', 'rm_src', '-n', _REPO_NAME])
 
+  # Re-enable 'devhost' repo if it's present. This is useful for devices that
+  # were booted with 'fx serve'.
+  target.RunCommand(['amber_ctl', 'enable_src', '-n', 'devhost'], silent=True)
+
 
 def _RegisterAmberRepository(target, tuf_repo, remote_port):
   """Configures a device to use a local TUF repository as an installation source
@@ -114,8 +122,9 @@ def _RegisterAmberRepository(target, tuf_repo, remote_port):
 
   # Register the repo.
   return_code = target.RunCommand(
-      ['amber_ctl', 'add_src', '-x', '-f',
-       'http://127.0.0.1:%d/repo_config.json' % remote_port])
+      [('amber_ctl rm_src -n %s; ' +
+        'amber_ctl add_src -f http://127.0.0.1:%d/repo_config.json')
+       % (_REPO_NAME, remote_port)])
   if return_code != 0:
     raise Exception('Error code %d when running amber_ctl.' % return_code)
 
@@ -170,9 +179,8 @@ def GetPackageInfo(package_path):
 def PublishPackage(tuf_root, package_path):
   """Publishes a combined FAR package to a TUF repository root."""
 
-  cmd = [PM, 'publish', '-a', '-f', package_path, '-r', tuf_root, '-v']
   subprocess.check_call(
-      [PM, 'publish', '-a', '-f', package_path, '-r', tuf_root, '-v'],
+      [PM, 'publish', '-a', '-f', package_path, '-r', tuf_root, '-vt', '-v'],
       stderr=subprocess.STDOUT)
 
 
@@ -220,7 +228,7 @@ def RunPackage(output_dir, target, package_path, package_name, package_deps,
     serve_port = common.GetAvailableTcpPort()
     pm_serve_task = subprocess.Popen(
         [PM, 'serve', '-d', os.path.join(tuf_root, 'repository'), '-l',
-         ':%d' % serve_port])
+         ':%d' % serve_port, '-q'])
     remote_port = common.ConnectPortForwardingTask(target, serve_port, 0)
     _RegisterAmberRepository(target, tuf_root, remote_port)
 
@@ -231,7 +239,8 @@ def RunPackage(output_dir, target, package_path, package_name, package_deps,
                    (install_package_name, package_version))
       return_code = target.RunCommand(['amber_ctl', 'get_up', '-n',
                                        install_package_name, '-v',
-                                       package_version])
+                                       package_version],
+                                       timeout_secs=_INSTALL_TIMEOUT_SECS)
       if return_code != 0:
         raise Exception('Error while installing %s.' % install_package_name)
 

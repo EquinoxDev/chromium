@@ -10,9 +10,9 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/renderer/media/stream/media_stream_constraints_util_sets.h"
 #include "content/renderer/media/stream/media_stream_constraints_util_video_device.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/platform/web_string.h"
 
 namespace content {
@@ -153,13 +153,11 @@ AudioCaptureSettings::AudioCaptureSettings(const char* failed_constraint_name)
 
 AudioCaptureSettings::AudioCaptureSettings(
     std::string device_id,
-    bool enable_hotword,
     bool disable_local_echo,
     bool enable_automatic_output_device_selection,
     const AudioProcessingProperties& audio_processing_properties)
     : failed_constraint_name_(nullptr),
       device_id_(std::move(device_id)),
-      hotword_enabled_(enable_hotword),
       disable_local_echo_(disable_local_echo),
       render_to_associated_sink_(enable_automatic_output_device_selection),
       audio_processing_properties_(audio_processing_properties) {}

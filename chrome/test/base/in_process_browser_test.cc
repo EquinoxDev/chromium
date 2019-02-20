@@ -94,6 +94,7 @@
 #include "chrome/test/base/default_ash_event_generator_delegate.h"
 #include "chromeos/services/device_sync/device_sync_impl.h"
 #include "chromeos/services/device_sync/fake_device_sync.h"
+#include "ui/aura/test/mus/change_completion_waiter.h"
 #include "ui/aura/test/ui_controls_factory_aura.h"
 #include "ui/aura/window.h"
 #include "ui/base/test/ui_controls.h"
@@ -281,6 +282,8 @@ void InProcessBrowserTest::SetUp() {
   CHECK(base::PathService::Override(chrome::DIR_DEFAULT_DOWNLOADS,
                                     default_download_dir_.GetPath()));
 
+  AfterStartupTaskUtils::DisableScheduleTaskDelayForTesting();
+
   BrowserTestBase::SetUp();
 }
 
@@ -351,6 +354,9 @@ void InProcessBrowserTest::CloseBrowserSynchronously(Browser* browser) {
       content::Source<Browser>(browser));
   CloseBrowserAsynchronously(browser);
   observer.Wait();
+#if defined(OS_CHROMEOS)
+  aura::test::WaitForAllChangesToComplete();
+#endif
 }
 
 void InProcessBrowserTest::CloseBrowserAsynchronously(Browser* browser) {
@@ -608,7 +614,7 @@ void InProcessBrowserTest::QuitBrowsers() {
   // AttemptExit exits the message loop after everything has been
   // shut down properly.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&chrome::AttemptExit));
+      FROM_HERE, base::BindOnce(&chrome::AttemptExit));
   RunUntilBrowserProcessQuits();
 
 #if defined(OS_MACOSX)

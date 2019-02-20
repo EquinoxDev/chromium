@@ -18,6 +18,7 @@ import android.os.StrictMode;
 import android.support.annotation.IntDef;
 import android.support.customtabs.CustomTabsIntent;
 import android.support.customtabs.CustomTabsSessionToken;
+import android.support.customtabs.TrustedWebUtils;
 
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.CommandLine;
@@ -26,6 +27,7 @@ import org.chromium.base.Log;
 import org.chromium.base.StrictModeContext;
 import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.metrics.CachedMetrics;
+import org.chromium.chrome.browser.browserservices.BrowserSessionContentUtils;
 import org.chromium.chrome.browser.customtabs.CustomTabActivity;
 import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider;
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
@@ -42,6 +44,7 @@ import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.searchwidget.SearchActivity;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.DocumentModeAssassin;
+import org.chromium.chrome.browser.touchless.NoTouchActivity;
 import org.chromium.chrome.browser.upgrade.UpgradeActivity;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.util.IntentUtils;
@@ -53,7 +56,6 @@ import org.chromium.ui.widget.Toast;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.lang.ref.WeakReference;
 import java.util.UUID;
 
 /**
@@ -292,14 +294,17 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
         newIntent.setData(uri);
         newIntent.setClassName(context, CustomTabActivity.class.getName());
 
-        // Ensure the new intent is routed into the instance of CustomTabActivity in this task, if
-        // it exists. If the existing CustomTabActivity can't handle the intent, it will re-launch
-        // the intent without these flags.
-        // If you change this flow, please make sure it works correctly with
-        // - "Don't keep activities",
-        // - Multiple clients hosting CCTs,
-        // - Multiwindow mode.
-        newIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (clearTopIntentsForCustomTabsEnabled(intent)
+                && BrowserSessionContentUtils.canHandleIntentInCurrentTask(intent, context)) {
+            // Ensure the new intent is routed into the instance of CustomTabActivity in this task.
+            // If the existing CustomTabActivity can't handle the intent, it will re-launch
+            // the intent without these flags.
+            // If you change this flow, please make sure it works correctly with
+            // - "Don't keep activities",
+            // - Multiple clients hosting CCTs,
+            // - Multiwindow mode.
+            newIntent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        }
 
         // Use a custom tab with a unique theme for payment handlers.
         if (intent.getIntExtra(CustomTabIntentDataProvider.EXTRA_UI_TYPE,
@@ -377,9 +382,16 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
      * in the same task.
      */
     private void launchCustomTabActivity() {
-        maybePrefetchDnsInBackground();
         CustomTabsConnection.getInstance().onHandledIntent(
                 CustomTabsSessionToken.getSessionTokenFromIntent(mIntent), mIntent);
+        if (!clearTopIntentsForCustomTabsEnabled(mIntent)) {
+            // The old way of delivering intents relies on calling the activity directly via a
+            // static reference. It doesn't allow using CLEAR_TOP, and also doesn't work when an
+            // intent brings the task to foreground. The condition above is a temporary safety net.
+            boolean handled = BrowserSessionContentUtils.handleBrowserServicesIntent(mIntent);
+            if (handled) return;
+        }
+        maybePrefetchDnsInBackground();
 
         // Create and fire a launch intent.
         Intent launchIntent = createCustomTabActivityIntent(mActivity, mIntent);
@@ -411,9 +423,7 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
     @SuppressLint("InlinedApi")
     private @Action int dispatchToTabbedActivity() {
         if (mIsVrIntent) {
-            for (WeakReference<Activity> weakActivity : ApplicationStatus.getRunningActivities()) {
-                final Activity activity = weakActivity.get();
-                if (activity == null) continue;
+            for (Activity activity : ApplicationStatus.getRunningActivities()) {
                 if (activity instanceof ChromeTabbedActivity) {
                     if (VrModuleProvider.getDelegate().willChangeDensityInVr(
                                 (ChromeActivity) activity)) {
@@ -432,7 +442,7 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
 
         Intent newIntent = new Intent(mIntent);
         Class<?> tabbedActivityClass = null;
-        if (CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_TOUCH_MODE)) {
+        if (FeatureUtilities.isNoTouchModeEnabled()) {
             // When in No Touch Mode we don't support tabs, and replace the TabbedActivity with the
             // NoTouchActivity.
             tabbedActivityClass = NoTouchActivity.class;
@@ -499,5 +509,12 @@ public class LaunchIntentDispatcher implements IntentHandler.IntentHandlerDelega
             sIntentFlagsHistogram.record(maskedFlags);
         }
         MediaNotificationUma.recordClickSource(mIntent);
+    }
+
+    private static boolean clearTopIntentsForCustomTabsEnabled(Intent intent) {
+        // The new behavior is important for TWAs, but could potentially affect other clients.
+        // For now we expose this risky change only to TWAs.
+        return IntentUtils.safeGetBooleanExtra(
+                intent, TrustedWebUtils.EXTRA_LAUNCH_AS_TRUSTED_WEB_ACTIVITY, false);
     }
 }

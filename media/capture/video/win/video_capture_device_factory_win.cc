@@ -13,6 +13,7 @@
 #include <wrl.h>
 #include <wrl/client.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
@@ -84,7 +85,9 @@ const char* const kModelIdsBlacklistedForMediaFoundation[] = {
     // Elgato HD60 Pro
     "12ab:0380",
     // Sensoray 2253
-    "1943:2253"};
+    "1943:2253",
+    // Dell E5440
+    "0c45:64d0", "0c45:64d2"};
 
 const std::pair<VideoCaptureApi, std::vector<std::pair<GUID, GUID>>>
     kMfAttributes[] = {{VideoCaptureApi::WIN_MEDIA_FOUNDATION,

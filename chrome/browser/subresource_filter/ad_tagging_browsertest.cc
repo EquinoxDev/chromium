@@ -4,11 +4,13 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/metrics/subprocess_metrics_provider.h"
-#include "chrome/browser/page_load_metrics/observers/ads_page_load_metrics_observer.h"
+#include "chrome/browser/page_load_metrics/observers/ad_metrics/ads_page_load_metrics_observer.h"
+#include "chrome/browser/page_load_metrics/observers/ad_metrics/frame_data.h"
 #include "chrome/browser/page_load_metrics/page_load_metrics_test_waiter.h"
 #include "chrome/browser/subresource_filter/subresource_filter_browser_test_harness.h"
 #include "chrome/browser/ui/browser.h"
@@ -210,12 +212,8 @@ IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest, FramesByURL) {
 }
 
 const char kSubresourceFilterOriginStatusHistogram[] =
-    "PageLoad.Clients.Ads.SubresourceFilter.FrameCounts.AdFrames.PerFrame."
+    "PageLoad.Clients.Ads.FrameCounts.AdFrames.PerFrame."
     "OriginStatus";
-const char kGoogleOriginStatusHistogram[] =
-    "PageLoad.Clients.Ads.Google.FrameCounts.AdFrames.PerFrame.OriginStatus";
-const char kAllOriginStatusHistogram[] =
-    "PageLoad.Clients.Ads.All.FrameCounts.AdFrames.PerFrame.OriginStatus";
 const char kWindowOpenFromAdStateHistogram[] = "Blink.WindowOpen.FromAdState";
 
 IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest, VerifySameOriginWithoutNavigate) {
@@ -229,9 +227,8 @@ IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest, VerifySameOriginWithoutNavigate) {
 
   // Navigate away and ensure we report same origin.
   ui_test_utils::NavigateToURL(browser(), GetURL(url::kAboutBlankURL));
-  histogram_tester.ExpectUniqueSample(
-      kAllOriginStatusHistogram,
-      AdsPageLoadMetricsObserver::AdOriginStatus::kSame, 1);
+  histogram_tester.ExpectUniqueSample(kSubresourceFilterOriginStatusHistogram,
+                                      FrameData::OriginStatus::kSame, 1);
 }
 
 IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest, VerifyCrossOriginWithoutNavigate) {
@@ -260,7 +257,6 @@ IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest,
 
   auto waiter = CreatePageLoadMetricsTestWaiter();
   // Create the main frame and cross origin subframe from an ad script.
-  // This triggers both subresource_filter and Google ad detection.
   ui_test_utils::NavigateToURL(browser(), GetURL("frame_factory.html"));
   CreateSrcFrameFromAdScript(GetWebContents(),
                              embedded_test_server()->GetURL(
@@ -269,20 +265,13 @@ IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest,
   // Waiting for the navigation to finish is not sufficient, as it blocks on the
   // main resource load finishing, not the iframe resource. Page loads 4
   // resources, a favicon, and 2 resources for the iframe.
-  waiter->AddMinimumCompleteResourcesExpectation(7);
+  waiter->AddMinimumCompleteResourcesExpectation(8);
   waiter->Wait();
 
   // Navigate away and ensure we report cross origin.
   ui_test_utils::NavigateToURL(browser(), GetURL(url::kAboutBlankURL));
-  histogram_tester.ExpectUniqueSample(
-      kGoogleOriginStatusHistogram,
-      AdsPageLoadMetricsObserver::AdOriginStatus::kCross, 1);
-  histogram_tester.ExpectUniqueSample(
-      kSubresourceFilterOriginStatusHistogram,
-      AdsPageLoadMetricsObserver::AdOriginStatus::kCross, 1);
-  histogram_tester.ExpectUniqueSample(
-      kAllOriginStatusHistogram,
-      AdsPageLoadMetricsObserver::AdOriginStatus::kCross, 1);
+  histogram_tester.ExpectUniqueSample(kSubresourceFilterOriginStatusHistogram,
+                                      FrameData::OriginStatus::kCross, 1);
 }
 
 // Ad script creates a frame and navigates it same origin.
@@ -303,13 +292,8 @@ IN_PROC_BROWSER_TEST_F(AdTaggingBrowserTest,
 
   // Navigate away and ensure we report same origin.
   ui_test_utils::NavigateToURL(browser(), GetURL(url::kAboutBlankURL));
-  histogram_tester.ExpectTotalCount(kGoogleOriginStatusHistogram, 0);
-  histogram_tester.ExpectUniqueSample(
-      kSubresourceFilterOriginStatusHistogram,
-      AdsPageLoadMetricsObserver::AdOriginStatus::kSame, 1);
-  histogram_tester.ExpectUniqueSample(
-      kAllOriginStatusHistogram,
-      AdsPageLoadMetricsObserver::AdOriginStatus::kSame, 1);
+  histogram_tester.ExpectUniqueSample(kSubresourceFilterOriginStatusHistogram,
+                                      FrameData::OriginStatus::kSame, 1);
 }
 
 // Test that a subframe with a non-ad url but loaded by ad script is an ad.
@@ -438,7 +422,7 @@ IN_PROC_BROWSER_TEST_P(AdTaggingEventFromSubframeBrowserTest,
   ExpectWindowOpenUmaEntry(histogram_tester, from_ad_subframe, from_ad_script);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     AdTaggingEventFromSubframeBrowserTest,
     ::testing::Combine(::testing::Bool(), ::testing::Bool()));
@@ -469,7 +453,7 @@ IN_PROC_BROWSER_TEST_P(AdTaggingEventWithScriptInStackBrowserTest,
   ExpectWindowOpenUmaEntry(histogram_tester, from_ad_subframe, from_ad_script);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     AdTaggingEventWithScriptInStackBrowserTest,
     ::testing::Bool());

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/base64.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
@@ -48,7 +49,7 @@
 #include "chrome/browser/metrics/subprocess_metrics_provider.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/safe_browsing/certificate_reporting_metrics_provider.h"
-#include "chrome/browser/sync/chrome_sync_client.h"
+#include "chrome/browser/sync/device_info_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/translate/translate_ranker_metrics_provider.h"
 #include "chrome/browser/ui/browser_otr_state.h"
@@ -59,8 +60,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/util_constants.h"
-#include "chromeos/assistant/buildflags.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/browser_watcher/stability_paths.h"
 #include "components/crash/core/common/crash_keys.h"
 #include "components/history/core/browser/history_service.h"
@@ -87,6 +86,7 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/sync/device_info/device_count_metrics_provider.h"
+#include "components/sync/driver/sync_service.h"
 #include "components/ukm/ukm_service.h"
 #include "components/version_info/version_info.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -94,6 +94,7 @@
 #include "content/public/browser/histogram_fetcher.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/notification_service.h"
+#include "google_apis/google_api_keys.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -125,15 +126,17 @@
 #include "chrome/browser/metrics/plugin_metrics_provider.h"
 #endif
 
-#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
-#include "chrome/browser/metrics/assistant_service_metrics_provider.h"
-#endif
-
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/printing/printer_metrics_provider.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/metrics/chromeos_metrics_provider.h"
 #include "chrome/browser/signin/signin_status_metrics_provider_chromeos.h"
+#include "chromeos/assistant/buildflags.h"
+
+#if BUILDFLAG(ENABLE_CROS_ASSISTANT)
+#include "chrome/browser/metrics/assistant_service_metrics_provider.h"
+#endif
+
 #endif
 
 #if defined(OS_WIN)
@@ -145,6 +148,7 @@
 #include "chrome/install_static/install_util.h"
 #include "chrome/notification_helper/notification_helper_constants.h"
 #include "components/browser_watcher/watcher_metrics_provider_win.h"
+#include "content/public/common/service_manager_connection.h"
 #endif
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -529,8 +533,8 @@ void ChromeMetricsServiceClient::CollectFinalMetricsForLog(
 
 std::unique_ptr<metrics::MetricsLogUploader>
 ChromeMetricsServiceClient::CreateUploader(
-    base::StringPiece server_url,
-    base::StringPiece insecure_server_url,
+    const GURL& server_url,
+    const GURL& insecure_server_url,
     base::StringPiece mime_type,
     metrics::MetricsLogUploader::MetricServiceType service_type,
     const metrics::MetricsLogUploader::UploadCallback& on_upload_complete) {
@@ -671,7 +675,8 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
           base::Bind(&GetExecutableVersionDetails)));
 
   metrics_service_->RegisterMetricsProvider(
-      std::make_unique<AntiVirusMetricsProvider>());
+      std::make_unique<AntiVirusMetricsProvider>(
+          content::ServiceManagerConnection::GetForProcess()->GetConnector()));
 #endif  // defined(OS_WIN)
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -682,7 +687,8 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
 
 #if defined(OS_CHROMEOS)
   metrics_service_->RegisterMetricsProvider(
-      std::make_unique<ChromeOSMetricsProvider>());
+      std::make_unique<ChromeOSMetricsProvider>(
+          metrics::MetricsLogUploader::UMA));
 
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<SigninStatusMetricsProviderChromeOS>());
@@ -706,8 +712,8 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
 #endif  // !defined(OS_CHROMEOS)
 
   metrics_service_->RegisterMetricsProvider(
-      std::make_unique<syncer::DeviceCountMetricsProvider>(
-          base::Bind(&browser_sync::ChromeSyncClient::GetDeviceInfoTrackers)));
+      std::make_unique<syncer::DeviceCountMetricsProvider>(base::BindRepeating(
+          &DeviceInfoSyncServiceFactory::GetAllDeviceInfoTrackers)));
 
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<HttpsEngagementMetricsProvider>());
@@ -725,10 +731,12 @@ void ChromeMetricsServiceClient::RegisterMetricsServiceProviders() {
       std::make_unique<PowerMetricsProvider>());
 #endif
 
+#if defined(OS_CHROMEOS)
 #if BUILDFLAG(ENABLE_CROS_ASSISTANT)
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<AssistantServiceMetricsProvider>());
 #endif  // BUILDFLAG(ENABLE_CROS_ASSISTANT)
+#endif  // defined(OS_CHROMEOS)
 }
 
 void ChromeMetricsServiceClient::RegisterUKMProviders() {
@@ -739,7 +747,8 @@ void ChromeMetricsServiceClient::RegisterUKMProviders() {
 
 #if defined(OS_CHROMEOS)
   ukm_service_->RegisterMetricsProvider(
-      std::make_unique<ChromeOSMetricsProvider>());
+      std::make_unique<ChromeOSMetricsProvider>(
+          metrics::MetricsLogUploader::UKM));
 #endif  // !defined(OS_CHROMEOS)
 
   metrics_service_->RegisterMetricsProvider(
@@ -931,7 +940,7 @@ bool ChromeMetricsServiceClient::RegisterForProfileEvents(Profile* profile) {
   ObserveServiceForDeletions(history_service);
 
   syncer::SyncService* sync =
-      ProfileSyncServiceFactory::GetSyncServiceForBrowserContext(profile);
+      ProfileSyncServiceFactory::GetSyncServiceForProfile(profile);
   if (!sync) {
     return false;
   }
@@ -1085,4 +1094,10 @@ std::string ChromeMetricsServiceClient::GetAppPackageName() {
   return base::android::BuildInfo::GetInstance()->package_name();
 #endif
   return std::string();
+}
+
+std::string ChromeMetricsServiceClient::GetUploadSigningKey() {
+  std::string decoded_key;
+  base::Base64Decode(google_apis::GetMetricsKey(), &decoded_key);
+  return decoded_key;
 }

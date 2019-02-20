@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
@@ -54,6 +55,16 @@ std::unique_ptr<base::Value> NetLogJobControllerCallback(
   auto dict = std::make_unique<base::DictionaryValue>();
   dict->SetString("url", url->possibly_invalid_spec());
   dict->SetBoolean("is_preconnect", is_preconnect);
+  return std::move(dict);
+}
+
+std::unique_ptr<base::Value> NetLogAltSvcCallback(
+    const AlternativeServiceInfo* alt_svc_info,
+    bool is_broken,
+    NetLogCaptureMode /* capture_mode */) {
+  auto dict = std::make_unique<base::DictionaryValue>();
+  dict->SetString("alt_svc", alt_svc_info->ToString());
+  dict->SetBoolean("is_broken", is_broken);
   return std::move(dict);
 }
 
@@ -725,8 +736,8 @@ void HttpStreamFactory::JobController::RunLoop(int result) {
     DCHECK(!alternative_job_);
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&HttpStreamFactory::JobController::NotifyRequestFailed,
-                   ptr_factory_.GetWeakPtr(), rv));
+        base::BindOnce(&HttpStreamFactory::JobController::NotifyRequestFailed,
+                       ptr_factory_.GetWeakPtr(), rv));
   }
 }
 
@@ -1078,7 +1089,7 @@ GURL HttpStreamFactory::JobController::ApplyHostMappingRules(
     HostPortPair* endpoint) {
   if (session_->params().host_mapping_rules.RewriteHost(endpoint)) {
     url::Replacements<char> replacements;
-    const std::string port_str = base::UintToString(endpoint->port());
+    const std::string port_str = base::NumberToString(endpoint->port());
     replacements.SetPort(port_str.c_str(), url::Component(0, port_str.size()));
     replacements.SetHost(endpoint->host().c_str(),
                          url::Component(0, endpoint->host().size()));
@@ -1149,8 +1160,13 @@ HttpStreamFactory::JobController::GetAlternativeServiceInfoInternal(
     DCHECK(IsAlternateProtocolValid(alternative_service_info.protocol()));
     if (!quic_advertised && alternative_service_info.protocol() == kProtoQUIC)
       quic_advertised = true;
-    if (http_server_properties.IsAlternativeServiceBroken(
-            alternative_service_info.alternative_service())) {
+    const bool is_broken = http_server_properties.IsAlternativeServiceBroken(
+        alternative_service_info.alternative_service());
+    net_log_.AddEvent(
+        NetLogEventType::HTTP_STREAM_JOB_CONTROLLER_ALT_SVC_FOUND,
+        base::BindRepeating(&NetLogAltSvcCallback, &alternative_service_info,
+                            is_broken));
+    if (is_broken) {
       HistogramAlternateProtocolUsage(ALTERNATE_PROTOCOL_USAGE_BROKEN, false);
       continue;
     }

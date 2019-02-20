@@ -10,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -175,8 +176,9 @@ namespace google_apis {
 std::unique_ptr<base::Value> ParseJson(const std::string& json) {
   int error_code = -1;
   std::string error_message;
-  std::unique_ptr<base::Value> value = base::JSONReader::ReadAndReturnError(
-      json, base::JSON_PARSE_RFC, &error_code, &error_message);
+  std::unique_ptr<base::Value> value =
+      base::JSONReader::ReadAndReturnErrorDeprecated(
+          json, base::JSON_PARSE_RFC, &error_code, &error_message);
 
   if (!value.get()) {
     std::string trimmed_json;
@@ -302,8 +304,9 @@ void UrlFetchRequestBase::StartAfterPrepare(
     // asynchronously because client code does not assume result callback is
     // called synchronously.
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&UrlFetchRequestBase::CompleteRequestWithError,
-                              weak_ptr_factory_.GetWeakPtr(), error_code));
+        FROM_HERE,
+        base::BindOnce(&UrlFetchRequestBase::CompleteRequestWithError,
+                       weak_ptr_factory_.GetWeakPtr(), error_code));
     return;
   }
 
@@ -399,7 +402,7 @@ void UrlFetchRequestBase::OnResponseStarted(
 }
 
 // static
-bool UrlFetchRequestBase::WriteFileData(base::StringPiece string_piece,
+bool UrlFetchRequestBase::WriteFileData(std::string file_data,
                                         DownloadData* download_data) {
   if (!download_data->output_file.IsValid()) {
     download_data->output_file.Initialize(
@@ -408,8 +411,8 @@ bool UrlFetchRequestBase::WriteFileData(base::StringPiece string_piece,
     if (!download_data->output_file.IsValid())
       return false;
   }
-  if (download_data->output_file.WriteAtCurrentPos(string_piece.data(),
-                                                   string_piece.size()) == -1) {
+  if (download_data->output_file.WriteAtCurrentPos(file_data.data(),
+                                                   file_data.size()) == -1) {
     download_data->output_file.Close();
     return false;
   }
@@ -419,10 +422,9 @@ bool UrlFetchRequestBase::WriteFileData(base::StringPiece string_piece,
   // errors. The size limit is to avoid consuming too much redundant memory.
   const size_t kMaxStringSize = 1024 * 1024;
   if (download_data->response_body.size() < kMaxStringSize) {
-    size_t bytes_to_copy =
-        std::min(string_piece.size(),
-                 kMaxStringSize - download_data->response_body.size());
-    download_data->response_body.append(string_piece.data(), bytes_to_copy);
+    size_t bytes_to_copy = std::min(
+        file_data.size(), kMaxStringSize - download_data->response_body.size());
+    download_data->response_body.append(file_data.data(), bytes_to_copy);
   }
 
   return true;
@@ -456,7 +458,7 @@ void UrlFetchRequestBase::OnDataReceived(base::StringPiece string_piece,
     base::PostTaskAndReplyWithResult(
         blocking_task_runner(), FROM_HERE,
         base::BindOnce(&UrlFetchRequestBase::WriteFileData,
-                       std::move(string_piece), download_data_ptr),
+                       string_piece.as_string(), download_data_ptr),
         base::BindOnce(&UrlFetchRequestBase::OnWriteComplete,
                        weak_ptr_factory_.GetWeakPtr(),
                        std::move(download_data_), std::move(resume)));
@@ -652,8 +654,8 @@ std::vector<std::string>
 InitiateUploadRequestBase::GetExtraRequestHeaders() const {
   std::vector<std::string> headers;
   headers.push_back(kUploadContentType + content_type_);
-  headers.push_back(
-      kUploadContentLength + base::Int64ToString(content_length_));
+  headers.push_back(kUploadContentLength +
+                    base::NumberToString(content_length_));
   return headers;
 }
 
@@ -816,11 +818,10 @@ ResumeUploadRequestBase::GetExtraRequestHeaders() const {
   DCHECK_GE(content_length_, 0);
 
   std::vector<std::string> headers;
-  headers.push_back(
-      std::string(kUploadContentRange) +
-      base::Int64ToString(start_position_) + "-" +
-      base::Int64ToString(end_position_ - 1) + "/" +
-      base::Int64ToString(content_length_));
+  headers.push_back(std::string(kUploadContentRange) +
+                    base::NumberToString(start_position_) + "-" +
+                    base::NumberToString(end_position_ - 1) + "/" +
+                    base::NumberToString(content_length_));
   return headers;
 }
 
@@ -859,9 +860,8 @@ GetUploadStatusRequestBase::GetExtraRequestHeaders() const {
   DCHECK_GE(content_length_, 0);
 
   std::vector<std::string> headers;
-  headers.push_back(
-      std::string(kUploadContentRange) + "*/" +
-      base::Int64ToString(content_length_));
+  headers.push_back(std::string(kUploadContentRange) + "*/" +
+                    base::NumberToString(content_length_));
   return headers;
 }
 

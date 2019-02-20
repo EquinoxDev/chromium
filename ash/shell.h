@@ -11,7 +11,6 @@
 
 #include "ash/ash_export.h"
 #include "ash/metrics/user_metrics_recorder.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/session/session_observer.h"
 #include "ash/wm/system_modal_container_event_filter_delegate.h"
@@ -49,7 +48,7 @@ class FileHelper;
 namespace gfx {
 class Insets;
 class Point;
-}
+}  // namespace gfx
 
 namespace keyboard {
 class KeyboardUIFactory;
@@ -110,6 +109,7 @@ class CastConfigController;
 class DisplayOutputProtection;
 class ContainedShellController;
 class CrosDisplayConfig;
+class DesksController;
 class DetachableBaseHandler;
 class DetachableBaseNotificationController;
 class DisplayColorManager;
@@ -200,7 +200,7 @@ class WaylandServerController;
 class WindowServiceOwner;
 class WindowCycleController;
 class WindowPositioner;
-class WindowSelectorController;
+class OverviewController;
 class WindowTreeHostManager;
 
 enum class LoginStatus;
@@ -371,6 +371,7 @@ class ASH_EXPORT Shell : public SessionObserver,
     return cros_display_config_.get();
   }
   ::wm::CursorManager* cursor_manager() { return cursor_manager_.get(); }
+  DesksController* desks_controller() { return desks_controller_.get(); }
   DetachableBaseHandler* detachable_base_handler() {
     return detachable_base_handler_.get();
   }
@@ -553,8 +554,8 @@ class ASH_EXPORT Shell : public SessionObserver,
     return window_cycle_controller_.get();
   }
   WindowPositioner* window_positioner() { return window_positioner_.get(); }
-  WindowSelectorController* window_selector_controller() {
-    return window_selector_controller_.get();
+  OverviewController* overview_controller() {
+    return overview_controller_.get();
   }
   WindowServiceOwner* window_service_owner() {
     return window_service_owner_.get();
@@ -600,23 +601,6 @@ class ASH_EXPORT Shell : public SessionObserver,
   // TODO(oshima): Investigate if we can merge this and |OnLoginStateChanged|.
   void UpdateAfterLoginStatusChange(LoginStatus status);
 
-  // Notifies observers that overview mode is about to be started (before the
-  // windows get re-arranged).
-  void NotifyOverviewModeStarting();
-
-  // Notifies observers that the start overview mode animation has completed.
-  void NotifyOverviewModeStartingAnimationComplete(bool canceled);
-
-  // Notifies observers that overview mode is about to end (before the windows
-  // restore themselves).
-  void NotifyOverviewModeEnding();
-
-  // Notifies observers that overview mode has ended.
-  void NotifyOverviewModeEnded();
-
-  // Notifies observers that the end overview mode animation has completed.
-  void NotifyOverviewModeEndingAnimationComplete(bool canceled);
-
   // Notifies observers that split view mode is about to be started (before the
   // window gets snapped and activated).
   void NotifySplitViewModeStarting();
@@ -644,8 +628,6 @@ class ASH_EXPORT Shell : public SessionObserver,
 
   // Used to provide better error messages for Shell::Get() under mash.
   static void SetIsBrowserProcessWithMash();
-
-  void NotifyAppListVisibilityChanged(bool visible, aura::Window* root_window);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtendedDesktopTest, TestCursor);
@@ -733,6 +715,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<CrosDisplayConfig> cros_display_config_;
   service_manager::Connector* const connector_;
   std::unique_ptr<ContainedShellController> contained_shell_controller_;
+  std::unique_ptr<DesksController> desks_controller_;
   std::unique_ptr<DetachableBaseHandler> detachable_base_handler_;
   std::unique_ptr<DetachableBaseNotificationController>
       detachable_base_notification_controller_;
@@ -777,7 +760,7 @@ class ASH_EXPORT Shell : public SessionObserver,
   std::unique_ptr<VpnList> vpn_list_;
   std::unique_ptr<WallpaperController> wallpaper_controller_;
   std::unique_ptr<WindowCycleController> window_cycle_controller_;
-  std::unique_ptr<WindowSelectorController> window_selector_controller_;
+  std::unique_ptr<OverviewController> overview_controller_;
   // Owned by |focus_controller_|.
   ::wm::FocusRules* focus_rules_ = nullptr;
   std::unique_ptr<::wm::ShadowController> shadow_controller_;

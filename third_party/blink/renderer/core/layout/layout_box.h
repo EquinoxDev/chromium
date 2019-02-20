@@ -39,6 +39,7 @@ namespace blink {
 class EventHandler;
 class LayoutBlockFlow;
 class LayoutMultiColumnSpannerPlaceholder;
+struct BoxLayoutExtraInput;
 struct NGPhysicalBoxStrut;
 class ShapeOutsideInfo;
 
@@ -71,8 +72,7 @@ struct LayoutBoxRareData {
         // TODO(rego): We should store these based on physical direction.
         has_override_containing_block_content_logical_width_(false),
         has_override_containing_block_content_logical_height_(false),
-        has_override_containing_block_percentage_resolution_logical_height_(
-            false),
+        has_override_percentage_resolution_block_size_(false),
         has_previous_content_box_rect_and_layout_overflow_rect_(false),
         percent_height_container_(nullptr),
         snap_container_(nullptr),
@@ -87,12 +87,12 @@ struct LayoutBoxRareData {
 
   bool has_override_containing_block_content_logical_width_ : 1;
   bool has_override_containing_block_content_logical_height_ : 1;
-  bool has_override_containing_block_percentage_resolution_logical_height_ : 1;
+  bool has_override_percentage_resolution_block_size_ : 1;
   bool has_previous_content_box_rect_and_layout_overflow_rect_ : 1;
 
   LayoutUnit override_containing_block_content_logical_width_;
   LayoutUnit override_containing_block_content_logical_height_;
-  LayoutUnit override_containing_block_percentage_resolution_logical_height_;
+  LayoutUnit override_percentage_resolution_block_size_;
 
   LayoutUnit offset_to_next_page_;
 
@@ -495,14 +495,6 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   LayoutSize MaxLayoutOverflow() const {
     return LayoutSize(LayoutOverflowRect().MaxX(), LayoutOverflowRect().MaxY());
   }
-  LayoutUnit LogicalLeftLayoutOverflow() const {
-    return StyleRef().IsHorizontalWritingMode() ? LayoutOverflowRect().X()
-                                                : LayoutOverflowRect().Y();
-  }
-  LayoutUnit LogicalRightLayoutOverflow() const {
-    return StyleRef().IsHorizontalWritingMode() ? LayoutOverflowRect().MaxX()
-                                                : LayoutOverflowRect().MaxY();
-  }
 
   LayoutRect VisualOverflowRect() const override;
   LayoutRect PhysicalVisualOverflowRect() const {
@@ -743,6 +735,10 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
                      MapCoordinatesFlags mode = 0) const override;
   FloatRect LocalBoundingBoxRectForAccessibility() const final;
 
+  void SetBoxLayoutExtraInput(const BoxLayoutExtraInput* input) {
+    extra_input_ = input;
+  }
+
   void UpdateLayout() override;
   void Paint(const PaintInfo&) const override;
 
@@ -787,10 +783,19 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void SetOverrideContainingBlockContentLogicalHeight(LayoutUnit);
   void ClearOverrideContainingBlockContentSize();
 
-  LayoutUnit OverrideContainingBlockPercentageResolutionLogicalHeight() const;
-  bool HasOverrideContainingBlockPercentageResolutionLogicalHeight() const;
-  void SetOverrideContainingBlockPercentageResolutionLogicalHeight(LayoutUnit);
-  void ClearOverrideContainingBlockPercentageResolutionLogicalHeight();
+  // When a percentage resolution block size override has been set, we'll use
+  // that size to resolve block-size percentages on this box, rather than
+  // deducing it from the containing block.
+  LayoutUnit OverridePercentageResolutionBlockSize() const;
+  bool HasOverridePercentageResolutionBlockSize() const;
+  void SetOverridePercentageResolutionBlockSize(LayoutUnit);
+  void ClearOverridePercentageResolutionBlockSize();
+
+  // When an available inline size override has been set, we'll use that to fill
+  // available inline size, rather than deducing it from the containing block
+  // (and then subtract space taken up by adjacent floats).
+  LayoutUnit OverrideAvailableInlineSize() const;
+  bool HasOverrideAvailableInlineSize() const { return extra_input_; }
 
   LayoutUnit AdjustBorderBoxLogicalWidthForBoxSizing(float width) const;
   LayoutUnit AdjustBorderBoxLogicalHeightForBoxSizing(float height) const;
@@ -1314,21 +1319,14 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       LayoutObject* container) const;
   LayoutRect LayoutOverflowRectForPropagation(LayoutObject* container) const;
 
-  // TODO(chrishtr): delete callsites of this.
-  bool HasOverflowModel() const { return overflow_.get(); }
   bool HasSelfVisualOverflow() const {
     return VisualOverflowIsSet() &&
            !BorderBoxRect().Contains(
                overflow_->visual_overflow->SelfVisualOverflowRect());
   }
-  bool HasVisualOverflow() const {
-    return VisualOverflowIsSet() &&
-           !BorderBoxRect().Contains(VisualOverflowRect());
-  }
-  bool HasLayoutOverflow() const {
-    return LayoutOverflowIsSet() &&
-           !BorderBoxRect().Contains(LayoutOverflowRect());
-  }
+
+  bool HasVisualOverflow() const { return VisualOverflowIsSet(); }
+  bool HasLayoutOverflow() const { return LayoutOverflowIsSet(); }
 
   // Return true if re-laying out the containing block of this object means that
   // we need to recalculate the preferred min/max logical widths of this object.
@@ -1555,6 +1553,9 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       LayoutUnit& min_logical_width,
       LayoutUnit& max_logical_width) const;
 
+  // Make it public.
+  using LayoutObject::BackgroundIsKnownToBeObscured;
+
  protected:
   ~LayoutBox() override;
 
@@ -1583,13 +1584,11 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   // Returns false if it could not cheaply compute the extent (e.g. fixed
   // background), in which case the returned rect may be incorrect.
-  // FIXME: make this a const method once the LayoutBox reference in BoxPainter
-  // is const.
   bool GetBackgroundPaintedExtent(LayoutRect&) const;
   virtual bool ForegroundIsKnownToBeOpaqueInRect(
       const LayoutRect& local_rect,
       unsigned max_depth_to_test) const;
-  bool ComputeBackgroundIsKnownToBeObscured() const override;
+  virtual bool ComputeBackgroundIsKnownToBeObscured() const;
 
   virtual void ComputePositionedLogicalWidth(
       LogicalExtentComputedValues&) const;
@@ -1664,8 +1663,8 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       LayoutUnit logical_height_value,
       const LayoutBoxModelObject* container_block,
       LayoutUnit container_logical_height);
-  bool SkipContainingBlockForPercentHeightCalculation(
-      const LayoutBox* containing_block) const;
+  static bool SkipContainingBlockForPercentHeightCalculation(
+      const LayoutBox* containing_block);
 
   LayoutRect LocalVisualRectIgnoringVisibility() const override;
 
@@ -1704,7 +1703,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       LogicalExtentComputedValues&) const;
   void ComputePositionedLogicalWidthUsing(
       SizeType,
-      Length logical_width,
+      const Length& logical_width,
       const LayoutBoxModelObject* container_block,
       TextDirection container_direction,
       LayoutUnit container_logical_width,
@@ -1805,6 +1804,10 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   // See LayoutObject::maxPreferredLogicalWidth() for more details.
   LayoutUnit max_preferred_logical_width_;
 
+  // LayoutBoxUtils is used for the LayoutNG code querying protected methods on
+  // this class, e.g. determining the static-position of OOF elements.
+  friend class LayoutBoxUtils;
+
  private:
   LogicalToPhysicalSetter<LayoutUnit, LayoutBox> LogicalMarginToPhysicalSetter(
       const ComputedStyle* override_style) {
@@ -1816,6 +1819,11 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   }
 
   std::unique_ptr<BoxOverflowModel> overflow_;
+
+  // Extra layout input data. This one may be set during layout, and cleared
+  // afterwards. Always nullptr when this object isn't in the process of being
+  // laid out.
+  const BoxLayoutExtraInput* extra_input_ = nullptr;
 
   union {
     // The inline box containing this LayoutBox, for atomic inline elements.

@@ -74,7 +74,6 @@ extern const char kAllowedLanguages[];
 #endif
 
 extern const char kDefaultCharset[];
-extern const char kAcceptLanguages[];
 extern const char kWebKitCommonScript[];
 extern const char kWebKitStandardFontFamily[];
 extern const char kWebKitFixedFontFamily[];
@@ -157,6 +156,7 @@ extern const char kWebKitAllowRunningInsecureContent[];
 extern const char kWebKitFontScaleFactor[];
 extern const char kWebKitForceEnableZoom[];
 extern const char kWebKitPasswordEchoEnabled[];
+extern const char kWebKitForceDarkModeEnabled[];
 #endif
 extern const char kDataSaverEnabled[];
 extern const char kSSLErrorOverrideAllowed[];
@@ -168,6 +168,8 @@ extern const char kContextualSearchDisabledValue[];
 extern const char kContextualSearchEnabledValue[];
 #endif  // defined(OS_ANDROID)
 extern const char kShowInternalAccessibilityTree[];
+extern const char kAccessibilityImageLabelsEnabled[];
+extern const char kAccessibilityImageLabelsOptInAccepted[];
 #if defined(OS_MACOSX)
 extern const char kConfirmToQuitEnabled[];
 extern const char kShowFullscreenToolbar[];
@@ -185,6 +187,8 @@ extern const char kNetworkPredictionOptions[];
 extern const char kDefaultAppsInstallState[];
 extern const char kHideWebStoreIcon[];
 #if defined(OS_CHROMEOS)
+extern const char kAccountManagerNumTimesMigrationRanSuccessfully[];
+extern const char kAccountManagerNumTimesWelcomeScreenShown[];
 extern const char kTapToClickEnabled[];
 extern const char kEnableTouchpadThreeFingerClick[];
 extern const char kNaturalScroll[];
@@ -203,8 +207,6 @@ extern const char kResolveTimezoneByGeolocationMigratedToMethod[];
 extern const char kLanguageCurrentInputMethod[];
 extern const char kLanguagePreviousInputMethod[];
 extern const char kLanguageAllowedInputMethods[];
-extern const char kLanguagePreferredLanguages[];
-extern const char kLanguagePreferredLanguagesSyncable[];
 extern const char kLanguagePreloadEngines[];
 extern const char kLanguagePreloadEnginesSyncable[];
 extern const char kLanguageEnabledImes[];
@@ -287,12 +289,13 @@ extern const char kNTLMShareAuthenticationEnabled[];
 extern const char kNetworkFileSharesPreconfiguredShares[];
 extern const char kMostRecentlyUsedNetworkFileShareURL[];
 extern const char kParentAccessCodeConfig[];
+extern const char kDeviceWallpaperImageFilePath[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kShowHomeButton[];
 extern const char kSpeechRecognitionFilterProfanities[];
 extern const char kAllowDeletingBrowserHistory[];
 #if !defined(OS_ANDROID)
-extern const char kMdHistoryMenuPromoShown[];
+extern const char kHistoryMenuPromoShown[];
 #endif
 extern const char kForceGoogleSafeSearch[];
 extern const char kForceYouTubeRestrict[];
@@ -416,6 +419,7 @@ extern const char kLocalDiscoveryNotificationsEnabled[];
 extern const char kNotificationsVibrateEnabled[];
 extern const char kMigratedToSiteNotificationChannels[];
 extern const char kClearedBlockedSiteNotificationChannels[];
+extern const char kUsageStatsEnabled[];
 #endif
 
 extern const char kPushMessagingAppIdentifierMap[];
@@ -532,11 +536,15 @@ extern const char kContentSuggestionsNotificationsSentCount[];
 #else
 extern const char kNtpCustomBackgroundDict[];
 extern const char kNtpCustomBackgroundLocalToDevice[];
+extern const char kNtpSearchSuggestionsBlocklist[];
+extern const char kNtpSearchSuggestionsImpressions[];
+extern const char kNtpSearchSuggestionsOptOut[];
 #endif  // defined(OS_ANDROID)
 extern const char kNtpShownPage[];
 
 extern const char kDevToolsAdbKey[];
 extern const char kDevToolsAvailability[];
+extern const char kDevToolsBackgroundServicesExpirationDict[];
 extern const char kDevToolsDiscoverUsbDevicesEnabled[];
 extern const char kDevToolsEditedFiles[];
 extern const char kDevToolsFileSystemPaths[];
@@ -549,8 +557,6 @@ extern const char kDevToolsTCPDiscoveryConfig[];
 
 #if !defined(OS_ANDROID)
 extern const char kDiceSigninUserMenuPromoCount[];
-extern const char kSignInPromoStartupCount[];
-extern const char kSignInPromoUserSkipped[];
 extern const char kSignInPromoShowOnFirstRunAllowed[];
 extern const char kSignInPromoShowNTPBubble[];
 #endif
@@ -630,6 +636,7 @@ extern const char kCustomizationDefaultWallpaperURL[];
 extern const char kLogoutStartedLast[];
 extern const char kConsumerManagementStage[];
 extern const char kReportArcStatusEnabled[];
+extern const char kSchedulerConfiguration[];
 extern const char kNetworkThrottlingEnabled[];
 extern const char kPowerMetricsDailySample[];
 extern const char kPowerMetricsIdleScreenDimCount[];
@@ -901,6 +908,14 @@ extern const char kNotificationNextPersistentId[];
 extern const char kTabLifecyclesEnabled[];
 
 extern const char kEnterpriseHardwarePlatformAPIEnabled[];
+
+#if defined(OS_ANDROID)
+extern const char kUsageStatsEnabled[];
+#endif
+
+#if defined(OS_CHROMEOS)
+extern const char kCertificateManagementAllowed[];
+#endif
 
 }  // namespace prefs
 

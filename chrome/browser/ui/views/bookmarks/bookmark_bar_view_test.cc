@@ -47,7 +47,7 @@
 #include "ui/aura/env_observer.h"
 #include "ui/aura/window.h"
 #include "ui/base/clipboard/clipboard.h"
-#include "ui/base/test/test_clipboard.h"
+#include "ui/base/clipboard/test/test_clipboard.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/background.h"
@@ -392,8 +392,8 @@ class BookmarkBarViewEventTestBase : public ViewEventTestBase {
     model_->AddURL(f1, 2, ASCIIToUTF16("f1b"), GURL(test_base + "f1b"));
     if (big_menu) {
       for (int i = 1; i <= 100; ++i) {
-        model_->AddURL(f1, i + 1, ASCIIToUTF16("f") + base::IntToString16(i),
-                       GURL(test_base + "f" + base::IntToString(i)));
+        model_->AddURL(f1, i + 1, ASCIIToUTF16("f") + base::NumberToString16(i),
+                       GURL(test_base + "f" + base::NumberToString(i)));
       }
     }
     model_->AddURL(bb_node, 1, ASCIIToUTF16("a"), GURL(test_base + "a"));
@@ -766,11 +766,8 @@ class BookmarkBarViewTest5 : public BookmarkBarViewEventTestBase {
 
   GURL url_dragging_;
 };
-// flaky on Windows: https://crbug.com/400578
-// flaky on ChromeOS: https://crbug.com/758210
-#if !defined(OS_WIN) && !defined(OS_CHROMEOS)
-VIEW_TEST(BookmarkBarViewTest5, DND)
-#endif
+// Flaky: https://crbug.com/758210
+VIEW_TEST(BookmarkBarViewTest5, DISABLED_DND)
 
 // Tests holding mouse down on overflow button, dragging such that menu pops up
 // then selecting an item.
@@ -2219,13 +2216,7 @@ class BookmarkBarViewTest24 : public BookmarkBarViewEventTestBase {
   BookmarkContextMenuNotificationObserver observer_;
 };
 
-#if defined(OS_WIN)
-// TODO(crbug.com/892228): Re-enable when test framework induced flake is fixed.
-#define MAYBE_ContextMenusKeyboardEscape DISABLED_ContextMenusKeyboardEscape
-#else
-#define MAYBE_ContextMenusKeyboardEscape ContextMenusKeyboardEscape
-#endif
-VIEW_TEST(BookmarkBarViewTest24, MAYBE_ContextMenusKeyboardEscape)
+VIEW_TEST(BookmarkBarViewTest24, ContextMenusKeyboardEscape)
 
 #if defined(OS_WIN)
 // Tests that pressing the key KEYCODE closes the menu.
@@ -2301,7 +2292,7 @@ class BookmarkBarViewTest26 : public BookmarkBarViewEventTestBase {
 
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&BookmarkBarViewTest26::Step3, base::Unretained(this)));
+        base::BindOnce(&BookmarkBarViewTest26::Step3, base::Unretained(this)));
   }
 
   void Step3() {
@@ -2336,7 +2327,7 @@ class BookmarkBarViewTest27 : public BookmarkBarViewEventTestBase {
   }
 };
 
-VIEW_TEST(BookmarkBarViewTest27, MiddleClickOnFolderOpensAllBookmarks);
+VIEW_TEST(BookmarkBarViewTest27, MiddleClickOnFolderOpensAllBookmarks)
 
 #endif  // defined(OS_MACOSX)
 
@@ -2366,4 +2357,4 @@ class BookmarkBarViewTest28 : public BookmarkBarViewEventTestBase {
   }
 };
 
-VIEW_TEST(BookmarkBarViewTest28, ClickWithModifierOnFolderOpensAllBookmarks);
+VIEW_TEST(BookmarkBarViewTest28, ClickWithModifierOnFolderOpensAllBookmarks)

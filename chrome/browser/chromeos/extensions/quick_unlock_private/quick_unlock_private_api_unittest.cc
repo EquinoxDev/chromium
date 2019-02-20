@@ -10,6 +10,7 @@
 
 #include "ash/public/cpp/ash_pref_names.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "base/run_loop.h"
@@ -753,8 +754,8 @@ TEST_P(QuickUnlockPrivateUnitTest, GetCredentialRequirements) {
   CheckGetCredentialRequirements(1, 0);
 }
 
-INSTANTIATE_TEST_CASE_P(StorageProviders,
-                        QuickUnlockPrivateUnitTest,
-                        ::testing::Values(TestType::kPrefs,
-                                          TestType::kCryptohome));
+INSTANTIATE_TEST_SUITE_P(StorageProviders,
+                         QuickUnlockPrivateUnitTest,
+                         ::testing::Values(TestType::kPrefs,
+                                           TestType::kCryptohome));
 }  // namespace chromeos

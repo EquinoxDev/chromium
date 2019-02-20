@@ -4,6 +4,7 @@
 
 #include "chrome/browser/vr/service/isolated_device_provider.h"
 
+#include "base/bind.h"
 #include "chrome/browser/vr/service/vr_ui_host.h"
 #include "content/public/common/service_manager_connection.h"
 #include "device/vr/buildflags/buildflags.h"
@@ -46,15 +47,15 @@ void IsolatedVRDeviceProvider::OnDeviceAdded(
     device::mojom::XRRuntimePtr device,
     device::mojom::IsolatedXRGamepadProviderFactoryPtr gamepad_factory,
     device::mojom::XRCompositorHostPtr compositor_host,
-    device::mojom::VRDisplayInfoPtr display_info) {
-  device::mojom::XRDeviceId id = display_info->id;
-  add_device_callback_.Run(id, display_info.Clone(), std::move(device));
+    device::mojom::XRDeviceId device_id) {
+  add_device_callback_.Run(device_id, nullptr, std::move(device));
 
-  auto ui_host = (*VRUiHost::GetFactory())(std::move(display_info),
-                                           std::move(compositor_host));
-  ui_host_map_.insert(std::make_pair(id, std::move(ui_host)));
+  auto ui_host =
+      (*VRUiHost::GetFactory())(device_id, std::move(compositor_host));
+  ui_host_map_.insert(std::make_pair(device_id, std::move(ui_host)));
+
   device::IsolatedGamepadDataFetcher::Factory::AddGamepad(
-      id, std::move(gamepad_factory));
+      device_id, std::move(gamepad_factory));
 }
 
 void IsolatedVRDeviceProvider::OnDeviceRemoved(device::mojom::XRDeviceId id) {

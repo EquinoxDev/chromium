@@ -204,6 +204,9 @@ class ExistingUserController
   // Shows "enable developer features" screen.
   void ShowEnableDebuggingScreen();
 
+  // Shows privacy notification in case of auto lunch managed guest session.
+  void ShowAutoLaunchManagedGuestSessionNotification();
+
   // Shows kiosk feature enable screen.
   void ShowKioskEnableScreen();
 
@@ -373,10 +376,6 @@ class ExistingUserController
   // Initialized with AUTH_MODE_EXTENSION as more restricted mode.
   LoginPerformer::AuthorizationMode auth_mode_ =
       LoginPerformer::AUTH_MODE_EXTENSION;
-
-  // When the sign-in or GAIA UI is finished loading
-  // public session or ARC kiosk are ready to auto-launch.
-  bool auto_launch_ready_ = false;
 
   // Indicates use of local (not GAIA) authentication.
   bool auth_flow_offline_ = false;

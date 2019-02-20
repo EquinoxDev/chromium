@@ -386,6 +386,18 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
                     nullptr);
     }
   }
+
+  if (policy.has_device_reboot_on_user_signout()) {
+    const em::DeviceRebootOnUserSignoutProto& container(
+        policy.device_reboot_on_user_signout());
+    if (container.has_reboot_on_signout_mode()) {
+      policies->Set(
+          key::kDeviceRebootOnUserSignout, POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          std::make_unique<base::Value>(container.reboot_on_signout_mode()),
+          nullptr);
+    }
+  }
 }
 
 void DecodeNetworkPolicies(const em::ChromeDeviceSettingsProto& policy,
@@ -517,6 +529,27 @@ void DecodeReportingPolicies(const em::ChromeDeviceSettingsProto& policy,
           key::kReportDeviceSessionStatus, POLICY_LEVEL_MANDATORY,
           POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
           std::make_unique<base::Value>(container.report_session_status()),
+          nullptr);
+    }
+    if (container.has_report_power_status()) {
+      policies->Set(
+          key::kReportDevicePowerStatus, POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          std::make_unique<base::Value>(container.report_power_status()),
+          nullptr);
+    }
+    if (container.has_report_storage_status()) {
+      policies->Set(
+          key::kReportDeviceStorageStatus, POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          std::make_unique<base::Value>(container.report_storage_status()),
+          nullptr);
+    }
+    if (container.has_report_board_status()) {
+      policies->Set(
+          key::kReportDeviceBoardStatus, POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          std::make_unique<base::Value>(container.report_board_status()),
           nullptr);
     }
     if (container.has_device_status_frequency()) {
@@ -747,7 +780,16 @@ void DecodeExternalDataPolicies(
     const em::ChromeDeviceSettingsProto& policy,
     base::WeakPtr<ExternalDataManager> external_data_manager,
     PolicyMap* policies) {
-  // TODO(https://crbug.com/814364): Migrate device wallpaper here.
+  if (policy.has_device_wallpaper_image()) {
+    const em::DeviceWallpaperImageProto& container(
+        policy.device_wallpaper_image());
+    if (container.has_device_wallpaper_image()) {
+      SetExternalDataDevicePolicy(key::kDeviceWallpaperImage,
+                                  container.device_wallpaper_image(),
+                                  external_data_manager, policies);
+    }
+  }
+
   if (policy.has_native_device_printers()) {
     const em::DeviceNativePrintersProto& container(
         policy.native_device_printers());
@@ -930,15 +972,6 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
           POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
           std::make_unique<base::Value>(container.quirks_download_enabled()),
           nullptr);
-    }
-  }
-
-  if (policy.has_device_wallpaper_image()) {
-    const em::DeviceWallpaperImageProto& container(
-        policy.device_wallpaper_image());
-    if (container.has_device_wallpaper_image()) {
-      SetJsonDevicePolicy(key::kDeviceWallpaperImage,
-                          container.device_wallpaper_image(), policies);
     }
   }
 
@@ -1134,6 +1167,18 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
           nullptr);
     }
   }
+
+  if (policy.has_plugin_vm_license_key()) {
+    const em::PluginVmLicenseKeyProto& container(
+        policy.plugin_vm_license_key());
+    if (container.has_plugin_vm_license_key()) {
+      policies->Set(
+          key::kPluginVmLicenseKey, POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          std::make_unique<base::Value>(container.plugin_vm_license_key()),
+          nullptr);
+    }
+  }
 }
 
 }  // namespace
@@ -1143,8 +1188,9 @@ std::unique_ptr<base::Value> DecodeJsonStringAndNormalize(
     const std::string& policy_name,
     std::string* error) {
   std::string json_error;
-  std::unique_ptr<base::Value> root = base::JSONReader::ReadAndReturnError(
-      json_string, base::JSON_ALLOW_TRAILING_COMMAS, NULL, &json_error);
+  std::unique_ptr<base::Value> root =
+      base::JSONReader::ReadAndReturnErrorDeprecated(
+          json_string, base::JSON_ALLOW_TRAILING_COMMAS, NULL, &json_error);
   if (!root) {
     *error = "Invalid JSON string: " + json_error;
     return nullptr;

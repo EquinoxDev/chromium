@@ -14,7 +14,7 @@ namespace content {
 
 namespace {
 
-constexpr char kSignedExchangeMagic[] = "sxg1-b2";
+constexpr char kSignedExchangeMagic[] = "sxg1-b3";
 
 // size of `fallbackUrlLength` field in number of bytes.
 constexpr size_t kFallbackUrlLengthFieldSizeInBytes = 2;

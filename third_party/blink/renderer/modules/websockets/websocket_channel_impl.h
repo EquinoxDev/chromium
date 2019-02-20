@@ -110,6 +110,8 @@ class MODULES_EXPORT WebSocketChannelImpl final
             std::unique_ptr<SourceLocation>) override;
   void Disconnect() override;
 
+  ExecutionContext* GetExecutionContext();
+
   void Trace(blink::Visitor*) override;
 
  private:
@@ -142,9 +144,7 @@ class MODULES_EXPORT WebSocketChannelImpl final
     Fail(reason, kErrorMessageLevel, location_at_construction_->Clone());
   }
   void AbortAsyncOperations();
-  void HandleDidClose(bool was_clean,
-                      unsigned short code,
-                      const String& reason);
+  void HandleDidClose(bool was_clean, uint16_t code, const String& reason);
 
   // WebSocketHandleClient functions.
   void DidConnect(WebSocketHandle*,
@@ -164,7 +164,7 @@ class MODULES_EXPORT WebSocketChannelImpl final
                       size_t) override;
   void DidClose(WebSocketHandle*,
                 bool was_clean,
-                unsigned short code,
+                uint16_t code,
                 const String& reason) override;
   void DidReceiveFlowControl(WebSocketHandle*, int64_t quota) override;
   void DidStartClosingHandshake(WebSocketHandle*) override;
@@ -211,6 +211,8 @@ class MODULES_EXPORT WebSocketChannelImpl final
   // throttle response when DidConnect is called.
   std::unique_ptr<ConnectInfo> connect_info_;
   bool throttle_passed_;
+
+  scoped_refptr<base::SingleThreadTaskRunner> file_reading_task_runner_;
 
   static const uint64_t kReceivedDataSizeForFlowControlHighWaterMark = 1 << 15;
 };

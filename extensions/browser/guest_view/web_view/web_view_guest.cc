@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/user_metrics.h"
@@ -39,7 +40,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/stop_find_action.h"
@@ -67,6 +67,7 @@
 #include "net/base/net_errors.h"
 #include "net/cookies/canonical_cookie.h"
 #include "services/network/public/cpp/features.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "url/url_constants.h"
@@ -428,7 +429,9 @@ void WebViewGuest::ClearCodeCache(base::Time remove_since,
   base::OnceClosure code_cache_removal_done_callback = base::BindOnce(
       &WebViewGuest::ClearDataInternal, weak_ptr_factory_.GetWeakPtr(),
       remove_since, removal_mask, callback);
-  partition->ClearCodeCaches(std::move(code_cache_removal_done_callback));
+  partition->ClearCodeCaches(remove_since, base::Time::Now(),
+                             base::RepeatingCallback<bool(const GURL&)>(),
+                             std::move(code_cache_removal_done_callback));
 }
 
 void WebViewGuest::ClearDataInternal(base::Time remove_since,
@@ -506,7 +509,9 @@ int WebViewGuest::GetTaskPrefix() const {
 }
 
 void WebViewGuest::GuestDestroyed() {
-  RemoveWebViewStateFromIOThread(web_contents());
+  WebViewRendererState::GetInstance()->RemoveGuest(
+      web_contents()->GetRenderViewHost()->GetProcess()->GetID(),
+      web_contents()->GetRenderViewHost()->GetRoutingID());
 }
 
 void WebViewGuest::GuestReady() {
@@ -1024,24 +1029,9 @@ void WebViewGuest::PushWebViewStateToIOThread() {
   web_view_info.content_script_ids = manager->GetContentScriptIDSet(
       web_view_info.embedder_process_id, web_view_info.instance_id);
 
-  base::PostTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::IO},
-      base::Bind(&WebViewRendererState::AddGuest,
-                 base::Unretained(WebViewRendererState::GetInstance()),
-                 web_contents()->GetRenderViewHost()->GetProcess()->GetID(),
-                 web_contents()->GetRenderViewHost()->GetRoutingID(),
-                 web_view_info));
-}
-
-// static
-void WebViewGuest::RemoveWebViewStateFromIOThread(
-    WebContents* web_contents) {
-  base::PostTaskWithTraits(
-      FROM_HERE, {content::BrowserThread::IO},
-      base::Bind(&WebViewRendererState::RemoveGuest,
-                 base::Unretained(WebViewRendererState::GetInstance()),
-                 web_contents->GetRenderViewHost()->GetProcess()->GetID(),
-                 web_contents->GetRenderViewHost()->GetRoutingID()));
+  WebViewRendererState::GetInstance()->AddGuest(
+      web_contents()->GetRenderViewHost()->GetProcess()->GetID(),
+      web_contents()->GetRenderViewHost()->GetRoutingID(), web_view_info);
 }
 
 void WebViewGuest::RequestMediaAccessPermission(
@@ -1055,7 +1045,7 @@ void WebViewGuest::RequestMediaAccessPermission(
 bool WebViewGuest::CheckMediaAccessPermission(
     content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
-    content::MediaStreamType type) {
+    blink::MediaStreamType type) {
   return web_view_permission_helper_->CheckMediaAccessPermission(
       render_frame_host, security_origin, type);
 }

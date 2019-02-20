@@ -4,6 +4,7 @@
 
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 
+#include "base/bind.h"
 #include "base/stl_util.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
@@ -59,6 +60,12 @@ gpu::SyncToken GenTestSyncToken(int id) {
   token.Set(gpu::CommandBufferNamespace::GPU_IO,
             gpu::CommandBufferId::FromUnsafeValue(id), 1);
   return token;
+}
+
+bool BeginFrameArgsAreEquivalent(const BeginFrameArgs& first,
+                                 const BeginFrameArgs& second) {
+  return first.source_id == second.source_id &&
+         first.sequence_number == second.sequence_number;
 }
 
 }  // namespace
@@ -204,6 +211,20 @@ class CompositorFrameSinkSupportTest : public testing::Test {
     manager_.surface_manager()->ExpireOldTemporaryReferences();
     // Second call removes the temporary references marked as old.
     manager_.surface_manager()->ExpireOldTemporaryReferences();
+  }
+
+  const BeginFrameArgs& GetLastUsedBeginFrameArgs(
+      const CompositorFrameSinkSupport* support) const {
+    return support->LastUsedBeginFrameArgs();
+  }
+
+  void SendPresentationFeedback(CompositorFrameSinkSupport* support,
+                                uint32_t frame_token) {
+    support->DidPresentCompositorFrame(
+        frame_token,
+        gfx::PresentationFeedback(base::TimeTicks::Now(),
+                                  base::TimeDelta::FromMilliseconds(16),
+                                  /*flags=*/0));
   }
 
  protected:
@@ -964,6 +985,57 @@ TEST_F(CompositorFrameSinkSupportTest, PassesOnBeginFrameAcks) {
   support_->SetNeedsBeginFrame(false);
 }
 
+// Validates that if a client asked to stop receiving begin-frames, then it
+// stops receiving begin-frames after receiving the presentation-feedback from
+// the last submitted frame.
+TEST_F(CompositorFrameSinkSupportTest,
+       NeedsBeginFrameResetAfterPresentationFeedback) {
+  // Request BeginFrames.
+  support_->SetNeedsBeginFrame(true);
+
+  // Issue a BeginFrame. Validate that the client receives the begin-frame.
+  BeginFrameArgs args =
+      CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 0, 1);
+  begin_frame_source_.TestOnBeginFrame(args);
+  BeginFrameArgs received_args = GetLastUsedBeginFrameArgs(support_.get());
+  EXPECT_TRUE(BeginFrameArgsAreEquivalent(args, received_args));
+  EXPECT_EQ(received_args.type, BeginFrameArgs::NORMAL);
+
+  // Client submits a compositor frame in response.
+  BeginFrameAck ack(args, true);
+  CompositorFrame frame = CompositorFrameBuilder()
+                              .AddDefaultRenderPass()
+                              .SetBeginFrameAck(ack)
+                              .Build();
+  auto token = frame.metadata.frame_token;
+  support_->SubmitCompositorFrame(local_surface_id_, std::move(frame));
+
+  // Client stops asking for begin-frames.
+  support_->SetNeedsBeginFrame(false);
+
+  // Issue a new BeginFrame. This time, the client should not receive it since
+  // it has stopped asking for begin-frames.
+  args = CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 1, 2);
+  begin_frame_source_.TestOnBeginFrame(args);
+  received_args = GetLastUsedBeginFrameArgs(support_.get());
+  EXPECT_FALSE(BeginFrameArgsAreEquivalent(args, received_args));
+
+  // The presentation-feedback from the last submitted frame arrives. This
+  // results in the client immediately receiving a MISSED begin-frame.
+  SendPresentationFeedback(support_.get(), token);
+  received_args = GetLastUsedBeginFrameArgs(support_.get());
+  EXPECT_TRUE(BeginFrameArgsAreEquivalent(args, received_args));
+  EXPECT_EQ(received_args.type, BeginFrameArgs::MISSED);
+
+  // Issue another begin-frame. This time, the client should not receive it
+  // anymore since it has stopped asking for begin-frames, and it has already
+  // received the last presentation-feedback.
+  args = CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 2, 3);
+  begin_frame_source_.TestOnBeginFrame(args);
+  received_args = GetLastUsedBeginFrameArgs(support_.get());
+  EXPECT_FALSE(BeginFrameArgsAreEquivalent(args, received_args));
+}
+
 TEST_F(CompositorFrameSinkSupportTest, FrameIndexCarriedOverToNewSurface) {
   LocalSurfaceId local_surface_id1(1, kArbitraryToken);
   LocalSurfaceId local_surface_id2(2, kArbitraryToken);
@@ -1131,6 +1203,54 @@ TEST_F(CompositorFrameSinkSupportTest,
   EXPECT_CALL(frame_sink_manager_client_, OnFirstSurfaceActivation(_));
   EXPECT_CALL(frame_sink_manager_client_, OnFrameTokenChanged(_, frame_token));
   support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+}
+
+// This test verifies that the parent sequence number of the submitted
+// CompositorFrames can decrease as long as the embed token changes as well.
+TEST_F(CompositorFrameSinkSupportTest, SubmitAfterReparenting) {
+  LocalSurfaceId local_surface_id1(2, base::UnguessableToken::Create());
+  LocalSurfaceId local_surface_id2(1, base::UnguessableToken::Create());
+
+  ASSERT_NE(local_surface_id1.embed_token(), local_surface_id2.embed_token());
+
+  CompositorFrame frame =
+      CompositorFrameBuilder().AddDefaultRenderPass().Build();
+  SubmitResult result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id1, std::move(frame), base::nullopt, 0,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
+  EXPECT_EQ(SubmitResult::ACCEPTED, result);
+
+  frame = CompositorFrameBuilder().AddDefaultRenderPass().Build();
+  result = support_->MaybeSubmitCompositorFrame(
+      local_surface_id2, std::move(frame), base::nullopt, 0,
+      mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
+
+  // Even though |local_surface_id2| has a smaller parent sequence number than
+  // |local_surface_id1|, the submit should still succeed because it has a
+  // different embed token.
+  EXPECT_EQ(SubmitResult::ACCEPTED, result);
+}
+
+// This test verifies that surfaces created with a new embed token are not
+// compared against the evicted parent sequence number of the previous embed
+// token.
+TEST_F(CompositorFrameSinkSupportTest, EvictThenReparent) {
+  LocalSurfaceId local_surface_id1(2, base::UnguessableToken::Create());
+  LocalSurfaceId local_surface_id2(1, base::UnguessableToken::Create());
+
+  ASSERT_NE(local_surface_id1.embed_token(), local_surface_id2.embed_token());
+
+  support_->EvictSurface(local_surface_id1);
+  CompositorFrame frame =
+      CompositorFrameBuilder().AddDefaultRenderPass().Build();
+  support_->SubmitCompositorFrame(local_surface_id2, std::move(frame));
+  manager_.surface_manager()->GarbageCollectSurfaces();
+
+  // Even though |local_surface_id2| has a smaller parent sequence number than
+  // |local_surface_id1|, it should not be evicted because it has a different
+  // embed token.
+  EXPECT_TRUE(
+      GetSurfaceForId(SurfaceId(support_->frame_sink_id(), local_surface_id2)));
 }
 
 }  // namespace viz

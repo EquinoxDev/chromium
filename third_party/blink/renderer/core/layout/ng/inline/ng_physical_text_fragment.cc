@@ -91,11 +91,15 @@ NGPhysicalTextFragment::NGPhysicalTextFragment(NGTextFragmentBuilder* builder)
   DCHECK(shape_result_ || IsFlowControl()) << ToString();
   line_orientation_ =
       static_cast<unsigned>(ToLineOrientation(builder->GetWritingMode()));
-  is_anonymous_text_ =
-      IsPhysicalTextFragmentAnonymousText(builder->layout_object_);
 
-  if (UNLIKELY(StyleVariant() == NGStyleVariant::kEllipsis))
+  if (UNLIKELY(StyleVariant() == NGStyleVariant::kEllipsis)) {
     EnsureRareData()->style_ = std::move(builder->style_);
+    is_anonymous_text_ = true;
+  } else {
+    is_anonymous_text_ =
+        builder->text_type_ == kGeneratedText ||
+        IsPhysicalTextFragmentAnonymousText(builder->layout_object_);
+  }
 
   UpdateSelfInkOverflow();
 }
@@ -189,6 +193,8 @@ NGPhysicalTextFragment::LineLeftAndRightForOffsets(unsigned start_offset,
 NGPhysicalOffsetRect NGPhysicalTextFragment::LocalRect(
     unsigned start_offset,
     unsigned end_offset) const {
+  if (start_offset == start_offset_ && end_offset == end_offset_)
+    return LocalRect();
   LayoutUnit start_position, end_position;
   std::tie(start_position, end_position) =
       LineLeftAndRightForOffsets(start_offset, end_offset);

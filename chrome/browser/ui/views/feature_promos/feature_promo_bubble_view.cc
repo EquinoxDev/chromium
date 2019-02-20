@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/metrics/user_metrics.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
@@ -24,11 +25,11 @@ namespace {
 
 // The amount of time the promo should stay onscreen if the user
 // never hovers over it.
-constexpr base::TimeDelta kDelayDefault = base::TimeDelta::FromSeconds(5);
+constexpr base::TimeDelta kDelayDefault = base::TimeDelta::FromSeconds(10);
 
 // The amount of time the promo should stay onscreen after the
 // user stops hovering over it.
-constexpr base::TimeDelta kDelayShort = base::TimeDelta::FromSeconds(1);
+constexpr base::TimeDelta kDelayShort = base::TimeDelta::FromSeconds(3);
 
 // The insets from the bubble border to the text inside.
 constexpr gfx::Insets kBubbleContentsInsets(12, 16);
@@ -91,7 +92,7 @@ FeaturePromoBubbleView::FeaturePromoBubbleView(
   AddChildView(label);
 
   if (activation_action == ActivationAction::DO_NOT_ACTIVATE) {
-    set_can_activate(activation_action == ActivationAction::ACTIVATE);
+    SetCanActivate(activation_action == ActivationAction::ACTIVATE);
     set_shadow(views::BubbleBorder::BIG_SHADOW);
   }
 
@@ -131,8 +132,9 @@ int FeaturePromoBubbleView::GetDialogButtons() const {
 }
 
 bool FeaturePromoBubbleView::OnMousePressed(const ui::MouseEvent& event) {
-  CloseBubble();
-  return true;
+  base::RecordAction(
+      base::UserMetricsAction("InProductHelp.Promos.BubbleClicked"));
+  return false;
 }
 
 void FeaturePromoBubbleView::OnMouseEntered(const ui::MouseEvent& event) {

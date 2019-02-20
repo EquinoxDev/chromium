@@ -21,12 +21,15 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/loader/testing/mock_fetch_context.h"
 #include "third_party/blink/renderer/platform/loader/testing/mock_resource_client.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_loader_factory.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 
 namespace blink {
 
 class FontResourceTest : public testing::Test {
+ public:
   void TearDown() override {
     Platform::Current()
         ->GetURLLoaderMockFactory()
@@ -45,9 +48,11 @@ TEST_F(FontResourceTest,
   Platform::Current()->GetURLLoaderMockFactory()->RegisterURL(
       url, WrappedResourceResponse(response), "");
 
-  MockFetchContext* context = MakeGarbageCollected<MockFetchContext>(
-      MockFetchContext::kShouldLoadNewResource);
-  ResourceFetcher* fetcher = MakeGarbageCollected<ResourceFetcher>(context);
+  MockFetchContext* context = MakeGarbageCollected<MockFetchContext>();
+  auto* properties = MakeGarbageCollected<TestResourceFetcherProperties>();
+  auto* fetcher = MakeGarbageCollected<ResourceFetcher>(ResourceFetcherInit(
+      *properties, context, base::MakeRefCounted<scheduler::FakeTaskRunner>(),
+      MakeGarbageCollected<TestLoaderFactory>()));
 
   // Fetch to cache a resource.
   ResourceRequest request1(url);
@@ -60,7 +65,7 @@ TEST_F(FontResourceTest,
   EXPECT_FALSE(resource1->ErrorOccurred());
 
   // Set the context as it is on reloads.
-  context->SetLoadComplete(true);
+  properties->SetIsLoadComplete(true);
 
   // Revalidate the resource.
   ResourceRequest request2(url);
@@ -101,9 +106,6 @@ TEST_F(FontResourceTest, CacheAwareFontLoading) {
   response.SetHTTPStatusCode(200);
   Platform::Current()->GetURLLoaderMockFactory()->RegisterURL(
       url, WrappedResourceResponse(response), "");
-
-  RuntimeEnabledFeatures::Backup features_backup;
-  RuntimeEnabledFeatures::SetWebFontsCacheAwareTimeoutAdaptationEnabled(true);
 
   std::unique_ptr<DummyPageHolder> dummy_page_holder =
       DummyPageHolder::Create(IntSize(800, 600));
@@ -163,8 +165,6 @@ TEST_F(FontResourceTest, CacheAwareFontLoading) {
 
   Platform::Current()->GetURLLoaderMockFactory()->ServeAsynchronousRequests();
   GetMemoryCache()->Remove(&resource);
-
-  features_backup.Restore();
 }
 
 }  // namespace blink

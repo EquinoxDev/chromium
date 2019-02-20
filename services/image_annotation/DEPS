@@ -1,0 +1,8 @@
+include_rules = [
+  "+components/google",
+  "+net",
+  "+services/network",
+  "+third_party/skia",
+  "+ui/gfx",
+  "+url",
+]

@@ -73,7 +73,6 @@
 #include "ios/web/public/favicon_status.h"
 #include "ios/web/public/favicon_url.h"
 #include "ios/web/public/interstitials/web_interstitial.h"
-#include "ios/web/public/load_committed_details.h"
 #import "ios/web/public/navigation_item.h"
 #import "ios/web/public/navigation_manager.h"
 #include "ios/web/public/referrer.h"
@@ -84,7 +83,6 @@
 #include "ios/web/public/web_client.h"
 #import "ios/web/public/web_state/js/crw_js_injection_receiver.h"
 #import "ios/web/public/web_state/navigation_context.h"
-#import "ios/web/public/web_state/ui/crw_generic_content_view.h"
 #import "ios/web/public/web_state/web_state.h"
 #import "ios/web/public/web_state/web_state_observer_bridge.h"
 #include "ios/web/public/web_thread.h"
@@ -188,27 +186,8 @@ NSString* const kTabUrlKey = @"url";
 
 #pragma mark - Properties
 
-- (NSString*)tabId {
-  if (!self.webState) {
-    // Tab can outlive WebState, in which case Tab is not valid anymore and
-    // tabId should be nil.
-    return nil;
-  }
-  TabIdTabHelper* tab_id_helper = TabIdTabHelper::FromWebState(self.webState);
-  DCHECK(tab_id_helper);
-  return tab_id_helper->tab_id();
-}
-
 - (web::WebState*)webState {
   return _webStateImpl;
-}
-
-- (BOOL)canGoBack {
-  return self.navigationManager && self.navigationManager->CanGoBack();
-}
-
-- (BOOL)canGoForward {
-  return self.navigationManager && self.navigationManager->CanGoForward();
 }
 
 - (void)setOverscrollActionsControllerDelegate:
@@ -256,22 +235,6 @@ NSString* const kTabUrlKey = @"url";
   return self.webState ? self.webState->GetNavigationManager() : nullptr;
 }
 
-- (void)goBack {
-  if (self.navigationManager) {
-    DCHECK(self.navigationManager->CanGoBack());
-    base::RecordAction(base::UserMetricsAction("Back"));
-    self.navigationManager->GoBack();
-  }
-}
-
-- (void)goForward {
-  if (self.navigationManager) {
-    DCHECK(self.navigationManager->CanGoForward());
-    base::RecordAction(base::UserMetricsAction("Forward"));
-    self.navigationManager->GoForward();
-  }
-}
-
 - (void)willUpdateSnapshot {
   [_overscrollActionsController clear];
 }
@@ -303,7 +266,8 @@ NSString* const kTabUrlKey = @"url";
       XCallbackFromRequestURL:requestURL
                     originURL:originURL
                        tabURL:self.webState->GetLastCommittedURL()
-                        tabID:self.tabId];
+                        tabID:TabIdTabHelper::FromWebState(self.webState)
+                                  ->tab_id()];
 }
 
 #pragma mark - CRWWebStateObserver protocol
@@ -316,6 +280,13 @@ NSString* const kTabUrlKey = @"url";
 
   [self.dialogDelegate cancelDialogForTab:self];
   [_openInController disable];
+}
+
+- (void)webState:(web::WebState*)webState
+    didFinishNavigation:(web::NavigationContext*)navigation {
+  if (navigation->HasCommitted() && !navigation->IsSameDocument()) {
+    [self.dialogDelegate cancelDialogForTab:self];
+  }
 }
 
 - (void)webState:(web::WebState*)webState
@@ -380,7 +351,9 @@ NSString* const kTabUrlKey = @"url";
     headers->GetNormalizedHeader("content-disposition", &contentDisposition);
   std::string defaultFilename =
       l10n_util::GetStringUTF8(IDS_IOS_OPEN_IN_FILE_DEFAULT_TITLE);
-  const GURL& lastCommittedURL = self.webState->GetLastCommittedURL();
+  web::NavigationItem* item =
+      self.webState->GetNavigationManager()->GetLastCommittedItem();
+  const GURL& lastCommittedURL = item ? item->GetURL() : GURL::EmptyGURL();
   base::string16 filename =
       net::GetSuggestedFilename(lastCommittedURL, contentDisposition,
                                 "",                 // referrer-charset

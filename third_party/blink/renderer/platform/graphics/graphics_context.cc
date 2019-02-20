@@ -89,11 +89,12 @@ class GraphicsContext::HighContrastFlags final {
 
 GraphicsContext::GraphicsContext(PaintController& paint_controller,
                                  DisabledMode disable_context_or_painting,
-                                 SkMetaData* meta_data)
+                                 printing::MetafileSkia* metafile)
     : canvas_(nullptr),
       paint_controller_(paint_controller),
       paint_state_stack_(),
       paint_state_index_(0),
+      metafile_(metafile),
 #if DCHECK_IS_ON()
       layer_count_(0),
       disable_destruction_checks_(false),
@@ -101,11 +102,7 @@ GraphicsContext::GraphicsContext(PaintController& paint_controller,
       disabled_state_(disable_context_or_painting),
       device_scale_factor_(1.0f),
       printing_(false),
-      has_meta_data_(!!meta_data),
       in_drawing_recorder_(false) {
-  if (meta_data)
-    meta_data_ = *meta_data;
-
   // FIXME: Do some tests to determine how many states are typically used, and
   // allocate several here.
   paint_state_stack_.push_back(GraphicsContextState::Create());
@@ -331,8 +328,8 @@ void GraphicsContext::BeginRecording(const FloatRect& bounds) {
 
   DCHECK(!canvas_);
   canvas_ = paint_recorder_.beginRecording(bounds);
-  if (has_meta_data_)
-    canvas_->getMetaData() = meta_data_;
+  if (metafile_)
+    canvas_->SetPrintingMetafile(metafile_);
 }
 
 namespace {
@@ -394,21 +391,25 @@ void GraphicsContext::CompositeRecord(sk_sp<PaintRecord> record,
 
 namespace {
 
-int AdjustedFocusRingOffset(int offset) {
+int AdjustedFocusRingOffset(int offset, int width, bool is_outset) {
 #if defined(OS_MACOSX)
   return offset + 2;
 #else
+  if (is_outset)
+    return offset + width - (width + 1) / 2;
   return 0;
 #endif
 }
 
-}  // anonymous ns
+}  // namespace
 
-int GraphicsContext::FocusRingOutsetExtent(int offset, int width) {
+int GraphicsContext::FocusRingOutsetExtent(int offset,
+                                           int width,
+                                           bool is_outset) {
   // Unlike normal outlines (whole width is outside of the offset), focus
-  // rings are drawn with the center of the path aligned with the offset, so
+  // rings can be drawn with the center of the path aligned with the offset, so
   // only half of the width is outside of the offset.
-  return AdjustedFocusRingOffset(offset) + (width + 1) / 2;
+  return AdjustedFocusRingOffset(offset, width, is_outset) + (width + 1) / 2;
 }
 
 void GraphicsContext::DrawFocusRingPath(const SkPath& path,
@@ -439,7 +440,8 @@ void GraphicsContext::DrawFocusRing(const Path& focus_ring_path,
 void GraphicsContext::DrawFocusRing(const Vector<IntRect>& rects,
                                     float width,
                                     int offset,
-                                    const Color& color) {
+                                    const Color& color,
+                                    bool is_outset) {
   if (ContextDisabled())
     return;
 
@@ -448,7 +450,7 @@ void GraphicsContext::DrawFocusRing(const Vector<IntRect>& rects,
     return;
 
   SkRegion focus_ring_region;
-  offset = AdjustedFocusRingOffset(offset);
+  offset = AdjustedFocusRingOffset(offset, std::ceil(width), is_outset);
   for (unsigned i = 0; i < rect_count; i++) {
     SkIRect r = rects[i];
     if (r.isEmpty())
@@ -910,7 +912,6 @@ void GraphicsContext::DrawImage(
   image_flags.setBlendMode(op);
   image_flags.setColor(SK_ColorBLACK);
   image_flags.setFilterQuality(ComputeFilterQuality(image, dest, src));
-  image_flags.setAntiAlias(ShouldAntialias());
   if (ShouldApplyHighContrastFilterToImage(*image))
     image_flags.setColorFilter(high_contrast_filter_);
   image->Draw(canvas_, image_flags, dest, src, should_respect_image_orientation,
@@ -946,7 +947,6 @@ void GraphicsContext::DrawImageRRect(
   image_flags.setColor(SK_ColorBLACK);
   image_flags.setFilterQuality(
       ComputeFilterQuality(image, dest.Rect(), src_rect));
-  image_flags.setAntiAlias(ShouldAntialias());
 
   bool use_shader = (visible_src == src_rect) &&
                     (respect_orientation == kDoNotRespectImageOrientation);
@@ -997,40 +997,17 @@ SkFilterQuality GraphicsContext::ComputeFilterQuality(
       std::min(resampling, ImageInterpolationQuality()));
 }
 
-void GraphicsContext::DrawTiledImage(Image* image,
-                                     const FloatSize& unsnapped_subset_size,
-                                     const FloatRect& snapped_paint_rect,
-                                     const FloatPoint& unsnapped_phase,
-                                     const FloatSize& tile_size,
-                                     SkBlendMode op,
-                                     const FloatSize& repeat_spacing) {
-  if (ContextDisabled() || !image)
-    return;
-  image->DrawTiledBackground(*this, unsnapped_subset_size, snapped_paint_rect,
-                             unsnapped_phase, tile_size, op, repeat_spacing);
-  paint_controller_.SetImagePainted();
-}
-
-void GraphicsContext::DrawTiledImage(Image* image,
-                                     const FloatRect& dest,
+void GraphicsContext::DrawImageTiled(Image* image,
+                                     const FloatRect& dest_rect,
                                      const FloatRect& src_rect,
-                                     const FloatSize& tile_scale_factor,
-                                     Image::TileRule h_rule,
-                                     Image::TileRule v_rule,
+                                     const FloatSize& scale_src_to_dest,
+                                     const FloatPoint& phase,
+                                     const FloatSize& repeat_spacing,
                                      SkBlendMode op) {
   if (ContextDisabled() || !image)
     return;
-
-  if (h_rule == Image::kStretchTile && v_rule == Image::kStretchTile) {
-    // Just do a scale.
-    // Since there is no way for the developer to specify decode behavior, use
-    // kSync by default.
-    DrawImage(image, Image::kSyncDecode, dest, &src_rect, op);
-    return;
-  }
-
-  image->DrawTiledBorder(*this, dest, src_rect, tile_scale_factor, h_rule,
-                         v_rule, op);
+  image->DrawPattern(*this, src_rect, scale_src_to_dest, phase, op, dest_rect,
+                     repeat_spacing);
   paint_controller_.SetImagePainted();
 }
 

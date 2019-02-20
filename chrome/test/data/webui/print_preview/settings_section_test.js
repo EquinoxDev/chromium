@@ -91,12 +91,8 @@ cr.define('settings_sections_tests', function() {
     }
 
     function setPdfDestination() {
-      const saveAsPdfDestination = new print_preview.Destination(
-          print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
-          print_preview.DestinationType.LOCAL,
-          print_preview.DestinationOrigin.LOCAL,
-          loadTimeData.getString('printToPDF'), false /*isRecent*/,
-          print_preview.DestinationConnectionStatus.ONLINE);
+      const saveAsPdfDestination =
+          print_preview_test_utils.getSaveAsPdfDestination();
       saveAsPdfDestination.capabilities =
           print_preview_test_utils.getCddTemplate(saveAsPdfDestination.id)
               .capabilities;
@@ -257,8 +253,6 @@ cr.define('settings_sections_tests', function() {
             selectElement.value);
         assertEquals(
             capabilityAndValue.expectedValue, page.getSettingValue('color'));
-        // Check that setting is not marked as managed.
-        assertFalse(colorElement.$$('print-preview-settings-section').managed);
         assertFalse(selectElement.disabled);
       });
     });
@@ -267,13 +261,10 @@ cr.define('settings_sections_tests', function() {
       // Check that the Save to Google Drive printer does not show the color
       // capability, but sets the value as true by default.
       const colorElement = page.$$('print-preview-color-settings');
-      const googleDrivePrinter = new print_preview.Destination(
-          print_preview.Destination.GooglePromotedId.DOCS,
-          print_preview.DestinationType.GOOGLE,
-          print_preview.DestinationOrigin.COOKIES,
-          print_preview.Destination.GooglePromotedId.DOCS, true /* isRecent */,
-          print_preview.DestinationConnectionStatus.ONLINE, {});
-      page.set('destination_', googleDrivePrinter);
+      page.set(
+          'destination_',
+          print_preview_test_utils.getGoogleDriveDestination(
+              'foo@chromium.org'));
       const capabilities =
           print_preview_test_utils
               .getCddTemplate(print_preview.Destination.GooglePromotedId.DOCS)
@@ -386,23 +377,25 @@ cr.define('settings_sections_tests', function() {
       toggleMoreSettings();
       assertFalse(scalingElement.hidden);
 
-      // HTML to non-PDF destination -> only input shown
+      // HTML to non-PDF destination -> No fit to page option.
       initDocumentInfo(false, false);
-      const fitToPageSection =
-          scalingElement.$$('print-preview-settings-section');
-      const scalingInputWrapper =
-          scalingElement.$$('print-preview-number-settings-section')
-              .$$('.input-wrapper');
       assertFalse(scalingElement.hidden);
-      assertTrue(fitToPageSection.hidden);
-      assertFalse(scalingInputWrapper.hidden);
+      const fitToPageOption = scalingElement.$$(
+          `[value="${scalingElement.scalingValueEnum_.FIT_TO_PAGE}"]`);
+      const defaultOption = scalingElement.$$(
+          `[value="${scalingElement.scalingValueEnum_.DEFAULT}"]`);
+      const customOption = scalingElement.$$(
+          `[value="${scalingElement.scalingValueEnum_.CUSTOM}"]`);
+      assertTrue(fitToPageOption.hidden);
+      assertFalse(defaultOption.hidden);
+      assertFalse(customOption.hidden);
 
-      // PDF to non-PDF destination -> checkbox and input shown. Check that if
-      // more settings is collapsed the section is hidden.
+      // PDF to non-PDF destination -> All 3 options.
       initDocumentInfo(true, false);
       assertFalse(scalingElement.hidden);
-      assertFalse(fitToPageSection.hidden);
-      assertFalse(scalingInputWrapper.hidden);
+      assertFalse(fitToPageOption.hidden);
+      assertFalse(defaultOption.hidden);
+      assertFalse(customOption.hidden);
 
       // PDF to PDF destination -> section disappears.
       setPdfDestination();
@@ -415,14 +408,6 @@ cr.define('settings_sections_tests', function() {
      */
     function isSectionHidden(checkbox) {
       return checkbox.parentNode.parentNode.hidden;
-    }
-
-    /**
-     * @param {!CrCheckboxElement} checkbox The checkbox to check
-     * @return {boolean} Whether the checkbox's parent section is managed.
-     */
-    function isSectionManaged(checkbox) {
-      return checkbox.parentNode.parentNode.managed;
     }
 
     test(assert(TestNames.Other), function() {
@@ -592,20 +577,21 @@ cr.define('settings_sections_tests', function() {
       assertFalse(pagesElement.hidden);
 
       // Default value is all pages. Print ticket expects this to be empty.
-      const allRadio = pagesElement.$.allRadioButton;
-      const customRadio = pagesElement.$.customRadioButton;
+      const pagesSelect = pagesElement.$$('select');
+      const customInputCollapse = pagesElement.$$('iron-collapse');
       const pagesCrInput = pagesElement.$.pageSettingsCustomInput;
       const pagesInput = pagesCrInput.inputElement;
 
       /**
-       * @param {boolean} allChecked Whether the all pages radio button is
-       *     selected.
+       * @param {boolean} allSelected Whether the all pages option is selected.
        * @param {string} inputString The expected string in the pages input.
        * @param {boolean} valid Whether the input string is valid.
        */
-      const validateInputState = function(allChecked, inputString, valid) {
-        assertEquals(allChecked, allRadio.checked);
-        assertEquals(!allChecked, customRadio.checked);
+      const validateInputState = function(allSelected, inputString, valid) {
+        assertEquals(allSelected, !customInputCollapse.opened);
+        assertEquals(
+            allSelected,
+            pagesSelect.value === pagesElement.pagesValueEnum_.ALL.toString());
         assertEquals(inputString, pagesInput.value);
         assertEquals(valid, !pagesCrInput.invalid);
       };
@@ -615,15 +601,14 @@ cr.define('settings_sections_tests', function() {
       assertTrue(page.settings.pages.valid);
 
       // Set selection of pages 1 and 2.
-      customRadio.click();
+      pagesSelect.value = pagesElement.pagesValueEnum_.CUSTOM.toString();
+      pagesSelect.dispatchEvent(new CustomEvent('change'));
 
-      // Manually set |optionSelected_| since focus may not work correctly on
-      // MacOS. The PageSettingsTests verify this behavior is correct on all
-      // platforms.
-      pagesElement.set('optionSelected_', pagesElement.pagesValueEnum_.CUSTOM);
-
-      print_preview_test_utils.triggerInputEvent(pagesInput, '1-2');
-      return test_util.eventToPromise('input-change', pagesElement)
+      return test_util.eventToPromise('process-select-change', pagesElement)
+          .then(function() {
+            print_preview_test_utils.triggerInputEvent(pagesInput, '1-2');
+            return test_util.eventToPromise('input-change', pagesElement);
+          })
           .then(function() {
             validateInputState(false, '1-2', true);
             assertEquals(1, page.settings.ranges.value.length);
@@ -779,6 +764,25 @@ cr.define('settings_sections_tests', function() {
           .then(function() {
             assertEquals(
                 squareOption, JSON.stringify(page.settings.mediaSize.value));
+
+            // Set the setting to an option that is not supported by the
+            // printer. This can occur if sticky settings are for a different
+            // printer at startup.
+            const unavailableOption = {
+              name: 'ISO_A4',
+              width_microns: 210000,
+              height_microns: 297000,
+              custom_display_name: 'A4',
+            };
+            page.setSetting('mediaSize', unavailableOption);
+            return test_util.eventToPromise(
+                'process-select-change', mediaSizeElement);
+          })
+          .then(function() {
+            // The section should reset the setting to the printer's default
+            // value, since the printer does not support A4.
+            assertEquals(
+                letterOption, JSON.stringify(page.settings.mediaSize.value));
           });
     });
 
@@ -812,6 +816,22 @@ cr.define('settings_sections_tests', function() {
             expectTrue(isDpiEqual(
                 lowQualityOption, JSON.parse(dpiInput.value)));
             expectTrue(isDpiEqual(lowQualityOption, page.settings.dpi.value));
+
+            // Set to the setting to an option that is not supported by the
+            // printer. This can occur if sticky settings are for a different
+            // printer at startup.
+            const unavailableOption = {
+              horizontal_dpi: 400,
+              vertical_dpi: 400,
+            };
+            page.setSetting('dpi', unavailableOption);
+            return test_util.eventToPromise(
+                'process-select-change', dpiElement);
+          })
+          .then(function() {
+            // The section should reset the setting to the printer's default
+            // value, since the printer does not support 400 DPI.
+            expectTrue(isDpiEqual(highQualityOption, page.settings.dpi.value));
           });
     });
 
@@ -924,22 +944,39 @@ cr.define('settings_sections_tests', function() {
       const scalingInput =
           scalingElement.$$('print-preview-number-settings-section')
               .$.userValue.inputElement;
-      const fitToPageCheckbox = scalingElement.$$('#fit-to-page-checkbox');
+      const collapse = scalingElement.$$('iron-collapse');
+      const scalingDropdown = scalingElement.$$('.md-select');
 
+      /**
+       * @param {boolean} isCustom Whether custom scaling is selected.
+       * @param {string} scalingValue The value of the scaling setting.
+       * @param {string} scalingDisplayValue The value displayed in the scaling
+       *     input.
+       * @param {boolean} scalingValid Whether the scaling setting is valid.
+       * @param {boolean} fitToPage Whether fit to page is selected.
+       */
       const validateScalingState =
-          (scalingValue, scalingValid, fitToPage, fitToPageDisplay) => {
-            // Invalid scalings are always set directly in the input, so no need
-            // to verify that the input matches them.
-            if (scalingValid) {
-              const scalingDisplay = fitToPage ?
-                  page.documentSettings_.fitToPageScaling.toString() :
-                  scalingValue;
-              assertEquals(scalingDisplay, scalingInput.value);
+          (isCustom, scalingValue, scalingDisplayValue, scalingValid,
+           fitToPage) => {
+            if (fitToPage) {
+              assertEquals(
+                  scalingElement.scalingValueEnum_.FIT_TO_PAGE.toString(),
+                  scalingDropdown.value);
+            } else if (isCustom) {
+              assertEquals(
+                  scalingElement.scalingValueEnum_.CUSTOM.toString(),
+                  scalingDropdown.value);
+            } else {
+              assertEquals(
+                  scalingElement.scalingValueEnum_.DEFAULT.toString(),
+                  scalingDropdown.value);
             }
+            assertEquals(isCustom && !fitToPage, collapse.opened);
+            assertEquals(scalingDisplayValue, scalingInput.value);
             assertEquals(scalingValue, page.settings.scaling.value);
             assertEquals(scalingValid, page.settings.scaling.valid);
-            assertEquals(fitToPageDisplay, fitToPageCheckbox.checked);
             assertEquals(fitToPage, page.settings.fitToPage.value);
+            assertEquals(isCustom, page.settings.customScaling.value);
           };
 
       // Set PDF so both scaling and fit to page are active.
@@ -947,32 +984,41 @@ cr.define('settings_sections_tests', function() {
       assertFalse(scalingElement.hidden);
 
       // Default is 100
-      validateScalingState('100', true, false, false);
+      validateScalingState(false, '100', '100', true, false);
 
-      // Change to 105
-      print_preview_test_utils.triggerInputEvent(scalingInput, '105');
-      return test_util.eventToPromise('input-change', scalingElement)
+      // Select custom
+      scalingDropdown.value =
+          scalingElement.scalingValueEnum_.CUSTOM.toString();
+      scalingDropdown.dispatchEvent(new CustomEvent('change'));
+      return test_util.eventToPromise('process-select-change', scalingElement)
           .then(function() {
-            validateScalingState('105', true, false, false);
+            validateScalingState(true, '100', '100', true, false);
 
-            // Change to fit to page. Should display fit to page scaling but not
-            // alter the scaling setting.
-            fitToPageCheckbox.checked = true;
-            fitToPageCheckbox.dispatchEvent(new CustomEvent('change'));
-            return test_util.eventToPromise(
-                'update-checkbox-setting', scalingElement);
-          })
-          .then(function(event) {
-            assertEquals('fitToPage', event.detail);
-            validateScalingState('105', true, true, true);
-
-            // Set scaling. Should uncheck fit to page and set the settings for
-            // scaling and fit to page.
-            print_preview_test_utils.triggerInputEvent(scalingInput, '95');
+            print_preview_test_utils.triggerInputEvent(scalingInput, '105');
             return test_util.eventToPromise('input-change', scalingElement);
           })
           .then(function() {
-            validateScalingState('95', true, false, false);
+            validateScalingState(true, '105', '105', true, false);
+
+            // Change to fit to page.
+            scalingDropdown.value =
+                scalingElement.scalingValueEnum_.FIT_TO_PAGE.toString();
+            scalingDropdown.dispatchEvent(new CustomEvent('change'));
+            return test_util.eventToPromise(
+                'process-select-change', scalingElement);
+          })
+          .then(function(event) {
+            validateScalingState(true, '105', '105', true, true);
+
+            // Go back to custom. Restores 105 value.
+            scalingDropdown.value =
+                scalingElement.scalingValueEnum_.CUSTOM.toString();
+            scalingDropdown.dispatchEvent(new CustomEvent('change'));
+            return test_util.eventToPromise(
+                'process-select-change', scalingElement);
+          })
+          .then(function() {
+            validateScalingState(true, '105', '105', true, false);
 
             // Set scaling to something invalid. Should change setting validity
             // but not value.
@@ -980,48 +1026,55 @@ cr.define('settings_sections_tests', function() {
             return test_util.eventToPromise('input-change', scalingElement);
           })
           .then(function() {
-            validateScalingState('95', false, false, false);
+            validateScalingState(true, '105', '5', false, false);
 
-            // Check fit to page. Should set scaling valid.
-            fitToPageCheckbox.checked = true;
-            fitToPageCheckbox.dispatchEvent(new CustomEvent('change'));
+            // Select fit to page. Should clear the invalid value.
+            scalingDropdown.value =
+                scalingElement.scalingValueEnum_.FIT_TO_PAGE.toString();
+            scalingDropdown.dispatchEvent(new CustomEvent('change'));
             return test_util.eventToPromise(
-                'update-checkbox-setting', scalingElement);
+                'process-select-change', scalingElement);
           })
           .then(function(event) {
-            assertEquals('fitToPage', event.detail);
-            validateScalingState('95', true, true, true);
+            validateScalingState(true, '105', '105', true, true);
 
-            // Uncheck fit to page. Should reset scaling to last valid.
-            fitToPageCheckbox.checked = false;
-            fitToPageCheckbox.dispatchEvent(new CustomEvent('change'));
+            // Custom scaling should set to last valid.
+            scalingDropdown.value =
+                scalingElement.scalingValueEnum_.CUSTOM.toString();
+            scalingDropdown.dispatchEvent(new CustomEvent('change'));
             return test_util.eventToPromise(
-                'update-checkbox-setting', scalingElement);
+                'process-select-change', scalingElement);
           })
           .then(function(event) {
-            assertEquals('fitToPage', event.detail);
-            validateScalingState('95', true, false, false);
+            validateScalingState(true, '105', '105', true, false);
 
-            // Change to fit to page. Should display fit to page scaling but not
-            // alter the scaling setting.
-            fitToPageCheckbox.checked = true;
-            fitToPageCheckbox.dispatchEvent(new CustomEvent('change'));
-            return test_util.eventToPromise(
-                'update-checkbox-setting', scalingElement);
-          })
-          .then(function(event) {
-            assertEquals('fitToPage', event.detail);
-            validateScalingState('95', true, true, true);
-
-            // Enter something invalid in the scaling field. This should not
-            // change the stored value of scaling or fit to page, to avoid an
-            // unnecessary preview regeneration, but should display fit to page
-            // as unchecked.
-            print_preview_test_utils.triggerInputEvent(scalingInput, '9');
+            // Set scaling to something invalid. Should change setting validity
+            // but not value.
+            print_preview_test_utils.triggerInputEvent(scalingInput, '500');
             return test_util.eventToPromise('input-change', scalingElement);
           })
           .then(function() {
-            validateScalingState('95', false, true, false);
+            validateScalingState(true, '105', '500', false, false);
+
+            // Pick default scaling. This should clear the error.
+            scalingDropdown.value =
+                scalingElement.scalingValueEnum_.DEFAULT.toString();
+            scalingDropdown.dispatchEvent(new CustomEvent('change'));
+            return test_util.eventToPromise(
+                'process-select-change', scalingElement);
+          })
+          .then(function(event) {
+            validateScalingState(false, '105', '105', true, false);
+
+            // Custom scaling should set to last valid.
+            scalingDropdown.value =
+                scalingElement.scalingValueEnum_.CUSTOM.toString();
+            scalingDropdown.dispatchEvent(new CustomEvent('change'));
+            return test_util.eventToPromise(
+                'process-select-change', scalingElement);
+          })
+          .then(function() {
+            validateScalingState(true, '105', '105', true, false);
 
             // Enter a blank value in the scaling field. This should not
             // change the stored value of scaling or fit to page, to avoid an
@@ -1030,15 +1083,7 @@ cr.define('settings_sections_tests', function() {
             return test_util.eventToPromise('input-change', scalingElement);
           })
           .then(function() {
-            validateScalingState('95', false, true, false);
-
-            // Entering something valid unsets fit to page and sets scaling
-            // valid to true.
-            print_preview_test_utils.triggerInputEvent(scalingInput, '90');
-            return test_util.eventToPromise('input-change', scalingElement);
-          })
-          .then(function() {
-            validateScalingState('90', true, false, false);
+            validateScalingState(true, '105', '', true, false);
           });
     });
 
@@ -1196,9 +1241,6 @@ cr.define('settings_sections_tests', function() {
           assertEquals(
               subtestParams.expectedValue ? 'color' : 'bw',
               selectElement.value);
-          assertEquals(
-              subtestParams.expectedManaged,
-              colorElement.$$('print-preview-settings-section').managed);
           assertEquals(subtestParams.expectedManaged, selectElement.disabled);
         }
       });
@@ -1276,8 +1318,6 @@ cr.define('settings_sections_tests', function() {
             subtestParams.expectedHidden, isSectionHidden(duplexElement));
         if (!subtestParams.expectedHidden) {
           assertEquals(subtestParams.expectedValue, duplexElement.checked);
-          assertEquals(
-              subtestParams.expectedManaged, isSectionManaged(duplexElement));
           assertEquals(subtestParams.expectedManaged, duplexElement.disabled);
         }
       });

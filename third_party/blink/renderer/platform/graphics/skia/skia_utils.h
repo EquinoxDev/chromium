@@ -74,10 +74,6 @@ BlendMode PLATFORM_EXPORT BlendModeFromSkBlendMode(SkBlendMode);
 // alpha is in the range [0, 1].
 SkColor PLATFORM_EXPORT ScaleAlpha(SkColor, float);
 
-// Convert a SkColorSpace to a gfx::ColorSpace
-gfx::ColorSpace PLATFORM_EXPORT
-SkColorSpaceToGfxColorSpace(const sk_sp<SkColorSpace>);
-
 bool PLATFORM_EXPORT
 ApproximatelyEqualSkColorSpaces(sk_sp<SkColorSpace> src_color_space,
                                 sk_sp<SkColorSpace> dst_color_space);
@@ -139,7 +135,7 @@ inline float BlurRadiusToStdDev(float radius) {
 
   // Per spec, sigma is exactly half the blur radius:
   // https://www.w3.org/TR/css-backgrounds-3/#shadow-blur
-  // https://html.spec.whatwg.org/multipage/canvas.html#when-shadows-are-drawn
+  // https://html.spec.whatwg.org/C/#when-shadows-are-drawn
   return radius * 0.5f;
 }
 

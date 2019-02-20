@@ -313,16 +313,7 @@ void ImageResource::AllClientsAndObserversRemoved() {
   // TODO(hiroshige): Make the CHECK condition cleaner.
   CHECK(is_during_finish_as_error_ || !GetContent()->HasImage() ||
         !ErrorOccurred());
-  // If possible, delay the resetting until back at the event loop. Doing so
-  // after a conservative GC prevents resetAnimation() from upsetting ongoing
-  // animation updates (crbug.com/613709)
-  if (!ThreadHeap::WillObjectBeLazilySwept(this)) {
-    Thread::Current()->GetTaskRunner()->PostTask(
-        FROM_HERE, WTF::Bind(&ImageResourceContent::DoResetAnimation,
-                             WrapWeakPersistent(GetContent())));
-  } else {
-    GetContent()->DoResetAnimation();
-  }
+  GetContent()->DoResetAnimation();
   if (multipart_parser_)
     multipart_parser_->Cancel();
   Resource::AllClientsAndObserversRemoved();
@@ -478,10 +469,7 @@ static bool IsEntireResource(const ResourceResponse& response) {
          first_byte_position == 0 && last_byte_position + 1 == instance_length;
 }
 
-void ImageResource::ResponseReceived(
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
-  DCHECK(!handle);
+void ImageResource::ResponseReceived(const ResourceResponse& response) {
   DCHECK(!multipart_parser_);
   if (response.MimeType() == "multipart/x-mixed-replace") {
     Vector<char> boundary = network_utils::ParseMultipartBoundary(
@@ -498,7 +486,7 @@ void ImageResource::ResponseReceived(
   // ResourceResponse, while |response| might just be a revalidation response
   // (e.g. a 304) with a partial set of updated headers that were folded into
   // the cached response.
-  Resource::ResponseReceived(response, std::move(handle));
+  Resource::ResponseReceived(response);
 
   if (placeholder_option_ ==
           PlaceholderOption::kShowAndReloadPlaceholderAlways &&

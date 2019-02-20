@@ -9,6 +9,7 @@
 
 #include "base/barrier_closure.h"
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/debug/dump_without_crashing.h"
@@ -139,6 +140,13 @@
 
 #if defined(OS_ANDROID)
 #include "base/android/application_status_listener.h"
+#endif
+
+#if BUILDFLAG(TRIAL_COMPARISON_CERT_VERIFIER_SUPPORTED)
+#include "net/cert/caching_cert_verifier.h"
+#include "net/cert/cert_verify_proc.h"
+#include "net/cert/cert_verify_proc_builtin.h"
+#include "services/network/trial_comparison_cert_verifier_mojo.h"
 #endif
 
 namespace network {
@@ -322,6 +330,7 @@ std::string HashesToBase64String(const net::HashValueVector& hashes) {
 
 }  // namespace
 
+constexpr uint32_t NetworkContext::kMaxOutstandingRequestsPerProcess;
 constexpr bool NetworkContext::enable_resource_scheduler_;
 
 NetworkContext::PendingCertVerify::PendingCertVerify() = default;
@@ -540,7 +549,7 @@ NetworkContext::NetworkContext(
   resource_scheduler_ =
       std::make_unique<ResourceScheduler>(enable_resource_scheduler_);
 
-  InitializeCorsOriginAccessList();
+  InitializeCorsParams();
 }
 
 // TODO(mmenke): Share URLRequestContextBulder configuration between two
@@ -569,7 +578,7 @@ NetworkContext::NetworkContext(
   resource_scheduler_ =
       std::make_unique<ResourceScheduler>(enable_resource_scheduler_);
 
-  InitializeCorsOriginAccessList();
+  InitializeCorsParams();
 }
 
 NetworkContext::NetworkContext(NetworkService* network_service,
@@ -678,7 +687,7 @@ void NetworkContext::CreateURLLoaderFactory(
     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client) {
   url_loader_factories_.emplace(std::make_unique<cors::CorsURLLoaderFactory>(
       this, std::move(params), std::move(resource_scheduler_client),
-      std::move(request), &cors_origin_access_list_));
+      std::move(request), &cors_origin_access_list_, nullptr));
 }
 
 void NetworkContext::SetClient(mojom::NetworkContextClientPtr client) {
@@ -735,6 +744,24 @@ void NetworkContext::DestroyURLLoaderFactory(
   auto it = url_loader_factories_.find(url_loader_factory);
   DCHECK(it != url_loader_factories_.end());
   url_loader_factories_.erase(it);
+}
+
+void NetworkContext::LoaderCreated(uint32_t process_id) {
+  loader_count_per_process_[process_id] += 1;
+}
+
+void NetworkContext::LoaderDestroyed(uint32_t process_id) {
+  auto it = loader_count_per_process_.find(process_id);
+  DCHECK(it != loader_count_per_process_.end());
+  it->second -= 1;
+  if (it->second == 0)
+    loader_count_per_process_.erase(it);
+}
+
+bool NetworkContext::CanCreateLoader(uint32_t process_id) {
+  auto it = loader_count_per_process_.find(process_id);
+  uint32_t count = (it == loader_count_per_process_.end() ? 0 : it->second);
+  return count < max_loaders_per_process_;
 }
 
 size_t NetworkContext::GetNumOutstandingResolveHostRequestsForTesting() const {
@@ -1736,8 +1763,7 @@ URLRequestContextOwner NetworkContext::ApplyContextParamsToBuilder(
           net::URLRequestContextBuilder::HttpCacheParams::IN_MEMORY;
     } else {
       cache_params.path = *params_->http_cache_path;
-      cache_params.type = network_session_configurator::ChooseCacheType(
-          *base::CommandLine::ForCurrentProcess());
+      cache_params.type = network_session_configurator::ChooseCacheType();
     }
 
 #if defined(OS_ANDROID)
@@ -1846,6 +1872,8 @@ URLRequestContextOwner NetworkContext::ApplyContextParamsToBuilder(
 
   session_params.http_09_on_non_default_ports_enabled =
       params_->http_09_on_non_default_ports_enabled;
+  session_params.disable_idle_sockets_close_on_memory_pressure =
+      params_->disable_idle_sockets_close_on_memory_pressure;
 
   builder->set_http_network_session_params(session_params);
 
@@ -2079,9 +2107,21 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext() {
       cert_verifier_with_trust_anchors_->InitializeOnIOThread(verify_proc);
       cert_verifier = base::WrapUnique(cert_verifier_with_trust_anchors_);
     }
-#else
-    cert_verifier = net::CertVerifier::CreateDefault();
+#elif BUILDFLAG(TRIAL_COMPARISON_CERT_VERIFIER_SUPPORTED)
+    if (params_->trial_comparison_cert_verifier_params) {
+      cert_verifier = std::make_unique<net::CachingCertVerifier>(
+          std::make_unique<TrialComparisonCertVerifierMojo>(
+              params_->trial_comparison_cert_verifier_params->initial_allowed,
+              std::move(params_->trial_comparison_cert_verifier_params
+                            ->config_client_request),
+              std::move(params_->trial_comparison_cert_verifier_params
+                            ->report_client),
+              net::CertVerifyProc::CreateDefault(),
+              net::CreateCertVerifyProcBuiltin()));
+    }
 #endif
+    if (!cert_verifier)
+      cert_verifier = net::CertVerifier::CreateDefault();
   }
 
   builder.SetCertVerifier(IgnoreErrorsCertVerifier::MaybeWrapCertVerifier(
@@ -2233,7 +2273,7 @@ void NetworkContext::TrustAnchorUsed() {
 }
 #endif
 
-void NetworkContext::InitializeCorsOriginAccessList() {
+void NetworkContext::InitializeCorsParams() {
   for (const auto& pattern : params_->cors_origin_access_list) {
     url::Origin origin = url::Origin::Create(GURL(pattern->source_origin));
     cors_origin_access_list_.SetAllowListForOrigin(origin,
@@ -2241,6 +2281,8 @@ void NetworkContext::InitializeCorsOriginAccessList() {
     cors_origin_access_list_.SetBlockListForOrigin(origin,
                                                    pattern->block_patterns);
   }
+  for (const auto& key : params_->cors_exempt_header_list)
+    cors_exempt_header_list_.insert(key);
 }
 
 }  // namespace network

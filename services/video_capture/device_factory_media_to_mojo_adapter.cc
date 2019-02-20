@@ -5,7 +5,9 @@
 #include "services/video_capture/device_factory_media_to_mojo_adapter.h"
 
 #include <sstream>
+#include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -13,6 +15,7 @@
 #include "media/capture/video/video_capture_device_info.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/video_capture/device_media_to_mojo_adapter.h"
+#include "services/video_capture/public/mojom/producer.mojom.h"
 #include "services/video_capture/public/uma/video_capture_service_event.h"
 
 namespace {
@@ -110,7 +113,7 @@ void DeviceFactoryMediaToMojoAdapter::CreateDevice(
     // Revoke the access and close the device, then bind to the new request.
     ActiveDeviceEntry& device_entry = active_device_iter->second;
     device_entry.binding->Unbind();
-    device_entry.device->Stop();
+    device_entry.device->Stop(base::DoNothing());
     device_entry.binding->Bind(std::move(device_request));
     device_entry.binding->set_connection_error_handler(base::Bind(
         &DeviceFactoryMediaToMojoAdapter::OnClientConnectionErrorOrClose,
@@ -150,7 +153,8 @@ void DeviceFactoryMediaToMojoAdapter::AddTextureVirtualDevice(
 }
 
 void DeviceFactoryMediaToMojoAdapter::RegisterVirtualDevicesChangedObserver(
-    mojom::DevicesChangedObserverPtr observer) {
+    mojom::DevicesChangedObserverPtr observer,
+    bool raise_event_if_virtual_devices_already_present) {
   NOTIMPLEMENTED();
 }
 
@@ -187,8 +191,17 @@ void DeviceFactoryMediaToMojoAdapter::OnClientConnectionErrorOrClose(
   video_capture::uma::LogVideoCaptureServiceEvent(
       video_capture::uma::SERVICE_LOST_CONNECTION_TO_BROWSER);
 
-  active_devices_by_id_[device_id].device->Stop();
+  active_devices_by_id_[device_id].device->Stop(base::DoNothing());
   active_devices_by_id_.erase(device_id);
 }
+
+#if defined(OS_CHROMEOS)
+void DeviceFactoryMediaToMojoAdapter::BindCrosImageCaptureRequest(
+    cros::mojom::CrosImageCaptureRequest request) {
+  CHECK(capture_system_);
+
+  capture_system_->BindCrosImageCaptureRequest(std::move(request));
+}
+#endif  // defined(OS_CHROMEOS)
 
 }  // namespace video_capture

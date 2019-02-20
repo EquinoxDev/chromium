@@ -37,15 +37,6 @@ std::string GetTracingCategories(
   return base::JoinString(categories, ",");
 }
 
-std::string GetAllTracingCategories() {
-  std::vector<base::StringPiece> categories;
-  for (size_t i = 0; i < chromecast::tracing::kCategoryCount; ++i) {
-    base::StringPiece category(chromecast::tracing::kCategories[i]);
-    categories.push_back(category);
-  }
-  return base::JoinString(categories, ",");
-}
-
 void DestroySystemTracerOnWorker(
     std::unique_ptr<chromecast::SystemTracer> tracer) {}
 
@@ -174,14 +165,14 @@ class CastDataSource : public tracing::ProducerClient::DataSourceBase {
   // Called from the tracing::ProducerClient on its sequence.
   void StartTracing(
       tracing::ProducerClient* producer_client,
-      const tracing::mojom::DataSourceConfig& data_source_config) override {
+      const perfetto::DataSourceConfig& data_source_config) override {
     DCHECK_CALLED_ON_VALID_SEQUENCE(perfetto_sequence_checker_);
     DCHECK(!producer_client_);
     DCHECK(!session_);
     producer_client_ = producer_client;
-    target_buffer_ = data_source_config.target_buffer;
+    target_buffer_ = data_source_config.target_buffer();
     session_ = std::make_unique<CastSystemTracingSession>(worker_task_runner_);
-    session_->StartTracing(data_source_config.trace_config,
+    session_->StartTracing(data_source_config.chrome_config().trace_config(),
                            base::BindOnce(&CastDataSource::SystemTracerStarted,
                                           base::Unretained(this)));
   }
@@ -288,14 +279,13 @@ CastTracingAgent::~CastTracingAgent() = default;
 
 // tracing::mojom::Agent. Called by Mojo internals on the UI thread.
 void CastTracingAgent::StartTracing(const std::string& config,
-                                    base::TimeTicks coordinator_time,
-                                    Agent::StartTracingCallback callback) {
+                                    base::TimeTicks coordinator_time) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!session_);
   session_ = std::make_unique<CastSystemTracingSession>(worker_task_runner_);
   session_->StartTracing(
       config, base::BindOnce(&CastTracingAgent::StartTracingCallbackProxy,
-                             base::Unretained(this), std::move(callback)));
+                             base::Unretained(this)));
 }
 
 void CastTracingAgent::StopAndFlush(tracing::mojom::RecorderPtr recorder) {
@@ -308,17 +298,17 @@ void CastTracingAgent::StopAndFlush(tracing::mojom::RecorderPtr recorder) {
                                             base::Unretained(this)));
 }
 
-void CastTracingAgent::GetCategories(Agent::GetCategoriesCallback callback) {
-  std::move(callback).Run(GetAllTracingCategories());
+void CastTracingAgent::GetCategories(std::set<std::string>* category_set) {
+  for (size_t i = 0; i < chromecast::tracing::kCategoryCount; ++i) {
+    category_set->insert(chromecast::tracing::kCategories[i]);
+  }
 }
 
 void CastTracingAgent::StartTracingCallbackProxy(
-    Agent::StartTracingCallback callback,
     bool success) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!success)
     session_.reset();
-  std::move(callback).Run(success);
 }
 
 void CastTracingAgent::HandleTraceData(chromecast::SystemTracer::Status status,

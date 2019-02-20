@@ -278,6 +278,15 @@ class CC_EXPORT SchedulerStateMachine {
   // Indicates the active tree's visible tiles are ready to be drawn.
   void NotifyReadyToDraw();
 
+  enum class AnimationWorkletState { PROCESSING, IDLE };
+  enum class TreeType { ACTIVE, PENDING };
+
+  // Indicates if currently processing animation worklets for the active or
+  // pending tree. This is used to determine if the draw deadline should be
+  // extended or activation delayed.
+  void NotifyAnimationWorkletStateChange(AnimationWorkletState state,
+                                         TreeType tree);
+
   void SetNeedsImplSideInvalidation(bool needs_first_draw_on_activation);
 
   bool has_pending_tree() const { return has_pending_tree_; }
@@ -295,7 +304,7 @@ class CC_EXPORT SchedulerStateMachine {
 
   bool CouldSendBeginMainFrame() const;
 
-  void SetDeferMainFrameUpdate(bool defer_main_frame_update);
+  void SetDeferBeginMainFrame(bool defer_begin_main_frame);
 
   void SetVideoNeedsBeginFrames(bool video_needs_begin_frames);
   bool video_needs_begin_frames() const { return video_needs_begin_frames_; }
@@ -417,7 +426,7 @@ class CC_EXPORT SchedulerStateMachine {
   bool critical_begin_main_frame_to_activate_is_fast_ = true;
   bool main_thread_missed_last_deadline_ = false;
   bool skip_next_begin_main_frame_to_reduce_latency_ = false;
-  bool defer_main_frame_update_ = false;
+  bool defer_begin_main_frame_ = false;
   bool video_needs_begin_frames_ = false;
   bool last_commit_had_no_updates_ = false;
   bool active_tree_is_ready_to_draw_ = true;
@@ -427,6 +436,8 @@ class CC_EXPORT SchedulerStateMachine {
   bool next_invalidation_needs_first_draw_on_activation_ = false;
   bool should_defer_invalidation_for_fast_main_frame_ = true;
   bool begin_frame_is_animate_only_ = false;
+  bool processing_animation_worklets_for_active_tree_ = false;
+  bool processing_animation_worklets_for_pending_tree_ = false;
 
   // Set to true if the main thread fails to respond with a commit or abort the
   // main frame before the draw deadline on the previous impl frame.

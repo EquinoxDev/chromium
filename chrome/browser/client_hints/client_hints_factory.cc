@@ -17,10 +17,10 @@ base::LazyInstance<ClientHintsFactory>::DestructorAtExit
 }  // namespace
 
 // static
-client_hints::ClientHints* ClientHintsFactory::GetForBrowserContext(
-    content::BrowserContext* context) {
+content::ClientHintsControllerDelegate*
+ClientHintsFactory::GetForBrowserContext(content::BrowserContext* context) {
   return static_cast<client_hints::ClientHints*>(
-      GetInstance()->GetServiceForContext(context, true));
+      GetInstance()->GetServiceForBrowserContext(context, true));
 }
 
 // static
@@ -43,4 +43,8 @@ KeyedService* ClientHintsFactory::BuildServiceInstanceFor(
 content::BrowserContext* ClientHintsFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
   return chrome::GetBrowserContextOwnInstanceInIncognito(context);
+}
+
+bool ClientHintsFactory::ServiceIsNULLWhileTesting() const {
+  return true;
 }

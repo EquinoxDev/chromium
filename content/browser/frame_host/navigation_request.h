@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
+#include "base/strings/string_util.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/initiator_csp_context.h"
 #include "content/browser/loader/navigation_url_loader_delegate.h"
@@ -90,7 +91,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
       bool browser_initiated,
       const std::string& extra_headers,
       const FrameNavigationEntry& frame_entry,
-      const NavigationEntryImpl& entry,
+      NavigationEntryImpl* entry,
       const scoped_refptr<network::ResourceRequestBody>& post_body,
       std::unique_ptr<NavigationUIData> navigation_ui_data);
 
@@ -156,11 +157,11 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     return dest_site_instance_.get();
   }
 
-  RestoreType restore_type() const { return restore_type_; };
+  RestoreType restore_type() const { return restore_type_; }
 
-  bool is_view_source() const { return is_view_source_; };
+  bool is_view_source() const { return is_view_source_; }
 
-  int bindings() const { return bindings_; };
+  int bindings() const { return bindings_; }
 
   bool browser_initiated() const { return browser_initiated_ ; }
 
@@ -180,6 +181,10 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   }
 
   int net_error() { return net_error_; }
+
+  const std::string& GetMimeType() {
+    return response_ ? response_->head.mime_type : base::EmptyString();
+  }
 
   void SetWaitingForRendererResponse();
 
@@ -221,10 +226,19 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   void RegisterSubresourceOverride(
       mojom::TransferrableURLLoaderPtr transferrable_loader);
 
-  // Returns the NavigationClient held by this navigation request that is ready
-  // to commit, or nullptr if there isn't any.
-  // Only used with PerNavigationMojoInterface enabled.
+  // Lazily initializes and returns the mojo::NavigationClient interface used
+  // for commit. Only used with PerNavigationMojoInterface enabled.
   mojom::NavigationClient* GetCommitNavigationClient();
+
+  void SetOriginPolicy(const std::string& policy);
+
+  void set_transition(ui::PageTransition transition) {
+    common_params_.transition = transition;
+  }
+
+  void set_has_user_gesture(bool has_user_gesture) {
+    common_params_.has_user_gesture = has_user_gesture;
+  }
 
  private:
   NavigationRequest(FrameTreeNode* frame_tree_node,
@@ -235,7 +249,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
                     bool from_begin_navigation,
                     bool is_for_commit,
                     const FrameNavigationEntry* frame_navigation_entry,
-                    const NavigationEntryImpl* navitation_entry,
+                    NavigationEntryImpl* navitation_entry,
                     std::unique_ptr<NavigationUIData> navigation_ui_data,
                     mojom::NavigationClientAssociatedPtrInfo navigation_client,
                     blink::mojom::NavigationInitiatorPtr navigation_initiator);
@@ -356,12 +370,18 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // Only used with PerNavigationMojoInterface enabled.
   void OnRendererAbortedNavigation();
 
-  // When called, this NavigationRequest will no longer interpret the pipe
+  // Binds the given error_handler to be called when an interface disconnection
+  // happens on the renderer side.
+  // Only used with PerNavigationMojoInterface enabled.
+  void HandleInterfaceDisconnection(mojom::NavigationClientAssociatedPtr*,
+                                    base::OnceClosure error_handler);
+
+  // When called, this NavigationRequest will no longer interpret the interface
   // disconnection on the renderer side as an AbortNavigation.
   // TODO(ahemery): remove this function when NavigationRequest properly handles
-  // pipe disconnection in all cases. Only used with PerNavigationMojoInterface
-  // enabled.
-  void IgnorePipeDisconnection();
+  // interface disconnection in all cases.
+  // Only used with PerNavigationMojoInterface enabled.
+  void IgnoreInterfaceDisconnection();
 
   FrameTreeNode* frame_tree_node_;
 

@@ -63,7 +63,7 @@ class PaintLayerScrollableAreaTestBase : public RenderingTest {
 class PaintLayerScrollableAreaTest : public PaintLayerScrollableAreaTestBase,
                                      public PaintTestConfigurations {};
 
-INSTANTIATE_PAINT_TEST_CASE_P(PaintLayerScrollableAreaTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(PaintLayerScrollableAreaTest);
 using PaintLayerScrollableAreaTestSPv1 = PaintLayerScrollableAreaTestBase;
 
 TEST_P(PaintLayerScrollableAreaTest,
@@ -909,6 +909,10 @@ TEST_P(PaintLayerScrollableAreaTest,
 }
 
 TEST_P(PaintLayerScrollableAreaTest, ViewScrollWithFixedAttachmentBackground) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   SetBodyInnerHTML(R"HTML(
     <style>
       html, #fixed-background {
@@ -938,15 +942,8 @@ TEST_P(PaintLayerScrollableAreaTest, ViewScrollWithFixedAttachmentBackground) {
   EXPECT_TRUE(fixed_background_div->ShouldDoFullPaintInvalidation());
   EXPECT_TRUE(fixed_background_div->BackgroundNeedsFullPaintInvalidation());
   EXPECT_FALSE(fixed_background_div->NeedsPaintPropertyUpdate());
-  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
-    // In CAP, we assume the view's fixed attachment background is composited
-    // at this time and doesn't need paint invalidation on view scroll.
-    EXPECT_FALSE(GetLayoutView().ShouldDoFullPaintInvalidation());
-    EXPECT_FALSE(GetLayoutView().BackgroundNeedsFullPaintInvalidation());
-  } else {
-    EXPECT_TRUE(GetLayoutView().ShouldDoFullPaintInvalidation());
-    EXPECT_TRUE(GetLayoutView().BackgroundNeedsFullPaintInvalidation());
-  }
+  EXPECT_TRUE(GetLayoutView().ShouldDoFullPaintInvalidation());
+  EXPECT_TRUE(GetLayoutView().BackgroundNeedsFullPaintInvalidation());
   EXPECT_TRUE(GetLayoutView().NeedsPaintPropertyUpdate());
   UpdateAllLifecyclePhasesForTest();
 
@@ -1026,7 +1023,7 @@ TEST_P(PaintLayerScrollableAreaTest, CompositedStickyDescendant) {
   EXPECT_EQ(FloatSize(0, 0), sticky->FirstFragment()
                                  .LocalBorderBoxProperties()
                                  .Transform()
-                                 ->Matrix()
+                                 .Matrix()
                                  .To2DTranslation());
 
   scrollable_area->SetScrollOffset(ScrollOffset(0, 50), kUserScroll);
@@ -1035,7 +1032,7 @@ TEST_P(PaintLayerScrollableAreaTest, CompositedStickyDescendant) {
   EXPECT_EQ(FloatSize(0, 50), sticky->FirstFragment()
                                   .LocalBorderBoxProperties()
                                   .Transform()
-                                  ->Matrix()
+                                  .Matrix()
                                   .To2DTranslation());
 }
 

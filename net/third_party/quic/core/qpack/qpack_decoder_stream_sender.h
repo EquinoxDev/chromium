@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "net/third_party/quic/core/qpack/qpack_instruction_encoder.h"
+#include "net/third_party/quic/core/quic_types.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
@@ -23,9 +24,10 @@ class QUIC_EXPORT_PRIVATE QpackDecoderStreamSender {
     virtual ~Delegate() = default;
 
     // Encoded |data| is ready to be written on the decoder stream.
-    // Write() is called exactly once for each instruction, |data| contains the
-    // entire encoded instruction and it is guaranteed to be not empty.
-    virtual void Write(QuicStringPiece data) = 0;
+    // WriteDecoderStreamData() is called exactly once for each instruction.
+    // |data| contains the entire encoded instruction and it is guaranteed to be
+    // not empty.
+    virtual void WriteDecoderStreamData(QuicStringPiece data) = 0;
   };
 
   explicit QpackDecoderStreamSender(Delegate* delegate);
@@ -36,12 +38,12 @@ class QUIC_EXPORT_PRIVATE QpackDecoderStreamSender {
   // Methods for sending instructions, see
   // https://quicwg.org/base-drafts/draft-ietf-quic-qpack.html#rfc.section.5.3
 
-  // 5.3.1 Table State Synchronize
-  void SendTableStateSynchronize(uint64_t insert_count);
+  // 5.3.1 Insert Count Increment
+  void SendInsertCountIncrement(uint64_t increment);
   // 5.3.2 Header Acknowledgement
-  void SendHeaderAcknowledgement(uint64_t stream_id);
+  void SendHeaderAcknowledgement(QuicStreamId stream_id);
   // 5.3.3 Stream Cancellation
-  void SendStreamCancellation(uint64_t stream_id);
+  void SendStreamCancellation(QuicStreamId stream_id);
 
  private:
   Delegate* const delegate_;

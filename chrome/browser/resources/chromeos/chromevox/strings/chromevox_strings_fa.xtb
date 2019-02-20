@@ -54,6 +54,7 @@
 <translation id="1346059596910821859">نکته</translation>
 <translation id="1346748346194534595">راست</translation>
 <translation id="135978014023467274">‏به ChromeVox نسخه ۶۳ به‌روزرسانی شدید!</translation>
+<translation id="1360699455582016846">روی مورد زیر کلید مسیریابی <ph name="ROUTING_KEY_NUMBER" /> کلیک کنید</translation>
 <translation id="136718599399906424">ردیف بعدی جدول</translation>
 <translation id="1377925789329510816">‏این آخرین عنوان است. با فشار دادن Search+H اولین عنوان را ببندید یا با فشار دادن Search+Shift+H به عنوان دوم در این صفحه بروید.</translation>
 <translation id="1383876407941801731">جستجو</translation>
@@ -112,6 +113,7 @@
 <translation id="1905379170753160525">نمایش فهرست عناوین</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">‎#ed</translation>
+<translation id="1914635379910604678"><ph name="DOT" /> ترکیب کلید</translation>
 <translation id="1954623340234317532">کنترل هفته از سال</translation>
 <translation id="1964135212174907577">شیء بعدی</translation>
 <translation id="1969092762068865084">ژوئیه</translation>
@@ -267,6 +269,7 @@
 <translation id="316542773973815724">پیمایش</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{فاصله}one{# فاصله}other{# فاصله}}</translation>
 <translation id="320961988183078793"><ph name="TYPE" /> قرار داده شد</translation>
+<translation id="3218691001991391708"><ph name="TEXT" /> را جای‌گذاری کنید.</translation>
 <translation id="3223701887221307104"><ph name="NAME" />، برگه</translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">پیوند بازدیدشده</translation>
@@ -286,48 +289,6 @@
 <translation id="3322936298410871309">عنوان قبلی سطح ۱</translation>
 <translation id="3323447499041942178">کادر متنی</translation>
 <translation id="3338224621010291843">لغزنده <ph name="VALUE" /> <ph name="NAME" /></translation>
-<translation id="3353420241558113817">‏{"ar": "عربی",
-        "bg": "بلغاری",
-        "ca": "کاتالان",
-        "cs": "چکی",
-        "da": "دانمارکی",
-        "de": "آلمانی",
-        "de_CH": "آلمان (سوئیس)",
-        "de_DE": "آلمانی (آلمان)",
-        "el": "یونانی",
-        "en": "انگلیسی",
-        "en_CA": "انگلیسی (کانادا)",
-        "en_GB": "انگلیسی (بریتانیا)",
-        "en_US": "انگلیسی (ایالات متحده)",
-        "es": "اسپانیایی",
-        "et": "استونیایی",
-        "fr": "فرانسوی",
-        "fr_CA": "فرانسوی  (کانادا)",
-        "fr_FR": "فرانسوی  (فرانسه)",
-        "fi": "فنلاندی",
-        "he": "عبری",
-        "hi": "هندی",
-        "hr": "کرواتی",
-        "hu": "مجارستانی",
-        "is": "ایسلندی",
-        "it": "ایتالیایی",
-        "ko": "کره‌ای",
-        "lt": "لیتوانیایی",
-        "lv": "لاتویایی",
-        "nb": "بوکمل نروژی",
-        "nl": "هلندی",
-        "pl": "لهستانی",
-        "pt": "پرتغالی",
-        "ro": "رومانیایی",
-        "ru": "روسی",
-        "sk": "اسلواکی",
-        "sl": "اسلوونیایی",
-        "sr": "صربی",
-        "sv": "سوئدی",
-        "tr": "ترکی",
-        "vi": "ویتنامی",
-        "zh": "چینی",
-        "zh_TW": "چینی (هان سنتی)"}</translation>
 <translation id="335581015389089642">صدا</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{علامت به اضافه}one{# علامت به اضافه}other{# علامت به اضافه}}</translation>
@@ -344,12 +305,14 @@
 <translation id="3468959318854349468">بدون عنوان</translation>
 <translation id="3473644018603298796">‏<ph name="COUNT" /> مورد انتخابی</translation>
 <translation id="3486232535569802404"><ph name="V1" /> تا <ph name="V2" /></translation>
+<translation id="3490765818161916458">جدول فهرست</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{کروشه راست}one{# کروشه راست}other{# کروشه راست}}</translation>
 <translation id="3493915602752813531">مرجع بعدی موجود نیست.</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{علامت سؤال}one{# علامت سؤال}other{# علامت سؤال}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{علامت هشتک}one{# علامت هشتک}other{# علامت هشتک}}</translation>
 <translation id="352577523970648069">فیلد نوشتاری قابل ویرایش</translation>
+<translation id="3549141990712742152"><ph name="TEXT" /> را ببرید.</translation>
 <translation id="3549680091535286226">برای توقف موقتی گفتار، با دو انگشت ضربه بزنید</translation>
 <translation id="3568702578574425662"><ph name="NAME" />، کادر انتخاب انتخاب نشده است</translation>
 <translation id="3589661172894441357">واژه‌نامه</translation>
@@ -381,6 +344,7 @@
 <translation id="3856075812838139784">فقط خوانده شده</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">منو</translation>
+<translation id="3907138069015388678">جدول فهرست</translation>
 <translation id="3909320334364316587">عنوان قبلی سطح ۶</translation>
 <translation id="3914173277599553213">ضروری</translation>
 <translation id="3914732343065571127">‏مرجع فرمان ChromeVox</translation>
@@ -515,7 +479,6 @@
 <translation id="4973762002207131920">به کلید <ph name="KEY" /> تغییر داده شد.</translation>
 <translation id="4975416682604111799">میلی‌ثانیه</translation>
 <translation id="49787999531187221">‏ChromeVox اکنون غیرفعال است.</translation>
-<translation id="4979263087381759787">گزینه‌های برنامه‌نویس</translation>
 <translation id="4979404613699303341">دکمه قبلی</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />، <ph name="NAME" />، کادر فهرست</translation>
 <translation id="4983588134362688868">رفتن به بالای صفحه</translation>
@@ -530,6 +493,7 @@
 <translation id="5020651427400641814">فعال کردن گزارش‌گیری از گفتار</translation>
 <translation id="5041394372352067729">انتقال صفحه‌نمایش بریل به بالای صفحه</translation>
 <translation id="5042770794184672516">افزایش میزان صدای گفتار</translation>
+<translation id="5042992464904238023">محتوای وب</translation>
 <translation id="5050015258024679800">عنوان قبلی سطح ۴</translation>
 <translation id="5054047268577924192">مورد قبلی فهرست</translation>
 <translation id="5075936896689244141">نقشه کلید بعدی</translation>
@@ -674,6 +638,7 @@
 <translation id="6129953537138746214">فاصله</translation>
 <translation id="6132506484792346370">کادر فهرست یا کادر ترکیبی</translation>
 <translation id="6142308968191113180">عنوان ۴</translation>
+<translation id="6158882249329863701">ردیف <ph name="TABLECELLROWINDEX" /> ستون <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="6164829606128959761">متر</translation>
 <translation id="6169420925157477918">تصویر با شرح طولانی</translation>
 <translation id="6186305613600865047">رفتن به پایین صفحه</translation>
@@ -689,6 +654,7 @@
 <translation id="6307969636681130414">فشرده شده</translation>
 <translation id="6322856989298155004">آواها</translation>
 <translation id="6324551002951139333">اشتباه دستوری شناسایی شد</translation>
+<translation id="6325241889020214828"><ph name="TEXT" /> را کپی کنید.</translation>
 <translation id="6348657800373377022">کادر ترکیبی</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{ گلوله}one{ # گلوله}other{ # گلوله}}</translation>
 <translation id="6355910664415701303">مورد قبلی فهرست وجود ندارد.</translation>
@@ -698,6 +664,7 @@
 <translation id="6387719785439924554">جدا</translation>
 <translation id="6411426777058107714">دکمه رادیویی قبلی وجود ندارد.</translation>
 <translation id="6414968628640960377">عنصر متفاوت قبلی.</translation>
+<translation id="6417265370957905582">‏دستیار Google</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{دونقطه}one{# دونقطه}other{# دونقطه}}</translation>
 <translation id="6438968337250688271"><ph name="NAME" />، منو</translation>
 <translation id="6444046323172968959">گفتگوی هشدار</translation>
@@ -877,6 +844,89 @@
 <translation id="8037651341025652929">نتیجه‌گیری</translation>
 <translation id="8042761080832772327">ویرایش نوشتار، ورودی جستجو</translation>
 <translation id="8049189770492311300">تایمر</translation>
+<translation id="8056782883599416672">‏{"ar": "عربی"،
+        "as": "آسامی"،
+        "aw": "اودهی"،
+        "be": "بنگالی"،
+        "bg": "بلغاری"،
+        "bh": "بیهاری"،
+        "bo": "تبتی"،
+        "br": "برج"،
+        "ca": "کاتالان"،
+        "ckb": "سورانی"،
+        "cs": "چکی"،
+        "cy": "ولزی"،
+        "da": "دانمارکی"،
+        "de": "آلمانی"،
+        "de_CH": "آلمانی (سوئیس)"،
+        "de_DE": "آلمانی (آلمان)"،
+        "dra": "دراویدی"،
+        "el": "یونانی"،
+        "en": "انگلیسی"،
+        "en_CA": "انگلیسی (کانادا)"،
+        "en_GB": "انگلیسی (بریتانیا)"،
+        "en_US": "انگلیسی (ایالات متحده)"،
+        "eo": "اسپرانتو"،
+        "es": "اسپانیایی"،
+        "et": "استونیایی"،
+        "fa": "فارسی"،
+        "fr": "فرانسوی"،
+        "fr_CA": "فرانسوی (کانادا)"،
+        "fr_FR": "فرانسوی (فرانسه)"،
+        "fi": "فنلاندی"،
+        "ga": "ایرلندی"،
+        "gd": "گیلیک"،
+        "gon": "گوندی"،
+        "gu": "گجراتی"،
+        "he": "عبری"،
+        "hi": "هندی"،
+        "hr": "کرواتی"،
+        "hu": "مجاری"،
+        "hy": "ارمنی"،
+        "is": "ایسلندی"،
+        "it": "ایتالیایی"،
+        "iu": "اینوکتیتوت"،
+        "ka": "کانارا"،
+        "kh": "خاسی"،
+        "ko": "کره‌ای"،
+        "kok": "کونکانی"،
+        "kru": "کوروخ"،
+        "ks": "کشمیری"،
+        "lt": "لیتوانیایی"،
+        "lv": "لتونیایی"،
+        "mao": "مائوری"،
+        "ml": "مالایالم"،
+        "mt": "مالتی"،
+        "mwr": "مارواری"،
+        "mn": "مغولی"،
+        "mun": "موندا"،
+        "nb": "بوکمل نروژی"،
+        "ne": "نپالی"،
+        "nl": "هلندی"،
+        "no": "نروژی"،
+        "or": "اوریا"،
+        "pi": "پالی"،
+        "pl": "لهستانی"،
+        "pt": "پرتغالی"،
+        "pu": "پنجابی"،
+        "ro": "رومانیایی"،
+        "ru": "روسی"،
+        "sa": "سانسکریت"،
+        "si": "سیندهی"،
+        "sin": "سینهالی"،
+        "sk": "اسلواکی"،
+        "sl": "اسلوونیایی"،
+        "sr": "صربی"،
+        "sv": "سوئدی"،
+        "ta": "تامیل"،
+        "te": "تلوگو"،
+        "tr": "ترکی"،
+        "tsn": "آفریکانس"،
+        "uk": "اوکراینی"،
+        "ur": "اردو"،
+        "vi": "ویتنامی"،
+        "zh": "چینی"،
+        "zh_TW": "چینی (هان سنتی)"}</translation>
 <translation id="8065607967589909823">مورد انتخابی عبارتست از</translation>
 <translation id="8066678206530322333">بنر</translation>
 <translation id="8076492880354921740">برگه‌ها</translation>
@@ -886,6 +936,7 @@
 <translation id="8153880621934657047">خارج از جدول</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{زیرخط}one{# زیرخط}other{# زیرخط}}</translation>
 <translation id="8179976553408161302">ورود</translation>
+<translation id="8183813379996435469">‏زبان ChromeVox را به‌طور خودکار شناسایی کنید و تغییر دهید.</translation>
 <translation id="8184828902145951186">ردیف</translation>
 <translation id="8186185314313222077">جابه‌جایی به حالت تمام صفحه</translation>
 <translation id="8199231515320852133">اعلان عناوین سلول کنونی</translation>
@@ -960,6 +1011,7 @@
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">کلیدهای تغییردهنده</translation>
 <translation id="8943175951035496220">سلولی در راست موجود نیست.</translation>
+<translation id="8946628535652548639">ر<ph name="TABLECELLROWINDEX" />س<ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">فراموش شود</translation>
 <translation id="900114243503212879">فایل</translation>

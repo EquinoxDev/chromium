@@ -42,7 +42,6 @@
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/blink/renderer/platform/wtf/text/cstring.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
@@ -179,6 +178,12 @@ class PLATFORM_EXPORT ResourceResponse final {
   // responded to the request. See the comments for that function.
   KURL ResponseUrl() const;
 
+  // Returns true if this response is the result of a service worker
+  // effectively calling `evt.respondWith(fetch(evt.request))`.  Specifically,
+  // it returns false for synthetic constructed responses, responses fetched
+  // from different URLs, and responses produced by cache_storage.
+  bool IsServiceWorkerPassThrough() const;
+
   const AtomicString& MimeType() const;
   void SetMimeType(const AtomicString&);
 
@@ -251,11 +256,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   }
   void SetCTPolicyCompliance(CTPolicyCompliance);
 
-  bool IsLegacySymantecCert() const { return is_legacy_symantec_cert_; }
-  void SetIsLegacySymantecCert(bool is_legacy_symantec_cert) {
-    is_legacy_symantec_cert_ = is_legacy_symantec_cert;
-  }
-
   bool IsLegacyTLSVersion() const { return is_legacy_tls_version_; }
   void SetIsLegacyTLSVersion(bool value) { is_legacy_tls_version_ = value; }
 
@@ -311,11 +311,11 @@ class PLATFORM_EXPORT ResourceResponse final {
   void SetType(network::mojom::FetchResponseType value) {
     response_type_ = value;
   }
-  // https://html.spec.whatwg.org/#cors-same-origin
+  // https://html.spec.whatwg.org/C/#cors-same-origin
   bool IsCorsSameOrigin() const {
     return network::cors::IsCorsSameOriginResponseType(response_type_);
   }
-  // https://html.spec.whatwg.org/#cors-cross-origin
+  // https://html.spec.whatwg.org/C/#cors-cross-origin
   bool IsCorsCrossOrigin() const {
     return network::cors::IsCorsCrossOriginResponseType(response_type_);
   }
@@ -447,10 +447,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   // The Certificate Transparency policy compliance status of the resource.
   CTPolicyCompliance ct_policy_compliance_ =
       kCTPolicyComplianceDetailsNotAvailable;
-
-  // True if the resource was retrieved with a legacy Symantec certificate which
-  // is slated for distrust in future.
-  bool is_legacy_symantec_cert_ = false;
 
   // True if the response was sent over TLS 1.0 or 1.1, which are deprecated and
   // will be removed in the future.

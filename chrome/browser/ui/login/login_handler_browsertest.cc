@@ -6,6 +6,7 @@
 #include <list>
 #include <map>
 
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "base/strings/utf_string_conversions.h"
@@ -41,6 +42,10 @@
 #include "services/network/public/cpp/features.h"
 #include "url/gurl.h"
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "extensions/common/extension_features.h"
+#endif
+
 using content::NavigationController;
 using content::OpenURLParams;
 using content::Referrer;
@@ -65,6 +70,55 @@ content::InterstitialPageDelegate* GetInterstitialDelegate(
   if (!interstitial_page)
     return nullptr;
   return interstitial_page->GetDelegateForTesting();
+}
+
+// Tests that a cross origin navigation triggering a login prompt should cause:
+// - A blank login interstitial being displayed.
+// - The destination URL being shown in the omnibox.
+// Navigates to |visit_url| which triggers an HTTP auth dialog, and checks if
+// the URL displayed in the omnibox is equal to |expected_url| after all
+// navigations including page redirects are completed.
+// If |cancel_prompt| is true, the auth dialog is cancelled at the end.
+void TestCrossOriginPrompt(Browser* browser,
+                           const GURL& visit_url,
+                           const std::string& expected_hostname,
+                           bool cancel_prompt) {
+  content::WebContents* contents =
+      browser->tab_strip_model()->GetActiveWebContents();
+  NavigationController* controller = &contents->GetController();
+  LoginPromptBrowserTestObserver observer;
+
+  observer.Register(content::Source<NavigationController>(controller));
+
+  // Load a page which will trigger a login prompt.
+  WindowedAuthNeededObserver auth_needed_waiter(controller);
+  browser->OpenURL(OpenURLParams(visit_url, Referrer(),
+                                 WindowOpenDisposition::CURRENT_TAB,
+                                 ui::PAGE_TRANSITION_TYPED, false));
+  ASSERT_EQ(visit_url.host(), contents->GetVisibleURL().host());
+  auth_needed_waiter.Wait();
+  ASSERT_EQ(1u, observer.handlers().size());
+  content::WaitForInterstitialAttach(contents);
+
+  // The omnibox should show the correct origin for the new page when the
+  // login prompt is shown.
+  EXPECT_EQ(expected_hostname, contents->GetVisibleURL().host());
+  EXPECT_TRUE(contents->ShowingInterstitialPage());
+  EXPECT_EQ(LoginInterstitialDelegate::kTypeForTesting,
+            contents->GetInterstitialPage()
+                ->GetDelegateForTesting()
+                ->GetTypeForTesting());
+
+  if (cancel_prompt) {
+    // Cancel and wait for the interstitial to detach.
+    LoginHandler* handler = *observer.handlers().begin();
+    content::RunTaskAndWaitForInterstitialDetach(
+        contents,
+        base::BindOnce(&LoginHandler::CancelAuth, base::Unretained(handler)));
+
+    EXPECT_EQ(expected_hostname, contents->GetVisibleURL().host());
+    EXPECT_FALSE(contents->ShowingInterstitialPage());
+  }
 }
 
 class LoginPromptBrowserTest : public InProcessBrowserTest {
@@ -99,14 +153,6 @@ class LoginPromptBrowserTest : public InProcessBrowserTest {
   typedef std::map<std::string, AuthInfo> AuthMap;
 
   void SetAuthFor(LoginHandler* handler);
-
-  // Navigates to |visit_url| which triggers an HTTP auth dialog, and checks if
-  // the URL displayed in the omnibox is equal to |expected_url| after all
-  // navigations including page redirects are completed.
-  // If |cancel_prompt| is true, the auth dialog is cancelled at the end.
-  void TestCrossOriginPrompt(const GURL& visit_url,
-                             const std::string& expected_hostname,
-                             bool cancel_prompt) const;
 
   AuthMap auth_map_;
   std::string bad_password_;
@@ -600,6 +646,15 @@ IN_PROC_BROWSER_TEST_F(MultiRealmLoginPromptBrowserTest,
 // Testing for recovery from an incorrect password for the case where
 // there are multiple authenticated resources.
 IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest, IncorrectConfirmation) {
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  // TODO(http://crbug.com/928465): This test has some timing issues that cause
+  // the asserts to fail when the webRequest proxy is enabled.
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kForceWebRequestProxyForTest)) {
+    return;
+  }
+#endif
+
   ASSERT_TRUE(embedded_test_server()->Start());
   GURL test_page = embedded_test_server()->GetURL(kSingleRealmTestPage);
 
@@ -1225,49 +1280,6 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
   EXPECT_EQ(1, observer.auth_cancelled_count());
 }
 
-// If a cross origin navigation triggers a login prompt, the destination URL
-// should be shown in the omnibox.
-void LoginPromptBrowserTest::TestCrossOriginPrompt(
-    const GURL& visit_url,
-    const std::string& expected_hostname,
-    bool cancel_prompt) const {
-  content::WebContents* contents =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  NavigationController* controller = &contents->GetController();
-  LoginPromptBrowserTestObserver observer;
-
-  observer.Register(content::Source<NavigationController>(controller));
-
-  // Load a page which will trigger a login prompt.
-  WindowedAuthNeededObserver auth_needed_waiter(controller);
-  browser()->OpenURL(OpenURLParams(visit_url, Referrer(),
-                                   WindowOpenDisposition::CURRENT_TAB,
-                                   ui::PAGE_TRANSITION_TYPED, false));
-  ASSERT_EQ(visit_url.host(), contents->GetVisibleURL().host());
-  auth_needed_waiter.Wait();
-  ASSERT_EQ(1u, observer.handlers().size());
-  content::WaitForInterstitialAttach(contents);
-
-  // The omnibox should show the correct origin for the new page when the
-  // login prompt is shown.
-  EXPECT_EQ(expected_hostname, contents->GetVisibleURL().host());
-  EXPECT_TRUE(contents->ShowingInterstitialPage());
-  EXPECT_EQ(LoginInterstitialDelegate::kTypeForTesting,
-            contents->GetInterstitialPage()
-                ->GetDelegateForTesting()
-                ->GetTypeForTesting());
-
-  if (cancel_prompt) {
-    // Cancel and wait for the interstitial to detach.
-    LoginHandler* handler = *observer.handlers().begin();
-    content::RunTaskAndWaitForInterstitialDetach(
-        contents, base::BindOnce(&LoginHandler::CancelAuth, handler));
-
-    EXPECT_EQ(expected_hostname, contents->GetVisibleURL().host());
-    EXPECT_FALSE(contents->ShowingInterstitialPage());
-  }
-}
-
 // If a cross origin direct navigation triggers a login prompt, the login
 // interstitial should be shown.
 IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
@@ -1277,7 +1289,20 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
   GURL test_page = embedded_test_server()->GetURL(kAuthBasicPage);
   ASSERT_EQ("127.0.0.1", test_page.host());
   std::string auth_host("127.0.0.1");
-  TestCrossOriginPrompt(test_page, auth_host, true);
+  TestCrossOriginPrompt(browser(), test_page, auth_host, true);
+}
+
+// Same as ShowCorrectUrlForCrossOriginMainFrameRequests, but happening in a
+// popup window.
+IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
+                       ShowCorrectUrlForCrossOriginMainFrameRequests_Popup) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  Browser* popup = CreateBrowserForPopup(browser()->profile());
+  const GURL test_page = embedded_test_server()->GetURL(kAuthBasicPage);
+  ASSERT_EQ("127.0.0.1", test_page.host());
+  const std::string auth_host("127.0.0.1");
+  TestCrossOriginPrompt(popup, test_page, auth_host, true);
 }
 
 // If a cross origin redirect triggers a login prompt, the destination URL
@@ -1290,7 +1315,7 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
   GURL test_page = embedded_test_server()->GetURL(kTestPage);
   ASSERT_EQ("127.0.0.1", test_page.host());
   std::string auth_host("www.a.com");
-  TestCrossOriginPrompt(test_page, auth_host, true);
+  TestCrossOriginPrompt(browser(), test_page, auth_host, true);
 }
 
 // Same as above, but instead of cancelling the prompt for www.a.com at the end,
@@ -1331,7 +1356,7 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
 
   // Load the test page. It should end up on www.a.com with the auth dialog
   // open.
-  TestCrossOriginPrompt(test_page, "www.a.com", false);
+  TestCrossOriginPrompt(browser(), test_page, "www.a.com", false);
   ASSERT_EQ(1u, observer.handlers().size());
 
   // While the auth dialog is open for www.a.com, redirect to www.b.com which
@@ -1359,7 +1384,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
   // Cancel auth dialog for www.b.com and wait for the interstitial to detach.
   LoginHandler* handler = *observer.handlers().begin();
   content::RunTaskAndWaitForInterstitialDetach(
-      contents, base::BindOnce(&LoginHandler::CancelAuth, handler));
+      contents,
+      base::BindOnce(&LoginHandler::CancelAuth, base::Unretained(handler)));
   EXPECT_EQ("www.b.com", contents->GetVisibleURL().host());
   EXPECT_FALSE(contents->ShowingInterstitialPage());
 }
@@ -1418,7 +1444,8 @@ IN_PROC_BROWSER_TEST_F(
     // the correct origin.
     LoginHandler* handler = *observer.handlers().begin();
     content::RunTaskAndWaitForInterstitialDetach(
-        contents, base::BindOnce(&LoginHandler::CancelAuth, handler));
+        contents,
+        base::BindOnce(&LoginHandler::CancelAuth, base::Unretained(handler)));
 
     EXPECT_EQ("127.0.0.1", contents->GetVisibleURL().host());
     EXPECT_FALSE(contents->ShowingInterstitialPage());
@@ -1476,7 +1503,8 @@ IN_PROC_BROWSER_TEST_F(LoginPromptBrowserTest,
     // Cancel the auth prompt. This commits the navigation.
     LoginHandler* handler = *observer.handlers().begin();
     content::RunTaskAndWaitForInterstitialDetach(
-        contents, base::BindOnce(&LoginHandler::CancelAuth, handler));
+        contents,
+        base::BindOnce(&LoginHandler::CancelAuth, base::Unretained(handler)));
     EXPECT_EQ("127.0.0.1", contents->GetVisibleURL().host());
     EXPECT_FALSE(contents->ShowingInterstitialPage());
     EXPECT_EQ(auth_url, contents->GetLastCommittedURL());

@@ -6,7 +6,7 @@ package org.chromium.chrome.browser.autofill.keyboard_accessory;
 
 import android.support.design.widget.TabLayout;
 
-import org.chromium.chrome.browser.modelutil.ListModel;
+import org.chromium.ui.modelutil.ListModel;
 import org.chromium.ui.modelutil.PropertyModel.ReadableObjectPropertyKey;
 import org.chromium.ui.modelutil.PropertyModel.WritableObjectPropertyKey;
 
@@ -16,11 +16,11 @@ import org.chromium.ui.modelutil.PropertyModel.WritableObjectPropertyKey;
  */
 class KeyboardAccessoryTabLayoutProperties {
     static final ReadableObjectPropertyKey<ListModel<KeyboardAccessoryData.Tab>> TABS =
-            new ReadableObjectPropertyKey<>();
+            new ReadableObjectPropertyKey<>("tabs");
     static final /* @Nullable */ WritableObjectPropertyKey<Integer> ACTIVE_TAB =
-            new WritableObjectPropertyKey<>();
+            new WritableObjectPropertyKey<>("active_tab");
     static final WritableObjectPropertyKey<TabLayout.OnTabSelectedListener>
-            TAB_SELECTION_CALLBACKS = new WritableObjectPropertyKey<>();
+            TAB_SELECTION_CALLBACKS = new WritableObjectPropertyKey<>("tab_selection_callback");
 
     private KeyboardAccessoryTabLayoutProperties() {}
 }

@@ -7,6 +7,7 @@ module tracing.mojom;
 import "mojo/public/mojom/base/process_id.mojom";
 import "mojo/public/mojom/base/time.mojom";
 import "mojo/public/mojom/base/values.mojom";
+import "services/tracing/public/mojom/perfetto_service.mojom";
 
 // The JSON type of data coming from a tracing agents.
 //
@@ -38,11 +39,9 @@ interface AgentRegistry {
 // close the recorder connection to signal the tracing service that no more data
 // will be sent.
 interface Agent {
-  StartTracing(string config, mojo_base.mojom.TimeTicks coordinator_time)
-      => (bool success);
+  StartTracing(string config, mojo_base.mojom.TimeTicks coordinator_time);
   StopAndFlush(Recorder recorder);
   RequestBufferStatus() => (uint32 capacity, uint32 count);
-  GetCategories() => (string categories);
 };
 
 // An agent can make several calls to |AddChunk|. Chunks will be concatenated
@@ -61,7 +60,7 @@ interface Coordinator {
   // The return value is false if tracing is already enabled with a different
   // config. Otherwise, true is returned as soon as the service receives acks
   // from all existing agents and agents that connect during |StartTracing|.
-  StartTracing(string config) => (bool success);
+  StartTracing(string config);
   StopAndFlush(handle<data_pipe_producer> stream)
       => (mojo_base.mojom.DictionaryValue metadata);
   // Same as |StopAndFlush| but only write data from a certain |agent_label| to
@@ -71,5 +70,4 @@ interface Coordinator {
   IsTracing() => (bool is_tracing);
   RequestBufferUsage() => (bool success, float percent_full,
                            uint32 approximate_count);
-  GetCategories() => (bool success, string categories);
 };

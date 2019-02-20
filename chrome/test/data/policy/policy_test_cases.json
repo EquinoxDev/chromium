@@ -1046,6 +1046,14 @@
     ]
   },
 
+  "ExtensionAllowInsecureUpdates": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "ExtensionAllowInsecureUpdates": true },
+    "pref_mappings": [
+      { "pref": "extension_updates.insecure_extension_updates_enabled" }
+    ]
+  },
+
   "ExtensionInstallBlacklist": {
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "ExtensionInstallBlacklist": ["*"] },
@@ -3307,6 +3315,16 @@
     ]
   },
 
+  "SchedulerConfiguration": {
+    "os": ["chromeos"],
+    "test_policy": { "SchedulerConfiguration": "performance" },
+    "pref_mappings": [
+      { "pref": "chromeos.scheduler_configuration",
+        "local_state": true
+      }
+    ]
+  },
+
   "CloudPolicyOverridesMachinePolicy": {
     "os": ["win", "linux", "mac"],
     "test_policy": { "CloudPolicyOverridesMachinePolicy": false },
@@ -3410,12 +3428,19 @@
       }, {
         "share_url": "\\\\server\\share",
         "mode": "drop_down"
+      }, {
+        "share_url": "smb://server/share",
+        "mode": "pre_mount"
+      }, {
+        "share_url": "\\\\server\\share",
+        "mode": "pre_mount"
       }]
     },
     "pref_mappings": [
       { "pref": "network_file_shares.preconfigured_shares" }
     ]
   },
+
   "ScreenBrightnessPercent": {
     "os": ["chromeos"],
     "test_policy": {
@@ -3511,6 +3536,15 @@
   },
 
   "ReportDeviceSessionStatus": {
+  },
+
+  "ReportDevicePowerStatus": {
+  },
+
+  "ReportDeviceStorageStatus": {
+  },
+
+  "ReportDeviceBoardStatus": {
   },
 
   "ReportUploadFrequency": {
@@ -3842,11 +3876,7 @@
         "url": "https://example.com/policyfile",
         "hash": "deadbeefdeadbeefdeadbeef"
       }
-    },
-    "pref_mappings": [{
-      "pref": "cros.device.native_printers",
-      "local_state": true
-    }]
+    }
   },
 
   "DeviceNativePrintersAccessMode": {
@@ -4033,6 +4063,14 @@
     ]
   },
 
+  "CrostiniExportImportUIAllowed": {
+    "os": ["chromeos"],
+    "test_policy": { "CrostiniExportImportUIAllowed": false },
+    "pref_mappings": [
+      { "pref": "crostini.user_export_import_ui_allowed_by_policy" }
+    ]
+  },
+
   "DeviceSamlLoginAuthenticationType": {
   },
 
@@ -4135,6 +4173,16 @@
     ]
   },
 
+  "PluginVmLicenseKey": {
+    "os": ["chromeos"],
+    "test_policy": {
+      "PluginVmLicenseKey": "LICENSE_KEY"
+    },
+    "pref_mappings": [
+      { "pref": "cros.device.plugin_vm_license_key" }
+    ]
+  },
+
   "ParentAccessCodeConfig": {
     "os": ["chromeos"],
     "test_policy": { "ParentAccessCodeConfig": {
@@ -4155,6 +4203,26 @@
       }]
     }},
     "pref_mappings": [{ "pref": "child_user.parent_access_code.config" }]
+  },
+
+  "CertificateManagementAllowed": {
+    "os": ["chromeos"],
+    "test_policy": { "CertificateManagementAllowed": 2 },
+    "pref_mappings": [{ "pref": "certificate_management_allowed" }]
+  },
+
+  "DeviceRebootOnUserSignout": {
+    "os": ["chromeos"],
+    "test_policy": {
+      "DeviceRebootOnUserSignout": 0
+    },
+    "pref_mappings": [
+      { "pref": "cros.device.reboot_on_user_signout"}
+    ]
+  },
+
+  "ForceNetworkInProcess": {
+    "note": "This policy is used directly through the policy service instead of through a pref."
   },
 
   "----- Chrome Frame policies -------------------------------------------": {},
@@ -4328,6 +4396,36 @@
     },
     "pref_mappings": [
       { "pref": "browser_switcher.external_sitelist_url" }
+    ]
+  },
+
+  "BrowserSwitcherDelay": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": {
+      "BrowserSwitcherDelay": 10000
+    },
+    "pref_mappings": [
+      { "pref": "browser_switcher.delay" }
+    ]
+  },
+
+  "BrowserSwitcherEnabled": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": {
+      "BrowserSwitcherEnabled": true
+    },
+    "pref_mappings": [
+      { "pref": "browser_switcher.enabled" }
+    ]
+  },
+
+  "BrowserSwitcherKeepLastChromeTab": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": {
+      "BrowserSwitcherKeepLastChromeTab": false
+    },
+    "pref_mappings": [
+      { "pref": "browser_switcher.keep_last_tab" }
     ]
   }
 }

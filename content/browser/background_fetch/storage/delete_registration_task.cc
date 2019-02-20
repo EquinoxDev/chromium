@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/barrier_closure.h"
+#include "base/bind.h"
 #include "content/browser/background_fetch/background_fetch.pb.h"
 #include "content/browser/background_fetch/background_fetch_data_manager.h"
 #include "content/browser/background_fetch/storage/database_helpers.h"
@@ -105,9 +106,9 @@ void DeleteRegistrationTask::DidGetRegistration(
 #endif  // DCHECK_IS_ON()
 
   std::vector<std::string> deletion_key_prefixes{
-      RegistrationKey(unique_id_), UIOptionsKey(unique_id_),
-      PendingRequestKeyPrefix(unique_id_), ActiveRequestKeyPrefix(unique_id_),
-      CompletedRequestKeyPrefix(unique_id_)};
+      RegistrationKey(unique_id_),           UIOptionsKey(unique_id_),
+      PendingRequestKeyPrefix(unique_id_),   ActiveRequestKeyPrefix(unique_id_),
+      CompletedRequestKeyPrefix(unique_id_), StorageVersionKey(unique_id_)};
 
   service_worker_context()->ClearRegistrationUserDataByKeyPrefixes(
       service_worker_registration_id_, std::move(deletion_key_prefixes),

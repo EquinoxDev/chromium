@@ -9,7 +9,6 @@
 
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_availability.h"
 #include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_client.h"
 #include "third_party/blink/public/platform/web_mouse_event.h"
 #include "third_party/blink/public/platform/web_screen_info.h"
@@ -34,11 +33,13 @@
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_current_time_display_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_download_button_element.h"
+#include "third_party/blink/renderer/modules/media_controls/elements/media_control_mute_button_element.h"
+#include "third_party/blink/renderer/modules/media_controls/elements/media_control_overflow_menu_button_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_overflow_menu_list_element.h"
+#include "third_party/blink/renderer/modules/media_controls/elements/media_control_play_button_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_remaining_time_display_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_slider_element.h"
-#include "third_party/blink/renderer/modules/media_controls/media_download_in_product_help_manager.h"
 #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/testing/empty_web_media_player.h"
@@ -87,22 +88,11 @@ class MockLayoutObject : public LayoutObject {
  public:
   MockLayoutObject(Node* node) : LayoutObject(node) {}
 
-  void SetVisible(bool visible) { visible_ = visible; }
-
   const char* GetName() const override { return "MockLayoutObject"; }
   void UpdateLayout() override {}
   FloatRect LocalBoundingBoxRectForAccessibility() const override {
     return FloatRect();
   }
-  void AbsoluteQuads(Vector<FloatQuad>& quads,
-                     MapCoordinatesFlags mode) const override {
-    if (!visible_)
-      return;
-    quads.push_back(FloatQuad(FloatRect(0.f, 0.f, 10.f, 10.f)));
-  }
-
- private:
-  bool visible_ = false;
 };
 
 class StubLocalFrameClientForImpl : public EmptyLocalFrameClient {
@@ -132,13 +122,6 @@ Element* GetElementByShadowPseudoId(Node& root_node,
       return &element;
   }
   return nullptr;
-}
-
-MediaControlDownloadButtonElement& GetDownloadButton(
-    MediaControlsImpl& controls) {
-  Element* element = GetElementByShadowPseudoId(
-      controls, "-internal-media-controls-download-button");
-  return static_cast<MediaControlDownloadButtonElement&>(*element);
 }
 
 bool IsElementVisible(Element& element) {
@@ -211,8 +194,6 @@ class MediaControlsImplTest : public PageTestBase,
     FillWithEmptyClients(clients);
     clients.chrome_client = MakeGarbageCollected<MockChromeClientForImpl>();
     SetupPageWithClients(&clients, StubLocalFrameClientForImpl::Create());
-    GetDocument().GetSettings()->SetMediaDownloadInProductHelpEnabled(
-        EnableDownloadInProductHelp());
 
     GetDocument().write("<video controls>");
     HTMLVideoElement& video =
@@ -224,8 +205,8 @@ class MediaControlsImplTest : public PageTestBase,
   }
 
   void SimulateRouteAvailable() {
-    media_controls_->MediaElement().RemoteRouteAvailabilityChanged(
-        WebRemotePlaybackAvailability::kDeviceAvailable);
+    RemotePlayback::From(media_controls_->MediaElement())
+        .AvailabilityChangedForTesting(/* screen_is_available */ true);
   }
 
   void EnsureSizing() {
@@ -255,6 +236,16 @@ class MediaControlsImplTest : public PageTestBase,
       const {
     return media_controls_->duration_display_;
   }
+  MediaControlMuteButtonElement* MuteButtonElement() const {
+    return media_controls_->mute_button_;
+  }
+  MediaControlPlayButtonElement* PlayButtonElement() const {
+    return media_controls_->play_button_;
+  }
+  MediaControlOverflowMenuButtonElement* OverflowMenuButtonElement() const {
+    return media_controls_->overflow_menu_;
+  }
+
   MockWebMediaPlayerForImpl* WebMediaPlayer() {
     return static_cast<MockWebMediaPlayerForImpl*>(
         MediaControls().MediaElement().GetWebMediaPlayer());
@@ -294,9 +285,7 @@ class MediaControlsImplTest : public PageTestBase,
     return !remote_playback.availability_callbacks_.IsEmpty();
   }
 
-  virtual bool EnableDownloadInProductHelp() { return false; }
-
-  const String& GetDisplayedTime(MediaControlTimeDisplayElement* display) {
+  const String GetDisplayedTime(MediaControlTimeDisplayElement* display) {
     return ToText(display->firstChild())->data();
   }
 
@@ -599,167 +588,6 @@ TEST_F(MediaControlsImplTest, DownloadButtonNotDisplayedHLS) {
   EXPECT_FALSE(IsElementVisible(*download_button));
 }
 
-TEST_F(MediaControlsImplTest, DownloadButtonInProductHelpDisabled) {
-  EXPECT_FALSE(MediaControls().DownloadInProductHelp());
-}
-
-class MediaControlsImplPictureInPictureTest : public MediaControlsImplTest {
- public:
-  void SetUp() override {
-    RuntimeEnabledFeatures::SetPictureInPictureEnabled(true);
-    MediaControlsImplTest::SetUp();
-  }
-};
-
-TEST_F(MediaControlsImplPictureInPictureTest, PictureInPictureButtonVisible) {
-  EnsureSizing();
-
-  Element* picture_in_picture_button = GetElementByShadowPseudoId(
-      MediaControls(), "-internal-media-controls-picture-in-picture-button");
-  ASSERT_NE(nullptr, picture_in_picture_button);
-  ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
-
-  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
-  test::RunPendingTasks();
-  SetReady();
-  test::RunPendingTasks();
-  SimulateLoadedMetadata();
-  ASSERT_TRUE(IsElementVisible(*picture_in_picture_button));
-
-  MediaControls().MediaElement().SetSrc("");
-  test::RunPendingTasks();
-  SimulateLoadedMetadata();
-  ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
-
-  MediaControls().MediaElement().SetBooleanAttribute(
-      html_names::kDisablepictureinpictureAttr, true);
-  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
-  test::RunPendingTasks();
-  SetReady();
-  test::RunPendingTasks();
-  SimulateLoadedMetadata();
-  ASSERT_FALSE(IsElementVisible(*picture_in_picture_button));
-
-  MediaControls().MediaElement().SetBooleanAttribute(
-      html_names::kDisablepictureinpictureAttr, false);
-  test::RunPendingTasks();
-  ASSERT_TRUE(IsElementVisible(*picture_in_picture_button));
-}
-
-class MediaControlsImplInProductHelpTest : public MediaControlsImplTest {
- public:
-  void SetUp() override {
-    MediaControlsImplTest::SetUp();
-    ASSERT_TRUE(MediaControls().DownloadInProductHelp());
-  }
-
-  MediaDownloadInProductHelpManager& Manager() {
-    return *MediaControls().DownloadInProductHelp();
-  }
-
-  void Play() { MediaControls().OnPlaying(); }
-  void OnTimeUpdate() { MediaControls().OnTimeUpdate(); }
-
-  bool EnableDownloadInProductHelp() override { return true; }
-};
-
-TEST_F(MediaControlsImplInProductHelpTest, DownloadButtonInProductHelp_Button) {
-  EnsureSizing();
-
-  // Inject the LayoutObject for the button to override the rect returned in
-  // visual viewport.
-  MediaControlDownloadButtonElement& button =
-      GetDownloadButton(MediaControls());
-  MockLayoutObject layout_object(&button);
-  layout_object.SetVisible(true);
-  button.SetLayoutObject(&layout_object);
-
-  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
-  test::RunPendingTasks();
-  SimulateLoadedMetadata();
-  Play();
-
-  // Load above should have made the button wanted, which should trigger showing
-  // in-product help.
-  EXPECT_TRUE(Manager().IsShowingInProductHelp());
-
-  // Disable the download button, which dismisses the in-product-help.
-  button.SetIsWanted(false);
-  EXPECT_FALSE(Manager().IsShowingInProductHelp());
-
-  // Toggle again. In-product help is shown only once.
-  button.SetIsWanted(true);
-  EXPECT_FALSE(Manager().IsShowingInProductHelp());
-
-  button.SetLayoutObject(nullptr);
-}
-
-TEST_F(MediaControlsImplInProductHelpTest,
-       DownloadButtonInProductHelp_ControlsVisibility) {
-  EnsureSizing();
-
-  // Inject the LayoutObject for the button to override the rect returned in
-  // visual viewport.
-  MediaControlDownloadButtonElement& button =
-      GetDownloadButton(MediaControls());
-  MockLayoutObject layout_object(&button);
-  layout_object.SetVisible(true);
-  button.SetLayoutObject(&layout_object);
-
-  // The in-product-help should not be shown while the controls are hidden.
-  MediaControls().Hide();
-  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
-  test::RunPendingTasks();
-  SimulateLoadedMetadata();
-  Play();
-
-  ASSERT_TRUE(button.IsWanted());
-  EXPECT_FALSE(Manager().IsShowingInProductHelp());
-
-  // Showing the controls initiates showing in-product-help.
-  MediaControls().MaybeShow();
-  EXPECT_TRUE(Manager().IsShowingInProductHelp());
-
-  OnTimeUpdate();
-  EXPECT_TRUE(Manager().IsShowingInProductHelp());
-
-  // Hiding the controls dismissed in-product-help.
-  MediaControls().Hide();
-  EXPECT_FALSE(Manager().IsShowingInProductHelp());
-
-  button.SetLayoutObject(nullptr);
-}
-
-TEST_F(MediaControlsImplInProductHelpTest,
-       DownloadButtonInProductHelp_ButtonVisibility) {
-  EnsureSizing();
-
-  // Inject the LayoutObject for the button to override the rect returned in
-  // visual viewport.
-  MediaControlDownloadButtonElement& button =
-      GetDownloadButton(MediaControls());
-  MockLayoutObject layout_object(&button);
-  button.SetLayoutObject(&layout_object);
-
-  // The in-product-help should not be shown while the button is hidden.
-  layout_object.SetVisible(false);
-  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
-  test::RunPendingTasks();
-  SimulateLoadedMetadata();
-  Play();
-
-  ASSERT_TRUE(button.IsWanted());
-  EXPECT_FALSE(Manager().IsShowingInProductHelp());
-
-  // Make the button visible to show in-product-help.
-  layout_object.SetVisible(true);
-  button.SetIsWanted(false);
-  button.SetIsWanted(true);
-  EXPECT_TRUE(Manager().IsShowingInProductHelp());
-
-  button.SetLayoutObject(nullptr);
-}
-
 TEST_F(MediaControlsImplTest, TimelineSeekToRoundedEnd) {
   EnsureSizing();
 
@@ -1049,17 +877,17 @@ TEST_F(MediaControlsImplTestWithMockScheduler,
 
   // Tabbing between controls prevents controls from hiding.
   platform()->RunForPeriodSeconds(2);
-  MediaControls().DispatchEvent(*Event::Create("focusin"));
+  MuteButtonElement()->DispatchEvent(*Event::CreateBubble("focusin"));
   platform()->RunForPeriodSeconds(2);
   EXPECT_TRUE(IsElementVisible(*panel));
 
   // Seeking on the timeline or volume bar prevents controls from hiding.
-  MediaControls().DispatchEvent(*Event::Create("input"));
+  TimelineElement()->DispatchEvent(*Event::CreateBubble("input"));
   platform()->RunForPeriodSeconds(2);
   EXPECT_TRUE(IsElementVisible(*panel));
 
   // Pressing a key prevents controls from hiding.
-  MediaControls().PanelElement()->DispatchEvent(*Event::Create("keypress"));
+  MuteButtonElement()->DispatchEvent(*Event::CreateBubble("keypress"));
   platform()->RunForPeriodSeconds(2);
   EXPECT_TRUE(IsElementVisible(*panel));
 
@@ -1336,10 +1164,8 @@ TEST_F(MediaControlsImplTestWithMockScheduler,
 
   WebTestSupport::SetIsRunningWebTest(false);
 
-  Element* volume_slider = GetElementByShadowPseudoId(
-      MediaControls(), "-webkit-media-controls-volume-slider");
-  Element* mute_btn = GetElementByShadowPseudoId(
-      MediaControls(), "-webkit-media-controls-mute-button");
+  Element* volume_slider = VolumeSliderElement();
+  Element* mute_btn = MuteButtonElement();
 
   ASSERT_NE(nullptr, volume_slider);
   ASSERT_NE(nullptr, mute_btn);
@@ -1381,8 +1207,7 @@ TEST_F(MediaControlsImplTestWithMockScheduler,
 
   WebTestSupport::SetIsRunningWebTest(false);
 
-  Element* volume_slider = GetElementByShadowPseudoId(
-      MediaControls(), "-webkit-media-controls-volume-slider");
+  Element* volume_slider = VolumeSliderElement();
 
   ASSERT_NE(nullptr, volume_slider);
 
@@ -1488,6 +1313,37 @@ TEST_F(ModernMediaControlsImplTest, ControlsShouldUseSafeAreaInsets) {
     EXPECT_EQ(3.0, style->MarginBottom().Pixels());
     EXPECT_EQ(4.0, style->MarginRight().Pixels());
   }
+}
+
+TEST_F(ModernMediaControlsImplTest, MediaControlsDisabledWithNoSource) {
+  EXPECT_EQ(MediaControls().State(), MediaControlsImpl::kNoSource);
+
+  EXPECT_TRUE(PlayButtonElement()->hasAttribute(html_names::kDisabledAttr));
+  EXPECT_TRUE(
+      OverflowMenuButtonElement()->hasAttribute(html_names::kDisabledAttr));
+  EXPECT_TRUE(TimelineElement()->hasAttribute(html_names::kDisabledAttr));
+
+  MediaControls().MediaElement().setAttribute(html_names::kPreloadAttr, "none");
+  MediaControls().MediaElement().SetSrc("https://example.com/foo.mp4");
+  test::RunPendingTasks();
+  SimulateLoadedMetadata();
+
+  EXPECT_EQ(MediaControls().State(), MediaControlsImpl::kNotLoaded);
+
+  EXPECT_FALSE(PlayButtonElement()->hasAttribute(html_names::kDisabledAttr));
+  EXPECT_FALSE(
+      OverflowMenuButtonElement()->hasAttribute(html_names::kDisabledAttr));
+  EXPECT_TRUE(TimelineElement()->hasAttribute(html_names::kDisabledAttr));
+
+  MediaControls().MediaElement().removeAttribute(html_names::kPreloadAttr);
+  SimulateLoadedMetadata();
+
+  EXPECT_EQ(MediaControls().State(), MediaControlsImpl::kLoadingMetadata);
+
+  EXPECT_FALSE(PlayButtonElement()->hasAttribute(html_names::kDisabledAttr));
+  EXPECT_FALSE(
+      OverflowMenuButtonElement()->hasAttribute(html_names::kDisabledAttr));
+  EXPECT_FALSE(TimelineElement()->hasAttribute(html_names::kDisabledAttr));
 }
 
 }  // namespace blink

@@ -264,11 +264,18 @@ std::unique_ptr<MediaLogEvent> MediaLog::CreateTimeEvent(
     MediaLogEvent::Type type,
     const std::string& property,
     base::TimeDelta value) {
+  return CreateTimeEvent(type, property, value.InSecondsF());
+}
+
+std::unique_ptr<MediaLogEvent> MediaLog::CreateTimeEvent(
+    MediaLogEvent::Type type,
+    const std::string& property,
+    double value) {
   std::unique_ptr<MediaLogEvent> event(CreateEvent(type));
-  if (value.is_max())
-    event->params.SetString(property, "unknown");
+  if (std::isfinite(value))
+    event->params.SetDouble(property, value);
   else
-    event->params.SetDouble(property, value.InSecondsF());
+    event->params.SetString(property, "unknown");
   return event;
 }
 
@@ -276,12 +283,6 @@ std::unique_ptr<MediaLogEvent> MediaLog::CreateLoadEvent(
     const std::string& url) {
   std::unique_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::LOAD));
   event->params.SetString("url", TruncateUrlString(url));
-  return event;
-}
-
-std::unique_ptr<MediaLogEvent> MediaLog::CreateSeekEvent(double seconds) {
-  std::unique_ptr<MediaLogEvent> event(CreateEvent(MediaLogEvent::SEEK));
-  event->params.SetDouble("seek_target", seconds);
   return event;
 }
 

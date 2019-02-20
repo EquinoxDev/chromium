@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "ash/screenshot_delegate.h"
+#include "base/bind.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,7 +38,8 @@ ChromeShellDelegate::ChromeShellDelegate() = default;
 
 ChromeShellDelegate::~ChromeShellDelegate() = default;
 
-bool ChromeShellDelegate::CanShowWindowForUser(aura::Window* window) const {
+bool ChromeShellDelegate::CanShowWindowForUser(
+    const aura::Window* window) const {
   return ::CanShowWindowForUser(window,
                                 base::BindRepeating(&GetActiveBrowserContext));
 }

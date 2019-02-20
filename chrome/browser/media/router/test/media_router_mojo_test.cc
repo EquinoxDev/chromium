@@ -43,21 +43,6 @@ MediaRoute CreateMediaRoute() {
   return route;
 }
 
-class RouteResponseCallbackHandler {
- public:
-  void Invoke(mojom::RoutePresentationConnectionPtr connection,
-              const RouteRequestResult& result) {
-    DoInvoke(result.route(), result.presentation_id(), result.error(),
-             result.result_code(), connection);
-  }
-  MOCK_METHOD5(DoInvoke,
-               void(const MediaRoute* route,
-                    const std::string& presentation_id,
-                    const std::string& error_text,
-                    RouteRequestResult::ResultCode result_code,
-                    mojom::RoutePresentationConnectionPtr& connection));
-};
-
 class SendMessageCallbackHandler {
  public:
   MOCK_METHOD1(Invoke, void(bool));
@@ -230,7 +215,11 @@ void MediaRouterMojoTest::ProvideTestSink(MediaRouteProviderId provider_id,
 
 void MediaRouterMojoTest::TestCreateRoute() {
   MediaSource media_source(kSource);
-  MediaRoute expected_route(kRouteId, media_source, kSinkId, "", false, false);
+  MediaRoute expected_route(kRouteId, media_source, kSinkId, kDescription, true,
+                            true);
+  expected_route.set_presentation_id(kPresentationId);
+  expected_route.set_controller_type(RouteControllerType::kGeneric);
+
   ProvideTestSink(MediaRouteProviderId::EXTENSION, kSinkId);
 
   // Use a lambda function as an invocation target here to work around
@@ -250,7 +239,7 @@ void MediaRouterMojoTest::TestCreateRoute() {
       }));
 
   RouteResponseCallbackHandler handler;
-  EXPECT_CALL(handler, DoInvoke(Pointee(Equals(expected_route)), Not(""), "",
+  EXPECT_CALL(handler, DoInvoke(Pointee(expected_route), Not(""), "",
                                 RouteRequestResult::OK, _));
   router()->CreateRoute(
       kSource, kSinkId, url::Origin::Create(GURL(kOrigin)), nullptr,
@@ -262,7 +251,10 @@ void MediaRouterMojoTest::TestCreateRoute() {
 
 void MediaRouterMojoTest::TestJoinRoute(const std::string& presentation_id) {
   MediaSource media_source(kSource);
-  MediaRoute expected_route(kRouteId, media_source, kSinkId, "", false, false);
+  MediaRoute expected_route(kRouteId, media_source, kSinkId, kDescription, true,
+                            true);
+  expected_route.set_presentation_id(kPresentationId);
+  expected_route.set_controller_type(RouteControllerType::kGeneric);
 
   MediaRoute route = CreateMediaRoute();
   // Make sure the MR has received an update with the route, so it knows there
@@ -292,7 +284,7 @@ void MediaRouterMojoTest::TestJoinRoute(const std::string& presentation_id) {
           }));
 
   RouteResponseCallbackHandler handler;
-  EXPECT_CALL(handler, DoInvoke(Pointee(Equals(expected_route)), Not(""), "",
+  EXPECT_CALL(handler, DoInvoke(Pointee(expected_route), Not(""), "",
                                 RouteRequestResult::OK, _));
   router()->JoinRoute(kSource, presentation_id,
                       url::Origin::Create(GURL(kOrigin)), nullptr,
@@ -304,8 +296,10 @@ void MediaRouterMojoTest::TestJoinRoute(const std::string& presentation_id) {
 
 void MediaRouterMojoTest::TestConnectRouteByRouteId() {
   MediaSource media_source(kSource);
-  MediaRoute expected_route(kRouteId, media_source, kSinkId, "", false, false);
-  expected_route.set_incognito(false);
+  MediaRoute expected_route(kRouteId, media_source, kSinkId, kDescription, true,
+                            true);
+  expected_route.set_presentation_id(kPresentationId);
+  expected_route.set_controller_type(RouteControllerType::kGeneric);
   MediaRoute route = CreateMediaRoute();
   ProvideTestRoute(MediaRouteProviderId::EXTENSION, kRouteId);
 
@@ -328,7 +322,7 @@ void MediaRouterMojoTest::TestConnectRouteByRouteId() {
           }));
 
   RouteResponseCallbackHandler handler;
-  EXPECT_CALL(handler, DoInvoke(Pointee(Equals(expected_route)), Not(""), "",
+  EXPECT_CALL(handler, DoInvoke(Pointee(expected_route), Not(""), "",
                                 RouteRequestResult::OK, _));
   router()->ConnectRouteByRouteId(
       kSource, kRouteId, url::Origin::Create(GURL(kOrigin)), nullptr,
@@ -502,6 +496,16 @@ void MediaRouterMojoTest::RegisterMediaRouteProvider(
       provider_id, std::move(mojo_provider),
       base::BindOnce([](const std::string& instance_id,
                         mojom::MediaRouteProviderConfigPtr config) {}));
+}
+
+RouteResponseCallbackHandler::RouteResponseCallbackHandler() = default;
+RouteResponseCallbackHandler::~RouteResponseCallbackHandler() = default;
+
+void RouteResponseCallbackHandler::Invoke(
+    mojom::RoutePresentationConnectionPtr connection,
+    const RouteRequestResult& result) {
+  DoInvoke(result.route(), result.presentation_id(), result.error(),
+           result.result_code(), connection);
 }
 
 }  // namespace media_router

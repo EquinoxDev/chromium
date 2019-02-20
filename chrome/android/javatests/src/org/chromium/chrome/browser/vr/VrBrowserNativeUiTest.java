@@ -11,6 +11,7 @@ import static org.chromium.chrome.test.util.ChromeRestriction.RESTRICTION_TYPE_V
 
 import android.graphics.PointF;
 import android.os.SystemClock;
+import android.support.test.filters.LargeTest;
 import android.support.test.filters.MediumTest;
 
 import org.junit.Assert;
@@ -20,17 +21,21 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.test.util.CommandLineFlags;
+import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.payments.ui.PaymentRequestUI;
 import org.chromium.chrome.browser.payments.ui.PaymentRequestUI.PaymentRequestObserverForTest;
 import org.chromium.chrome.browser.vr.rules.ChromeTabbedActivityVrTestRule;
 import org.chromium.chrome.browser.vr.util.NativeUiUtils;
+import org.chromium.chrome.browser.vr.util.RenderTestUtils;
 import org.chromium.chrome.browser.vr.util.VrBrowserTransitionUtils;
 import org.chromium.chrome.browser.vr.util.VrShellDelegateUtils;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.ChromeTabUtils;
+import org.chromium.chrome.test.util.RenderTestRule;
 
+import java.io.IOException;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -45,6 +50,10 @@ public class VrBrowserNativeUiTest {
     // only ever runs in ChromeTabbedActivity.
     @Rule
     public ChromeTabbedActivityVrTestRule mVrTestRule = new ChromeTabbedActivityVrTestRule();
+
+    @Rule
+    public RenderTestRule mRenderTestRule =
+            new RenderTestRule("components/test/data/vr_browser_ui/render_tests");
 
     private VrBrowserTestFramework mVrBrowserTestFramework;
 
@@ -92,9 +101,7 @@ public class VrBrowserNativeUiTest {
     public void testPaymentRequest() throws InterruptedException {
         // We can't request payment on file:// URLs, so use a local server.
         mVrBrowserTestFramework.loadUrlAndAwaitInitialization(
-                mVrTestRule.getTestServer().getURL(
-                        VrBrowserTestFramework.getEmbeddedServerPathForHtmlTestFile(
-                                "test_payment_request")),
+                mVrBrowserTestFramework.getEmbeddedServerUrlForHtmlTestFile("test_payment_request"),
                 PAGE_LOAD_TIMEOUT_S);
         // Set up an observer so we'll know if the payment request is shown.
         AtomicBoolean requestShown = new AtomicBoolean(false);
@@ -282,5 +289,243 @@ public class VrBrowserNativeUiTest {
         NativeUiUtils.inputEnter();
         ChromeTabUtils.waitForTabPageLoaded(
                 mVrTestRule.getActivity().getActivityTab(), "chrome://va/");
+    }
+
+    /**
+     * Tests that the keyboard appears when clicking on the URL bar.
+     * Also contains a regression test for https://crbug.com/874671 where inputting text into the
+     * URL bar would cause a browser crash.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testKeyboardAppearsOnUrlBarClick()
+            throws InterruptedException, TimeoutException, IOException {
+        NativeUiUtils.clickElementAndWaitForUiQuiescence(UserFriendlyElementName.URL, new PointF());
+        // For whatever reason, the laser has a lot of random noise (not visible to an actual user)
+        // when the keyboard is present on certain OS/hardware configurations (currently known to
+        // happen on Pixel XL w/ N). So, allow pixels to differ by a small amount without failing.
+        mRenderTestRule.setPixelDiffThreshold(5);
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                "keyboard_visible_browser_ui", mRenderTestRule);
+        // Regression test for https://crbug.com/874671
+        // We need to use the VrCore-side emulated controller because the keyboard isn't a UI
+        // element, meaning we can't specify it as a click target for the Chrome-side controller.
+        NativeUiUtils.revertToRealInput();
+        // Point at the keyboard and click an arbitrary key
+        EmulatedVrController controller = new EmulatedVrController(mVrTestRule.getActivity());
+        controller.recenterView();
+        controller.moveControllerInstant(0.0f, -0.259f, -0.996f, -0.0f);
+        // Spam clicks to ensure we're getting one in.
+        for (int i = 0; i < 5; i++) {
+            controller.performControllerClick();
+        }
+    }
+
+    /**
+     * Tests that the overflow menu appears when the overflow menu button is clicked.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testOverflowMenuAppears()
+            throws InterruptedException, TimeoutException, IOException {
+        // TODO(https://crbug.com/930840): Remove this when the weird gradient behavior is fixed.
+        mRenderTestRule.setPixelDiffThreshold(2);
+        NativeUiUtils.clickElementAndWaitForUiQuiescence(
+                UserFriendlyElementName.OVERFLOW_MENU, new PointF());
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                "overflow_menu_visible_browser_ui", mRenderTestRule);
+    }
+
+    /**
+     * Tests that the page info popup appears when the security token in the URL bar is clicked.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testPageInfoAppearsOnSecurityTokenClick()
+            throws InterruptedException, TimeoutException, IOException {
+        NativeUiUtils.clickElementAndWaitForUiQuiescence(
+                UserFriendlyElementName.PAGE_INFO_BUTTON, new PointF());
+        // Workaround for https://crbug.com/893291, where the text doesn't actually show up until a
+        // bit after the element is drawn.
+        SystemClock.sleep(1000);
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                "page_info_visible_browser_ui", mRenderTestRule);
+    }
+
+    /**
+     * Tests that data URLs have the data portion of the URL emphasized like in 2D browsing.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testDataUrlEmphasis() throws InterruptedException, IOException {
+        NativeUiUtils.enableMockedInput();
+        mVrTestRule.loadUrl("data:,Hello%2C%20World!", PAGE_LOAD_TIMEOUT_S);
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                "data_url_emphasis_browser_ui", mRenderTestRule);
+    }
+
+    /**
+     * Tests that file URLs have the entire URL emphasized like in 2D browsing.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testFileUrlEmphasis() throws InterruptedException, IOException {
+        NativeUiUtils.enableMockedInput();
+        mVrTestRule.loadUrl(VrBrowserTestFramework.getFileUrlForHtmlTestFile("2d_permission_page"),
+                PAGE_LOAD_TIMEOUT_S);
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                "file_url_emphasis_browser_ui", mRenderTestRule);
+    }
+
+    /**
+     * Tests that the reposition bar does not appear if the keyboard is open.
+     */
+    @Test
+    @MediumTest
+    @Feature({"Browser", "RenderTest"})
+    public void testRepositionBarDoesNotAppearWithKeyboardOpen()
+            throws InterruptedException, TimeoutException, IOException {
+        // Use the mock keyboard so it doesn't show, reducing the chance of flakes due to AA.
+        NativeUiUtils.enableMockedKeyboard();
+        mVrTestRule.loadUrl(
+                VrBrowserTestFramework.getFileUrlForHtmlTestFile("generic_text_entry_page"),
+                PAGE_LOAD_TIMEOUT_S);
+        NativeUiUtils.clickContentNode(
+                "textfield", new PointF(), 1 /* numClicks */, mVrBrowserTestFramework);
+        NativeUiUtils.waitForUiQuiescence();
+        NativeUiUtils.hoverElement(UserFriendlyElementName.CONTENT_QUAD, new PointF(0.0f, 0.55f));
+        NativeUiUtils.waitForUiQuiescence();
+        // Due to the way the repositioner works, the reposition bar is technically always visible
+        // in the element hierarchy, so we can't just assert that it's invisible. Instead, we have
+        // to resort to pixel diffing.
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                "reposition_bar_keyboard_open", mRenderTestRule);
+    }
+
+    /*
+     * Tests that hovering over various elements in the URL bar looks as expected.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testUrlBarHovering() throws InterruptedException, TimeoutException, IOException {
+        testUrlBarHoveringImpl(false);
+    }
+
+    /**
+     * Tests that hovering over various elements in the URL bar looks as expected while in Incognito
+     * mode.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testUrlBarHoveringIncognito()
+            throws InterruptedException, TimeoutException, IOException {
+        mVrBrowserTestFramework.openIncognitoTab("about:blank");
+        testUrlBarHoveringImpl(true);
+    }
+
+    private void testUrlBarHoveringImpl(boolean incognito)
+            throws InterruptedException, TimeoutException, IOException {
+        // Back button hovering doesn't do anything unless the back button is actually active. so
+        // navigate to do that.
+        mVrTestRule.loadUrl("chrome://version/", PAGE_LOAD_TIMEOUT_S);
+        // Back button.
+        NativeUiUtils.hoverElement(UserFriendlyElementName.BACK_BUTTON, new PointF());
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                generateRenderTestIdentifier("back_button_hover", incognito), mRenderTestRule);
+        // Security icon.
+        NativeUiUtils.hoverElement(UserFriendlyElementName.PAGE_INFO_BUTTON, new PointF());
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                generateRenderTestIdentifier("security_icon_hover", incognito), mRenderTestRule);
+        // URL bar.
+        NativeUiUtils.hoverElement(UserFriendlyElementName.URL, new PointF());
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                generateRenderTestIdentifier("url_bar_hover", incognito), mRenderTestRule);
+        // Overflow menu.
+        NativeUiUtils.hoverElement(UserFriendlyElementName.OVERFLOW_MENU, new PointF());
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                generateRenderTestIdentifier("overflow_menu_hover", incognito), mRenderTestRule);
+    }
+
+    /**
+     * Tests that hovering over various elements in the overflow menu looks as expected.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testOverflowMenuHovering()
+            throws InterruptedException, TimeoutException, IOException {
+        testOverflowMenuHoveringImpl(false);
+    }
+
+    /**
+     * Tests that hovering over various elements in the overflow menu looks as expected while in
+     * Incognito mode.
+     */
+    @Test
+    @LargeTest
+    @Feature({"Browser", "RenderTest"})
+    public void testOverflowMenuHoveringIncognito()
+            throws InterruptedException, TimeoutException, IOException {
+        mVrBrowserTestFramework.openIncognitoTab("about:blank");
+        testOverflowMenuHoveringImpl(true);
+    }
+
+    private void testOverflowMenuHoveringImpl(boolean incognito)
+            throws InterruptedException, TimeoutException, IOException {
+        // TODO(https://crbug.com/930840): Remove this when the weird gradient behavior is fixed.
+        mRenderTestRule.setPixelDiffThreshold(2);
+        // The forward button only has a hover state if the button is actually active, so navigate
+        // a bit.
+        mVrTestRule.loadUrl("chrome://version/", PAGE_LOAD_TIMEOUT_S);
+        VrBrowserTransitionUtils.navigateBack();
+        ChromeTabUtils.waitForTabPageLoaded(
+                mVrTestRule.getActivity().getActivityTab(), "about:blank");
+        // Make the overflow menu appear.
+        NativeUiUtils.performActionAndWaitForVisibilityStatus(
+                UserFriendlyElementName.RELOAD_BUTTON, true /* visible */, () -> {
+                    NativeUiUtils.clickElement(UserFriendlyElementName.OVERFLOW_MENU, new PointF());
+                });
+        // Reload button.
+        NativeUiUtils.hoverElement(UserFriendlyElementName.RELOAD_BUTTON, new PointF());
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                generateRenderTestIdentifier("reload_button_hover", incognito), mRenderTestRule);
+        // Forward Button.
+        NativeUiUtils.hoverElement(UserFriendlyElementName.FORWARD_BUTTON, new PointF());
+        NativeUiUtils.waitForUiQuiescence();
+        RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                generateRenderTestIdentifier("forward_button_hover", incognito), mRenderTestRule);
+        // New Incognito tab button/close Incognito tabs button.
+        if (incognito) {
+            NativeUiUtils.hoverElement(UserFriendlyElementName.CLOSE_INCOGNITO_TABS, new PointF());
+            NativeUiUtils.waitForUiQuiescence();
+            RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                    generateRenderTestIdentifier("close_incognito_tabs_hover", incognito),
+                    mRenderTestRule);
+        } else {
+            NativeUiUtils.hoverElement(UserFriendlyElementName.NEW_INCOGNITO_TAB, new PointF());
+            NativeUiUtils.waitForUiQuiescence();
+            RenderTestUtils.dumpAndCompare(NativeUiUtils.FRAME_BUFFER_SUFFIX_BROWSER_UI,
+                    generateRenderTestIdentifier("new_incognito_tab_hover", incognito),
+                    mRenderTestRule);
+        }
+    }
+
+    private String generateRenderTestIdentifier(String name, boolean incognito) {
+        return name + (incognito ? "_incognito" : "") + "_browser_ui";
     }
 }

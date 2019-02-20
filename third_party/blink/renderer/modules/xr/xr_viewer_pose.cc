@@ -4,8 +4,8 @@
 
 #include "third_party/blink/renderer/modules/xr/xr_viewer_pose.h"
 
+#include "third_party/blink/renderer/modules/xr/xr_rigid_transform.h"
 #include "third_party/blink/renderer/modules/xr/xr_session.h"
-#include "third_party/blink/renderer/modules/xr/xr_utils.h"
 #include "third_party/blink/renderer/modules/xr/xr_view.h"
 
 namespace blink {
@@ -13,35 +13,22 @@ namespace blink {
 XRViewerPose::XRViewerPose(
     XRSession* session,
     std::unique_ptr<TransformationMatrix> pose_model_matrix)
-    : session_(session), pose_model_matrix_(std::move(pose_model_matrix)) {}
+    : XRPose(std::move(pose_model_matrix), session->EmulatedPosition()) {
+  // Can only update views with an invertible matrix.
+  TransformationMatrix inv_pose_matrix = transform_->InverseMatrix();
 
-DOMFloat32Array* XRViewerPose::poseModelMatrix() const {
-  if (!pose_model_matrix_)
-    return nullptr;
-  return transformationMatrixToDOMFloat32Array(*pose_model_matrix_);
-}
+  // session will update views if required
+  // views array gets copied to views_
+  views_ = session->views();
 
-DOMFloat32Array* XRViewerPose::getViewMatrix(XRView* view) {
-  if (view->session() != session_)
-    return nullptr;
-
-  if (!pose_model_matrix_->IsInvertible())
-    return nullptr;
-
-  TransformationMatrix view_matrix(pose_model_matrix_->Inverse());
-
-  // Transform by the negative offset, since we're operating on the inverted
-  // matrix
-  const FloatPoint3D& view_offset = view->offset();
-  view_matrix.PostTranslate3d(-view_offset.X(), -view_offset.Y(),
-                              -view_offset.Z());
-
-  return transformationMatrixToDOMFloat32Array(view_matrix);
+  for (Member<XRView>& view : views_) {
+    view->UpdateViewMatrix(inv_pose_matrix);
+  }
 }
 
 void XRViewerPose::Trace(blink::Visitor* visitor) {
-  visitor->Trace(session_);
-  ScriptWrappable::Trace(visitor);
+  visitor->Trace(views_);
+  XRPose::Trace(visitor);
 }
 
 }  // namespace blink

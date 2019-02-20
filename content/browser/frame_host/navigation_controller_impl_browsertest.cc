@@ -20,6 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
@@ -48,7 +49,7 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/bindings_policy.h"
-#include "content/public/common/renderer_preferences.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/screen_info.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
@@ -71,6 +72,7 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/url_request/url_request_failed_job.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 
 namespace {
 
@@ -95,6 +97,16 @@ class NavigationControllerBrowserTest : public ContentBrowserTest {
     host_resolver()->AddRule("*", "127.0.0.1");
     content::SetupCrossSiteRedirector(embedded_test_server());
     ASSERT_TRUE(embedded_test_server()->Start());
+  }
+};
+
+// Base class for tests that need to supply modifications to EmbeddedTestServer
+// which are required to be complete before it is started.
+class NavigationControllerBrowserTestNoServer : public ContentBrowserTest {
+ protected:
+  void SetUpOnMainThread() override {
+    host_resolver()->AddRule("*", "127.0.0.1");
+    content::SetupCrossSiteRedirector(embedded_test_server());
   }
 };
 
@@ -143,9 +155,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, LoadDataWithBaseURL) {
   const std::string data = "<html><body>foo</body></html>";
   const GURL data_url = GURL("data:text/html;charset=utf-8," + data);
 
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Load data, but don't commit yet.
   TestNavigationObserver same_tab_observer(shell()->web_contents(), 1);
@@ -223,6 +234,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(history_url, entry->GetVirtualURL());
   EXPECT_EQ(history_url, entry->GetHistoryURLForDataURL());
   EXPECT_EQ(data_url1, entry->GetURL());
+  EXPECT_EQ("http://baseurl", EvalJs(shell(), "self.origin"));
+  EXPECT_EQ(url::Origin::Create(base_url),
+            shell()->web_contents()->GetMainFrame()->GetLastCommittedOrigin());
 
   // Navigate again to a different data URL.
   const std::string data2 = "<html><title>Two</title><body>bar</body></html>";
@@ -233,6 +247,11 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
     EXPECT_TRUE(NavigateToURL(shell(), data_url2));
     same_tab_observer.Wait();
   }
+  url::Origin data_origin =
+      shell()->web_contents()->GetMainFrame()->GetLastCommittedOrigin();
+  EXPECT_TRUE(data_origin.opaque());
+  EXPECT_EQ(url::SchemeHostPort(),
+            data_origin.GetTupleOrPrecursorTupleIfOpaque());
 
   // Go back.
   TestNavigationObserver back_load_observer(shell()->web_contents());
@@ -252,6 +271,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   EXPECT_EQ(data_url1,
             shell()->web_contents()->GetMainFrame()->GetLastCommittedURL());
+  EXPECT_EQ(url::Origin::Create(base_url),
+            shell()->web_contents()->GetMainFrame()->GetLastCommittedOrigin());
 }
 
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
@@ -261,9 +282,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   const std::string data = "<html><body></body></html>";
   const GURL data_url = GURL("data:text/html;charset=utf-8," + data);
 
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Load data and commit.
   {
@@ -302,9 +322,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       title.c_str());
   const GURL data_url = GURL("data:text/html;charset=utf-8," + data);
 
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   TestNavigationObserver same_tab_observer(shell()->web_contents(), 1);
   TitleWatcher title_watcher(shell()->web_contents(), base::UTF8ToUTF16(title));
@@ -338,9 +357,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   const std::string data = "<html><body></body></html>";
   const GURL data_url = GURL("data:text/html;charset=utf-8," + data);
 
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Load data and commit.
   {
@@ -396,9 +414,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "  </p>"
       "</body></html>";
 
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Load data and commit.
   TestNavigationObserver same_tab_observer(shell()->web_contents(), 1);
@@ -427,9 +444,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, UniqueIDs) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/page_with_link_to_load_iframe.html"));
@@ -1838,9 +1854,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root =
       static_cast<WebContentsImpl*>(shell()->web_contents())->
           GetFrameTree()->root();
@@ -1865,7 +1880,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(main_url, entry->GetURL());
   FrameNavigationEntry* root_entry = entry->root_node()->frame_entry.get();
   EXPECT_EQ(main_url, root_entry->url());
-  EXPECT_EQ(main_origin, root_entry->origin());
+  EXPECT_EQ(main_origin, root_entry->committed_origin());
 
   // Verify subframe entries.  The entry should now have one blank subframe
   // FrameNavigationEntry, but this does not count as committing a real load.
@@ -1873,7 +1888,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameNavigationEntry* frame_entry =
       entry->root_node()->children[0]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
-  EXPECT_EQ(main_origin, frame_entry->origin());
+  EXPECT_EQ(main_origin, frame_entry->committed_origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
 
   // 1a. A nested iframe with no URL should also create a subframe entry but not
@@ -1893,7 +1908,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(1U, entry->root_node()->children[0]->children.size());
   frame_entry = entry->root_node()->children[0]->children[0]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
-  EXPECT_EQ(main_origin, frame_entry->origin());
+  EXPECT_EQ(main_origin, frame_entry->committed_origin());
   EXPECT_FALSE(root->child_at(0)->child_at(0)->has_committed_real_load());
 
   // 2. Create another iframe with an explicit about:blank URL.
@@ -1917,7 +1932,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(2U, entry->root_node()->children.size());
   frame_entry = entry->root_node()->children[1]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
-  EXPECT_EQ(main_origin, frame_entry->origin());
+  EXPECT_EQ(main_origin, frame_entry->committed_origin());
   EXPECT_FALSE(root->child_at(1)->has_committed_real_load());
 
   // 3. A real same-site navigation in the nested iframe should be AUTO.
@@ -1944,7 +1959,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(1U, entry->root_node()->children[0]->children.size());
   frame_entry = entry->root_node()->children[0]->children[0]->frame_entry.get();
   EXPECT_EQ(frame_url, frame_entry->url());
-  EXPECT_EQ(url::Origin::Create(frame_url), frame_entry->origin());
+  EXPECT_EQ(url::Origin::Create(frame_url), frame_entry->committed_origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(0)->child_at(0)->has_committed_real_load());
   EXPECT_FALSE(root->child_at(1)->has_committed_real_load());
@@ -1972,11 +1987,11 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   ASSERT_EQ(2U, entry->root_node()->children.size());
   frame_entry = entry->root_node()->children[1]->frame_entry.get();
   EXPECT_EQ(foo_url, frame_entry->url());
-  EXPECT_EQ(url::Origin::Create(foo_url), frame_entry->origin());
+  EXPECT_EQ(url::Origin::Create(foo_url), frame_entry->committed_origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(0)->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(1)->has_committed_real_load());
-  EXPECT_EQ(frame_entry->origin(),
+  EXPECT_EQ(frame_entry->committed_origin(),
             root->child_at(1)->current_frame_host()->GetLastCommittedOrigin());
 
   // 5. A new navigation to about:blank in the nested frame should count as a
@@ -2002,7 +2017,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   frame_entry =
       entry2->root_node()->children[0]->children[0]->frame_entry.get();
   EXPECT_EQ(about_blank_url, frame_entry->url());
-  EXPECT_EQ(main_origin, frame_entry->origin());
+  EXPECT_EQ(main_origin, frame_entry->committed_origin());
   EXPECT_FALSE(root->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(0)->child_at(0)->has_committed_real_load());
   EXPECT_TRUE(root->child_at(1)->has_committed_real_load());
@@ -2058,6 +2073,99 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // TODO(creis): Check subframe entries once we create them in this case.
   // See https://crbug.com/608402.
   EXPECT_EQ(foo_url, root->child_at(0)->child_at(0)->current_url());
+}
+
+// Verify that history.pushState() does not replace the pending entry.
+// https://crbug.com/900036.
+// TODO(crbug.com/926009): Fix and re-enable this test.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       DISABLED_PushStatePreservesPendingEntry) {
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  GURL main_url(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  // 1. Start loading an URL that doesn't commit.
+  GURL stalled_url(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_2.html"));
+  // Have the user decide to go to a different page which is very slow.
+  TestNavigationManager stalled_navigation(shell()->web_contents(),
+                                           stalled_url);
+  controller.LoadURL(stalled_url, Referrer(), ui::PAGE_TRANSITION_LINK,
+                     std::string());
+  EXPECT_TRUE(stalled_navigation.WaitForRequestStart());
+
+  // That should be the pending entry.
+  NavigationEntryImpl* entry = controller.GetPendingEntry();
+  ASSERT_NE(nullptr, entry);
+  EXPECT_EQ(stalled_url, entry->GetURL());
+
+  {
+    // Now the existing page uses history.pushState() while the pending entry
+    // for the other navigation still exists.
+    FrameNavigateParamsCapturer capturer(root);
+    capturer.set_wait_for_load(false);
+    std::string script = "history.pushState({}, '', 'pushed')";
+    EXPECT_TRUE(ExecJs(root, script));
+    capturer.Wait();
+    EXPECT_EQ(NAVIGATION_TYPE_NEW_PAGE, capturer.navigation_type());
+    EXPECT_TRUE(capturer.is_same_document());
+  }
+
+  // This should not replace the pending entry.
+  entry = controller.GetPendingEntry();
+  ASSERT_NE(nullptr, entry);
+  EXPECT_EQ(stalled_url, entry->GetURL());
+}
+
+// Verify that history.replaceState() does not replace the pending entry.
+// https://crbug.com/900036.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+                       ReplaceStatePreservesPendingEntry) {
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  GURL main_url(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  // 1. Start loading an URL that doesn't commit.
+  GURL stalled_url(embedded_test_server()->GetURL(
+      "/navigation_controller/simple_page_2.html"));
+  // Have the user decide to go to a different page which is very slow.
+  TestNavigationManager stalled_navigation(shell()->web_contents(),
+                                           stalled_url);
+  controller.LoadURL(stalled_url, Referrer(), ui::PAGE_TRANSITION_LINK,
+                     std::string());
+  EXPECT_TRUE(stalled_navigation.WaitForRequestStart());
+
+  // That should be the pending entry.
+  NavigationEntryImpl* entry = controller.GetPendingEntry();
+  ASSERT_NE(nullptr, entry);
+  EXPECT_EQ(stalled_url, entry->GetURL());
+
+  {
+    // Now the existing page uses history.replaceState() while the pending entry
+    // for the other navigation still exists.
+    FrameNavigateParamsCapturer capturer(root);
+    capturer.set_wait_for_load(false);
+    std::string script = "history.replaceState({}, '', 'replaced')";
+    EXPECT_TRUE(ExecJs(root, script));
+    capturer.Wait();
+    EXPECT_EQ(NAVIGATION_TYPE_EXISTING_PAGE, capturer.navigation_type());
+    EXPECT_TRUE(capturer.is_same_document());
+  }
+
+  // This should not replace the pending entry.
+  entry = controller.GetPendingEntry();
+  ASSERT_NE(nullptr, entry);
+  EXPECT_EQ(stalled_url, entry->GetURL());
 }
 
 // Verify the tree of FrameNavigationEntries when a nested iframe commits inside
@@ -2223,9 +2331,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root =
       static_cast<WebContentsImpl*>(shell()->web_contents())->
           GetFrameTree()->root();
@@ -2386,9 +2493,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root =
       static_cast<WebContentsImpl*>(shell()->web_contents())->
           GetFrameTree()->root();
@@ -2541,9 +2647,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/page_with_iframe.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root =
       static_cast<WebContentsImpl*>(shell()->web_contents())->
           GetFrameTree()->root();
@@ -2601,9 +2706,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -2727,9 +2831,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL initial_url(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   EXPECT_TRUE(NavigateToURL(shell(), initial_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -2754,6 +2857,13 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // The entry should have a FrameNavigationEntry for the data subframe.
   ASSERT_EQ(1U, entry2->root_node()->children.size());
   EXPECT_EQ(data_url, entry2->root_node()->children[0]->frame_entry->url());
+  EXPECT_EQ(entry2->root_node()
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque(),
+            entry2->root_node()
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque());
 
   // 3. Navigate the iframe cross-site to a page with a nested iframe.
   GURL frame_url_b(embedded_test_server()->GetURL(
@@ -2778,6 +2888,15 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(frame_url_b, entry3->root_node()->children[0]->frame_entry->url());
   EXPECT_EQ(data_url,
             entry3->root_node()->children[0]->children[0]->frame_entry->url());
+  EXPECT_EQ(entry3->root_node()
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque(),
+            entry3->root_node()
+                ->children[0]
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque());
 
   // 4. Navigate the nested iframe cross-site.
   GURL frame_url_c(embedded_test_server()->GetURL(
@@ -2886,6 +3005,15 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(frame_url_b, entry3->root_node()->children[0]->frame_entry->url());
   EXPECT_EQ(data_url,
             entry3->root_node()->children[0]->children[0]->frame_entry->url());
+  EXPECT_EQ(entry3->root_node()
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque(),
+            entry3->root_node()
+                ->children[0]
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque());
 
   // Verify that we did not reload the main frame. See https://crbug.com/586234.
   EXPECT_EQ(3, EvalJs(root, "foo"));
@@ -2908,6 +3036,13 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // The entry should have a FrameNavigationEntry for the subframe.
   ASSERT_EQ(1U, entry2->root_node()->children.size());
   EXPECT_EQ(data_url, entry2->root_node()->children[0]->frame_entry->url());
+  EXPECT_EQ(entry2->root_node()
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque(),
+            entry2->root_node()
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque());
 
   // 9. Go back again, to the initial main frame page.
   {
@@ -2943,6 +3078,15 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(frame_url_b, entry3->root_node()->children[0]->frame_entry->url());
   EXPECT_EQ(data_url,
             entry3->root_node()->children[0]->children[0]->frame_entry->url());
+  EXPECT_EQ(entry3->root_node()
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque(),
+            entry3->root_node()
+                ->children[0]
+                ->children[0]
+                ->frame_entry->committed_origin()
+                ->GetTupleOrPrecursorTupleIfOpaque());
 }
 
 // Verify that we navigate to the fallback (original) URL if a subframe's
@@ -2954,9 +3098,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "a.com", "/navigation_controller/page_with_data_iframe.html"));
   GURL data_url("data:text/html,Subframe");
   EXPECT_TRUE(NavigateToURL(shell(), main_url_a));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -3069,9 +3212,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
     EXPECT_TRUE(NavigateToURL(shell(), main_url_a));
     data_observer.Wait();
   }
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -3511,9 +3653,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL initial_url(
       embedded_test_server()->GetURL("/frame_tree/page_with_two_frames.html"));
   EXPECT_TRUE(NavigateToURL(shell(), initial_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -3808,9 +3949,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "a.com", "/navigation_controller/page_with_data_iframe.html"));
   GURL data_url("data:text/html,Subframe");
   EXPECT_TRUE(NavigateToURL(shell(), main_url_a));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -3976,9 +4116,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // back/forward and restore.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        FrameNavigationEntry_FrameUniqueName) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // 1. Navigate the main frame.
   GURL url(embedded_test_server()->GetURL(
@@ -4072,9 +4211,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // replaced data.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        ReplacedNavigationEntryData_ClientSideRedirect) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/client_redirect.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -4115,9 +4253,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -4167,9 +4304,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -4265,9 +4401,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -4312,9 +4447,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
 
@@ -4368,9 +4502,8 @@ IN_PROC_BROWSER_TEST_F(
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -4436,9 +4569,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL(
       "/navigation_controller/simple_page_1.html"));
   GURL url2(embedded_test_server()->GetURL(
@@ -4699,9 +4831,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // properly for main frames and subframes.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        FrameNavigationEntry_SequenceNumbers) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // 1. Navigate the main frame.
   GURL url(embedded_test_server()->GetURL(
@@ -4772,9 +4903,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // main frame.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        FrameNavigationEntry_MainFrameRedirectChain) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Navigate the main frame to a redirecting URL (server-side)
   GURL final_url(embedded_test_server()->GetURL("/simple_page.html"));
@@ -4797,9 +4927,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // the right subframe (AUTO_SUBFRAME navigation).
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        FrameNavigationEntry_AutoSubFrameRedirectChain) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   GURL main_url(embedded_test_server()->GetURL(
       "/navigation_controller/page_with_iframe_redirect.html"));
@@ -4829,9 +4958,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // the right subframe (NEW_SUBFRAME navigation).
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        FrameNavigationEntry_NewSubFrameRedirectChain) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -4872,9 +5000,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "a.com", "/navigation_controller/page_with_data_iframe.html"));
   GURL data_url("data:text/html,Subframe");
   EXPECT_TRUE(NavigateToURL(shell(), main_url_a));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
@@ -5894,6 +6021,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   EXPECT_EQ(1, controller.GetEntryCount());
   EXPECT_EQ(1, EvalJs(shell(), "history.length"));
+  const url::Origin opaque_origin = root->current_origin();
+  EXPECT_TRUE(opaque_origin.opaque());
+  EXPECT_EQ(url::SchemeHostPort(),
+            opaque_origin.GetTupleOrPrecursorTupleIfOpaque());
 
   // Add an iframe with no 'src'.
   GURL blank_url(url::kAboutBlankURL);
@@ -5901,15 +6032,17 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "var iframe = document.createElement('iframe');"
       "iframe.id = 'frame';"
       "document.body.appendChild(iframe);";
-  EXPECT_TRUE(ExecJs(root->current_frame_host(), script));
+  EXPECT_TRUE(ExecJs(root, script));
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
   EXPECT_EQ(1, controller.GetEntryCount());
-  EXPECT_EQ(1, EvalJs(shell(), "history.length"));
+  EXPECT_EQ(1, EvalJs(root, "history.length"));
   EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
   ASSERT_EQ(1U, root->child_count());
   FrameTreeNode* frame = root->child_at(0);
   ASSERT_NE(nullptr, frame);
   EXPECT_EQ(blank_url, frame->current_url());
+  EXPECT_EQ(opaque_origin, root->current_origin());
+  EXPECT_EQ(opaque_origin, frame->current_origin());
 
   // Do a document.write in the subframe to create a link to click.
   std::string html = "<a id='fraglink' href='#frag'>fragment link</a>";
@@ -5918,16 +6051,26 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "iframe.contentWindow.document.write($1);"
       "iframe.contentWindow.document.close();",
       html);
-  EXPECT_TRUE(ExecJs(root->current_frame_host(), document_write_script));
+  EXPECT_TRUE(ExecJs(root, document_write_script));
+  EXPECT_EQ(opaque_origin, root->current_origin());
+  EXPECT_EQ(opaque_origin, frame->current_origin());
 
   // Click the link to do a same document navigation.  Due to the
-  // document.write, the new URL matches the parent frame's URL.
+  // document.write, the new URL matches the parent frame's URL, but the
+  // opaque origin is preserved.
   GURL frame_url_2("data:text/html,Top level page#frag");
   std::string link_script = "document.getElementById('fraglink').click()";
-  EXPECT_TRUE(ExecJs(frame->current_frame_host(), link_script));
+  EXPECT_TRUE(ExecJs(frame, link_script));
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_EQ(opaque_origin, root->current_origin());
+  EXPECT_EQ(opaque_origin, frame->current_origin());
+  EXPECT_EQ(ListValueOf("Top level page", "fragment link"),
+            EvalJs(frame,
+                   "[window.parent.document.body.textContent,"
+                   " document.body.textContent]"))
+      << "Frames should be same-origin and able to script each other.";
   EXPECT_EQ(2, controller.GetEntryCount());
-  EXPECT_EQ(2, EvalJs(shell(), "history.length"));
+  EXPECT_EQ(2, EvalJs(root, "history.length"));
   EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
   EXPECT_EQ(frame_url_2, frame->current_url());
 
@@ -5941,10 +6084,11 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // Verify the process is still alive by running script.  We can't just call
   // IsRenderFrameLive after the navigation since it might not have disconnected
   // yet.
-  EXPECT_TRUE(ExecJs(root->current_frame_host(), "true;"));
+  EXPECT_EQ("ping", EvalJs(root, "'ping'"));
   EXPECT_TRUE(root->current_frame_host()->IsRenderFrameLive());
 
   EXPECT_EQ(blank_url, frame->current_url());
+  EXPECT_EQ(opaque_origin, frame->current_origin());
 }
 
 // Ensure that we do not corrupt a NavigationEntry's PageState if a subframe
@@ -6848,8 +6992,8 @@ class HistoryNavigationBeforeCommitInjector
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     if (!render_frame_host->GetParent() && params->url == url_) {
       did_trigger_history_navigation_ = true;
       web_contents()->GetController().GoBack();
@@ -7194,9 +7338,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // Check that the referrer is stored inside FrameNavigationEntry for subframes.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        RefererStoredForSubFrame) {
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   GURL url_simple(embedded_test_server()->GetURL(
       "/navigation_controller/page_with_iframe_simple.html"));
@@ -7432,9 +7575,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   // Navigate to the initial page.
   EXPECT_TRUE(NavigateToURL(shell(), kURL));
 
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   NavigationEntryImpl* entry = controller.GetLastCommittedEntry();
   EXPECT_EQ(kURL, entry->GetURL());
@@ -7460,8 +7602,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest, StopDuringLoad) {
   shell()->LoadURL(slow_url);
   shell()->web_contents()->Stop();
 
-  const NavigationController& controller =
-      shell()->web_contents()->GetController();
+  NavigationController& controller = shell()->web_contents()->GetController();
   ASSERT_EQ(controller.GetPendingEntry(), nullptr);
 }
 
@@ -7914,9 +8055,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ("done-with-test", EvalJs(shell(), script));
 
   // Grab the last committed entry.
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   EXPECT_EQ(1, controller.GetEntryCount());
   NavigationEntryImpl* entry = controller.GetLastCommittedEntry();
   EXPECT_EQ(main_url, entry->GetURL());
@@ -7942,9 +8082,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   GURL main_url(embedded_test_server()->GetURL(
       "a.com", "/navigation_controller/page_with_iframe_simple.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Add 5 dynamic subframes to |frame|.
   RenderFrameHost* frame = shell()->web_contents()->GetAllFrames()[1];
@@ -7985,9 +8124,8 @@ IN_PROC_BROWSER_TEST_F(
   GURL main_url(embedded_test_server()->GetURL(
       "a.com", "/navigation_controller/page_with_iframe_simple.html"));
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
 
   // Add 5 dynamic subframes to |frame|.
   RenderFrameHost* frame = shell()->web_contents()->GetAllFrames()[1];
@@ -8132,9 +8270,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  const NavigationControllerImpl& controller =
-      static_cast<const NavigationControllerImpl&>(
-          shell()->web_contents()->GetController());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
   GURL url1(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url2(embedded_test_server()->GetURL("b.com", "/title2.html"));
   GURL url3(embedded_test_server()->GetURL("c.com", "/title3.html"));
@@ -8234,14 +8371,32 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   EXPECT_EQ(url1, shell()->web_contents()->GetLastCommittedURL());
 }
 
+class NavigationControllerHistoryInterventionBrowserTest
+    : public NavigationControllerBrowserTest {
+ protected:
+  void SetUp() override {
+    feature_list_.InitAndEnableFeature(
+        features::kHistoryManipulationIntervention);
+    NavigationControllerBrowserTest::SetUp();
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
 // Tests that the navigation entry is marked as skippable on back/forward button
 // if it does a renderer initiated navigation without ever getting a user
 // activation.
-IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
                        NoUserActivationSetSkipOnBackForward) {
   base::HistogramTester histograms;
-  GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
-  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
@@ -8253,41 +8408,50 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   // Navigate to a new same-site document from the renderer without a user
   // gesture.
-  GURL url(embedded_test_server()->GetURL("/title1.html"));
-  EXPECT_TRUE(NavigateToURLFromRendererWithoutUserGesture(shell(), url));
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 1);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 1);
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
 
   // Last entry should have been marked as skippable.
-  EXPECT_TRUE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
+  EXPECT_TRUE(controller.GetEntryAtIndex(1)->should_skip_on_back_forward_ui());
   EXPECT_FALSE(
       controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
   histograms.ExpectBucketCount(
       "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
 
-  // TODO(shivanisha): Test that the site actually gets skipped when the
-  // intervention logic is implemented.
+  EXPECT_TRUE(controller.CanGoBack());
   // Attempt to go back or forward to the skippable entry should log the
-  // corresponding histogram.
+  // corresponding histogram and skip the corresponding entry.
   TestNavigationObserver back_load_observer(shell()->web_contents());
   controller.GoBack();
   back_load_observer.Wait();
   histograms.ExpectBucketCount("Navigation.BackForward.BackTargetSkipped", 1,
                                1);
+  histograms.ExpectBucketCount("Navigation.BackForward.AllBackTargetsSkippable",
+                               false, 1);
+  EXPECT_EQ(non_skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
 }
 
 // Same as the above test except the navigation is cross-site in this case.
 // Tests that the navigation entry is marked as skippable on back/forward button
 // if it does a renderer initiated cross-site navigation without ever getting a
 // user activation.
-IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
                        NoUserActivationSetSkipOnBackForwardCrossSite) {
   base::HistogramTester histograms;
-  GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
-  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
@@ -8299,42 +8463,49 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   // Navigate to a new cross-site document from the renderer with a user
   // gesture.
-  GURL url(embedded_test_server()->GetURL("foo.com", "/title1.html"));
-  EXPECT_TRUE(NavigateToURLFromRendererWithoutUserGesture(shell(), url));
+  GURL redirected_url(
+      embedded_test_server()->GetURL("foo.com", "/title1.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 1);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 1);
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
 
   // Last entry should have been marked as skippable.
-  EXPECT_TRUE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
+  EXPECT_TRUE(controller.GetEntryAtIndex(1)->should_skip_on_back_forward_ui());
   EXPECT_FALSE(
       controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
   histograms.ExpectBucketCount(
       "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
 
-  // TODO(shivanisha): Test that the site actually gets skipped when the
-  // intervention logic is implemented.
+  EXPECT_TRUE(controller.CanGoBack());
   // Attempt to go back or forward to the skippable entry should log the
-  // corresponding histogram.
+  // corresponding histogram and skip the corresponding entry.
   TestNavigationObserver back_load_observer(shell()->web_contents());
   controller.GoBack();
   back_load_observer.Wait();
   histograms.ExpectBucketCount("Navigation.BackForward.BackTargetSkipped", 1,
                                1);
+  histograms.ExpectBucketCount("Navigation.BackForward.AllBackTargetsSkippable",
+                               false, 1);
+  EXPECT_EQ(non_skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
 }
 
-// Tests that the navigation entry is marked as skippable on back button if it
-// does a renderer initiated navigation without ever getting a user activation.
-// Also tests this for an entry added using history.pushState.
+// Tests that the navigation entry is marked as skippable on back/forward button
+// but is not skipped if the feature is not enabled.
 IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
-                       NoUserActivationSetSkippableMultipleGoBack) {
+                       NoSkipOnBackFeatureDisabled) {
   base::HistogramTester histograms;
-  const std::string histogram_name =
-      "Navigation.BackForward.SetShouldSkipOnBackForwardUI";
-  GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
-  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
@@ -8346,8 +8517,60 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   // Navigate to a new same-site document from the renderer without a user
   // gesture.
-  GURL url(embedded_test_server()->GetURL("/title1.html"));
-  EXPECT_TRUE(NavigateToURLFromRendererWithoutUserGesture(shell(), url));
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
+
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
+
+  // Last entry should have been marked as skippable.
+  EXPECT_TRUE(controller.GetEntryAtIndex(1)->should_skip_on_back_forward_ui());
+  EXPECT_FALSE(
+      controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
+  histograms.ExpectBucketCount(
+      "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
+
+  EXPECT_TRUE(controller.CanGoBack());
+  // Attempt to go back or forward to the skippable entry should log the
+  // corresponding histogram.
+  TestNavigationObserver back_load_observer(shell()->web_contents());
+  controller.GoBack();
+  back_load_observer.Wait();
+  histograms.ExpectBucketCount("Navigation.BackForward.BackTargetSkipped", 1,
+                               1);
+  // Since the feature is disabled, it will be navigated to the skippable entry.
+  EXPECT_EQ(skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+}
+
+// Tests that the navigation entry is marked as skippable on back button if it
+// does a renderer initiated navigation without ever getting a user activation.
+// Also tests this for an entry added using history.pushState.
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
+                       NoUserActivationSetSkippableMultipleGoBack) {
+  base::HistogramTester histograms;
+  const std::string histogram_name =
+      "Navigation.BackForward.SetShouldSkipOnBackForwardUI";
+
+  GURL skippable_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_FALSE(root->HasBeenActivated());
+  EXPECT_FALSE(root->HasTransientUserActivation());
+
+  // Navigate to a new same-site document from the renderer without a user
+  // gesture.
+  GURL redirected_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
 
   // Use the pushState API to add another entry without user gesture.
   GURL push_state_url(embedded_test_server()->GetURL("/title2.html"));
@@ -8358,8 +8581,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 2);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 2);
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
 
   // Last 2 entries should have been marked as skippable.
   EXPECT_TRUE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
@@ -8368,25 +8591,29 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
   histograms.ExpectBucketCount(histogram_name, true, 2);
 
+  // CanGoBack should return false since all previous entries are skippable.
+  EXPECT_FALSE(controller.CanGoBack());
+
   // Attempt to go back to the entries marked to be skipped should log a
   // histogram.
-  {
-    TestNavigationObserver back_load_observer(shell()->web_contents());
-    controller.GoBack();
-    back_load_observer.Wait();
-    histograms.ExpectBucketCount("Navigation.BackForward.BackTargetSkipped", 2,
-                                 1);
-  }
+  controller.GoBack();  // Will not go back
+  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 2);
+
+  histograms.ExpectBucketCount("Navigation.BackForward.BackTargetSkipped", 2,
+                               1);
+  histograms.ExpectBucketCount("Navigation.BackForward.AllBackTargetsSkippable",
+                               true, 1);
 }
 
 // Same as above but tests the metrics on going forward.
-IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
                        NoUserActivationSetSkippableMultipleGoForward) {
   base::HistogramTester histograms;
   const std::string histogram_name =
       "Navigation.BackForward.SetShouldSkipOnBackForwardUI";
-  GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
-  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
@@ -8398,8 +8625,9 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   // Navigate to a new same-site document from the renderer without a user
   // gesture.
-  GURL url(embedded_test_server()->GetURL("/title1.html"));
-  EXPECT_TRUE(NavigateToURLFromRendererWithoutUserGesture(shell(), url));
+  GURL redirected_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
 
   // Use the pushState API to add another entry without user gesture.
   GURL push_state_url(embedded_test_server()->GetURL("/title2.html"));
@@ -8410,8 +8638,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 2);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 2);
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
 
   // Last 2 entries should have been marked as skippable.
   EXPECT_TRUE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
@@ -8421,20 +8649,18 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   histograms.ExpectBucketCount(histogram_name, true, 2);
 
   // Go to the 1st entry.
-  {
-    TestNavigationObserver load_observer(shell()->web_contents());
-    controller.GoToIndex(0);
-    load_observer.Wait();
-  }
+  TestNavigationObserver load_observer(shell()->web_contents());
+  controller.GoToIndex(0);
+  load_observer.Wait();
+
   // Attempt to go forward to the entries marked to be skipped should log a
   // histogram.
-  {
-    TestNavigationObserver back_load_observer(shell()->web_contents());
-    controller.GoForward();
-    back_load_observer.Wait();
-    histograms.ExpectBucketCount("Navigation.BackForward.ForwardTargetSkipped",
-                                 1, 1);
-  }
+  EXPECT_TRUE(controller.CanGoForward());
+  TestNavigationObserver back_load_observer(shell()->web_contents());
+  controller.GoForward();
+  back_load_observer.Wait();
+  histograms.ExpectBucketCount("Navigation.BackForward.ForwardTargetSkipped", 1,
+                               1);
 }
 
 // Tests that if an entry is marked as skippable, it will be reset if there is a
@@ -8443,6 +8669,7 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
                        ResetSkipOnBackForward) {
   base::HistogramTester histograms;
   GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
+
   EXPECT_TRUE(NavigateToURL(shell(), main_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
@@ -8460,8 +8687,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 1);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 1);
+  EXPECT_EQ(1, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
 
   // Last entry should have been marked as skippable.
   EXPECT_TRUE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
@@ -8471,11 +8698,10 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
       "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
 
   // Go back to the last entry.
-  {
-    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
-    controller.GoToIndex(0);
-    back_nav_load_observer.Wait();
-  }
+  TestNavigationObserver back_nav_load_observer(shell()->web_contents());
+  controller.GoToIndex(0);
+  back_nav_load_observer.Wait();
+
   // Going back again to an entry should reset its skippable flag.
   EXPECT_FALSE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
 
@@ -8490,13 +8716,15 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // Tests that the navigation entry is not marked as skippable on back/forward
 // button if it does a renderer initiated navigation after getting a user
 // activation.
-IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
                        UserActivationDoNotSkipOnBackForward) {
   base::HistogramTester histograms;
   const std::string histogram_name =
       "Navigation.BackForward.SetShouldSkipOnBackForwardUI";
-  GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
-  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
@@ -8508,13 +8736,14 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   // Navigate to a new same-site document from the renderer.
   // Note that NavigateToURLFromRenderer also simulates a user gesture.
-  GURL url(embedded_test_server()->GetURL("/title1.html"));
-  EXPECT_TRUE(NavigateToURLFromRenderer(shell(), url));
+  GURL user_gesture_redirected_url(
+      embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURLFromRenderer(shell(), user_gesture_redirected_url));
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 1);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 1);
+  EXPECT_EQ(1, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
 
   // Last entry should not have been marked as skippable.
   EXPECT_FALSE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
@@ -8523,12 +8752,11 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   histograms.ExpectBucketCount(histogram_name, false, 1);
 
   // Nothing should get skipped when back button is clicked.
-  {
-    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
-    controller.GoBack();
-    back_nav_load_observer.Wait();
-  }
-  EXPECT_EQ(controller.GetLastCommittedEntry()->GetURL(), main_url);
+  TestNavigationObserver back_nav_load_observer(shell()->web_contents());
+  controller.GoBack();
+  back_nav_load_observer.Wait();
+  EXPECT_EQ(non_skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
   histograms.ExpectBucketCount("Navigation.BackForward.BackTargetSkipped", 0,
                                1);
 }
@@ -8536,13 +8764,15 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 // Tests that the navigation entry should not be marked as skippable on
 // back/forward button if it is navigated away using a browser initiated
 // navigation.
-IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
                        BrowserInitiatedNavigationDoNotSkipOnBackForward) {
   base::HistogramTester histograms;
   const std::string histogram_name =
       "Navigation.BackForward.SetShouldSkipOnBackForwardUI";
-  GURL main_url(embedded_test_server()->GetURL("/frame_tree/top.html"));
-  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
 
   // It is safe to obtain the root frame tree node here, as it doesn't change.
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
@@ -8559,8 +8789,8 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
 
   NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
       shell()->web_contents()->GetController());
-  EXPECT_EQ(controller.GetCurrentEntryIndex(), 1);
-  EXPECT_EQ(controller.GetLastCommittedEntryIndex(), 1);
+  EXPECT_EQ(1, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
 
   // Last entry should not have been marked as skippable.
   EXPECT_FALSE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
@@ -8569,12 +8799,265 @@ IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTest,
   histograms.ExpectBucketCount(histogram_name, false, 1);
 
   // Nothing should get skipped when back button is clicked.
-  {
-    TestNavigationObserver back_nav_load_observer(shell()->web_contents());
-    controller.GoBack();
-    back_nav_load_observer.Wait();
-  }
-  EXPECT_EQ(controller.GetLastCommittedEntry()->GetURL(), main_url);
+  TestNavigationObserver back_nav_load_observer(shell()->web_contents());
+  controller.GoBack();
+  back_nav_load_observer.Wait();
+  EXPECT_EQ(non_skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(0, controller.GetLastCommittedEntryIndex());
+}
+
+// Tests that the navigation entry that is marked as skippable on back/forward
+// button does not get skipped for history.back API calls.
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
+                       SetSkipOnBackDoNotSkipForHistoryBackAPI) {
+  base::HistogramTester histograms;
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_FALSE(root->HasBeenActivated());
+  EXPECT_FALSE(root->HasTransientUserActivation());
+
+  // Navigate to a new same-site document from the renderer without a user
+  // gesture.
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
+
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
+
+  // Last entry should have been marked as skippable.
+  EXPECT_TRUE(controller.GetEntryAtIndex(1)->should_skip_on_back_forward_ui());
+  EXPECT_FALSE(
+      controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
+  histograms.ExpectBucketCount(
+      "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
+
+  // Attempt to go back to the skippable entry using the History API should
+  // not skip the corresponding entry.
+  TestNavigationObserver frame_observer(shell()->web_contents());
+  EXPECT_TRUE(ExecuteScript(root, "window.history.back()"));
+  frame_observer.Wait();
+
+  histograms.ExpectTotalCount("Navigation.BackForward.BackTargetSkipped", 0);
+  EXPECT_EQ(skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+}
+
+// Tests that the navigation entry that is marked as skippable on back/forward
+// button does not get skipped for history.forward API calls.
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
+                       SetSkipOnBackDoNotSkipForHistoryForwardAPI) {
+  base::HistogramTester histograms;
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_FALSE(root->HasBeenActivated());
+  EXPECT_FALSE(root->HasTransientUserActivation());
+
+  // Navigate to a new same-site document from the renderer without a user
+  // gesture.
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
+
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
+
+  // Last entry should have been marked as skippable.
+  EXPECT_TRUE(controller.GetEntryAtIndex(1)->should_skip_on_back_forward_ui());
+  EXPECT_FALSE(
+      controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
+  histograms.ExpectBucketCount(
+      "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
+
+  TestNavigationObserver nav_observer1(shell()->web_contents());
+  controller.GoToIndex(0);
+  nav_observer1.Wait();
+  EXPECT_EQ(non_skippable_url, controller.GetLastCommittedEntry()->GetURL());
+
+  // Attempt to go forward to the skippable entry using the History API should
+  // not skip the corresponding entry.
+  TestNavigationObserver nav_observer2(shell()->web_contents());
+  EXPECT_TRUE(ExecuteScript(root, "window.history.forward()"));
+  nav_observer2.Wait();
+
+  histograms.ExpectTotalCount("Navigation.BackForward.ForwardTargetSkipped", 0);
+  EXPECT_EQ(skippable_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+}
+
+// Tests that the oldest navigation entry that is marked as skippable is the one
+// that is pruned if max entry count is reached.
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
+                       PruneOldestSkippableEntry) {
+  base::HistogramTester histograms;
+
+  // Set the max entry count as 3.
+  NavigationControllerImpl::set_max_entry_count_for_testing(3);
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_FALSE(root->HasBeenActivated());
+  EXPECT_FALSE(root->HasTransientUserActivation());
+
+  // Navigate to a new same-site document from the renderer without a user
+  // gesture.
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
+
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  EXPECT_EQ(2, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(2, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(3, controller.GetEntryCount());
+  EXPECT_EQ(non_skippable_url, controller.GetEntryAtIndex(0)->GetURL());
+  EXPECT_EQ(skippable_url, controller.GetEntryAtIndex(1)->GetURL());
+  EXPECT_EQ(redirected_url, controller.GetEntryAtIndex(2)->GetURL());
+
+  // |skippable_url| entry should have been marked as skippable.
+  EXPECT_TRUE(controller.GetEntryAtIndex(1)->should_skip_on_back_forward_ui());
+  EXPECT_FALSE(
+      controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
+  histograms.ExpectBucketCount(
+      "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
+
+  // A new navigation should lead to |skippable_url| to be pruned.
+  GURL new_navigation_url(embedded_test_server()->GetURL("/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), new_navigation_url));
+  // Should still have 3 entries.
+  EXPECT_EQ(3, controller.GetEntryCount());
+  EXPECT_EQ(non_skippable_url, controller.GetEntryAtIndex(0)->GetURL());
+  EXPECT_EQ(redirected_url, controller.GetEntryAtIndex(1)->GetURL());
+  EXPECT_EQ(new_navigation_url, controller.GetEntryAtIndex(2)->GetURL());
+}
+
+// Tests that we fallback to pruning the oldest entry if the last committed
+// entry is the oldest skippable navigation entry.
+IN_PROC_BROWSER_TEST_F(NavigationControllerHistoryInterventionBrowserTest,
+                       PruneOldestWhenLastCommittedIsSkippable) {
+  base::HistogramTester histograms;
+
+  // Set the max entry count as 2.
+  NavigationControllerImpl::set_max_entry_count_for_testing(2);
+
+  GURL non_skippable_url(
+      embedded_test_server()->GetURL("/frame_tree/top.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), non_skippable_url));
+
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), skippable_url));
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()
+                            ->root();
+
+  EXPECT_FALSE(root->HasBeenActivated());
+  EXPECT_FALSE(root->HasTransientUserActivation());
+
+  // Navigate to a new same-site document from the renderer without a user
+  // gesture. This will mark |skippable_url| as skippable but since that is also
+  // the last committed entry, it will not be pruned. Instead the oldest entry
+  // will be removed.
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  EXPECT_TRUE(
+      NavigateToURLFromRendererWithoutUserGesture(shell(), redirected_url));
+
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+  EXPECT_EQ(1, controller.GetCurrentEntryIndex());
+  EXPECT_EQ(1, controller.GetLastCommittedEntryIndex());
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_EQ(skippable_url, controller.GetEntryAtIndex(0)->GetURL());
+  EXPECT_EQ(redirected_url, controller.GetEntryAtIndex(1)->GetURL());
+
+  // |skippable_url| entry should have been marked as skippable.
+  EXPECT_TRUE(controller.GetEntryAtIndex(0)->should_skip_on_back_forward_ui());
+  EXPECT_FALSE(
+      controller.GetLastCommittedEntry()->should_skip_on_back_forward_ui());
+  histograms.ExpectBucketCount(
+      "Navigation.BackForward.SetShouldSkipOnBackForwardUI", true, 1);
+}
+
+// Tests that a same document navigation followed by a client redirect
+// do not add any more session history entries and going to previous entry
+// works.
+// It replaces invalidly behaving unit test added for http://crbug.com/40395.
+IN_PROC_BROWSER_TEST_F(NavigationControllerBrowserTestNoServer,
+                       ClientRedirectAfterSameDocumentNavigation) {
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "/foo.html");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  NavigationControllerImpl& controller = static_cast<NavigationControllerImpl&>(
+      shell()->web_contents()->GetController());
+
+  // Load an initial page, which the test will eventually go back to.
+  const GURL start_url(embedded_test_server()->GetURL("/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), start_url));
+  EXPECT_EQ(start_url, controller.GetLastCommittedEntry()->GetURL());
+
+  const GURL main_url(embedded_test_server()->GetURL("/foo.html"));
+  const GURL last_url(embedded_test_server()->GetURL("/title3.html"));
+
+  // Navigate to foo.html which will do a same document navigation and client
+  // redirect.
+  TestNavigationManager observer(shell()->web_contents(), last_url);
+  shell()->LoadURL(main_url);
+  response.WaitForRequest();
+  response.Send(
+      "HTTP/1.1 200 OK\r\n"
+      "Content-Type: text/html; charset=utf-8\r\n"
+      "\r\n"
+      "<html><script>"
+      "window.location.replace('#a');"
+      "window.location='/title3.html';"
+      "</script></html>");
+  observer.WaitForNavigationFinished();
+
+  EXPECT_EQ(last_url, controller.GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(2, controller.GetEntryCount());
+  EXPECT_TRUE(controller.CanGoBack());
+
+  TestNavigationObserver back_load_observer(shell()->web_contents());
+  controller.GoBack();
+  back_load_observer.Wait();
+  EXPECT_EQ(start_url, controller.GetLastCommittedEntry()->GetURL());
 }
 
 }  // namespace content

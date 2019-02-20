@@ -45,7 +45,6 @@
 #include "third_party/blink/renderer/core/editing/finder/find_options.h"
 #include "third_party/blink/renderer/core/editing/finder/find_task_controller.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
-#include "third_party/blink/renderer/core/editing/iterators/search_buffer.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
 #include "third_party/blink/renderer/core/editing/selection_template.h"
@@ -55,6 +54,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/invisible_dom/invisible_dom.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
@@ -74,6 +74,8 @@ void TextFinder::FindMatch::Trace(blink::Visitor* visitor) {
 
 static void ScrollToVisible(Range* match) {
   const Node& first_node = *match->FirstNode();
+  if (InvisibleDOM::ActivateRangeIfNeeded(EphemeralRangeInFlatTree(match)))
+    first_node.GetDocument().UpdateStyleAndLayoutIgnorePendingStylesheets();
   Settings* settings = first_node.GetDocument().GetSettings();
   bool smooth_find_enabled =
       settings ? settings->GetSmoothScrollForFindEnabled() : false;
@@ -157,8 +159,7 @@ bool TextFinder::Find(int identifier,
           ->PageNeedsAutosizing()) {
     OwnerFrame().LocalRoot()->FrameWidget()->ZoomToFindInPageRect(
         OwnerFrame().GetFrameView()->ConvertToRootFrame(
-            EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
-                EphemeralRange(active_match_.Get())))));
+            ComputeTextRect(EphemeralRange(active_match_.Get()))));
   }
 
   bool was_active_frame = current_active_match_frame_;
@@ -608,8 +609,7 @@ int TextFinder::SelectFindMatch(unsigned index, WebRect* selection_rect) {
 
   IntRect active_match_rect;
   IntRect active_match_bounding_box =
-      EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
-          EphemeralRange(active_match_.Get())));
+      ComputeTextRect(EphemeralRange(active_match_.Get()));
 
   if (!active_match_bounding_box.IsEmpty()) {
     if (active_match_->FirstNode() &&
@@ -629,8 +629,7 @@ int TextFinder::SelectFindMatch(unsigned index, WebRect* selection_rect) {
       // that needs to be merged to a release branch.
       // https://crbug.com/823365.
       active_match_bounding_box =
-          EnclosingIntRect(LayoutObject::AbsoluteBoundingBoxRectForRange(
-              EphemeralRange(active_match_.Get())));
+          ComputeTextRect(EphemeralRange(active_match_.Get()));
     }
 
     // Zoom to the active match.

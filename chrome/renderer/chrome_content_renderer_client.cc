@@ -17,6 +17,7 @@
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -42,7 +43,6 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/renderer_resources.h"
-#include "chrome/renderer/app_categorizer.h"
 #include "chrome/renderer/benchmarking_extension.h"
 #include "chrome/renderer/chrome_render_frame_observer.h"
 #include "chrome/renderer/chrome_render_thread_observer.h"
@@ -82,7 +82,6 @@
 #include "components/network_hints/renderer/prescient_networking_dispatcher.h"
 #include "components/pdf/renderer/pepper_pdf_host.h"
 #include "components/safe_browsing/renderer/threat_dom_details.h"
-#include "components/services/heap_profiling/public/cpp/allocator_shim.h"
 #include "components/spellcheck/spellcheck_buildflags.h"
 #include "components/startup_metric_utils/common/startup_metric.mojom.h"
 #include "components/subresource_filter/content/renderer/subresource_filter_agent.h"
@@ -163,6 +162,7 @@
 #include "extensions/common/manifest_handlers/web_accessible_resources_info.h"
 #include "extensions/common/switches.h"
 #include "extensions/renderer/dispatcher.h"
+#include "extensions/renderer/guest_view/mime_handler_view/mime_handler_view_container_manager.h"
 #include "extensions/renderer/renderer_extension_registry.h"
 #endif
 
@@ -226,11 +226,6 @@ namespace {
 // Whitelist PPAPI for Android Runtime for Chromium. (See crbug.com/383937)
 #if BUILDFLAG(ENABLE_PLUGINS)
 const char* const kPredefinedAllowedCameraDeviceOrigins[] = {
-  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",
-  "4EB74897CB187C7633357C2FE832E0AD6A44883A"
-};
-
-const char* const kPredefinedAllowedCompositorOrigins[] = {
   "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",
   "4EB74897CB187C7633357C2FE832E0AD6A44883A"
 };
@@ -332,8 +327,8 @@ void OnModuleEvent(scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
   // |module_event_sink|: it is owned by a ChromeContentRendererClient, which is
   // a leaked singleton in the process.
   io_task_runner->PostTask(
-      FROM_HERE, base::Bind(&HandleModuleEventOnIOThread,
-                            base::ConstRef(module_event_sink), event));
+      FROM_HERE, base::BindOnce(&HandleModuleEventOnIOThread,
+                                base::ConstRef(module_event_sink), event));
 }
 #endif
 
@@ -350,12 +345,7 @@ ChromeContentRendererClient::ChromeContentRendererClient()
 #if BUILDFLAG(ENABLE_PLUGINS)
   for (const char* origin : kPredefinedAllowedCameraDeviceOrigins)
     allowed_camera_device_origins_.insert(origin);
-  for (const char* origin : kPredefinedAllowedCompositorOrigins)
-    allowed_compositor_origins_.insert(origin);
 #endif
-
-  heap_profiling::SetGCHeapAllocationHookFunctions(
-      &blink::WebHeap::SetAllocationHook, &blink::WebHeap::SetFreeHook);
 }
 
 ChromeContentRendererClient::~ChromeContentRendererClient() = default;
@@ -482,10 +472,14 @@ void ChromeContentRendererClient::RenderThreadStarted() {
         WebString::FromASCII(scheme));
   }
 
-  main_thread_profiler_->SetMainThreadTaskRunner(
-      base::ThreadTaskRunnerHandle::Get());
-  ThreadProfiler::SetServiceManagerConnectorForChildProcess(
-      thread->GetConnector());
+  // This doesn't work in single-process mode.
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSingleProcess)) {
+    main_thread_profiler_->SetMainThreadTaskRunner(
+        base::ThreadTaskRunnerHandle::Get());
+    ThreadProfiler::SetServiceManagerConnectorForChildProcess(
+        thread->GetConnector());
+  }
 }
 
 void ChromeContentRendererClient::RenderFrameCreated(
@@ -511,6 +505,11 @@ void ChromeContentRendererClient::RenderFrameCreated(
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   ChromeExtensionsRendererClient::GetInstance()->RenderFrameCreated(
       render_frame, registry);
+  if (content::MimeHandlerViewMode::UsesCrossProcessFrame()) {
+    registry->AddInterface(base::BindRepeating(
+        &extensions::MimeHandlerViewContainerManager::BindRequest,
+        render_frame->GetRoutingID()));
+  }
 #endif
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -842,10 +841,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
           const Extension* extension =
               extensions::RendererExtensionRegistry::Get()
                   ->GetExtensionOrAppByURL(manifest_url);
-          if (!IsNaClAllowed(manifest_url,
-                             app_url,
-                             is_nacl_unrestricted,
-                             extension,
+          if (!IsNaClAllowed(app_url, is_nacl_unrestricted, extension,
                              &params)) {
             WebString error_message;
             if (is_nacl_mime_type) {
@@ -858,7 +854,7 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
                   "Portable Native Client must not be disabled in about:flags.";
             }
             frame->AddMessageToConsole(WebConsoleMessage(
-                WebConsoleMessage::kLevelError, error_message));
+                blink::mojom::ConsoleMessageLevel::kError, error_message));
             placeholder = create_blocked_plugin(
                 IDR_BLOCKED_PLUGIN_HTML,
 #if defined(OS_CHROMEOS)
@@ -1077,15 +1073,11 @@ void ChromeContentRendererClient::GetInterface(
 #if BUILDFLAG(ENABLE_NACL)
 //  static
 bool ChromeContentRendererClient::IsNaClAllowed(
-    const GURL& manifest_url,
     const GURL& app_url,
     bool is_nacl_unrestricted,
     const Extension* extension,
     WebPluginParams* params) {
-  // Temporarily allow these whitelisted apps and WebUIs to use NaCl.
-  bool is_whitelisted_web_ui =
-      app_url.spec() == chrome::kChromeUIAppListStartPageURL;
-
+  // Temporarily allow these whitelisted apps to use NaCl.
   bool is_invoked_by_webstore_installed_extension = false;
   bool is_extension_unrestricted = false;
   bool is_extension_force_installed = false;
@@ -1110,15 +1102,12 @@ bool ChromeContentRendererClient::IsNaClAllowed(
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
   // Allow NaCl under any of the following circumstances:
-  //  1) An app or URL is explictly whitelisted above.
-  //  2) An extension is loaded unpacked or built-in (component) to Chrome.
-  //  3) An extension is force installed by policy.
-  //  4) An extension is installed from the webstore, and invoked in that
+  //  1) An extension is loaded unpacked or built-in (component) to Chrome.
+  //  2) An extension is force installed by policy.
+  //  3) An extension is installed from the webstore, and invoked in that
   //     context (hosted app URL or chrome-extension:// scheme).
-  //  5) --enable-nacl is set.
+  //  4) --enable-nacl is set.
   bool is_nacl_allowed_by_location =
-      is_whitelisted_web_ui ||
-      AppCategorizer::IsWhitelistedApp(manifest_url, app_url) ||
       is_extension_unrestricted ||
       is_extension_force_installed ||
       is_invoked_by_webstore_installed_extension;
@@ -1362,6 +1351,11 @@ void ChromeContentRendererClient::InitSpellCheck() {
 }
 #endif
 
+base::WeakPtr<ChromeRenderThreadObserver>
+ChromeContentRendererClient::GetChromeObserver() const {
+  return chrome_observer_->GetWeakPtr();
+}
+
 std::unique_ptr<content::WebSocketHandshakeThrottleProvider>
 ChromeContentRendererClient::CreateWebSocketHandshakeThrottleProvider() {
   return std::make_unique<WebSocketHandshakeThrottleProviderImpl>();
@@ -1427,22 +1421,6 @@ bool ChromeContentRendererClient::IsPluginAllowedToUseCameraDeviceAPI(
 #endif
 
   return false;
-}
-
-bool ChromeContentRendererClient::IsPluginAllowedToUseCompositorAPI(
-    const GURL& url) {
-#if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_EXTENSIONS)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnablePepperTesting))
-    return true;
-  if (IsExtensionOrSharedModuleWhitelisted(url, allowed_compositor_origins_))
-    return true;
-
-  version_info::Channel channel = chrome::GetChannel();
-  return channel <= version_info::Channel::DEV;
-#else
-  return false;
-#endif
 }
 
 content::BrowserPluginDelegate*
@@ -1574,7 +1552,7 @@ void ChromeContentRendererClient::WillDestroyServiceWorkerContextOnWorkerThread(
 
 bool ChromeContentRendererClient::IsExcludedHeaderForServiceWorkerFetchEvent(
     const std::string& header_name) {
-  return header_name == variations::kClientDataHeader;
+  return variations::IsVariationsHeader(header_name);
 }
 
 // If we're in an extension, there is no need disabling multiple routes as
@@ -1595,18 +1573,6 @@ GURL ChromeContentRendererClient::OverrideFlashEmbedWithHTML(const GURL& url) {
 std::unique_ptr<base::TaskScheduler::InitParams>
 ChromeContentRendererClient::GetTaskSchedulerInitParams() {
   return task_scheduler_util::GetTaskSchedulerInitParamsForRenderer();
-}
-
-bool ChromeContentRendererClient::OverrideLegacySymantecCertConsoleMessage(
-    const GURL& url,
-    std::string* console_message) {
-  *console_message = base::StringPrintf(
-      "The SSL certificate used to load resources from %s"
-      " will be distrusted very soon. Once distrusted, users will be prevented"
-      " from loading these resources. See https://g.co/chrome/symantecpkicerts"
-      " for more information.",
-      url::Origin::Create(url).Serialize().c_str());
-  return true;
 }
 
 void ChromeContentRendererClient::CreateRendererService(

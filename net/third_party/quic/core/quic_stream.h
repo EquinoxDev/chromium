@@ -33,7 +33,7 @@
 #include "net/third_party/quic/platform/api/quic_reference_counted.h"
 #include "net/third_party/quic/platform/api/quic_string.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 
 namespace quic {
 
@@ -70,6 +70,9 @@ class QUIC_EXPORT_PRIVATE PendingStream
   // Stores the final byte offset from |frame|.
   // If the final offset violates flow control, the connection will be closed.
   void OnRstStreamFrame(const QuicRstStreamFrame& frame);
+
+  // Returns the number of bytes read on this stream.
+  uint64_t stream_bytes_read() { return stream_bytes_read_; }
 
  private:
   friend class QuicStream;
@@ -283,12 +286,13 @@ class QUIC_EXPORT_PRIVATE QuicStream
                        QuicDataWriter* writer);
 
   // Called when data [offset, offset + data_length) is acked. |fin_acked|
-  // indicates whether the fin is acked. Returns true if any new stream data
-  // (including fin) gets acked.
+  // indicates whether the fin is acked. Returns true and updates
+  // |newly_acked_length| if any new stream data (including fin) gets acked.
   virtual bool OnStreamFrameAcked(QuicStreamOffset offset,
                                   QuicByteCount data_length,
                                   bool fin_acked,
-                                  QuicTime::Delta ack_delay_time);
+                                  QuicTime::Delta ack_delay_time,
+                                  QuicByteCount* newly_acked_length);
 
   // Called when data [offset, offset + data_length) was retransmitted.
   // |fin_retransmitted| indicates whether fin was retransmitted.
@@ -342,6 +346,11 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // QuicStream class.
   virtual void OnStopSending(uint16_t code);
 
+  // Close the write side of the socket.  Further writes will fail.
+  // Can be called by the subclass or internally.
+  // Does not send a FIN.  May cause the stream to be closed.
+  virtual void CloseWriteSide();
+
  protected:
   // Sends as many bytes in the first |count| buffers of |iov| to the connection
   // as the connection will consume. If FIN is consumed, the write side is
@@ -359,11 +368,6 @@ class QUIC_EXPORT_PRIVATE QuicStream
                                            QuicStreamOffset offset,
                                            bool fin);
 
-  // Close the write side of the socket.  Further writes will fail.
-  // Can be called by the subclass or internally.
-  // Does not send a FIN.  May cause the stream to be closed.
-  virtual void CloseWriteSide();
-
   // Close the read side of the socket.  May cause the stream to be closed.
   // Subclasses and consumers should use StopReading to terminate reading early
   // if expecting a FIN. Can be used directly by subclasses if not expecting a
@@ -380,6 +384,10 @@ class QUIC_EXPORT_PRIVATE QuicStream
 
   // True if buffered data in send buffer is below buffered_data_threshold_.
   bool CanWriteNewData() const;
+
+  // True if buffered data in send buffer is still below
+  // buffered_data_threshold_ even after writing |length| bytes.
+  bool CanWriteNewDataAfterData(QuicByteCount length) const;
 
   // Called when upper layer can write new data.
   virtual void OnCanWriteNewData() {}
@@ -404,11 +412,6 @@ class QUIC_EXPORT_PRIVATE QuicStream
 
   void DisableConnectionFlowControlForThisStream() {
     stream_contributes_to_connection_flow_control_ = false;
-  }
-
-  void set_ack_listener(
-      QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
-    ack_listener_ = std::move(ack_listener);
   }
 
   const QuicIntervalSet<QuicStreamOffset>& bytes_acked() const;
@@ -513,10 +516,6 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // Indicates whether paddings will be added after the fin is consumed for this
   // stream.
   bool add_random_padding_after_fin_;
-
-  // Ack listener of this stream, and it is notified when any of written bytes
-  // are acked.
-  QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener_;
 
   // Send buffer of this stream. Send buffer is cleaned up when data gets acked
   // or discarded.

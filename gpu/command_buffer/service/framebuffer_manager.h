@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "gpu/command_buffer/service/context_group.h"
@@ -156,6 +155,7 @@ class GPU_GLES2_EXPORT Framebuffer : public base::RefCounted<Framebuffer> {
   bool HasColorAttachment(int index) const;
   bool HasDepthAttachment() const;
   bool HasStencilAttachment() const;
+  bool HasFloatColorAttachment() const;
   GLenum GetDepthFormat() const;
   GLenum GetStencilFormat() const;
   GLenum GetDrawBufferInternalFormat() const;

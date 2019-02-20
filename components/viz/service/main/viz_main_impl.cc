@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_monitor_device_source.h"
 #include "base/single_thread_task_runner.h"
@@ -100,6 +101,10 @@ VizMainImpl::VizMainImpl(Delegate* delegate,
       base::BindOnce(&VizMainImpl::ExitProcess, base::Unretained(this)));
   if (dependencies_.create_display_compositor)
     gpu_service_->set_oopd_enabled();
+
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()->AddInterfaces(&registry_);
+#endif
 }
 
 VizMainImpl::~VizMainImpl() {
@@ -133,6 +138,17 @@ void VizMainImpl::Bind(mojom::VizMainRequest request) {
 void VizMainImpl::BindAssociated(mojom::VizMainAssociatedRequest request) {
   associated_binding_.Bind(std::move(request));
 }
+
+#if defined(USE_OZONE)
+bool VizMainImpl::CanBindInterface(const std::string& interface_name) const {
+  return registry_.CanBindInterface(interface_name);
+}
+
+void VizMainImpl::BindInterface(const std::string& interface_name,
+                                mojo::ScopedMessagePipeHandle interface_pipe) {
+  registry_.BindInterface(interface_name, std::move(interface_pipe));
+}
+#endif
 
 void VizMainImpl::CreateGpuService(
     mojom::GpuServiceRequest request,
@@ -235,7 +251,9 @@ void VizMainImpl::CreateFrameSinkManagerInternal(
       gpu_thread_task_runner_, gpu_service_->scheduler(),
       gpu_service_->sync_point_manager(), gpu_service_->mailbox_manager(),
       gpu_service_->share_group(), format, gpu_service_->gpu_feature_info(),
-      gpu_service_->gpu_channel_manager()->gpu_preferences());
+      gpu_service_->gpu_channel_manager()->gpu_preferences(),
+      gpu_service_->shared_image_manager(),
+      gpu_service_->gpu_channel_manager()->program_cache());
 
   viz_compositor_thread_runner_->CreateFrameSinkManager(
       std::move(params), task_executor_, gpu_service_.get());

@@ -10,6 +10,7 @@
 #include "ash/public/cpp/ash_pref_names.h"
 #include "ash/public/interfaces/constants.mojom.h"
 #include "ash/public/interfaces/cros_display_config.mojom.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/i18n/time_formatting.h"
 #include "base/metrics/histogram_macros.h"
@@ -42,6 +43,7 @@
 #include "chromeos/timezone/timezone_resolver.h"
 #include "components/drive/drive_pref_names.h"
 #include "components/feedback/tracing_manager.h"
+#include "components/language/core/browser/pref_names.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_member.h"
@@ -69,8 +71,6 @@
 namespace chromeos {
 
 namespace {
-
-static const char kFallbackInputMethodLocale[] = "en-US";
 
 // The keyboard preferences that determine how we remap modifier keys. These
 // preferences will be saved in global user preferences dictionary so that they
@@ -200,6 +200,15 @@ void Preferences::RegisterProfilePrefs(
   }
 
   registry->RegisterBooleanPref(prefs::kPerformanceTracingEnabled, false);
+
+  // This pref is device specific and must not be synced.
+  registry->RegisterIntegerPref(
+      prefs::kAccountManagerNumTimesMigrationRanSuccessfully,
+      0 /* default_value */);
+
+  // This pref is device specific and must not be synced.
+  registry->RegisterIntegerPref(
+      prefs::kAccountManagerNumTimesWelcomeScreenShown, 0 /* default_value */);
 
   registry->RegisterBooleanPref(
       prefs::kTapToClickEnabled,
@@ -339,12 +348,8 @@ void Preferences::RegisterProfilePrefs(
   // because they're just used to track the logout state of the device.
   registry->RegisterStringPref(prefs::kLanguageCurrentInputMethod, "");
   registry->RegisterStringPref(prefs::kLanguagePreviousInputMethod, "");
-  registry->RegisterListPref(prefs::kLanguageAllowedInputMethods,
-                             std::make_unique<base::ListValue>());
-  registry->RegisterListPref(prefs::kAllowedLanguages,
-                             std::make_unique<base::ListValue>());
-  registry->RegisterStringPref(prefs::kLanguagePreferredLanguages,
-                               kFallbackInputMethodLocale);
+  registry->RegisterListPref(prefs::kLanguageAllowedInputMethods);
+  registry->RegisterListPref(prefs::kAllowedLanguages);
   registry->RegisterStringPref(prefs::kLanguagePreloadEngines,
                                hardware_keyboard_id);
   registry->RegisterStringPref(prefs::kLanguageEnabledImes, "");
@@ -560,12 +565,11 @@ void Preferences::InitUserPrefs(sync_preferences::PrefServiceSyncable* prefs) {
   allowed_input_methods_.Init(prefs::kLanguageAllowedInputMethods, prefs,
                               callback);
   allowed_languages_.Init(prefs::kAllowedLanguages, prefs, callback);
-  preferred_languages_.Init(prefs::kLanguagePreferredLanguages, prefs,
+  preferred_languages_.Init(language::prefs::kPreferredLanguages, prefs,
                             callback);
   ime_menu_activated_.Init(prefs::kLanguageImeMenuActivated, prefs, callback);
   // Notifies the system tray to remove the IME items.
-  if (base::FeatureList::IsEnabled(features::kOptInImeMenu) &&
-      ime_menu_activated_.GetValue())
+  if (ime_menu_activated_.GetValue())
     input_method::InputMethodManager::Get()->ImeMenuActivationChanged(true);
 
   xkb_auto_repeat_enabled_.Init(
@@ -836,7 +840,7 @@ void Preferences::ApplyPreferences(ApplyReason reason,
     locale_util::RemoveDisallowedLanguagesFromPreferred(prefs_);
 
   if (reason != REASON_PREF_CHANGED ||
-      pref_name == prefs::kLanguagePreferredLanguages) {
+      pref_name == language::prefs::kPreferredLanguages) {
     // In case setting has been changed with sync it can contain disallowed
     // values.
     locale_util::RemoveDisallowedLanguagesFromPreferred(prefs_);
@@ -866,8 +870,7 @@ void Preferences::ApplyPreferences(ApplyReason reason,
   }
 
   if (pref_name == prefs::kLanguageImeMenuActivated &&
-      (reason == REASON_PREF_CHANGED || reason == REASON_ACTIVE_USER_CHANGED) &&
-      base::FeatureList::IsEnabled(features::kOptInImeMenu)) {
+      (reason == REASON_PREF_CHANGED || reason == REASON_ACTIVE_USER_CHANGED)) {
     const bool activated = ime_menu_activated_.GetValue();
     input_method::InputMethodManager::Get()->ImeMenuActivationChanged(
         activated);

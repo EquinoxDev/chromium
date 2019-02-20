@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -33,7 +34,6 @@
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/public/web/web_user_media_request.h"
 
-using webrtc::MediaConstraintsInterface;
 using webrtc::StatsReport;
 using webrtc::StatsReports;
 using blink::WebRTCPeerConnectionHandlerClient;
@@ -686,7 +686,7 @@ void PeerConnectionTracker::TrackAddIceCandidate(
     return;
   std::string value =
       "sdpMid: " + candidate->SdpMid().Utf8() + ", " +
-      "sdpMLineIndex: " + base::UintToString(candidate->SdpMLineIndex()) +
+      "sdpMLineIndex: " + base::NumberToString(candidate->SdpMLineIndex()) +
       ", " + "candidate: " + candidate->Candidate().Utf8();
 
   // OnIceCandidate always succeeds as it's a callback from the browser.
@@ -764,7 +764,7 @@ void PeerConnectionTracker::TrackTransceiver(
         blink::WebRTCRtpTransceiverImplementationType::kPlanBReceiverOnly);
     result += "getReceivers()";
   }
-  result += "[" + base::UintToString(transceiver_index) + "]:";
+  result += "[" + base::NumberToString(transceiver_index) + "]:";
   result += SerializeTransceiver(transceiver);
   SendPeerConnectionUpdate(id, callback_type, result);
 }

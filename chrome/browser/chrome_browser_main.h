@@ -29,6 +29,10 @@ class ShutdownWatcherHelper;
 class ThreadProfiler;
 class WebUsbDetector;
 
+namespace tracing {
+class TraceEventSystemStatsMonitor;
+}
+
 class ChromeBrowserMainParts : public content::BrowserMainParts {
  public:
   ~ChromeBrowserMainParts() override;
@@ -63,7 +67,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   void PreMainMessageLoopRun() override;
   bool MainMessageLoopRun(int* result_code) override;
   void PostMainMessageLoopRun() override;
-  void PreShutdown() override;
   void PostDestroyThreads() override;
 
   // Additional stages for ChromeBrowserMainExtraParts. These stages are called
@@ -154,6 +157,11 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // The controller schedules UMA heap profiles collections and forwarding down
   // the reporting pipeline.
   std::unique_ptr<HeapProfilerController> heap_profiler_controller_;
+
+  // The system stats monitor used by chrome://tracing. This doesn't do anything
+  // until tracing of the |system_stats| category is enabled.
+  std::unique_ptr<tracing::TraceEventSystemStatsMonitor>
+      trace_event_system_stats_monitor_;
 
   // Whether PerformPreMainMessageLoopStartup() is called on VariationsService.
   // Initialized to true if |MainFunctionParams::ui_task| is null (meaning not

@@ -145,6 +145,7 @@ class MockInputRouter : public InputRouter {
   void OnHasTouchEventHandlers(bool has_handlers) override {
     has_handlers_ = has_handlers;
   }
+  void WaitForInputProcessed(base::OnceClosure callback) override {}
 
   bool sent_mouse_event_;
   bool sent_wheel_event_;
@@ -333,9 +334,7 @@ class TestView : public TestRenderWidgetHostView {
         acked_event_count_(0),
         gesture_event_type_(-1),
         use_fake_compositor_viewport_pixel_size_(false),
-        ack_result_(INPUT_EVENT_ACK_STATE_UNKNOWN),
-        top_controls_height_(0.f),
-        bottom_controls_height_(0.f) {
+        ack_result_(INPUT_EVENT_ACK_STATE_UNKNOWN) {
     local_surface_id_allocator_.GenerateId();
   }
 
@@ -358,14 +357,6 @@ class TestView : public TestRenderWidgetHostView {
 
   void GetScreenInfo(ScreenInfo* screen_info) const override {
     *screen_info = screen_info_;
-  }
-
-  void set_top_controls_height(float top_controls_height) {
-    top_controls_height_ = top_controls_height;
-  }
-
-  void set_bottom_controls_height(float bottom_controls_height) {
-    bottom_controls_height_ = bottom_controls_height;
   }
 
   const WebTouchEvent& acked_event() const { return acked_event_; }
@@ -408,10 +399,6 @@ class TestView : public TestRenderWidgetHostView {
 
   // RenderWidgetHostView override.
   gfx::Rect GetViewBounds() const override { return bounds_; }
-  float GetTopControlsHeight() const override { return top_controls_height_; }
-  float GetBottomControlsHeight() const override {
-    return bottom_controls_height_;
-  }
   const viz::LocalSurfaceIdAllocation& GetLocalSurfaceIdAllocation()
       const override {
     return local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation();
@@ -453,8 +440,6 @@ class TestView : public TestRenderWidgetHostView {
   bool use_fake_compositor_viewport_pixel_size_;
   gfx::Size mock_compositor_viewport_pixel_size_;
   InputEventAckState ack_result_;
-  float top_controls_height_;
-  float bottom_controls_height_;
   viz::BeginFrameAck last_did_not_produce_frame_ack_;
   viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator_;
   ScreenInfo screen_info_;
@@ -1962,31 +1947,6 @@ TEST_F(RenderWidgetHostTest, VisualProperties) {
   EXPECT_EQ(bounds.size(), visual_properties.new_size);
   EXPECT_EQ(compositor_viewport_pixel_size,
             visual_properties.compositor_viewport_pixel_size);
-}
-
-TEST_F(RenderWidgetHostTest, VisualPropertiesDeviceScale) {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  command_line->AppendSwitchASCII(switches::kEnableUseZoomForDSF, "true");
-
-  float device_scale = 3.5f;
-  ScreenInfo screen_info;
-  screen_info.device_scale_factor = device_scale;
-
-  view_->SetScreenInfo(screen_info);
-  host_->SynchronizeVisualProperties();
-
-  float top_controls_height = 10.0f;
-  float bottom_controls_height = 20.0f;
-  view_->set_top_controls_height(top_controls_height);
-  view_->set_bottom_controls_height(bottom_controls_height);
-
-  VisualProperties visual_properties;
-  bool needs_ack = false;
-  host_->GetVisualProperties(&visual_properties, &needs_ack);
-  EXPECT_EQ(top_controls_height * device_scale,
-            visual_properties.top_controls_height);
-  EXPECT_EQ(bottom_controls_height * device_scale,
-            visual_properties.bottom_controls_height);
 }
 
 // Make sure no dragging occurs after renderer exited. See crbug.com/704832.

@@ -5,6 +5,7 @@
 #ifndef ASH_SYSTEM_NETWORK_NETWORK_ICON_H_
 #define ASH_SYSTEM_NETWORK_NETWORK_ICON_H_
 
+#include <set>
 #include <string>
 
 #include "ash/ash_export.h"
@@ -32,32 +33,52 @@ enum IconType {
 // Strength of a wireless signal.
 enum class SignalStrength { NONE, WEAK, MEDIUM, STRONG, NOT_WIRELESS };
 
-// Gets the image for provided |network|. |network| must not be NULL.
-// |icon_type| determines the color theme and whether or not to show the VPN
-// badge. This caches badged icons per network per |icon_type|. |animating| is
-// an optional out parameter that is set to true when the returned image can be
-// animated.
-ASH_EXPORT gfx::ImageSkia GetImageForNetwork(
+// Returns an image to represent either a fully connected network or a
+// disconnected network.
+const gfx::ImageSkia GetBasicImage(IconType icon_type,
+                                   const std::string& network_type,
+                                   bool connected);
+
+// Returns and caches an image for non VPN |network| which must not be null.
+// Use this for non virtual networks and for the default (tray) icon.
+// |icon_type| determines the color theme.
+// |badge_vpn| should be true if a VPN is also connected and a badge is desired.
+// |animating| is an optional out parameter that is set to true when the
+// returned image should be animated.
+ASH_EXPORT gfx::ImageSkia GetImageForNonVirtualNetwork(
     const chromeos::NetworkState* network,
     IconType icon_type,
+    bool badge_vpn,
     bool* animating = nullptr);
 
-// Gets an image for a Wi-Fi network, either full strength or strike-through
+// Similar to above but for displaying only VPN icons, e.g. for the VPN menu
+// or Settings section.
+ASH_EXPORT gfx::ImageSkia GetImageForVPN(const chromeos::NetworkState* vpn,
+                                         IconType icon_type,
+                                         bool* animating = nullptr);
+
+// Returns an image for a Wi-Fi network, either full strength or strike-through
 // based on |enabled|.
 ASH_EXPORT gfx::ImageSkia GetImageForWiFiEnabledState(
     bool enabled,
     IconType = ICON_TYPE_DEFAULT_VIEW);
 
-// Gets the conneting image for a shill network type.
+// Returns the connecting image for a shill network non-VPN type.
 gfx::ImageSkia GetConnectingImageForNetworkType(const std::string& network_type,
                                                 IconType icon_type);
 
-// Gets the disconnected image for a shill network type.
+// Returns the connected image for |connected_network| and |network_type| with a
+// connecting VPN badge.
+gfx::ImageSkia GetConnectedNetworkWithConnectingVpnImage(
+    const chromeos::NetworkState* connected_network,
+    IconType icon_type);
+
+// Returns the disconnected image for a shill network type.
 gfx::ImageSkia GetDisconnectedImageForNetworkType(
     const std::string& network_type);
 
-// Gets the full strength image for a Wi-Fi network using |icon_color| for the
-// main icon and |badge_color| for the badge.
+// Returns the full strength image for a Wi-Fi network using |icon_color| for
+// the main icon and |badge_color| for the badge.
 ASH_EXPORT gfx::ImageSkia GetImageForNewWifiNetwork(SkColor icon_color,
                                                     SkColor badge_color);
 
@@ -67,21 +88,10 @@ ASH_EXPORT base::string16 GetLabelForNetwork(
     const chromeos::NetworkState* network,
     IconType icon_type);
 
-// Updates and returns the appropriate message id if the cellular network
-// is uninitialized.
-ASH_EXPORT int GetCellularUninitializedMsg();
-
-// Gets the correct icon and label for |icon_type|. Also sets |animating|
-// based on whether or not the icon is animating (i.e. connecting).
-ASH_EXPORT void GetDefaultNetworkImageAndLabel(IconType icon_type,
-                                               gfx::ImageSkia* image,
-                                               base::string16* label,
-                                               bool* animating);
-
-// Called when the list of networks changes. Retreives the list of networks
-// from the global NetworkStateHandler instance and removes cached entries
-// that are no longer in the list.
-ASH_EXPORT void PurgeNetworkIconCache();
+// Called periodically with the current list of network paths. Removes cached
+// entries that are no longer in the list.
+ASH_EXPORT void PurgeNetworkIconCache(
+    const std::set<std::string>& network_paths);
 
 // Called by ChromeVox to give a verbal indication of the network icon. Returns
 // the signal strength of |network|, if it is a network type with a signal

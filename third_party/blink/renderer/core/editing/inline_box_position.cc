@@ -108,8 +108,6 @@ InlineBoxPosition AdjustInlineBoxPositionForTextDirection(InlineBox* inline_box,
                                                           int caret_offset) {
   DCHECK(caret_offset == inline_box->CaretLeftmostOffset() ||
          caret_offset == inline_box->CaretRightmostOffset());
-  if (RuntimeEnabledFeatures::BidiCaretAffinityEnabled())
-    return InlineBoxPosition(inline_box, caret_offset);
   return BidiAdjustment::AdjustForCaretPositionResolution(
       InlineBoxPosition(inline_box, caret_offset));
 }
@@ -143,8 +141,9 @@ InlineBoxPosition ComputeInlineBoxPositionForTextNode(
     int caret_max_offset = box->CaretMaxOffset();
 
     if (caret_offset < caret_min_offset || caret_offset > caret_max_offset ||
-        (caret_offset == caret_max_offset && box->IsLineBreak()))
-      continue;
+        (caret_offset == caret_max_offset && box->IsLineBreak())) {
+        continue;
+    }
 
     if (caret_offset > caret_min_offset && caret_offset < caret_max_offset)
       return InlineBoxPosition(box, caret_offset);

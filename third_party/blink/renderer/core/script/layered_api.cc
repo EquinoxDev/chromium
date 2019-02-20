@@ -5,7 +5,7 @@
 #include "third_party/blink/renderer/core/script/layered_api.h"
 
 #include "base/stl_util.h"
-#include "third_party/blink/public/resources/grit/blink_resources.h"
+#include "third_party/blink/renderer/core/script/layered_api_resources.h"
 #include "third_party/blink/renderer/platform/data_resource_helper.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -18,31 +18,9 @@ namespace {
 static const char kStdScheme[] = "std";
 static const char kInternalScheme[] = "std-internal";
 
-struct LayeredAPIResource {
-  const char* path;
-  int resource_id;
-};
+static const char kImportScheme[] = "import";
 
-const LayeredAPIResource kLayeredAPIResources[] = {
-    {"blank/index.js", IDR_LAYERED_API_BLANK_INDEX_JS},
-
-    {"async-local-storage/index.js",
-     IDR_LAYERED_API_ASYNC_LOCAL_STORAGE_INDEX_JS},
-
-    {"virtual-scroller/index.js", IDR_LAYERED_API_VIRTUAL_SCROLLER_INDEX_JS},
-    {"virtual-scroller/item-source.js",
-     IDR_LAYERED_API_VIRTUAL_SCROLLER_ITEM_SOURCE_JS},
-    {"virtual-scroller/layouts/layout-1d-base.js",
-     IDR_LAYERED_API_VIRTUAL_SCROLLER_LAYOUTS_LAYOUT_1D_BASE_JS},
-    {"virtual-scroller/layouts/layout-1d-grid.js",
-     IDR_LAYERED_API_VIRTUAL_SCROLLER_LAYOUTS_LAYOUT_1D_GRID_JS},
-    {"virtual-scroller/layouts/layout-1d.js",
-     IDR_LAYERED_API_VIRTUAL_SCROLLER_LAYOUTS_LAYOUT_1D_JS},
-    {"virtual-scroller/virtual-scroller.js",
-     IDR_LAYERED_API_VIRTUAL_SCROLLER_VIRTUAL_SCROLLER_JS},
-    {"virtual-scroller/virtual-repeater.js",
-     IDR_LAYERED_API_VIRTUAL_SCROLLER_VIRTUAL_REPEATER_JS},
-};
+constexpr char kBuiltinSpecifierPrefix[] = "@std/";
 
 int GetResourceIDFromPath(const String& path) {
   for (size_t i = 0; i < base::size(kLayeredAPIResources); ++i) {
@@ -59,14 +37,26 @@ bool IsImplemented(const String& name) {
 
 }  // namespace
 
+String GetBuiltinPath(const KURL& url) {
+  if (url.ProtocolIs(kStdScheme))
+    return url.GetPath();
+
+  const StringView prefix(kBuiltinSpecifierPrefix);
+  if (url.ProtocolIs(kImportScheme) && url.GetPath().StartsWith(prefix))
+    return url.GetPath().Substring(prefix.length());
+
+  return String();
+}
+
 // https://github.com/drufball/layered-apis/blob/master/spec.md#user-content-layered-api-fetching-url
 KURL ResolveFetchingURL(const KURL& url) {
   // <spec step="1">If url's scheme is not "std", return url.</spec>
-  if (!url.ProtocolIs(kStdScheme))
-    return url;
-
   // <spec step="2">Let path be url's path[0].</spec>
-  const String path = url.GetPath();
+  // Note: Also accepts "import:@std/x".
+  // See the comment at GetBuiltinPath() declaration.
+  String path = GetBuiltinPath(url);
+  if (path.IsNull())
+    return url;
 
   // <spec step="5">If the layered API identified by path is implemented by this
   // user agent, return the result of parsing the concatenation of "std:" with
@@ -83,11 +73,12 @@ KURL ResolveFetchingURL(const KURL& url) {
 }
 
 KURL GetInternalURL(const KURL& url) {
-  if (url.ProtocolIs(kStdScheme)) {
+  String path = GetBuiltinPath(url);
+  if (!path.IsNull()) {
     StringBuilder url_string;
     url_string.Append(kInternalScheme);
     url_string.Append("://");
-    url_string.Append(url.GetPath());
+    url_string.Append(path);
     url_string.Append("/index.js");
     return KURL(NullURL(), url_string.ToString());
   }
@@ -115,7 +106,7 @@ String GetSourceText(const KURL& url) {
   if (resource_id < 0)
     return String();
 
-  return GetResourceAsString(resource_id);
+  return UncompressResourceAsString(resource_id);
 }
 
 }  // namespace layered_api

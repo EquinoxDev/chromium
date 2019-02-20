@@ -12,6 +12,8 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "device/usb/public/cpp/fake_usb_device.h"
 #include "device/usb/public/cpp/usb_utils.h"
+#include "device/usb/public/mojom/device_enumeration_options.mojom.h"
+#include "device/usb/public/mojom/device_manager_client.mojom.h"
 
 namespace device {
 
@@ -54,6 +56,21 @@ void FakeUsbDeviceManager::GetDevice(const std::string& guid,
   FakeUsbDevice::Create(it->second, std::move(device_request),
                         std::move(device_client));
 }
+
+#if defined(OS_CHROMEOS)
+void FakeUsbDeviceManager::CheckAccess(const std::string& guid,
+                                       CheckAccessCallback callback) {
+  std::move(callback).Run(true);
+}
+
+void FakeUsbDeviceManager::OpenFileDescriptor(
+    const std::string& guid,
+    OpenFileDescriptorCallback callback) {
+  std::move(callback).Run(base::File(
+      base::FilePath(FILE_PATH_LITERAL("/dev/null")),
+      base::File::FLAG_OPEN | base::File::FLAG_READ | base::File::FLAG_WRITE));
+}
+#endif  // defined(OS_CHROMEOS)
 
 void FakeUsbDeviceManager::SetClient(
     mojom::UsbDeviceManagerClientAssociatedPtrInfo client) {

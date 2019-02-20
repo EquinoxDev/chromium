@@ -458,8 +458,24 @@ void FakeAppInstance::GetAppShortcutItems(
   std::move(callback).Run(std::move(fake_app_shortcut_items));
 }
 
-void FakeAppInstance::StartPaiFlow() {
+void FakeAppInstance::StartPaiFlowDeprecated() {
+  NOTREACHED();
+}
+
+void FakeAppInstance::StartPaiFlow(StartPaiFlowCallback callback) {
   ++start_pai_request_count_;
+  std::move(callback).Run(pai_state_response_);
+}
+
+void FakeAppInstance::GetAppReinstallCandidates(
+    GetAppReinstallCandidatesCallback callback) {
+  ++get_app_reinstall_callback_count_;
+  std::vector<arc::mojom::AppReinstallCandidatePtr> candidates;
+  for (const auto& candidate : app_reinstall_candidates_)
+    candidates.emplace_back(candidate.Clone());
+
+  std::move(callback).Run(arc::mojom::AppReinstallState::REQUEST_SUCCESS,
+                          std::move(candidates));
 }
 
 void FakeAppInstance::StartFastAppReinstallFlow(
@@ -498,6 +514,24 @@ void FakeAppInstance::RequestShortcutIcon(
   }
 }
 
+void FakeAppInstance::RequestPackageIcon(const std::string& package_name,
+                                         int dimension,
+                                         bool normalize,
+                                         RequestPackageIconCallback callback) {
+  base::ScopedAllowBlockingForTesting allow_io;
+  std::string png_data_as_string;
+  GetFakeIcon(mojom::ScaleFactor::SCALE_FACTOR_100P, &png_data_as_string);
+  std::move(callback).Run(std::vector<uint8_t>(png_data_as_string.begin(),
+                                               png_data_as_string.end()));
+}
+
 void FakeAppInstance::RemoveCachedIcon(const std::string& icon_resource_id) {}
+
+void FakeAppInstance::SetAppReinstallCandidates(
+    const std::vector<arc::mojom::AppReinstallCandidatePtr>& candidates) {
+  app_reinstall_candidates_.clear();
+  for (const auto& candidate : candidates)
+    app_reinstall_candidates_.emplace_back(candidate.Clone());
+}
 
 }  // namespace arc

@@ -5,6 +5,7 @@
 #include "content/renderer/service_worker/service_worker_subresource_loader.h"
 
 #include "base/atomic_sequence_num.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
@@ -54,23 +55,6 @@ network::ResourceResponseHead RewriteServiceWorkerTime(
   new_head.service_worker_start_time = service_worker_start_time;
   new_head.service_worker_ready_time = service_worker_ready_time;
   return new_head;
-}
-
-const char* FetchResponseSourceToSuffix(
-    network::mojom::FetchResponseSource source) {
-  // Don't change these returned strings. They are used for recording UMAs.
-  switch (source) {
-    case network::mojom::FetchResponseSource::kUnspecified:
-      return ".Unspecified";
-    case network::mojom::FetchResponseSource::kNetwork:
-      return ".Network";
-    case network::mojom::FetchResponseSource::kHttpCache:
-      return ".HttpCache";
-    case network::mojom::FetchResponseSource::kCacheStorage:
-      return ".CacheStorage";
-  }
-  NOTREACHED();
-  return ".Unknown";
 }
 
 // A wrapper URLLoaderClient that invokes the given RewriteHeaderCallback
@@ -570,8 +554,10 @@ void ServiceWorkerSubresourceLoader::CommitCompleted(int error_code) {
                           TRACE_ID_LOCAL(request_id_)),
       TRACE_EVENT_FLAG_FLOW_IN, "error_code", net::ErrorToString(error_code));
 
-  if (error_code == net::OK)
-    RecordTimingMetrics(true /* handled */);
+  if (error_code == net::OK) {
+    bool handled = !response_head_.was_fallback_required_by_service_worker;
+    RecordTimingMetrics(handled);
+  }
 
   TransitionToStatus(Status::kCompleted);
   DCHECK(url_loader_client_.is_bound());
@@ -639,7 +625,8 @@ void ServiceWorkerSubresourceLoader::RecordTimingMetrics(bool handled) {
     base::UmaHistogramMediumTimes(
         base::StrCat({"ServiceWorker.LoadTiming.Subresource."
                       "ResponseReceivedToCompleted2",
-                      FetchResponseSourceToSuffix(response_source_)}),
+                      ServiceWorkerUtils::FetchResponseSourceToSuffix(
+                          response_source_)}),
         completion_time - response_head_.load_timing.receive_headers_end);
   } else {
     // Mojo message delay (network fallback case). See above for the detail.
@@ -653,8 +640,8 @@ void ServiceWorkerSubresourceLoader::RecordTimingMetrics(bool handled) {
 // ServiceWorkerSubresourceLoader: URLLoader implementation -----------------
 
 void ServiceWorkerSubresourceLoader::FollowRedirect(
-    const base::Optional<std::vector<std::string>>& removed_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_headers,
+    const std::vector<std::string>& removed_headers,
+    const net::HttpRequestHeaders& modified_headers,
     const base::Optional<GURL>& new_url) {
   TRACE_EVENT_WITH_FLOW1(
       "ServiceWorker", "ServiceWorkerSubresourceLoader::FollowRedirect",
@@ -665,7 +652,7 @@ void ServiceWorkerSubresourceLoader::FollowRedirect(
   // TODO(arthursonzogni, juncai): This seems to be correctly implemented, but
   // not used so far. Add tests and remove this DCHECK to support this feature
   // if needed. See https://crbug.com/845683.
-  DCHECK(!removed_headers && !modified_headers)
+  DCHECK(removed_headers.empty() && modified_headers.IsEmpty())
       << "Redirect with removed or modified headers is not supported yet. See "
          "https://crbug.com/845683";
   DCHECK(!new_url.has_value()) << "Redirect with modified url was not "

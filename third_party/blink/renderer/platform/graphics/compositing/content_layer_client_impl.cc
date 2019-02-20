@@ -27,21 +27,23 @@ ContentLayerClientImpl::ContentLayerClientImpl()
       raster_invalidator_([this](const IntRect& rect) {
         cc_picture_layer_->SetNeedsDisplayRect(rect);
       }),
-      layer_state_(nullptr, nullptr, nullptr),
+      layer_state_(PropertyTreeState::Uninitialized()),
       weak_ptr_factory_(this) {
   cc_picture_layer_->SetLayerClient(weak_ptr_factory_.GetWeakPtr());
 }
 
-ContentLayerClientImpl::~ContentLayerClientImpl() = default;
+ContentLayerClientImpl::~ContentLayerClientImpl() {
+  cc_picture_layer_->ClearClient();
+}
 
 static int GetTransformId(const TransformPaintPropertyNode* transform,
                           ContentLayerClientImpl::LayerAsJSONContext& context) {
   if (!transform)
     return 0;
 
-  auto it = context.transform_id_map.find(transform);
-  if (it != context.transform_id_map.end())
-    return it->value;
+  auto transform_lookup_result = context.transform_id_map.find(transform);
+  if (transform_lookup_result != context.transform_id_map.end())
+    return transform_lookup_result->value;
 
   int parent_id = GetTransformId(transform->Parent(), context);
   if (transform->Matrix().IsIdentity() && !transform->RenderingContextId()) {
@@ -67,12 +69,13 @@ static int GetTransformId(const TransformPaintPropertyNode* transform,
     json->SetBoolean("flattenInheritedTransform", false);
 
   if (auto rendering_context = transform->RenderingContextId()) {
-    auto it = context.rendering_context_map.find(rendering_context);
+    auto context_lookup_result =
+        context.rendering_context_map.find(rendering_context);
     int rendering_id = context.rendering_context_map.size() + 1;
-    if (it == context.rendering_context_map.end())
+    if (context_lookup_result == context.rendering_context_map.end())
       context.rendering_context_map.Set(rendering_context, rendering_id);
     else
-      rendering_id = it->value;
+      rendering_id = context_lookup_result->value;
 
     json->SetInteger("renderingContext", rendering_id);
   }
@@ -127,7 +130,7 @@ std::unique_ptr<JSONObject> ContentLayerClientImpl::LayerAsJSON(
       raster_invalidator_.GetTracking())
     raster_invalidator_.GetTracking()->AsJSON(json.get());
 
-  if (int transform_id = GetTransformId(layer_state_.Transform(), context))
+  if (int transform_id = GetTransformId(&layer_state_.Transform(), context))
     json->SetInteger("transform", transform_id);
 
 #if DCHECK_IS_ON()
@@ -210,6 +213,13 @@ scoped_refptr<cc::PictureLayer> ContentLayerClientImpl::UpdateCcPictureLayer(
                                layer_state);
   layer_state_ = layer_state;
 
+  // Note: cc::Layer API assumes the layer bounds start at (0, 0), but the
+  // bounding box of a paint chunk does not necessarily start at (0, 0) (and
+  // could even be negative). Internally the generated layer translates the
+  // paint chunk to align the bounding box to (0, 0) and we set the layer's
+  // offset_to_transform_parent with the origin of the paint chunk here.
+  cc_picture_layer_->SetOffsetToTransformParent(
+      layer_bounds.OffsetFromOrigin());
   cc_picture_layer_->SetBounds(layer_bounds.size());
   cc_picture_layer_->SetIsDrawable(true);
 

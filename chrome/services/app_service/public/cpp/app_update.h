@@ -5,6 +5,9 @@
 #ifndef CHROME_SERVICES_APP_SERVICE_PUBLIC_CPP_APP_UPDATE_H_
 #define CHROME_SERVICES_APP_SERVICE_PUBLIC_CPP_APP_UPDATE_H_
 
+#include <string>
+#include <vector>
+
 #include "base/macros.h"
 #include "chrome/services/app_service/public/mojom/types.mojom.h"
 
@@ -61,14 +64,35 @@ class AppUpdate {
   const std::string& Name() const;
   bool NameChanged() const;
 
+  const std::string& ShortName() const;
+  bool ShortNameChanged() const;
+
   apps::mojom::IconKeyPtr IconKey() const;
   bool IconKeyChanged() const;
+
+  base::Time LastLaunchTime() const;
+  bool LastLaunchTimeChanged() const;
+
+  base::Time InstallTime() const;
+  bool InstallTimeChanged() const;
+
+  std::vector<apps::mojom::PermissionPtr> Permissions() const;
+  bool PermissionsChanged() const;
+
+  apps::mojom::OptionalBool InstalledInternally() const;
+  bool InstalledInternallyChanged() const;
+
+  apps::mojom::OptionalBool IsPlatformApp() const;
+  bool IsPlatformAppChanged() const;
 
   apps::mojom::OptionalBool ShowInLauncher() const;
   bool ShowInLauncherChanged() const;
 
   apps::mojom::OptionalBool ShowInSearch() const;
   bool ShowInSearchChanged() const;
+
+  apps::mojom::OptionalBool ShowInManagement() const;
+  bool ShowInManagementChanged() const;
 
  private:
   const apps::mojom::App* state_;

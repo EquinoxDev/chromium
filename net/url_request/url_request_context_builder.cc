@@ -14,6 +14,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/task/post_task.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "net/base/cache_type.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate_impl.h"
@@ -234,6 +235,7 @@ void URLRequestContextBuilder::SetHttpNetworkSessionComponents(
   session_context->ct_policy_enforcer = request_context->ct_policy_enforcer();
   session_context->proxy_resolution_service =
       request_context->proxy_resolution_service();
+  session_context->proxy_delegate = request_context->proxy_delegate();
   session_context->ssl_config_service = request_context->ssl_config_service();
   session_context->http_auth_handler_factory =
       request_context->http_auth_handler_factory();
@@ -565,9 +567,6 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
 
-  HttpNetworkSession::Context network_session_context;
-  SetHttpNetworkSessionComponents(context.get(), &network_session_context);
-
   if (proxy_delegate_) {
     DCHECK(!shared_proxy_delegate_);
     proxy_resolution_service->AssertNoProxyDelegate();
@@ -576,7 +575,11 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   } else if (shared_proxy_delegate_) {
     proxy_resolution_service->AssertNoProxyDelegate();
     proxy_resolution_service->SetProxyDelegate(shared_proxy_delegate_);
+    context->set_proxy_delegate(shared_proxy_delegate_);
   }
+
+  HttpNetworkSession::Context network_session_context;
+  SetHttpNetworkSessionComponents(context.get(), &network_session_context);
 
   storage->set_http_network_session(std::make_unique<HttpNetworkSession>(
       http_network_session_params_, network_session_context));

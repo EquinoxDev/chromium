@@ -26,12 +26,14 @@ class TestAppListClient : public mojom::AppListClient {
   void StartSearch(const base::string16& trimmed_query) override {}
   void OpenSearchResult(const std::string& result_id,
                         int event_flags) override {}
+  void LogSearchClick(const std::string& result_id,
+                      int suggestion_index) override {}
   void InvokeSearchResultAction(const std::string& result_id,
                                 int action_index,
                                 int event_flags) override {}
   void GetSearchResultContextMenuModel(
       const std::string& result_id,
-      GetContextMenuModelCallback callback) override {}
+      GetContextMenuModelCallback callback) override;
   void SearchResultContextMenuItemSelected(const std::string& result_id,
                                            int command_id,
                                            int event_flags) override {}
@@ -39,7 +41,7 @@ class TestAppListClient : public mojom::AppListClient {
   void ViewShown(int64_t display_id) override {}
   void ActivateItem(const std::string& id, int event_flags) override {}
   void GetContextMenuModel(const std::string& id,
-                           GetContextMenuModelCallback callback) override {}
+                           GetContextMenuModelCallback callback) override;
   void ContextMenuItemSelected(const std::string& id,
                                int command_id,
                                int event_flags) override {}
@@ -51,16 +53,10 @@ class TestAppListClient : public mojom::AppListClient {
   void OnPageBreakItemAdded(const std::string& id,
                             const syncer::StringOrdinal& position) override {}
   void OnPageBreakItemDeleted(const std::string& id) override {}
-  void StartVoiceInteractionSession() override;
-  void ToggleVoiceInteractionSession() override;
   void GetNavigableContentsFactory(
       content::mojom::NavigableContentsFactoryRequest request) override {}
 
-  size_t voice_session_count() const { return voice_session_count_; }
-
  private:
-  size_t voice_session_count_ = 0u;
-
   mojo::Binding<mojom::AppListClient> binding_;
 
   DISALLOW_COPY_AND_ASSIGN(TestAppListClient);

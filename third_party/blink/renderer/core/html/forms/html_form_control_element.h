@@ -46,10 +46,10 @@ class CORE_EXPORT HTMLFormControlElement : public HTMLElement,
 
  public:
   ~HTMLFormControlElement() override;
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
-  String formAction() const;
-  void setFormAction(const AtomicString&);
+  void formAction(USVStringOrTrustedURL&) const;
+  void setFormAction(const USVStringOrTrustedURL&, ExceptionState&);
   String formEnctype() const;
   void setFormEnctype(const AtomicString&);
   String formMethod() const;
@@ -119,7 +119,7 @@ class CORE_EXPORT HTMLFormControlElement : public HTMLElement,
   void CloneNonAttributePropertiesFrom(const Element&,
                                        CloneChildrenFlag) override;
 
-  FormAssociated* ToFormAssociatedOrNull() override { return this; };
+  FormAssociated* ToFormAssociatedOrNull() override { return this; }
   void AssociateWith(HTMLFormElement*) override;
 
   bool BlocksFormSubmission() const { return blocks_form_submission_; }
@@ -150,7 +150,7 @@ class CORE_EXPORT HTMLFormControlElement : public HTMLElement,
                          WebFocusType,
                          InputDeviceCapabilities* source_capabilities) override;
 
-  void DidRecalcStyle(StyleRecalcChange) override;
+  void DidRecalcStyle(const StyleRecalcChange) override;
 
   virtual void ResetImpl() {}
   virtual bool SupportsAutofocus() const;

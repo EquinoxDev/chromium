@@ -6,6 +6,7 @@
 
 #include "base/strings/string_piece.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/web_applications/extensions/bookmark_app_util.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
@@ -13,7 +14,9 @@
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
 #include "url/gurl.h"
 
@@ -102,6 +105,35 @@ const Extension* GetInstalledShortcutForUrl(
       return app.get();
   }
   return nullptr;
+}
+
+int CountUserInstalledBookmarkApps(content::BrowserContext* browser_context) {
+  // To avoid data races and inaccurate counting, ensure that ExtensionSystem is
+  // always ready at this point.
+  DCHECK(extensions::ExtensionSystem::Get(browser_context)
+             ->extension_service()
+             ->is_ready());
+
+  int num_user_installed = 0;
+
+  const ExtensionPrefs* prefs = ExtensionPrefs::Get(browser_context);
+  for (scoped_refptr<const Extension> app :
+       ExtensionRegistry::Get(browser_context)->enabled_extensions()) {
+    if (!app->from_bookmark())
+      continue;
+    if (!BookmarkAppIsLocallyInstalled(prefs, app.get()))
+      continue;
+    if (!app->was_installed_by_default())
+      ++num_user_installed;
+  }
+
+  return num_user_installed;
+}
+
+bool IsValidBookmarkAppUrl(const GURL& url) {
+  URLPattern origin_only_pattern(Extension::kValidBookmarkAppSchemes);
+  origin_only_pattern.SetMatchAllURLs(true);
+  return url.is_valid() && origin_only_pattern.MatchesURL(url);
 }
 
 }  // namespace extensions

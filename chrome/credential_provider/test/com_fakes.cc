@@ -9,6 +9,7 @@
 #include "base/logging.h"
 #include "chrome/credential_provider/gaiacp/os_user_manager.h"
 #include "chrome/credential_provider/gaiacp/stdafx.h"
+#include "chrome/credential_provider/test/test_credential.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace credential_provider {
@@ -47,8 +48,7 @@ FakeCredentialProviderUser::GetStringValue(REFPROPERTYKEY key,
     return E_INVALIDARG;
 
   DWORD length = username_.length() + 1;
-  *value =
-      static_cast<wchar_t*>(::CoTaskMemAlloc(length * sizeof(wchar_t)));
+  *value = static_cast<wchar_t*>(::CoTaskMemAlloc(length * sizeof(wchar_t)));
   EXPECT_EQ(0, wcscpy_s(*value, length, username_.c_str()));
   return S_OK;
 }
@@ -109,6 +109,12 @@ IMPL_IUNKOWN_NOQI_NOREF(FakeCredentialProviderEvents);
 FakeGaiaCredentialProvider::FakeGaiaCredentialProvider() {}
 
 FakeGaiaCredentialProvider::~FakeGaiaCredentialProvider() {}
+
+HRESULT FakeGaiaCredentialProvider::GetUsageScenario(DWORD* cpus) {
+  DCHECK(cpus);
+  *cpus = static_cast<DWORD>(CPUS_LOGON);
+  return S_OK;
+}
 
 HRESULT FakeGaiaCredentialProvider::OnUserAuthenticated(
     IUnknown* credential,

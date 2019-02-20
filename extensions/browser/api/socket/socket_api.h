@@ -25,6 +25,7 @@
 #include "net/base/address_list.h"
 #include "net/base/network_change_notifier.h"
 #include "net/socket/tcp_client_socket.h"
+#include "services/network/public/cpp/resolve_host_client_base.h"
 #include "services/network/public/mojom/host_resolver.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/udp_socket.mojom.h"
@@ -149,7 +150,7 @@ class SocketAsyncApiFunction : public AsyncApiFunction {
 
 class SocketExtensionWithDnsLookupFunction
     : public SocketAsyncApiFunction,
-      public network::mojom::ResolveHostClient {
+      public network::ResolveHostClientBase {
  protected:
   SocketExtensionWithDnsLookupFunction();
   ~SocketExtensionWithDnsLookupFunction() override;
@@ -471,9 +472,8 @@ class SocketGetNetworkListFunction : public UIThreadExtensionFunction {
   ResponseAction Run() override;
 
  private:
-  void GetNetworkListOnFileThread();
-  void HandleGetNetworkListError();
-  void SendResponseOnUIThread(const net::NetworkInterfaceList& interface_list);
+  void GotNetworkList(
+      const base::Optional<net::NetworkInterfaceList>& interface_list);
 };
 
 class SocketJoinGroupFunction : public SocketAsyncApiFunction {
@@ -570,7 +570,7 @@ class SocketGetJoinedGroupsFunction : public SocketAsyncApiFunction {
 
 class SocketSecureFunction : public SocketAsyncApiFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION("socket.secure", SOCKET_SECURE);
+  DECLARE_EXTENSION_FUNCTION("socket.secure", SOCKET_SECURE)
   SocketSecureFunction();
 
  protected:

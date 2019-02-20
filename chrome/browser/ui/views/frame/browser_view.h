@@ -50,9 +50,9 @@
 #include "chrome/browser/ui/views/intent_picker_bubble_view.h"
 #endif  // defined(OS_CHROMEOS)
 
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
-#include "chrome/browser/ui/views/quit_instruction_bubble_controller.h"
-#endif
+#if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
+#include "chrome/browser/ui/views/feature_promos/reopen_tab_promo_controller.h"
+#endif  // BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
 
 // NOTE: For more information about the objects and files in this directory,
 // view: http://dev.chromium.org/developers/design-documents/browser-window
@@ -66,7 +66,6 @@ class ExclusiveAccessBubbleViews;
 class FullscreenControlHost;
 class InfoBarContainerView;
 class LocationBarView;
-class ReopenTabPromoController;
 class StatusBubbleViews;
 class TabStrip;
 class ToolbarButtonProvider;
@@ -112,10 +111,8 @@ class BrowserView : public BrowserWindow,
   // The browser view's class name.
   static const char kViewClassName[];
 
-  BrowserView();
+  explicit BrowserView(std::unique_ptr<Browser> browser);
   ~BrowserView() override;
-
-  void Init(std::unique_ptr<Browser> browser);
 
   void set_frame(BrowserFrame* frame) { frame_ = frame; }
   BrowserFrame* frame() const { return frame_; }
@@ -317,6 +314,7 @@ class BrowserView : public BrowserWindow,
                           int index,
                           int reason) override;
   void OnTabDetached(content::WebContents* contents, bool was_active) override;
+  void OnTabRestoredFromMenu(int command_id) override;
   void ZoomChangedForActiveTab(bool can_show_bubble) override;
   gfx::Rect GetRestoredBounds() const override;
   ui::WindowShowState GetRestoredState() const override;
@@ -341,7 +339,7 @@ class BrowserView : public BrowserWindow,
   bool IsFullscreenBubbleVisible() const override;
   PageActionIconContainer* GetPageActionIconContainer() override;
   LocationBar* GetLocationBar() const override;
-  void SetFocusToLocationBar(bool select_all) override;
+  void SetFocusToLocationBar() override;
   void UpdateReloadStopState(bool is_loading, bool force) override;
   void UpdateToolbar(content::WebContents* contents) override;
   void UpdateToolbarVisibility(bool visible, bool animate) override;
@@ -367,8 +365,6 @@ class BrowserView : public BrowserWindow,
       bool disable_stay_in_chrome,
       IntentPickerResponse callback) override;
   void SetIntentPickerViewVisibility(bool visible) override;
-#else   // !defined(OS_CHROMEOS)
-  BadgeServiceDelegate* GetBadgeServiceDelegate() const override;
 #endif  // defined(OS_CHROMEOS)
   void ShowBookmarkBubble(const GURL& url, bool already_bookmarked) override;
   autofill::SaveCardBubbleView* ShowSaveCreditCardBubble(
@@ -382,12 +378,14 @@ class BrowserView : public BrowserWindow,
   ShowTranslateBubbleResult ShowTranslateBubble(
       content::WebContents* contents,
       translate::TranslateStep step,
+      const std::string& source_language,
+      const std::string& target_language,
       translate::TranslateErrors::Type error_type,
       bool is_user_gesture) override;
 #if BUILDFLAG(ENABLE_ONE_CLICK_SIGNIN)
   void ShowOneClickSigninConfirmation(
       const base::string16& email,
-      const StartSyncCallback& start_sync_callback) override;
+      base::OnceCallback<void(bool)> confirmed_callback) override;
 #endif
   // TODO(beng): Not an override, move somewhere else.
   void SetDownloadShelfVisible(bool visible);
@@ -424,6 +422,8 @@ class BrowserView : public BrowserWindow,
           callback) override;
   std::string GetWorkspace() const override;
   bool IsVisibleOnAllWorkspaces() const override;
+
+  void ShowEmojiPanel() override;
 
   BookmarkBarView* GetBookmarkBarView() const;
   LocationBarView* GetLocationBarView() const;
@@ -680,6 +680,11 @@ class BrowserView : public BrowserWindow,
   // the actual child order.
   void EnsureFocusOrder();
 
+  // Returns true when the window icon of this browser window can change based
+  // on the context. GetWindowIcon() method should return the same image if
+  // this returns false.
+  bool CanChangeWindowIcon() const;
+
   // The BrowserFrame that hosts this view.
   BrowserFrame* frame_ = nullptr;
 
@@ -829,13 +834,8 @@ class BrowserView : public BrowserWindow,
 
   std::unique_ptr<FullscreenControlHost> fullscreen_control_host_;
 
-#if !defined(OS_CHROMEOS)
-  // The badge service delegate for this window.
-  std::unique_ptr<BadgeServiceDelegate> badge_service_delegate_;
-#endif  // !defined(OS_CHROMEOS)
-
 #if BUILDFLAG(ENABLE_DESKTOP_IN_PRODUCT_HELP)
-  std::unique_ptr<ReopenTabPromoController> reopen_tab_promo_controller_;
+  ReopenTabPromoController reopen_tab_promo_controller_{this};
 #endif
 
   struct ResizeSession {
@@ -847,11 +847,6 @@ class BrowserView : public BrowserWindow,
     size_t step_count = 0;
   };
   base::Optional<ResizeSession> interactive_resize_;
-
-#if defined(OS_WIN) || (defined(OS_LINUX) && !defined(OS_CHROMEOS))
-  scoped_refptr<QuitInstructionBubbleController>
-      quit_instruction_bubble_controller_;
-#endif
 
   mutable base::WeakPtrFactory<BrowserView> activate_modal_dialog_factory_{
       this};

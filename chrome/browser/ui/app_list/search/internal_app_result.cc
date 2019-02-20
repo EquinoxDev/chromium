@@ -8,6 +8,7 @@
 
 #include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/public/cpp/app_list/internal_app_id_constants.h"
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/browser/favicon/large_icon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -105,7 +106,7 @@ void InternalAppResult::UpdateContinueReadingFavicon(
     // Desired size of the icon. If not available, a smaller one will be used.
     constexpr int min_source_size_in_pixel = 16;
     constexpr int desired_size_in_pixel = 32;
-    large_icon_service_->GetLargeIconImageOrFallbackStyle(
+    large_icon_service_->GetLargeIconImageOrFallbackStyleForPageUrl(
         url_for_continuous_reading_, min_source_size_in_pixel,
         desired_size_in_pixel,
         base::BindRepeating(&InternalAppResult::OnGetFaviconFromCacheFinished,

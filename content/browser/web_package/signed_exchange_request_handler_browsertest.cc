@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
@@ -59,7 +60,11 @@ const uint64_t kSignatureHeaderDate = 1520834000;  // 2018-03-12T05:53:20Z
 const uint64_t kSignatureHeaderExpires = 1520837600;  // 2018-03-12T06:53:20Z
 
 constexpr char kExpectedSXGEnabledAcceptHeaderForPrefetch[] =
-    "application/signed-exchange;v=b2;q=0.9,*/*;q=0.8";
+    "application/signed-exchange;v=b3;q=0.9,*/*;q=0.8";
+
+constexpr char kLoadResultHistogram[] = "SignedExchange.LoadResult2";
+constexpr char kPrefetchResultHistogram[] =
+    "SignedExchange.Prefetch.LoadResult2";
 
 class RedirectObserver : public WebContentsObserver {
  public:
@@ -264,14 +269,14 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest, Simple) {
       net::X509Certificate::CalculateFingerprint256(
           original_cert->cert_buffer());
   EXPECT_EQ(original_fingerprint, fingerprint);
-  histogram_tester_.ExpectUniqueSample("SignedExchange.LoadResult",
+  histogram_tester_.ExpectUniqueSample(kLoadResultHistogram,
                                        SignedExchangeLoadResult::kSuccess,
                                        PrefetchIsEnabled() ? 2 : 1);
   histogram_tester_.ExpectTotalCount(
       "SignedExchange.Time.CertificateFetch.Success",
       PrefetchIsEnabled() ? 2 : 1);
   if (PrefetchIsEnabled()) {
-    histogram_tester_.ExpectUniqueSample("SignedExchange.Prefetch.LoadResult",
+    histogram_tester_.ExpectUniqueSample(kPrefetchResultHistogram,
                                          SignedExchangeLoadResult::kSuccess, 1);
     histogram_tester_.ExpectUniqueSample(
         "SignedExchange.Prefetch.Recall.30Seconds", true, 1);
@@ -303,8 +308,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest,
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
   EXPECT_EQ(303, redirect_observer.response_code());
   histogram_tester_.ExpectUniqueSample(
-      "SignedExchange.LoadResult",
-      SignedExchangeLoadResult::kSXGServedWithoutNosniff,
+      kLoadResultHistogram, SignedExchangeLoadResult::kSXGServedWithoutNosniff,
       PrefetchIsEnabled() ? 2 : 1);
 }
 
@@ -331,7 +335,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest,
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
   EXPECT_EQ(303, redirect_observer.response_code());
   histogram_tester_.ExpectUniqueSample(
-      "SignedExchange.LoadResult", SignedExchangeLoadResult::kVersionMismatch,
+      kLoadResultHistogram, SignedExchangeLoadResult::kVersionMismatch,
       PrefetchIsEnabled() ? 2 : 1);
 }
 
@@ -358,7 +362,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest, Expired) {
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
   EXPECT_EQ(303, redirect_observer.response_code());
   histogram_tester_.ExpectUniqueSample(
-      "SignedExchange.LoadResult",
+      kLoadResultHistogram,
       SignedExchangeLoadResult::kSignatureVerificationError, 1);
   histogram_tester_.ExpectUniqueSample(
       "SignedExchange.SignatureVerificationResult",
@@ -392,13 +396,13 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest,
     NavigateToURL(shell(), url);
     EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
   }
-  histogram_tester_.ExpectTotalCount("SignedExchange.LoadResult",
+  histogram_tester_.ExpectTotalCount(kLoadResultHistogram,
                                      PrefetchIsEnabled() ? 4 : 2);
   histogram_tester_.ExpectBucketCount(
-      "SignedExchange.LoadResult", SignedExchangeLoadResult::kVersionMismatch,
+      kLoadResultHistogram, SignedExchangeLoadResult::kVersionMismatch,
       PrefetchIsEnabled() ? 2 : 1);
   histogram_tester_.ExpectBucketCount(
-      "SignedExchange.LoadResult", SignedExchangeLoadResult::kHeaderParseError,
+      kLoadResultHistogram, SignedExchangeLoadResult::kHeaderParseError,
       PrefetchIsEnabled() ? 2 : 1);
 }
 
@@ -420,14 +424,14 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest, CertNotFound) {
   NavigateToURL(shell(), url);
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
   histogram_tester_.ExpectUniqueSample(
-      "SignedExchange.LoadResult", SignedExchangeLoadResult::kCertFetchError,
+      kLoadResultHistogram, SignedExchangeLoadResult::kCertFetchError,
       PrefetchIsEnabled() ? 2 : 1);
   histogram_tester_.ExpectTotalCount(
       "SignedExchange.Time.CertificateFetch.Failure",
       PrefetchIsEnabled() ? 2 : 1);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignedExchangeRequestHandlerBrowserTest,
     SignedExchangeRequestHandlerBrowserTest,
     testing::Values(
@@ -542,7 +546,7 @@ IN_PROC_BROWSER_TEST_F(SignedExchangeRequestHandlerRealCertVerifierBrowserTest,
   NavigateToURL(shell(), url);
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
   // Verify that it failed at the OCSP check step.
-  histogram_tester_.ExpectUniqueSample("SignedExchange.LoadResult",
+  histogram_tester_.ExpectUniqueSample(kLoadResultHistogram,
                                        SignedExchangeLoadResult::kOCSPError, 1);
 }
 
@@ -738,7 +742,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerWithServiceWorkerBrowserTest,
   EXPECT_FALSE(result);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignedExchangeRequestHandlerWithServiceWorkerBrowserTest,
     SignedExchangeRequestHandlerWithServiceWorkerBrowserTest,
     testing::Values(
@@ -1178,7 +1182,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeAcceptHeaderBrowserTest,
       {enabled_prefetch_target, disabled_prefetch_target});
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SignedExchangeAcceptHeaderBrowserTest,
     SignedExchangeAcceptHeaderBrowserTest,
     testing::Values(

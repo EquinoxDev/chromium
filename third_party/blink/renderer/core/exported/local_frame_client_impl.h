@@ -36,6 +36,7 @@
 
 #include "base/memory/scoped_refptr.h"
 
+#include "third_party/blink/public/mojom/frame/document_interface_broker.mojom-blink.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
@@ -51,9 +52,10 @@ struct WebScrollIntoViewParams;
 
 class LocalFrameClientImpl final : public LocalFrameClient {
  public:
-  static LocalFrameClientImpl* Create(WebLocalFrameImpl*);
+  static LocalFrameClientImpl* Create(WebLocalFrameImpl*,
+                                      mojo::ScopedMessagePipeHandle);
 
-  explicit LocalFrameClientImpl(WebLocalFrameImpl*);
+  LocalFrameClientImpl(WebLocalFrameImpl*, mojo::ScopedMessagePipeHandle);
   ~LocalFrameClientImpl() override;
 
   void Trace(blink::Visitor*) override;
@@ -125,6 +127,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
       mojom::blink::BlobURLTokenPtr,
       base::TimeTicks input_start_time,
       const String& href_translate,
+      WebContentSecurityPolicyList,
       mojom::blink::NavigationInitiatorPtr) override;
   void DispatchWillSendSubmitEvent(HTMLFormElement*) override;
   void DidStartLoading() override;
@@ -143,7 +146,6 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   void DidDispatchPingLoader(const KURL&) override;
   void DidDisplayContentWithCertificateErrors() override;
   void DidRunContentWithCertificateErrors() override;
-  void ReportLegacySymantecCert(const KURL&, bool) override;
   void ReportLegacyTLSVersion(const KURL&) override;
   void DidChangePerformanceTiming() override;
   void DidObserveLoadingBehavior(WebLoadingBehaviorFlag) override;
@@ -153,6 +155,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   bool ShouldTrackUseCounter(const KURL&) override;
   void SelectorMatchChanged(const Vector<String>& added_selectors,
                             const Vector<String>& removed_selectors) override;
+  void VisibilityChanged(blink::mojom::FrameVisibility visibility) override;
 
   // Creates a WebDocumentLoaderImpl that is a DocumentLoader but also has:
   // - storage to store an extra data that can be used by the content layer
@@ -170,6 +173,7 @@ class LocalFrameClientImpl final : public LocalFrameClient {
       DocumentLoader* document_loader,
       std::unique_ptr<WebDocumentLoader::ExtraData> extra_data) override;
   WTF::String UserAgent() override;
+  blink::UserAgentMetadata UserAgentMetadata() override;
   WTF::String DoNotTrackValue() override;
   void TransitionToCommittedForNewPage() override;
   LocalFrame* CreateFrame(const WTF::AtomicString& name,
@@ -254,6 +258,9 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   std::unique_ptr<WebURLLoaderFactory> CreateURLLoaderFactory() override;
 
   service_manager::InterfaceProvider* GetInterfaceProvider() override;
+
+  mojom::blink::DocumentInterfaceBroker* GetDocumentInterfaceBroker() override;
+
   AssociatedInterfaceProvider* GetRemoteNavigationAssociatedInterfaces()
       override;
 
@@ -294,6 +301,8 @@ class LocalFrameClientImpl final : public LocalFrameClient {
 
   bool UsePrintingLayout() const override;
 
+  const FeaturePolicy::FeatureState& GetOpenerFeatureState() const override;
+
  private:
   bool IsLocalFrameClientImpl() const override { return true; }
   WebDevToolsAgentImpl* DevToolsAgent();
@@ -303,6 +312,9 @@ class LocalFrameClientImpl final : public LocalFrameClient {
   Member<WebLocalFrameImpl> web_frame_;
 
   String user_agent_;
+  blink::UserAgentMetadata user_agent_metadata_;
+
+  mojom::blink::DocumentInterfaceBrokerPtr document_interface_broker_;
 };
 
 DEFINE_TYPE_CASTS(LocalFrameClientImpl,

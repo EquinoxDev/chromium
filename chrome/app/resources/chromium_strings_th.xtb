@@ -76,14 +76,16 @@
 <translation id="3479552764303398839">ไม่ใช่ตอนนี้</translation>
 <translation id="3509308970982693815">โปรดปิดหน้าต่าง Chromium ทั้งหมดแล้วลองอีกครั้ง</translation>
 <translation id="352783484088404971">นำออกจาก Chromium...</translation>
+<translation id="3575459661164320785">มีซอฟต์แวร์อันตรายในคอมพิวเตอร์ของคุณ Chromium ช่วยนำซอฟต์แวร์ดังกล่าวออก คืนการตั้งค่า และปิดใช้ส่วนขยายให้คุณได้ เพื่อให้เบราว์เซอร์กลับมาทำงานเป็นปกติอีกครั้ง</translation>
 <translation id="3582788516608077514">กำลังอัปเดต Chromium...</translation>
 <translation id="358997566136285270">โลโก้ Chromium</translation>
+<translation id="3639635944603682591">ระบบจะลบข้อมูลการท่องเว็บของบุคคลนี้ออกจากอุปกรณ์นี้ หากต้องการกู้ข้อมูลคืน ให้ลงชื่อเข้าใช้ Chromium ในชื่อ <ph name="USER_EMAIL" /></translation>
 <translation id="3713809861844741608">เปิดลิงก์ใน Chromium แท็บใหม่</translation>
 <translation id="3728336900324680424">Chromium จะเข้าถึงไดรฟ์ของคุณเพื่อแสดงคำแนะนำในแถบที่อยู่</translation>
-<translation id="3762167353400286894">ระบบปฏิบัติการ Chromium แสดงในภาษานี้</translation>
 <translation id="378917192836375108">Chromium ช่วยให้คุณสามารถคลิกหมายเลขโทรศัพท์บนเว็บและโทรออกด้วย Skype ได้!</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE" /> - Chromium</translation>
 <translation id="3852700440713538496">ตรึง Chromium กับแถบงาน</translation>
+<translation id="388648406173476553">ปรับแต่งและควบคุม Chromium มีสิ่งที่คุณจำเป็นต้องทราบ โปรดคลิกเพื่อดูรายละเอียด</translation>
 <translation id="3889543394854987837">คลิกชื่อของคุณเพื่อเปิด Chromium และเริ่มท่องเว็บ</translation>
 <translation id="3898493977366060150">การท่องเว็บพร้อมฟีเจอร์เจ๋งๆ จาก Google</translation>
 <translation id="3965668104013180445">{0,plural, =1{Chromium OS จะรีสตาร์ทใน 1 ชั่วโมง}other{Chromium OS จะรีสตาร์ทใน # ชั่วโมง}}</translation>
@@ -91,10 +93,10 @@
 <translation id="4050175100176540509">การปรับปรุงด้านความปลอดภัยที่สำคัญและฟีเจอร์ใหม่ๆ พร้อมให้บริการในเวอร์ชันล่าสุด</translation>
 <translation id="407254336480250557">เลือก <ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /></translation>
 <translation id="421369550622382712">พบกับแอป เกม ส่วนขยาย และธีมเด็ดๆ สำหรับ Chromium</translation>
+<translation id="4216212958613226427">นี่เป็นภาษาที่ใช้ในการแสดง UI ของ Chromium</translation>
 <translation id="4222580632002216401">ขณะนี้คุณลงชื่อเข้าใช้ Chromium แล้ว! การซิงค์ถูกปิดใช้งานโดยผู้ดูแลระบบของคุณ</translation>
 <translation id="4224199872375172890">Chromium อัปเดตแล้ว</translation>
 <translation id="4230135487732243613">เชื่อมโยงข้อมูล Chromium กับบัญชีนี้ไหม</translation>
-<translation id="4260985389288095068">พบซอฟต์แวร์อันตรายในคอมพิวเตอร์ของคุณ Chromium สามารถนำซอฟต์แวร์ดังกล่าวออกและคืนการตั้งค่าเดิมเพื่อให้เบราว์เซอร์ทำงานเป็นปกติอีกครั้ง</translation>
 <translation id="4271805377592243930">รับความช่วยเหลือเกี่ยวกับ Chromium</translation>
 <translation id="4285930937574705105">การติดตั้งล้มเหลวเนื่องจากมีข้อผิดพลาดที่ไม่ได้ระบุ หาก Chromium ทำงานอยู่ในขณะนี้ โปรดปิดและลองอีกครั้ง</translation>
 <translation id="4407044323746248786">ออกจาก Chromium ใช่ไหม</translation>
@@ -136,7 +138,7 @@
 <translation id="5680901439334282664">ลงชื่อเข้าใช้ Chromium</translation>
 <translation id="5698481217667032250">แสดง Chromium ในภาษานี้</translation>
 <translation id="5712253116097046984">ผู้ดูแลระบบขอให้คุณรีสตาร์ท Chromium OS เพื่อใช้การอัปเดตนี้</translation>
-<translation id="5726838626470692954">ผู้จัดการต้องนำคุณออกแล้วเพิ่มคุณกลับเข้าไปใน Chromium ใหม่</translation>
+<translation id="5756484659843248772">นี่เป็นภาษาที่ใช้ในการแสดง UI ของ Chromium OS</translation>
 <translation id="5768914737813585044">แสดงระบบปฏิบัติการ Chromium ในภาษานี้</translation>
 <translation id="5796460469508169315">Chromium เกือบจะพร้อมใช้งานแล้ว</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
@@ -165,6 +167,7 @@
 <translation id="6373523479360886564">คุณแน่ใจหรือไม่ว่าต้องการถอนการติดตั้ง Chromium</translation>
 <translation id="6400072781405947421">Chromium อาจทำงานไม่ถูกต้องเนื่องจากไม่รองรับ Mac OS X 10.9 แล้ว</translation>
 <translation id="6403826409255603130">Chromium เป็นเว็บเบราว์เซอร์ที่เรียกใช้หน้าเว็บและแอปพลิเคชันด้วยความเร็วสูง มีความรวดเร็ว เสถียร และง่ายในการใช้งาน เรียกดูเว็บได้อย่างปลอดภัยมากขึ้นด้วยการป้องกันมัลแวร์และฟิชชิงที่สร้างอยู่ภายใน Chromium</translation>
+<translation id="6434250628340475518">ระบบ Chromium OS</translation>
 <translation id="6457450909262716557">{SECONDS,plural, =1{Chromium จะรีสตาร์ทใน 1 วินาที}other{Chromium จะรีสตาร์ทใน # วินาที}}</translation>
 <translation id="6475912303565314141">อีกทั้งยังควบคุมหน้าที่จะแสดงเมื่อคุณเปิด Chromium ด้วย</translation>
 <translation id="6485906693002546646">คุณกำลังใช้ <ph name="PROFILE_EMAIL" /> ในการซิงค์ข้อมูลใน Chromium หากต้องการอัปเดตค่ากำหนดการซิงค์หรือใช้ Chromium โดยไม่มีบัญชี Google โปรดไปที่ <ph name="SETTINGS_LINK" /></translation>
@@ -180,6 +183,7 @@
 <translation id="6810143991807788455">ช่วยให้ Chromium ดียิ่งขึ้นด้วยการรายงานการตั้งค่าปัจจุบัน</translation>
 <translation id="6857782730669500492">Chromium - <ph name="PAGE_TITLE" /></translation>
 <translation id="6863361426438995919">Google Pay (คัดลอกไปยัง Chromium)</translation>
+<translation id="6877899728743402439">ผู้ดูแลระบบของคุณกำหนดค่าให้ Chromium เปิดเบราว์เซอร์สำรอง</translation>
 <translation id="6893813176749746474">Chromium ได้รับการอัปเดตแล้ว แต่คุณไม่ได้ใช้งานมาไม่ต่ำกว่า 30 วันแล้ว</translation>
 <translation id="6964305034639999644">เปิดลิงก์ในหน้าต่างที่ไม่ระบุตัวตนของ Chromium</translation>
 <translation id="6970811910055250180">กำลังอัปเดตอุปกรณ์ของคุณ...</translation>
@@ -211,6 +215,7 @@ Chromium ไม่สามารถกู้คืนการตั้งค�
 <translation id="7471302858145901434">{0,plural, =1{รีสตาร์ท Chromium OS ภายใน 1 วัน}other{รีสตาร์ท Chromium OS ภายใน # วัน}}</translation>
 <translation id="7483335560992089831">ไม่สามารถติดตั้ง Chromium รุ่นเดียวกับที่กำลังใช้งานอยู่ในขณะนี้ โปรดปิด Chromium และลองอีกครั้ง</translation>
 <translation id="7549178288319965365">เกี่ยวกับ Chromium OS</translation>
+<translation id="7561906087460245826">ล้างข้อมูลจาก Chromium (<ph name="URL" />) ด้วย</translation>
 <translation id="761356813943268536">Chromium ใช้กล้องและไมโครโฟนของคุณอยู่</translation>
 <translation id="7617377681829253106">Chromium ดีขึ้นกว่าเดิม</translation>
 <translation id="7686590090926151193">Chromium ไม่ใช่เบราว์เซอร์เริ่มต้น</translation>
@@ -228,7 +233,6 @@ Chromium ไม่สามารถกู้คืนการตั้งค�
 <translation id="7979877361127045932">ซ่อนในเมนู Chromium</translation>
 <translation id="8013436988911883588">เมื่อ Chromium มีสิทธิ์การเข้าถึงแล้ว เว็บไซต์จะขอสิทธิ์การเข้าถึงจากคุณได้</translation>
 <translation id="8030318113982266900">กำลังอัปเดตอุปกรณ์ของคุณไปยังช่อง <ph name="CHANNEL_NAME" />...</translation>
-<translation id="8157153840442649507">Chromium แสดงในภาษานี้</translation>
 <translation id="81770708095080097">ไฟล์นี้อันตราย Chromium จึงบล็อกไว้</translation>
 <translation id="8222496066431494154">ติดตั้ง Chromium ในโทรศัพท์ เราจะส่ง SMS ไปยังหมายเลขโทรศัพท์สำหรับการกู้คืนบัญชีของคุณ: <ph name="PHONE_NUMBER" /></translation>
 <translation id="8269379391216269538">ช่วยปรับปรุง Chromium ให้ดีขึ้น</translation>

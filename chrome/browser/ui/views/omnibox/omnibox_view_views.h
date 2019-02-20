@@ -96,6 +96,13 @@ class OmniboxViewViews : public OmniboxView,
   bool SelectionAtBeginning() const;
   bool SelectionAtEnd() const;
 
+  // Returns the width in pixels needed to display the current text. The
+  // returned value includes margins.
+  int GetTextWidth() const;
+
+  // Returns the omnibox's width in pixels.
+  int GetWidth() const;
+
   // OmniboxView:
   void EmphasizeURLComponents() override;
   void Update() override;
@@ -103,6 +110,10 @@ class OmniboxViewViews : public OmniboxView,
   using OmniboxView::SetUserText;
   void SetUserText(const base::string16& text,
                    bool update_popup) override;
+  void SetWindowTextAndCaretPos(const base::string16& text,
+                                size_t caret_pos,
+                                bool update_popup,
+                                bool notify_text_changed) override;
   void EnterKeywordModeForDefaultSearchProvider() override;
   bool IsSelectAll() const override;
   void GetSelectionBounds(base::string16::size_type* start,
@@ -110,7 +121,6 @@ class OmniboxViewViews : public OmniboxView,
   void SelectAll(bool reversed) override;
   void RevertAll() override;
   void SetFocus() override;
-  int GetTextWidth() const override;
   bool IsImeComposing() const override;
 
   // views::Textfield:
@@ -121,6 +131,8 @@ class OmniboxViewViews : public OmniboxView,
   void AddedToWidget() override;
   void RemovedFromWidget() override;
   bool ShouldDoLearning() override;
+  base::string16 GetLabelForCommandId(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
 
   // For testing only.
   OmniboxPopupContentsView* GetPopupContentsViewForTesting() const {
@@ -137,6 +149,8 @@ class OmniboxViewViews : public OmniboxView,
   FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag);
   FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, FriendlyAccessibleLabel);
   FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, DoNotNavigateOnDrop);
+
+  class PathFadeAnimation;
 
   enum class UnelisionGesture {
     HOME_KEY_PRESSED,
@@ -190,10 +204,6 @@ class OmniboxViewViews : public OmniboxView,
   bool MaybeUnfocusTabButton();
 
   // OmniboxView:
-  void SetWindowTextAndCaretPos(const base::string16& text,
-                                size_t caret_pos,
-                                bool update_popup,
-                                bool notify_text_changed) override;
   void SetCaretPos(size_t caret_pos) override;
   void UpdatePopup() override;
   void ApplyCaretVisibility() override;
@@ -209,7 +219,6 @@ class OmniboxViewViews : public OmniboxView,
   bool OnAfterPossibleChange(bool allow_keyword_ui_change) override;
   gfx::NativeView GetNativeView() const override;
   gfx::NativeView GetRelativeWindowForPopup() const override;
-  int GetWidth() const override;
   bool IsImeShowingPopup() const override;
   void ShowVirtualKeyboardIfEnabled() override;
   void HideImeIfNeeded() override;
@@ -223,7 +232,6 @@ class OmniboxViewViews : public OmniboxView,
 
   // views::Textfield:
   bool IsItemForCommandIdDynamic(int command_id) const override;
-  base::string16 GetLabelForCommandId(int command_id) const override;
   const char* GetClassName() const override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
   bool OnMouseDragged(const ui::MouseEvent& event) override;
@@ -235,7 +243,6 @@ class OmniboxViewViews : public OmniboxView,
   bool HandleAccessibleAction(const ui::AXActionData& action_data) override;
   void OnFocus() override;
   void OnBlur() override;
-  bool IsCommandIdEnabled(int command_id) const override;
   base::string16 GetSelectionClipboardText() const override;
   void DoInsertChar(base::char16 ch) override;
   bool IsTextEditCommandEnabled(ui::TextEditCommand command) const override;
@@ -262,7 +269,7 @@ class OmniboxViewViews : public OmniboxView,
   void OnGetDragOperationsForTextfield(int* drag_operations) override;
   void AppendDropFormats(
       int* formats,
-      std::set<ui::Clipboard::FormatType>* format_types) override;
+      std::set<ui::ClipboardFormatType>* format_types) override;
   int OnDrop(const ui::OSExchangeData& data) override;
   void UpdateContextMenu(ui::SimpleMenuModel* menu_contents) override;
 
@@ -271,7 +278,6 @@ class OmniboxViewViews : public OmniboxView,
   void OnCompositingStarted(ui::Compositor* compositor,
                             base::TimeTicks start_time) override;
   void OnCompositingEnded(ui::Compositor* compositor) override;
-  void OnCompositingChildResizing(ui::Compositor* compositor) override;
   void OnCompositingShuttingDown(ui::Compositor* compositor) override;
 
   // TemplateURLServiceObserver:
@@ -282,6 +288,9 @@ class OmniboxViewViews : public OmniboxView,
   bool popup_window_mode_;
 
   std::unique_ptr<OmniboxPopupContentsView> popup_view_;
+
+  // Animation used to fade out the path under some elision settings.
+  std::unique_ptr<PathFadeAnimation> path_fade_animation_;
 
   security_state::SecurityLevel security_level_;
 

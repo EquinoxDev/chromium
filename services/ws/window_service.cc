@@ -167,15 +167,17 @@ Id WindowService::GetCompleteTransportIdForWindow(aura::Window* window) {
   ProxyWindow* proxy_window = ProxyWindow::GetMayBeNull(window);
   if (!proxy_window)
     return kInvalidTransportId;
-  if (!proxy_window->owning_window_tree())
+  WindowTree* tree = proxy_window->owning_window_tree()
+                         ? proxy_window->owning_window_tree()
+                         : proxy_window->embedded_window_tree();
+  if (!tree)
     return kInvalidTransportId;
   // NOTE: WindowTree::TransportIdForWindow() is the id sent to the client,
   // which has the client_id portion set to 0. This function wants to see the
   // real client_id, so it has to build it.
   return BuildTransportId(
-      proxy_window->owning_window_tree()->client_id(),
-      ClientWindowIdFromTransportId(
-          proxy_window->owning_window_tree()->TransportIdForWindow(window)));
+      tree->client_id(),
+      ClientWindowIdFromTransportId(tree->TransportIdForWindow(window)));
 }
 
 WindowService::TreeAndWindowId
@@ -294,10 +296,6 @@ void WindowService::OnStart() {
   // |gpu_interface_provider_| may be null in tests.
   if (gpu_interface_provider_) {
     gpu_interface_provider_->RegisterGpuInterfaces(&registry_);
-
-#if defined(USE_OZONE)
-    gpu_interface_provider_->RegisterOzoneGpuInterfaces(&registry_);
-#endif
   }
 
   if (test_config_) {
@@ -310,10 +308,18 @@ void WindowService::OnBindInterface(
     const service_manager::BindSourceInfo& remote_info,
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle handle) {
-  if (!registry_with_source_info_.TryBindInterface(interface_name, &handle,
-                                                   remote_info)) {
-    registry_.BindInterface(interface_name, std::move(handle));
+  if (registry_with_source_info_.TryBindInterface(interface_name, &handle,
+                                                  remote_info) ||
+      registry_.TryBindInterface(interface_name, &handle)) {
+    return;
   }
+
+#if defined(USE_OZONE)
+  gpu_interface_provider_->BindOzoneGpuInterface(interface_name,
+                                                 std::move(handle));
+#else
+  NOTREACHED();
+#endif
 }
 
 WindowTree* WindowService::GetTreeById(ClientSpecificId id) {

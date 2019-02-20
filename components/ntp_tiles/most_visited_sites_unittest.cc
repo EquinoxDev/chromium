@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback_list.h"
 #include "base/command_line.h"
 #include "base/macros.h"
@@ -428,7 +429,8 @@ class MostVisitedSitesTest : public ::testing::TestWithParam<bool> {
     icon_cacher_ = icon_cacher.get();
 
     // Custom links needs to be nullptr when MostVisitedSites is created, unless
-    // the custom links feature (kNtpCustomLinks) is enabled.
+    // the custom links feature is enabled. Custom links is disabled for
+    // Android, iOS, and third-party NTPs.
     std::unique_ptr<StrictMock<MockCustomLinksManager>> mock_custom_links;
     if (is_custom_links_enabled_) {
       mock_custom_links =
@@ -1013,9 +1015,9 @@ TEST_P(MostVisitedSitesTest, ShouldHandleTopSitesCacheHit) {
   base::RunLoop().RunUntilIdle();
 }
 
-INSTANTIATE_TEST_CASE_P(MostVisitedSitesTest,
-                        MostVisitedSitesTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(MostVisitedSitesTest,
+                         MostVisitedSitesTest,
+                         ::testing::Bool());
 
 TEST(MostVisitedSitesTest, ShouldDeduplicateDomainWithNoWwwDomain) {
   EXPECT_TRUE(MostVisitedSites::IsHostOrMobilePageKnown({"www.mobile.de"},
@@ -1056,7 +1058,6 @@ TEST(MostVisitedSitesTest, ShouldDeduplicateDomainByReplacingMobilePrefixes) {
 class MostVisitedSitesWithCustomLinksTest : public MostVisitedSitesTest {
  public:
   MostVisitedSitesWithCustomLinksTest() {
-    feature_list_.InitAndEnableFeature(kNtpCustomLinks);
     EnableCustomLinks();
     RecreateMostVisitedSites();
   }
@@ -1100,9 +1101,6 @@ class MostVisitedSitesWithCustomLinksTest : public MostVisitedSitesTest {
     EXPECT_CALL(mock_observer_, OnURLsAvailable(_))
         .WillOnce(SaveArg<0>(sections));
   }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
 };
 
 TEST_P(MostVisitedSitesWithCustomLinksTest,
@@ -1517,9 +1515,9 @@ TEST_P(MostVisitedSitesWithCustomLinksTest,
   base::RunLoop().RunUntilIdle();
 }
 
-INSTANTIATE_TEST_CASE_P(MostVisitedSitesWithCustomLinksTest,
-                        MostVisitedSitesWithCustomLinksTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(MostVisitedSitesWithCustomLinksTest,
+                         MostVisitedSitesWithCustomLinksTest,
+                         ::testing::Bool());
 #endif
 
 class MostVisitedSitesWithCacheHitTest : public MostVisitedSitesTest {
@@ -1677,9 +1675,9 @@ TEST_P(MostVisitedSitesWithCacheHitTest, ShouldFetchFaviconsIfEnabled) {
   base::RunLoop().RunUntilIdle();
 }
 
-INSTANTIATE_TEST_CASE_P(MostVisitedSitesWithCacheHitTest,
-                        MostVisitedSitesWithCacheHitTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(MostVisitedSitesWithCacheHitTest,
+                         MostVisitedSitesWithCacheHitTest,
+                         ::testing::Bool());
 
 class MostVisitedSitesWithEmptyCacheTest : public MostVisitedSitesTest {
  public:
@@ -1968,9 +1966,9 @@ TEST_P(MostVisitedSitesWithEmptyCacheTest,
   }
 }
 
-INSTANTIATE_TEST_CASE_P(MostVisitedSitesWithEmptyCacheTest,
-                        MostVisitedSitesWithEmptyCacheTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(MostVisitedSitesWithEmptyCacheTest,
+                         MostVisitedSitesWithEmptyCacheTest,
+                         ::testing::Bool());
 
 // This a test for MostVisitedSites::MergeTiles(...) method, and thus has the
 // same scope as the method itself. This tests merging popular sites with

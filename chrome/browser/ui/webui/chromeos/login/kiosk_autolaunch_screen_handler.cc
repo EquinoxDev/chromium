@@ -32,8 +32,9 @@ const char kJsScreenPath[] = "login.AutolaunchScreen";
 
 namespace chromeos {
 
-KioskAutolaunchScreenHandler::KioskAutolaunchScreenHandler()
-    : BaseScreenHandler(kScreenId) {
+KioskAutolaunchScreenHandler::KioskAutolaunchScreenHandler(
+    JSCallsContainer* js_calls_container)
+    : BaseScreenHandler(kScreenId, js_calls_container) {
   set_call_js_prefix(kJsScreenPath);
   KioskAppManager::Get()->AddObserver(this);
 }
@@ -81,7 +82,7 @@ void KioskAutolaunchScreenHandler::UpdateKioskApp() {
     icon_url = webui::GetBitmapDataUrl(*app.icon.bitmap());
 
   app_info.SetString("appIconUrl", icon_url);
-  CallJSWithPrefix("updateApp", app_info);
+  CallJS("login.AutolaunchScreen.updateApp", app_info);
 }
 
 void KioskAutolaunchScreenHandler::DeclareLocalizedValues(

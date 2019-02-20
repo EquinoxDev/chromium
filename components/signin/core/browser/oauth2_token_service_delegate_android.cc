@@ -129,7 +129,8 @@ std::string AndroidAccessTokenFetcher::CombineScopes(
 
 }  // namespace
 
-bool OAuth2TokenServiceDelegateAndroid::is_testing_profile_ = false;
+bool OAuth2TokenServiceDelegateAndroid::
+    disable_interaction_with_system_accounts_ = false;
 
 OAuth2TokenServiceDelegateAndroid::OAuth2TokenServiceDelegateAndroid(
     AccountTrackerService* account_tracker_service)
@@ -158,7 +159,7 @@ OAuth2TokenServiceDelegateAndroid::OAuth2TokenServiceDelegateAndroid(
     Java_OAuth2TokenService_saveStoredAccounts(env, java_accounts);
   }
 
-  if (!is_testing_profile_) {
+  if (!disable_interaction_with_system_accounts_) {
     Java_OAuth2TokenService_validateAccounts(AttachCurrentThread(), java_ref_,
                                              JNI_TRUE);
   }
@@ -488,6 +489,13 @@ void OAuth2TokenServiceDelegateAndroid::LoadCredentials(
   } else if (fire_refresh_token_loaded_ == RT_LOAD_NOT_START) {
     fire_refresh_token_loaded_ = RT_WAIT_FOR_VALIDATION;
   }
+}
+
+void OAuth2TokenServiceDelegateAndroid::ReloadAccountsFromSystem(
+    const std::string& primary_account_id) {
+  // ValidateAccounts() effectively synchronizes the accounts in the Token
+  // Service with those present at the system level.
+  ValidateAccounts(primary_account_id, /*force_notifications=*/true);
 }
 
 std::string OAuth2TokenServiceDelegateAndroid::MapAccountIdToAccountName(

@@ -88,8 +88,7 @@ FontResource& CSSFontFaceSrcValue::Fetch(ExecutionContext* context,
     ResourceLoaderOptions options;
     options.initiator_info.name = fetch_initiator_type_names::kCSS;
     FetchParameters params(resource_request, options);
-    if (RuntimeEnabledFeatures::WebFontsCacheAwareTimeoutAdaptationEnabled())
-      params.SetCacheAwareLoadingEnabled(kIsCacheAwareLoadingEnabled);
+    params.SetCacheAwareLoadingEnabled(kIsCacheAwareLoadingEnabled);
     params.SetContentSecurityCheck(should_check_content_security_policy_);
     const SecurityOrigin* security_origin = context->GetSecurityOrigin();
 

@@ -7,12 +7,12 @@
 #include <algorithm>
 #include <memory>
 
-#include "base/metrics/histogram_macros.h"
 #include "net/third_party/quic/core/crypto/cert_compressor.h"
 #include "net/third_party/quic/core/crypto/chacha20_poly1305_encrypter.h"
 #include "net/third_party/quic/core/crypto/channel_id.h"
 #include "net/third_party/quic/core/crypto/common_cert_set.h"
 #include "net/third_party/quic/core/crypto/crypto_framer.h"
+#include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/crypto/crypto_utils.h"
 #include "net/third_party/quic/core/crypto/curve25519_key_exchange.h"
 #include "net/third_party/quic/core/crypto/key_exchange.h"
@@ -442,7 +442,11 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
     CryptoHandshakeMessage* out) const {
   out->set_tag(kCHLO);
   // TODO(rch): Remove this when we remove quic_use_chlo_packet_size flag.
-  out->set_minimum_size(kClientHelloMinimumSize);
+  if (pad_inchoate_hello_) {
+    out->set_minimum_size(kClientHelloMinimumSize);
+  } else {
+    out->set_minimum_size(1);
+  }
 
   // Server name indication. We only send SNI if it's a valid domain name, as
   // per the spec.
@@ -518,12 +522,20 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     CryptoHandshakeMessage* out,
     QuicString* error_details) const {
   DCHECK(error_details != nullptr);
-  QUIC_BUG_IF(connection_id.length() != kQuicDefaultConnectionIdLength)
-      << "FillClientHello called with connection ID " << connection_id
-      << " of unsupported length " << connection_id.length();
+  QUIC_BUG_IF(!QuicUtils::IsConnectionIdValidForVersion(
+      connection_id, preferred_version.transport_version))
+      << "FillClientHello: attempted to use connection ID " << connection_id
+      << " which is invalid with version "
+      << QuicVersionToString(preferred_version.transport_version);
 
   FillInchoateClientHello(server_id, preferred_version, cached, rand,
                           /* demand_x509_proof= */ true, out_params, out);
+
+  if (pad_full_hello_) {
+    out->set_minimum_size(kClientHelloMinimumSize);
+  } else {
+    out->set_minimum_size(1);
+  }
 
   const CryptoHandshakeMessage* scfg = cached->GetServerConfig();
   if (!scfg) {
@@ -684,8 +696,7 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     std::unique_ptr<char[]> output(new char[encrypted_len]);
     size_t output_size = 0;
     if (!crypters.encrypter->EncryptPacket(
-            preferred_version.transport_version, 0 /* packet number */,
-            QuicStringPiece() /* associated data */,
+            0 /* packet number */, QuicStringPiece() /* associated data */,
             cetv_plaintext.AsStringPiece(), output.get(), &output_size,
             encrypted_len)) {
       *error_details = "Packet encryption failed";
@@ -861,10 +872,9 @@ QuicErrorCode QuicCryptoClientConfig::ProcessRejection(
       }
       connection_id = QuicConnectionId(connection_id_bytes.data(),
                                        connection_id_bytes.length());
-      if (connection_id.length() != kQuicDefaultConnectionIdLength) {
+      if (!QuicUtils::IsConnectionIdValidForVersion(connection_id, version)) {
         QUIC_PEER_BUG << "Received server-designated connection ID "
-                      << connection_id << " of bad length "
-                      << connection_id.length() << " with version "
+                      << connection_id << " which is invalid with version "
                       << QuicVersionToString(version);
         *error_details = "Bad kRCID length";
         return QUIC_CRYPTO_INTERNAL_ERROR;

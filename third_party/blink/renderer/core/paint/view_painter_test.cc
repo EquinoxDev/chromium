@@ -19,7 +19,7 @@ class ViewPainterTest : public PaintControllerPaintTest {
   void RunFixedBackgroundTest(bool prefer_compositing_to_lcd_text);
 };
 
-INSTANTIATE_PAINT_TEST_CASE_P(ViewPainterTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(ViewPainterTest);
 
 void ViewPainterTest::RunFixedBackgroundTest(
     bool prefer_compositing_to_lcd_text) {
@@ -106,8 +106,6 @@ void ViewPainterTest::RunFixedBackgroundTest(
   SkRect rect = static_cast<const cc::DrawRectOp*>(*it)->rect;
   if (prefer_compositing_to_lcd_text) {
     EXPECT_EQ(SkRect::MakeXYWH(0, 0, 800, 600), rect);
-  } else if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
-    EXPECT_EQ(SkRect::MakeXYWH(0, 0, 800, 600), rect);
   } else {
     EXPECT_EQ(SkRect::MakeXYWH(scroll_offset.Width(), scroll_offset.Height(),
                                800, 600),
@@ -116,6 +114,10 @@ void ViewPainterTest::RunFixedBackgroundTest(
 }
 
 TEST_P(ViewPainterTest, DocumentFixedBackgroundLowDPI) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   RunFixedBackgroundTest(false);
 }
 
@@ -175,7 +177,7 @@ class ViewPainterTestWithPaintTouchAction
   }
 };
 
-INSTANTIATE_PAINT_TEST_CASE_P(ViewPainterTestWithPaintTouchAction);
+INSTANTIATE_PAINT_TEST_SUITE_P(ViewPainterTestWithPaintTouchAction);
 
 TEST_P(ViewPainterTestWithPaintTouchAction, TouchActionRectScrollingContents) {
   SetBodyInnerHTML(R"HTML(

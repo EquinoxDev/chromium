@@ -42,14 +42,13 @@
 #include "chrome/browser/chromeos/settings/stub_install_attributes.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_downloader.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chromeos/constants/chromeos_paths.h"
 #include "chromeos/constants/chromeos_switches.h"
 #include "chromeos/cryptohome/cryptohome_parameters.h"
+#include "chromeos/dbus/constants/dbus_paths.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
@@ -62,15 +61,13 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/account_info.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_image/user_image.h"
 #include "components/user_manager/user_manager.h"
 #include "crypto/rsa_private_key.h"
-#include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "google_apis/gaia/oauth2_token_service.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -282,7 +279,7 @@ class UserImageManagerTest : public LoginManagerTest,
     auto account_info = identity_manager->GetPrimaryAccountInfo();
     account_info.full_name = account_info.email;
     account_info.given_name = account_info.email;
-    account_info.hosted_domain = AccountTrackerService::kNoHostedDomainFound;
+    account_info.hosted_domain = kNoHostedDomainFound;
     account_info.locale = account_info.email;
     account_info.picture_url =
         embedded_test_server()->GetURL("/avatar.jpg").spec();
@@ -626,8 +623,8 @@ class UserImageManagerPolicyTest : public UserImageManagerTest,
     UserImageManagerTest::SetUpOnMainThread();
 
     base::FilePath user_keys_dir;
-    ASSERT_TRUE(
-        base::PathService::Get(chromeos::DIR_USER_POLICY_KEYS, &user_keys_dir));
+    ASSERT_TRUE(base::PathService::Get(
+        chromeos::dbus_paths::DIR_USER_POLICY_KEYS, &user_keys_dir));
     const std::string sanitized_username =
         chromeos::CryptohomeClient::GetStubSanitizedUsername(cryptohome_id_);
     const base::FilePath user_key_file =

@@ -9,22 +9,24 @@
 #include "chrome/browser/web_applications/extensions/bookmark_app_util.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/url_handlers/url_handlers_parser.h"
+#include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
 #include "url/gurl.h"
 
 namespace extensions {
 
 BookmarkAppTabHelper::BookmarkAppTabHelper(content::WebContents* web_contents)
-    : WebAppTabHelperBase(web_contents) {}
+    : WebAppTabHelperBase(web_contents) {
+  scoped_observer_.Add(
+      ExtensionRegistry::Get(web_contents->GetBrowserContext()));
+}
 
 BookmarkAppTabHelper::~BookmarkAppTabHelper() = default;
 
 // static
 BookmarkAppTabHelper* BookmarkAppTabHelper::CreateForWebContents(
     content::WebContents* web_contents) {
-  // Do nothing if already exists.
-  if (FromWebContents(web_contents))
-    return nullptr;
+  DCHECK(!FromWebContents(web_contents));
 
   auto tab_helper = std::make_unique<BookmarkAppTabHelper>(web_contents);
   BookmarkAppTabHelper* result = tab_helper.get();
@@ -58,6 +60,50 @@ web_app::AppId BookmarkAppTabHelper::GetAppId(const GURL& url) {
 
 bool BookmarkAppTabHelper::IsInAppWindow() const {
   return util::IsWebContentsInAppWindow(web_contents());
+}
+
+bool BookmarkAppTabHelper::IsUserInstalled() const {
+  const Extension* app = GetExtension();
+  return app && !app->was_installed_by_default();
+}
+
+bool BookmarkAppTabHelper::IsFromInstallButton() const {
+  const bool pwa_windowing =
+      base::FeatureList::IsEnabled(::features::kDesktopPWAWindowing);
+  const Extension* app = GetExtension();
+  // TODO(loyso): Use something better to record apps installed from promoted
+  // UIs. crbug.com/774918.
+  return app && app->is_hosted_app() && pwa_windowing &&
+         UrlHandlers::GetUrlHandlers(app);
+}
+
+void BookmarkAppTabHelper::OnExtensionInstalled(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    bool is_update) {
+  OnWebAppInstalled(extension->id());
+}
+
+void BookmarkAppTabHelper::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UninstallReason reason) {
+  OnWebAppUninstalled(extension->id());
+}
+
+void BookmarkAppTabHelper::OnShutdown(ExtensionRegistry* registry) {
+  OnWebAppRegistryShutdown();
+  scoped_observer_.RemoveAll();
+}
+
+const Extension* BookmarkAppTabHelper::GetExtension() const {
+  DCHECK(!app_id().empty());
+  content::BrowserContext* browser_context =
+      web_contents()->GetBrowserContext();
+  const Extension* app =
+      ExtensionRegistry::Get(browser_context)
+          ->GetExtensionById(app_id(), ExtensionRegistry::EVERYTHING);
+  return app;
 }
 
 }  // namespace extensions

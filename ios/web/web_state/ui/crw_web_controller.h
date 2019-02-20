@@ -157,12 +157,18 @@ class WebStateImpl;
 - (void)stopLoading;
 
 // Loads the URL indicated by current session state.
-- (void)loadCurrentURL;
+- (void)loadCurrentURLWithRendererInitiatedNavigation:(BOOL)rendererInitiated;
 
 // Loads the URL indicated by current session state if the current page has not
 // loaded yet. This method should never be called directly. Use
 // NavigationManager::LoadIfNecessary() instead.
 - (void)loadCurrentURLIfNecessary;
+
+// Loads |data| of type |MIMEType| and replaces last committed URL with the
+// given |URL|.
+- (void)loadData:(NSData*)data
+        MIMEType:(NSString*)MIMEType
+          forURL:(const GURL&)URL;
 
 // Loads HTML in the page and presents it as if it was originating from an
 // application specific URL. |HTML| must not be empty.

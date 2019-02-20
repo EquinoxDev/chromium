@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "ash/public/cpp/ash_switches.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/optional.h"
@@ -428,8 +429,8 @@ IN_PROC_BROWSER_TEST_P(OobeInteractiveUITest, MAYBE_SimpleEndToEnd) {
   SimpleEndToEnd();
 }
 
-INSTANTIATE_TEST_CASE_P(OobeInteractiveUITestImpl,
-                        OobeInteractiveUITest,
-                        testing::Combine(testing::Bool(), testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(OobeInteractiveUITestImpl,
+                         OobeInteractiveUITest,
+                         testing::Combine(testing::Bool(), testing::Bool()));
 
 }  //  namespace chromeos

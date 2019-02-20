@@ -13,7 +13,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -158,7 +157,7 @@ class CONTENT_EXPORT RenderFrameHostManager
     virtual bool FocusLocationBarByDefault() = 0;
 
     // Focuses the location bar.
-    virtual void SetFocusToLocationBar(bool select_all) = 0;
+    virtual void SetFocusToLocationBar() = 0;
 
     // Returns true if views created for this delegate should be created in a
     // hidden state.
@@ -454,7 +453,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   void SetRWHViewForInnerContents(RenderWidgetHostView* child_rwhv);
 
   // Returns the number of RenderFrameProxyHosts for this frame.
-  int GetProxyCount();
+  size_t GetProxyCount();
 
   // Sends an IPC message to every process in the FrameTree. This should only be
   // called in the top-level RenderFrameHostManager.  |instance_to_skip|, if

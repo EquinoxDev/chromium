@@ -22,12 +22,34 @@ public class TaskTraits {
     // Keep in sync with base::TaskTraitsExtensionStorage::kStorageSize
     public static final int EXTENSION_STORAGE_SIZE = 8;
 
+    // Convenience variables explicitly specifying common priorities
+    public static final TaskTraits USER_BLOCKING =
+            new TaskTraits().taskPriority(TaskPriority.USER_BLOCKING);
+    public static final TaskTraits USER_VISIBLE =
+            new TaskTraits().taskPriority(TaskPriority.USER_VISIBLE);
+    public static final TaskTraits BEST_EFFORT =
+            new TaskTraits().taskPriority(TaskPriority.BEST_EFFORT);
+
     public TaskTraits() {}
 
-    public TaskTraits setTaskPriority(int taskPriority) {
-        mPrioritySetExplicitly = true;
-        mPriority = taskPriority;
-        return this;
+    private TaskTraits(TaskTraits other) {
+        mPrioritySetExplicitly = other.mPrioritySetExplicitly;
+        mPriority = other.mPriority;
+        mMayBlock = other.mMayBlock;
+        mExtensionId = other.mExtensionId;
+        mExtensionData = other.mExtensionData;
+    }
+
+    public TaskTraits(byte extensionId, byte[] extensionData) {
+        mExtensionId = extensionId;
+        mExtensionData = extensionData;
+    }
+
+    public TaskTraits taskPriority(int taskPriority) {
+        TaskTraits taskTraits = new TaskTraits(this);
+        taskTraits.mPrioritySetExplicitly = true;
+        taskTraits.mPriority = taskPriority;
+        return taskTraits;
     }
 
     /**
@@ -36,9 +58,10 @@ public class TaskTraits {
      * socket, rename or delete a file, enumerate files in a directory, etc. This trait isn't
      * required for the mere use of locks.
      */
-    public TaskTraits setMayBlock(boolean mayBlock) {
-        mMayBlock = mayBlock;
-        return this;
+    public TaskTraits mayBlock(boolean mayBlock) {
+        TaskTraits taskTraits = new TaskTraits(this);
+        taskTraits.mMayBlock = mayBlock;
+        return taskTraits;
     }
 
     // For convenience of the JNI code, we use primitive types only.
@@ -49,12 +72,37 @@ public class TaskTraits {
     byte mExtensionId = INVALID_EXTENSION_ID;
     byte mExtensionData[];
 
-    protected void setExtensionId(byte extensionId) {
-        mExtensionId = extensionId;
+    /**
+     * @return true if this task is using some TaskTraits extension.
+     */
+    public boolean hasExtension() {
+        return mExtensionId != INVALID_EXTENSION_ID;
     }
 
-    protected void setExtensionData(byte[] extensionData) {
-        mExtensionData = extensionData;
+    /**
+     * Tries to extract the extension for the given descriptor from this traits.
+     *
+     * @return Extension instance or null if the traits do not contain the requested extension
+     */
+    public <Extension> Extension getExtension(TaskTraitsExtensionDescriptor<Extension> descriptor) {
+        if (mExtensionId == descriptor.getId()) {
+            return descriptor.fromSerializedData(mExtensionData);
+        } else {
+            return null;
+        }
+    }
+
+    public <Extension> TaskTraits withExtension(
+            TaskTraitsExtensionDescriptor<Extension> descriptor, Extension extension) {
+        int id = descriptor.getId();
+        byte[] data = descriptor.toSerializedData(extension);
+        assert id > INVALID_EXTENSION_ID && id <= MAX_EXTENSION_ID;
+        assert data.length <= EXTENSION_STORAGE_SIZE;
+
+        TaskTraits taskTraits = new TaskTraits(this);
+        taskTraits.mExtensionId = (byte) id;
+        taskTraits.mExtensionData = data;
+        return taskTraits;
     }
 
     @Override

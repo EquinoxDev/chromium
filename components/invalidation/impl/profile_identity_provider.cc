@@ -4,6 +4,7 @@
 
 #include "components/invalidation/impl/profile_identity_provider.h"
 
+#include "base/bind.h"
 #include "components/invalidation/public/active_account_access_token_fetcher_impl.h"
 
 namespace invalidation {
@@ -110,7 +111,7 @@ void ProfileIdentityProvider::InvalidateAccessToken(
 }
 
 void ProfileIdentityProvider::OnRefreshTokenUpdatedForAccount(
-    const AccountInfo& account_info) {
+    const CoreAccountInfo& account_info) {
   ProcessRefreshTokenUpdateForAccount(account_info.account_id);
 }
 

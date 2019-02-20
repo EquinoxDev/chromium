@@ -8,6 +8,7 @@
 #include <tuple>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
@@ -144,7 +145,8 @@ class AppShimHostTest : public testing::Test,
   void OnShimLaunchRequested(
       AppShimHost* host,
       bool recreate_shims,
-      apps::LaunchShimCallback launch_callback) override {}
+      apps::ShimLaunchedCallback launched_callback,
+      apps::ShimTerminatedCallback terminated_callback) override {}
   void OnShimProcessConnected(
       std::unique_ptr<AppShimHostBootstrap> bootstrap) override {
     ++launch_count_;

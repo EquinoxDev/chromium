@@ -109,6 +109,7 @@ void EmptyLocalFrameClient::BeginNavigation(
     mojom::blink::BlobURLTokenPtr,
     base::TimeTicks,
     const String&,
+    WebContentSecurityPolicyList,
     mojom::blink::NavigationInitiatorPtr) {}
 
 void EmptyLocalFrameClient::DispatchWillSendSubmitEvent(HTMLFormElement*) {}
@@ -121,6 +122,12 @@ DocumentLoader* EmptyLocalFrameClient::CreateDocumentLoader(
   DCHECK(frame);
   return MakeGarbageCollected<DocumentLoader>(frame, navigation_type,
                                               std::move(navigation_params));
+}
+
+mojom::blink::DocumentInterfaceBroker*
+EmptyLocalFrameClient::GetDocumentInterfaceBroker() {
+  mojo::MakeRequest(&document_interface_broker_);
+  return document_interface_broker_.get();
 }
 
 LocalFrame* EmptyLocalFrameClient::CreateFrame(const AtomicString&,
@@ -169,6 +176,12 @@ void EmptyLocalFrameClient::SetTextCheckerClientForTesting(
 
 Frame* EmptyLocalFrameClient::FindFrame(const AtomicString& name) const {
   return nullptr;
+}
+
+const FeaturePolicy::FeatureState&
+EmptyLocalFrameClient::GetOpenerFeatureState() const {
+  DEFINE_STATIC_LOCAL(FeaturePolicy::FeatureState, g_empty_feature_state, ());
+  return g_empty_feature_state;
 }
 
 std::unique_ptr<WebServiceWorkerProvider>

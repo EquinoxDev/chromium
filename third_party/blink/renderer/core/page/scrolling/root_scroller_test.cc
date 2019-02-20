@@ -179,13 +179,7 @@ class RootScrollerTest : public testing::Test,
   WebViewImpl* InitializeInternal(
       const std::string& url,
       frame_test_helpers::TestWebWidgetClient* client) {
-    if (client) {
-      view_client_ =
-          std::make_unique<frame_test_helpers::TestWebViewClient>(client);
-    } else {
-      view_client_.reset();
-    }
-    helper_.InitializeAndLoad(url, nullptr, view_client_.get(),
+    helper_.InitializeAndLoad(url, nullptr, nullptr, client,
                               &ConfigureSettings);
 
     // Initialize browser controls to be shown.
@@ -2262,9 +2256,9 @@ TEST_F(ImplicitRootScrollerSimTest, NavigateToValidRemainsRootScroller) {
   // Ensure that we remain the root scroller even though there's no layout in
   // the parent.
   SimRequest child_request2("https://example.com/child-next.html", "text/html");
-  WebURLRequest request(KURL("https://example.com/child-next.html"));
-  WebView().MainFrameImpl()->FirstChild()->ToWebLocalFrame()->StartNavigation(
-      request);
+  frame_test_helpers::LoadFrameDontWait(
+      WebView().MainFrameImpl()->FirstChild()->ToWebLocalFrame(),
+      KURL("https://example.com/child-next.html"));
 
   child_request2.Write(R"HTML(
         <!DOCTYPE html>

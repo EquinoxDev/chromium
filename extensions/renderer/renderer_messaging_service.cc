@@ -16,6 +16,7 @@
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_endpoint.h"
 #include "extensions/common/api/messaging/port_id.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/renderer/extension_bindings_system.h"
@@ -71,7 +72,6 @@ void RendererMessagingService::DispatchOnConnect(
     const std::string& channel_name,
     const ExtensionMsg_TabConnectionInfo& source,
     const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& tls_channel_id,
     content::RenderFrame* restrict_to_render_frame) {
   DCHECK(!target_port_id.is_opener);
   int routing_id = restrict_to_render_frame
@@ -82,7 +82,7 @@ void RendererMessagingService::DispatchOnConnect(
       info.target_id, restrict_to_render_frame,
       base::Bind(&RendererMessagingService::DispatchOnConnectToScriptContext,
                  base::Unretained(this), target_port_id, channel_name, &source,
-                 info, tls_channel_id, &port_created));
+                 info, &port_created));
   // Note: |restrict_to_render_frame| may have been deleted at this point!
 
   IPCMessageSender* ipc_sender = bindings_system_->GetIPCMessageSender();
@@ -131,7 +131,6 @@ void RendererMessagingService::DispatchOnConnectToScriptContext(
     const std::string& channel_name,
     const ExtensionMsg_TabConnectionInfo* source,
     const ExtensionMsg_ExternalConnectionInfo& info,
-    const std::string& tls_channel_id,
     bool* port_created,
     ScriptContext* script_context) {
   // If the channel was opened by this same context, ignore it. This should only
@@ -142,7 +141,7 @@ void RendererMessagingService::DispatchOnConnectToScriptContext(
 
   // First, determine the event we'll use to connect.
   std::string target_extension_id = script_context->GetExtensionID();
-  bool is_external = info.source_id != target_extension_id;
+  bool is_external = info.source_endpoint.extension_id != target_extension_id;
   std::string event_name;
   if (channel_name == messaging_util::kSendRequestChannel) {
     event_name = is_external ? messaging_util::kOnRequestExternalEvent
@@ -165,7 +164,7 @@ void RendererMessagingService::DispatchOnConnectToScriptContext(
 
   DispatchOnConnectToListeners(script_context, target_port_id,
                                target_extension_id, channel_name, source, info,
-                               tls_channel_id, event_name);
+                               event_name);
 }
 
 void RendererMessagingService::DeliverMessageToScriptContext(

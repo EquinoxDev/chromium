@@ -63,14 +63,13 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   int GetThemeBackgroundXInset() const override;
   void UpdateThrobber(bool running) override;
   gfx::Size GetMinimumSize() const override;
-  SkColor GetFrameForegroundColor(ActiveState active_state) const override;
 
   // views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override;
   gfx::Rect GetWindowBoundsForClientBounds(
       const gfx::Rect& client_bounds) const override;
   int NonClientHitTest(const gfx::Point& point) override;
-  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override;
+  void GetWindowMask(const gfx::Size& size, SkPath* window_mask) override;
   void ResetWindowControls() override;
   void UpdateWindowIcon() override;
   void UpdateWindowTitle() override;
@@ -120,9 +119,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
 
   // views::View:
   void OnPaint(gfx::Canvas* canvas) override;
-
-  // BrowserNonClientFrameView:
-  bool ShouldPaintAsThemed() const override;
 
   OpaqueBrowserFrameViewLayout* layout() { return layout_; }
 

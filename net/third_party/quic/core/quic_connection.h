@@ -231,9 +231,6 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // Called when a StreamFrame has been parsed.
   virtual void OnStreamFrame(const QuicStreamFrame& frame) {}
 
-  // Called when a AckFrame has been parsed.
-  virtual void OnAckFrame(const QuicAckFrame& frame) {}
-
   // Called when a StopWaitingFrame has been parsed.
   virtual void OnStopWaitingFrame(const QuicStopWaitingFrame& frame) {}
 
@@ -297,6 +294,9 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // Called when RTT may have changed, including when an RTT is read from
   // the config.
   virtual void OnRttChanged(QuicTime::Delta rtt) const {}
+
+  // Called when a StopSendingFrame has been parsed.
+  virtual void OnStopSendingFrame(const QuicStopSendingFrame& frame) {}
 };
 
 class QUIC_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -745,7 +745,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Tries to send |message| and returns the message status.
   virtual MessageStatus SendMessage(QuicMessageId message_id,
-                                    QuicStringPiece message);
+                                    QuicMemSliceSpan message);
 
   // Returns the largest payload that will fit into a single MESSAGE frame.
   QuicPacketLength GetLargestMessagePayload() const;
@@ -792,6 +792,35 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     fill_up_link_during_probing_ = new_value;
   }
 
+  // This setting may be changed during the crypto handshake in order to
+  // enable/disable padding of different packets in the crypto handshake.
+  //
+  // This setting should never be set to false in public facing endpoints. It
+  // can only be set to false if there is some other mechanism of preventing
+  // amplification attacks, such as ICE (plus its a non-standard quic).
+  void set_fully_pad_crypto_hadshake_packets(bool new_value) {
+    packet_generator_.set_fully_pad_crypto_hadshake_packets(new_value);
+  }
+
+  bool fully_pad_during_crypto_handshake() const {
+    return packet_generator_.fully_pad_crypto_handshake_packets();
+  }
+
+  size_t min_received_before_ack_decimation() const {
+    return min_received_before_ack_decimation_;
+  }
+  void set_min_received_before_ack_decimation(size_t new_value) {
+    min_received_before_ack_decimation_ = new_value;
+  }
+
+  size_t ack_frequency_before_ack_decimation() const {
+    return ack_frequency_before_ack_decimation_;
+  }
+  void set_ack_frequency_before_ack_decimation(size_t new_value) {
+    DCHECK_GT(new_value, 0u);
+    ack_frequency_before_ack_decimation_ = new_value;
+  }
+
   // If |defer| is true, configures the connection to defer sending packets in
   // response to an ACK to the SendAlarm. If |defer| is false, packets may be
   // sent immediately after receiving an ACK.
@@ -811,12 +840,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   }
 
   bool IsPathDegrading() const { return is_path_degrading_; }
-
-  // TODO(wub): Remove this function once
-  // quic_donot_retransmit_old_window_update flag is deprecated.
-  void set_donot_retransmit_old_window_updates(bool value) {
-    donot_retransmit_old_window_updates_ = value;
-  }
 
   // Attempts to process any queued undecryptable packets.
   void MaybeProcessUndecryptablePackets();
@@ -1061,10 +1084,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Contents received in the current packet, especially used to identify
   // whether the current packet is a padded PING packet.
   PacketContent current_packet_content_;
-  // True if the packet currently being processed is a connectivity probing
-  // packet. Is set to false when a new packet is received, and will be set to
-  // true as soon as |current_packet_content_| is set to
-  // SECOND_FRAME_IS_PADDING.
+  // Set to true as soon as the packet currently being processed has been
+  // detected as a connectivity probing.
+  // Always false outside the context of ProcessUdpPacket().
   bool is_current_packet_connectivity_probing_;
 
   // Caches the current effective peer migration type if a effective peer
@@ -1325,10 +1347,17 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Consecutive number of sent packets which have no retransmittable frames.
   size_t consecutive_num_packets_with_no_retransmittable_frames_;
+
   // After this many packets sent without retransmittable frames, an artificial
   // retransmittable frame(a WINDOW_UPDATE) will be created to solicit an ack
   // from the peer. Default to kMaxConsecutiveNonRetransmittablePackets.
   size_t max_consecutive_num_packets_with_no_retransmittable_frames_;
+
+  // Ack decimation will start happening after this many packets are received.
+  size_t min_received_before_ack_decimation_;
+
+  // Before ack decimation starts (if enabled), we ack every n-th packet.
+  size_t ack_frequency_before_ack_decimation_;
 
   // If true, the connection will fill up the pipe with extra data whenever the
   // congestion controller needs it in order to make a bandwidth estimate.  This
@@ -1363,16 +1392,13 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Time this connection can release packets into the future.
   QuicTime::Delta release_time_into_future_;
 
-  // Latched value of quic_donot_retransmit_old_window_update flag.
-  bool donot_retransmit_old_window_updates_;
-
   // Indicates whether server connection does version negotiation. Server
   // connection does not support version negotiation if a single version is
   // provided in constructor.
   const bool no_version_negotiation_;
 
-  // Latched value of quic_decrypt_packets_on_key_change flag.
-  const bool decrypt_packets_on_key_change_;
+  // Latched value of --quic_clear_probing_mark_after_packet_processing.
+  const bool clear_probing_mark_after_packet_processing_;
 
   // Payload of most recently transmitted QUIC_VERSION_99 connectivity
   // probe packet (the PATH_CHALLENGE payload). This implementation transmits

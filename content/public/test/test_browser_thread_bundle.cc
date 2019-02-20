@@ -4,6 +4,9 @@
 
 #include "content/public/test/test_browser_thread_bundle.h"
 
+#include <utility>
+
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_current.h"
 #include "base/run_loop.h"
@@ -11,62 +14,21 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/browser/after_startup_task_utils.h"
 #include "content/browser/scheduler/browser_task_executor.h"
+#include "content/browser/scheduler/browser_ui_thread_scheduler.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
+
+#if defined(OS_ANDROID)
+#include "base/android/task_scheduler/post_task_android.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
 #endif
 
 namespace content {
-
-namespace {
-
-base::test::ScopedTaskEnvironment::MainThreadType GetThreadTypeFromOptions(
-    int options) {
-  if (options & TestBrowserThreadBundle::PLAIN_MAINLOOP)
-    return base::test::ScopedTaskEnvironment::MainThreadType::DEFAULT;
-  if (options & TestBrowserThreadBundle::IO_MAINLOOP)
-    return base::test::ScopedTaskEnvironment::MainThreadType::IO;
-  return base::test::ScopedTaskEnvironment::MainThreadType::UI;
-}
-
-}  // namespace
-
-TestBrowserThreadBundle::TestBrowserThreadBundle(
-    base::test::ScopedTaskEnvironment::MainThreadType main_thread_type,
-    base::test::ScopedTaskEnvironment::ExecutionMode execution_control_mode,
-    int options)
-    : base::test::ScopedTaskEnvironment(main_thread_type,
-                                        execution_control_mode),
-      options_(options) {
-  // Infer |options_| from |main_thread_type|.
-  switch (main_thread_type) {
-    case base::test::ScopedTaskEnvironment::MainThreadType::DEFAULT:
-    case base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME:
-      options_ |= TestBrowserThreadBundle::PLAIN_MAINLOOP;
-      break;
-    case base::test::ScopedTaskEnvironment::MainThreadType::IO:
-      options_ |= TestBrowserThreadBundle::IO_MAINLOOP;
-      break;
-    case base::test::ScopedTaskEnvironment::MainThreadType::UI:
-    case base::test::ScopedTaskEnvironment::MainThreadType::UI_MOCK_TIME:
-      break;
-
-    default:
-      NOTREACHED();
-  }
-
-  Init();
-}
-
-TestBrowserThreadBundle::TestBrowserThreadBundle(int options)
-    : TestBrowserThreadBundle(
-          GetThreadTypeFromOptions(options),
-          base::test::ScopedTaskEnvironment::ExecutionMode::ASYNC,
-          options) {}
 
 TestBrowserThreadBundle::~TestBrowserThreadBundle() {
   // To ensure a clean teardown, each thread's message loop must be flushed
@@ -106,15 +68,20 @@ TestBrowserThreadBundle::~TestBrowserThreadBundle() {
 #endif
 }
 
+TestBrowserThreadBundle::TestBrowserThreadBundle(
+    base::test::ScopedTaskEnvironment&& scoped_task_environment,
+    bool real_io_thread)
+    : base::test::ScopedTaskEnvironment(std::move(scoped_task_environment)),
+      real_io_thread_(real_io_thread) {
+  Init();
+}
+
 void TestBrowserThreadBundle::Init() {
   // Check that the UI thread hasn't already been initialized. This will fail if
   // multiple TestBrowserThreadBundles are initialized in the same scope.
   CHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI));
 
-  // Check for conflicting options can't have two IO threads.
-  CHECK(!(options_ & IO_MAINLOOP) || !(options_ & REAL_IO_THREAD));
-  // Check for conflicting main loop options.
-  CHECK(!(options_ & IO_MAINLOOP) || !(options_ & PLAIN_MAINLOOP));
+  CHECK(!real_io_thread_ || !HasIOMainLoop()) << "Can't have two IO threads";
 
 #if defined(OS_WIN)
   // Similar to Chrome's UI thread, we need to initialize COM separately for
@@ -124,18 +91,28 @@ void TestBrowserThreadBundle::Init() {
   CHECK(com_initializer_->Succeeded());
 #endif
 
-  BrowserTaskExecutor::Create();
+  std::unique_ptr<BrowserUIThreadScheduler> browser_ui_thread_scheduler =
+      BrowserUIThreadScheduler::CreateForTesting(sequence_manager(),
+                                                 GetTimeDomain());
+  scoped_refptr<base::SingleThreadTaskRunner> default_task_runner =
+      browser_ui_thread_scheduler->GetTaskRunnerForTesting(
+          BrowserUIThreadScheduler::QueueType::kDefault);
+  BrowserTaskExecutor::CreateWithBrowserUIThreadSchedulerForTesting(
+      std::move(browser_ui_thread_scheduler));
+  DeferredInitFromSubclass(std::move(default_task_runner));
 
-  if (options_ & IO_MAINLOOP)
+  if (HasIOMainLoop()) {
     CHECK(base::MessageLoopCurrentForIO::IsSet());
-  else if (!(options_ & PLAIN_MAINLOOP))
+  } else if (main_thread_type() == MainThreadType::UI ||
+             main_thread_type() == MainThreadType::UI_MOCK_TIME) {
     CHECK(base::MessageLoopCurrentForUI::IsSet());
+  }
 
   // Set the current thread as the UI thread.
   ui_thread_ = std::make_unique<TestBrowserThread>(
       BrowserThread::UI, base::ThreadTaskRunnerHandle::Get());
 
-  if (options_ & REAL_IO_THREAD) {
+  if (real_io_thread_) {
     io_thread_ = std::make_unique<TestBrowserThread>(BrowserThread::IO);
     io_thread_->StartIOThread();
   } else {
@@ -150,7 +127,7 @@ void TestBrowserThreadBundle::Init() {
 
 void TestBrowserThreadBundle::RunIOThreadUntilIdle() {
   // Use a RunLoop to run until idle if already on BrowserThread::IO (which is
-  // the main thread unless using Options::REAL_IO_THREAD).
+  // the main thread unless using REAL_IO_THREAD).
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   base::WaitableEvent io_thread_idle(

@@ -15,6 +15,8 @@ config("content_implementation") {
   ]
 }
 
+assert(!is_ios, "Chromium/iOS shouldn't use anything in //content")
+
 # When targets depend on, e.g. //content/public/browser, what happens? To
 # facilitate the complexity here, the "public" targets are groups that forward
 # to the right thing depending on the build mode. Say for additional
@@ -122,12 +124,6 @@ grit("resources") {
   ]
   deps = [
     "//content/browser/process_internals:mojo_bindings_js",
-    "//content/public/app:browser_manifest",
-    "//content/public/app:gpu_manifest",
-    "//content/public/app:packaged_services_manifest",
-    "//content/public/app:plugin_manifest",
-    "//content/public/app:renderer_manifest",
-    "//content/public/app:utility_manifest",
   ]
 }
 

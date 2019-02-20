@@ -10,8 +10,8 @@
 #include <utility>
 
 #include "android_webview/browser/aw_browser_permission_request_delegate.h"
+#include "base/bind.h"
 #include "base/callback.h"
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "content/public/browser/permission_controller.h"
 #include "content/public/browser/permission_type.h"
@@ -327,6 +327,7 @@ int AwPermissionManager::RequestPermissions(
       case PermissionType::CLIPBOARD_WRITE:
       case PermissionType::PAYMENT_HANDLER:
       case PermissionType::BACKGROUND_FETCH:
+      case PermissionType::IDLE_DETECTION:
         NOTIMPLEMENTED() << "RequestPermissions is not implemented for "
                          << static_cast<int>(permissions[i]);
         pending_request_raw->SetPermissionStatus(permissions[i],
@@ -519,6 +520,7 @@ void AwPermissionManager::CancelPermissionRequest(int request_id) {
       case PermissionType::CLIPBOARD_WRITE:
       case PermissionType::PAYMENT_HANDLER:
       case PermissionType::BACKGROUND_FETCH:
+      case PermissionType::IDLE_DETECTION:
         NOTIMPLEMENTED() << "CancelPermission not implemented for "
                          << static_cast<int>(permission);
         break;

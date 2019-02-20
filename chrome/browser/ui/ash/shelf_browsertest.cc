@@ -4,9 +4,11 @@
 
 #include "ash/public/cpp/shelf_prefs.h"
 #include "ash/public/interfaces/constants.mojom.h"
+#include "ash/public/interfaces/shelf_test_api.test-mojom-test-utils.h"
 #include "ash/public/interfaces/shelf_test_api.test-mojom.h"
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/status_bubble.h"

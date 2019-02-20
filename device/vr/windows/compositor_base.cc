@@ -4,6 +4,7 @@
 
 #include "device/vr/windows/compositor_base.h"
 
+#include "base/bind.h"
 #include "ui/gfx/geometry/angle_conversions.h"
 #include "ui/gfx/transform.h"
 
@@ -169,7 +170,10 @@ void XRCompositorCommon::RequestSession(
     return;
   }
 
-  DCHECK(!on_presentation_ended_);
+  // If on_presentation_ended_ is not already null, we won't call to notify the
+  // runtime that that session has completed.  This is ok because the XRRuntime
+  // knows it has requested a new session, and isn't expecting that callback to
+  // be called.
   on_presentation_ended_ = std::move(on_presentation_ended);
 
   device::mojom::XRPresentationProviderPtr presentation_provider;
@@ -314,8 +318,9 @@ void XRCompositorCommon::GetControllerDataAndSendFrameData(
 
   // We have posted a message to allow other calls to get through, and now state
   // may have changed.  WebXR may not be presenting any more, or may be hidden.
-  std::move(callback).Run(
-      is_presenting_ && webxr_visible_ ? std::move(frame_data) : nullptr);
+  std::move(callback).Run(is_presenting_ && webxr_visible_
+                              ? std::move(frame_data)
+                              : mojom::XRFrameData::New());
 }
 
 void XRCompositorCommon::SubmitOverlayTexture(
@@ -400,7 +405,9 @@ void XRCompositorCommon::SetOverlayAndWebXRVisibility(bool overlay_visible,
 
 void XRCompositorCommon::MaybeCompositeAndSubmit() {
   if (!pending_frame_) {
-    // There is no frame to composite.
+    // There is no outstanding frame, nor frame to composite, but there may be
+    // pending GetFrameData calls, so ClearPendingFrame() to respond to them.
+    ClearPendingFrame();
     return;
   }
 

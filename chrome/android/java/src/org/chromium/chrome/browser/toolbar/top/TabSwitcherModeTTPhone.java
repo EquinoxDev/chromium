@@ -93,7 +93,8 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
             mNewTabButton.setOnClickListener(this);
         }
 
-        if (usingHorizontalTabSwitcher()
+        if ((usingHorizontalTabSwitcher()
+                    || FeatureUtilities.isGridTabSwitcherEnabled(getContext()))
                 && PrefServiceBridge.getInstance().isIncognitoModeEnabled()) {
             updateTabSwitchingElements(true);
         }
@@ -269,7 +270,9 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
         }
 
         boolean useLightIcons = mIsIncognito
-                && (usingHorizontalTabSwitcher() || DeviceClassManager.enableAccessibilityLayout());
+                && (usingHorizontalTabSwitcher()
+                        || FeatureUtilities.isGridTabSwitcherEnabled(getContext())
+                        || DeviceClassManager.enableAccessibilityLayout());
 
         if (mUseLightIcons == useLightIcons) return;
 
@@ -293,7 +296,8 @@ public class TabSwitcherModeTTPhone extends OptimizedFrameLayout
     }
 
     private int getToolbarColorForCurrentState() {
-        if (DeviceClassManager.enableAccessibilityLayout()) {
+        if (DeviceClassManager.enableAccessibilityLayout()
+                || FeatureUtilities.isGridTabSwitcherEnabled(getContext())) {
             int colorId = mIsIncognito ? R.color.incognito_modern_primary_color
                                        : R.color.modern_primary_color;
             return ApiCompatibilityUtils.getColor(getResources(), colorId);

@@ -10,9 +10,6 @@ class MyControl extends HTMLElement {
     this.internals_ = this.attachInternals();
   }
   get i() { return this.internals_; }
-
-  // Must provide ‘value’ setter.
-  set value(v) {}
 }
 
 customElements.define('my-control', MyControl);

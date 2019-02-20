@@ -19,6 +19,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
@@ -31,6 +32,7 @@
 #include "gpu/command_buffer/service/decoder_client.h"
 #include "gpu/command_buffer/service/decoder_context.h"
 #include "gpu/command_buffer/service/gr_cache_controller.h"
+#include "gpu/command_buffer/service/program_cache.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
 #include "gpu/command_buffer/service/service_transfer_cache.h"
 #include "gpu/config/gpu_feature_info.h"
@@ -54,6 +56,7 @@ class Size;
 }
 
 namespace gpu {
+class SharedContextState;
 class GpuChannelManagerDelegate;
 class GpuProcessActivityFlags;
 class GpuMemoryBufferManager;
@@ -61,13 +64,11 @@ class ImageFactory;
 class SharedImageFactory;
 class SharedImageInterface;
 class SyncPointClientState;
-class TransferBufferManager;
 struct ContextCreationAttribs;
 struct SwapBuffersCompleteParams;
 
 namespace raster {
 class GrShaderCache;
-struct RasterDecoderContextState;
 }
 
 // This class provides a thread-safe interface to the global GPU service (for
@@ -174,7 +175,8 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   const GpuFeatureInfo& GetGpuFeatureInfo() const;
 
   using UpdateVSyncParametersCallback =
-      base::Callback<void(base::TimeTicks timebase, base::TimeDelta interval)>;
+      base::RepeatingCallback<void(base::TimeTicks timebase,
+                                   base::TimeDelta interval)>;
   void SetUpdateVSyncParametersCallback(
       const UpdateVSyncParametersCallback& callback);
 
@@ -235,6 +237,8 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   void ScheduleDelayedWorkOnGpuThread();
 
   bool MakeCurrent();
+
+  base::Optional<gles2::ProgramCache::ScopedCacheUse> CreateCacheUse();
 
   // Client callbacks are posted back to |origin_task_runner_|, or run
   // synchronously if there's no task runner or message loop.
@@ -311,7 +315,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   bool use_virtualized_gl_context_ = false;
   raster::GrShaderCache* gr_shader_cache_ = nullptr;
   scoped_refptr<base::SingleThreadTaskRunner> origin_task_runner_;
-  std::unique_ptr<TransferBufferManager> transfer_buffer_manager_;
   std::unique_ptr<CommandBufferService> command_buffer_;
   std::unique_ptr<DecoderContext> decoder_;
   base::Optional<raster::GrCacheController> gr_cache_controller_;
@@ -368,7 +371,7 @@ class GL_IN_PROCESS_CONTEXT_EXPORT InProcessCommandBuffer
   base::circular_deque<SwapBufferParams> pending_presented_params_;
   base::circular_deque<SwapBufferParams> pending_swap_completed_params_;
 
-  scoped_refptr<raster::RasterDecoderContextState> context_state_;
+  scoped_refptr<SharedContextState> context_state_;
 
   base::WeakPtrFactory<InProcessCommandBuffer> client_thread_weak_ptr_factory_;
   base::WeakPtrFactory<InProcessCommandBuffer> gpu_thread_weak_ptr_factory_;

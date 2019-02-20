@@ -6,6 +6,7 @@
 #define NET_THIRD_PARTY_QUIC_CORE_QPACK_QPACK_INSTRUCTION_ENCODER_H_
 
 #include <cstddef>
+#include <cstdint>
 
 #include "net/third_party/quic/core/qpack/qpack_constants.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
@@ -81,7 +82,7 @@ class QUIC_EXPORT_PRIVATE QpackInstructionEncoder {
   bool s_bit_;
   uint64_t varint_;
   uint64_t varint2_;
-  // The caller must keep the std::string that |name_| and |value_| point to
+  // The caller must keep the string that |name_| and |value_| point to
   // valid until they are encoded.
   QuicStringPiece name_;
   QuicStringPiece value_;

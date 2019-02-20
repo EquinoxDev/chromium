@@ -100,11 +100,10 @@ cr.define('invalid_settings_browsertest', function() {
 
       createPage(true);
 
-      page.userInfo_.setUsers('foo@chromium.org', ['foo@chromium.org']);
+      page.activeUser = 'foo@chromium.org';
+      page.users = [page.activeUser];
       cr.webUIListenerCallback('use-cloud-print', 'cloudprint url', false);
-      printers.forEach(printer => {
-        cloudPrintInterface.setPrinter(printer.id, printer);
-      });
+      printers.forEach(printer => cloudPrintInterface.setPrinter(printer));
     }
 
     // Test that error message is displayed when plugin doesn't exist.
@@ -159,8 +158,7 @@ cr.define('invalid_settings_browsertest', function() {
 
       return nativeLayer.whenCalled('getInitialSettings')
           .then(function() {
-            page.destinationStore_.startLoadDestinations(
-                print_preview.PrinterType.LOCAL_PRINTER);
+            page.destinationStore_.startLoadAllDestinations();
             // Wait for the preview request.
             return Promise.all([
               nativeLayer.whenCalled('getPrinterCapabilities'),
@@ -259,6 +257,9 @@ cr.define('invalid_settings_browsertest', function() {
 
       return nativeLayer.whenCalled('getInitialSettings')
           .then(function() {
+            // Set this to enable the scaling input.
+            page.setSetting('customScaling', true);
+
             page.destinationStore_.startLoadCloudDestinations();
 
             // FooDevice will be selected since it is the most recently used
@@ -279,9 +280,9 @@ cr.define('invalid_settings_browsertest', function() {
             assertTrue(layoutSettings.$$('select').disabled);
             assertTrue(scalingSettings.$$('cr-input').disabled);
 
-            // The destination settings button should be enabled, so that the
+            // The destination select dropdown should be enabled, so that the
             // user can select a new printer.
-            assertFalse(destinationSettings.$$('paper-button').disabled);
+            assertFalse(destinationSettings.$.destinationSelect.disabled);
 
             // Reset
             nativeLayer.reset();
@@ -298,8 +299,8 @@ cr.define('invalid_settings_browsertest', function() {
             assertFalse(layoutSettings.$$('select').disabled);
             assertFalse(scalingSettings.$$('cr-input').disabled);
 
-            // The destination settings button should still be enabled.
-            assertFalse(destinationSettings.$$('paper-button').disabled);
+            // The destination select dropdown should still be enabled.
+            assertFalse(destinationSettings.$.destinationSelect.disabled);
 
             // Message text should have changed and overlay should be invisible.
             assertFalse(messageEl.textContent.includes(expectedMessageStart));

@@ -89,12 +89,13 @@ class CONTENT_EXPORT WebMediaPlayerMSCompositor
       const viz::SurfaceId& id,
       base::TimeTicks local_surface_id_allocation_time,
       media::VideoRotation rotation,
-      bool force_submit,
-      bool is_opaque,
-      blink::WebFrameSinkDestroyedCallback frame_sink_destroyed_callback);
+      bool force_submit);
 
   // Notifies the |submitter_| that the frames must be submitted.
   void SetForceSubmit(bool force_submit);
+
+  // Notifies the |submitter_| that the page is no longer visible.
+  void SetIsPageVisible(bool is_visible);
 
   // VideoFrameProvider implementation.
   void SetVideoFrameProviderClient(
@@ -132,7 +133,7 @@ class CONTENT_EXPORT WebMediaPlayerMSCompositor
   void InitializeSubmitter();
 
   // Signals the VideoFrameSubmitter to stop submitting frames.
-  void UpdateSubmissionState(bool);
+  void SetIsSurfaceVisible(bool);
 
   bool MapTimestampsToRenderTimeTicks(
       const std::vector<base::TimeDelta>& timestamps,

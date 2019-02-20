@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
@@ -88,6 +89,9 @@ void LocalCardMigrationManager::AttemptToOfferLocalCardMigration(
     return;
   migration_request_ = payments::PaymentsClient::MigrationRequestDetails();
 
+  if (observer_for_testing_)
+    observer_for_testing_->OnDecideToRequestLocalCardMigration();
+
   payments_client_->GetUploadDetails(
       std::vector<AutofillProfile>(), GetDetectedValues(),
       /*active_experiments=*/std::vector<const char*>(), app_locale_,
@@ -122,10 +126,7 @@ void LocalCardMigrationManager::OnUserAcceptedMainMigrationDialog(
   auto card_is_selected = [&selected_card_guids](MigratableCreditCard& card) {
     return !base::ContainsValue(selected_card_guids, card.credit_card().guid());
   };
-  migratable_credit_cards_.erase(
-      std::remove_if(migratable_credit_cards_.begin(),
-                     migratable_credit_cards_.end(), card_is_selected),
-      migratable_credit_cards_.end());
+  base::EraseIf(migratable_credit_cards_, card_is_selected);
   // Populating risk data and offering migration two-round pop-ups occur
   // asynchronously. If |migration_risk_data_| has already been loaded, send the
   // migrate local cards request. Otherwise, continue to wait and let
@@ -145,15 +146,25 @@ bool LocalCardMigrationManager::IsCreditCardMigrationEnabled() {
   bool migration_experiment_enabled =
       features::GetLocalCardMigrationExperimentalFlag() !=
       features::LocalCardMigrationExperimentalFlag::kMigrationDisabled;
-  bool credit_card_upload_enabled = ::autofill::IsCreditCardUploadEnabled(
-      client_->GetPrefs(), client_->GetSyncService(),
-      client_->GetIdentityManager()->GetPrimaryAccountInfo().email);
+
+  // If |observer_for_testing_| is set, assume we are in a browsertest and
+  // credit card upload should be enabled by default. Cannot get around this as
+  // Chrome OS testing requires an unsupported email domain (i.e.
+  // stub-user@example.com).
+  bool credit_card_upload_enabled =
+      observer_for_testing_ ||
+      ::autofill::IsCreditCardUploadEnabled(
+          client_->GetPrefs(), client_->GetSyncService(),
+          client_->GetIdentityManager()->GetPrimaryAccountInfo().email);
+
   bool has_google_payments_account =
       (payments::GetBillingCustomerId(personal_data_manager_,
                                       payments_client_->GetPrefService()) != 0);
+
   bool sync_feature_enabled =
       (personal_data_manager_->GetSyncSigninState() ==
        AutofillSyncSigninState::kSignedInAndSyncFeature);
+
   return migration_experiment_enabled && credit_card_upload_enabled &&
          has_google_payments_account && sync_feature_enabled;
 }
@@ -163,6 +174,9 @@ void LocalCardMigrationManager::OnDidGetUploadDetails(
     AutofillClient::PaymentsRpcResult result,
     const base::string16& context_token,
     std::unique_ptr<base::Value> legal_message) {
+  if (observer_for_testing_)
+    observer_for_testing_->OnReceivedGetUploadDetailsResponse();
+
   if (result == AutofillClient::SUCCESS) {
     migration_request_.context_token = context_token;
     legal_message_ = base::DictionaryValue::From(std::move(legal_message));
@@ -196,6 +210,9 @@ void LocalCardMigrationManager::OnDidMigrateLocalCards(
     AutofillClient::PaymentsRpcResult result,
     std::unique_ptr<std::unordered_map<std::string, std::string>> save_result,
     const std::string& display_text) {
+  if (observer_for_testing_)
+    observer_for_testing_->OnReceivedMigrateCardsResponse();
+
   if (!save_result)
     return;
 
@@ -203,26 +220,32 @@ void LocalCardMigrationManager::OnDidMigrateLocalCards(
     std::vector<CreditCard> migrated_cards;
     // Traverse the migratable credit cards to update each migrated card status.
     for (MigratableCreditCard& card : migratable_credit_cards_) {
+      // If it is run in a test, count all cards as successfully migrated.
+      if (observer_for_testing_) {
+        migrated_cards.push_back(card.credit_card());
+        continue;
+      }
+
       // Not every card exists in the |save_result| since some cards are
       // unchecked by the user and not migrated.
       auto it = save_result->find(card.credit_card().guid());
-      // If current card exists in the |save_result|, update its migration
-      // status.
-      if (it != save_result->end()) {
-        // Server-side response can return SUCCESS, TEMPORARY_FAILURE, or
-        // PERMANENT_FAILURE (see SaveResult enum). Branch here depending on
-        // which is received.
-        if (it->second == kMigrationResultPermanentFailure ||
-            it->second == kMigrationResultTemporaryFailure) {
-          card.set_migration_status(autofill::MigratableCreditCard::
-                                        MigrationStatus::FAILURE_ON_UPLOAD);
-        } else if (it->second == kMigrationResultSuccess) {
-          card.set_migration_status(autofill::MigratableCreditCard::
-                                        MigrationStatus::SUCCESS_ON_UPLOAD);
-          migrated_cards.push_back(card.credit_card());
-        } else {
-          NOTREACHED();
-        }
+      // If current card does not exist in the |save_result|, skip it.
+      if (it == save_result->end())
+        continue;
+
+      // Otherwise update its migration status. Server-side response can return
+      // SUCCESS, TEMPORARY_FAILURE, or PERMANENT_FAILURE (see SaveResult
+      // enum). Branch here depending on which is received.
+      if (it->second == kMigrationResultPermanentFailure ||
+          it->second == kMigrationResultTemporaryFailure) {
+        card.set_migration_status(
+            autofill::MigratableCreditCard::MigrationStatus::FAILURE_ON_UPLOAD);
+      } else if (it->second == kMigrationResultSuccess) {
+        card.set_migration_status(
+            autofill::MigratableCreditCard::MigrationStatus::SUCCESS_ON_UPLOAD);
+        migrated_cards.push_back(card.credit_card());
+      } else {
+        NOTREACHED();
       }
     }
     // Remove cards that were successfully migrated from local storage.
@@ -254,6 +277,9 @@ void LocalCardMigrationManager::OnDidGetMigrationRiskData(
 // Send the migration request. Will call payments_client to create a new
 // PaymentsRequest. Also create a new callback function OnDidMigrateLocalCards.
 void LocalCardMigrationManager::SendMigrateLocalCardsRequest() {
+  if (observer_for_testing_)
+    observer_for_testing_->OnSentMigrateCardsRequest();
+
   migration_request_.app_locale = app_locale_;
   migration_request_.billing_customer_number = payments::GetBillingCustomerId(
       personal_data_manager_, payments_client_->GetPrefService());
@@ -273,7 +299,9 @@ void LocalCardMigrationManager::ShowMainMigrationDialog() {
       local_card_migration_origin_, AutofillMetrics::MAIN_DIALOG_SHOWN);
   // Pops up a larger, modal dialog showing the local cards to be uploaded.
   client_->ConfirmMigrateLocalCardToCloud(
-      std::move(legal_message_), migratable_credit_cards_,
+      std::move(legal_message_),
+      client_->GetIdentityManager()->GetPrimaryAccountInfo().email,
+      migratable_credit_cards_,
       base::BindOnce(
           &LocalCardMigrationManager::OnUserAcceptedMainMigrationDialog,
           weak_ptr_factory_.GetWeakPtr()));

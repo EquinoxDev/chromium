@@ -235,14 +235,29 @@ var defaultTests = [
         chrome.test.callbackFail(
           'Assistant is not available for the current user'));
   },
-  // This test verifies that ARC is not provisioned by default.
-  function isArcProvisioned() {
-    chrome.autotestPrivate.isArcProvisioned(
-        function(arcProvisioned) {
-          chrome.test.assertFalse(arcProvisioned);
-          chrome.test.assertNoLastError();
-          chrome.test.succeed();
-        });
+  function setWhitelistedPref() {
+    chrome.autotestPrivate.setWhitelistedPref(
+        'settings.voice_interaction.hotword.enabled' /* pref_name */,
+        true /* value */,
+        chrome.test.callbackFail(
+          'Assistant is not available for the current user'));
+  },
+  // This test verifies that getArcState returns provisined False in case ARC
+  // is not provisoned by default.
+  function arcNotProvisioned() {chrome.autotestPrivate.getArcState(
+    function(state) {
+      chrome.test.assertFalse(state.provisioned);
+      chrome.test.assertNoLastError();
+      chrome.test.succeed();
+    });
+  },
+  // This test verifies that ARC Terms of Service are needed by default.
+  function arcTosNeeded() {
+    chrome.autotestPrivate.getArcState(function(state) {
+      chrome.test.assertTrue(state.tosNeeded);
+      chrome.test.assertNoLastError();
+      chrome.test.succeed();
+    });
   },
   // No any ARC app by default
   function getArcApp() {
@@ -266,18 +281,43 @@ var defaultTests = [
           chrome.test.succeed();
         });
   },
-];
-
-var arcEnabledTests = [
-  // This test verifies that isArcProvisioned returns True in case ARC
-  // provisiong is done.
-  function isArcProvisioned() {
-    chrome.autotestPrivate.isArcProvisioned(
-        function(arcProvisioned) {
-          chrome.test.assertTrue(arcProvisioned);
+  // This gets the primary display's scale factor.
+  function getPrimaryDisplayScaleFactor() {
+    chrome.autotestPrivate.getPrimaryDisplayScaleFactor(
+        function(scaleFactor) {
+          chrome.test.assertNoLastError();
+          chrome.test.assertTrue(scaleFactor >= 1.0);
+          chrome.test.succeed();
+        });
+  },
+  // Check if tablet mode is enabled.
+  function isTabletModeEnabled() {
+    chrome.autotestPrivate.isTabletModeEnabled(
+        function(enabled) {
           chrome.test.assertNoLastError();
           chrome.test.succeed();
         });
+  },
+];
+
+var arcEnabledTests = [
+  // This test verifies that getArcState returns provisined True in case ARC
+  // provisiong is done.
+  function arcProvisioned() {chrome.autotestPrivate.getArcState(
+    function(state) {
+      chrome.test.assertTrue(state.provisioned);
+      chrome.test.assertNoLastError();
+      chrome.test.succeed();
+    });
+  },
+  // This test verifies that ARC Terms of Service are not needed in case ARC is
+  // provisioned and Terms of Service are accepted.
+  function arcTosNotNeeded() {
+    chrome.autotestPrivate.getArcState(function(state) {
+      chrome.test.assertFalse(state.tosNeeded);
+      chrome.test.assertNoLastError();
+      chrome.test.succeed();
+    });
   },
   // ARC app is available
   function getArcApp() {

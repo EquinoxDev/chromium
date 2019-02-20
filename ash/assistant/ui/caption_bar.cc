@@ -6,9 +6,9 @@
 
 #include <memory>
 
+#include "ash/assistant/model/assistant_ui_model.h"
 #include "ash/assistant/ui/assistant_ui_constants.h"
 #include "ash/assistant/ui/base/assistant_button.h"
-#include "ash/assistant/util/views_util.h"
 #include "ash/public/cpp/vector_icons/vector_icons.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ui/gfx/color_palette.h"
@@ -34,9 +34,9 @@ views::ImageButton* CreateCaptionButton(const gfx::VectorIcon& icon,
                                         int accessible_name_id,
                                         AssistantButtonId button_id,
                                         views::ButtonListener* listener) {
-  return assistant::util::CreateImageButton(
-      listener, icon, kCaptionButtonSizeDip, kVectorIconSizeDip,
-      accessible_name_id, button_id, gfx::kGoogleGrey700);
+  return AssistantButton::Create(listener, icon, kCaptionButtonSizeDip,
+                                 kVectorIconSizeDip, accessible_name_id,
+                                 button_id, gfx::kGoogleGrey700);
 }
 
 }  // namespace
@@ -58,12 +58,23 @@ bool CaptionBar::AcceleratorPressed(const ui::Accelerator& accelerator) {
     case ui::VKEY_BROWSER_BACK:
       HandleButton(AssistantButtonId::kBack);
       break;
+    case ui::VKEY_ESCAPE:
+      HandleButton(AssistantButtonId::kClose);
+      break;
+    case ui::VKEY_W:
+      if (accelerator.IsCtrlDown()) {
+        HandleButton(AssistantButtonId::kClose);
+      } else {
+        NOTREACHED();
+        return false;
+      }
+      break;
     default:
       NOTREACHED();
       return false;
   }
 
-  // Don't let DialogClientView handle the accelerator.
+  // Don't let ClientView handle the accelerator.
   return true;
 }
 
@@ -119,7 +130,10 @@ void CaptionBar::InitLayout() {
                           AssistantButtonId::kClose, this);
   AddChildView(close_button);
 
-  AddAccelerator(ui::Accelerator(ui::VKEY_BROWSER_BACK, ui::EF_NONE));
+  // Add accelerators for keyboard shortcuts that behave like caption buttons.
+  AddAccelerator(ui::Accelerator(ui::VKEY_BROWSER_BACK, ui::EF_NONE));  // Back
+  AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));        // Close
+  AddAccelerator(ui::Accelerator(ui::VKEY_W, ui::EF_CONTROL_DOWN));     // Close
 }
 
 void CaptionBar::HandleButton(AssistantButtonId id) {

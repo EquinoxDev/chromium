@@ -114,7 +114,6 @@ jumbo_source_set("common_sources") {
   visibility = [ "//content/*" ]
 
   sources = [
-    "appcache_info.h",
     "bind_interface_helpers.h",
     "bindings_policy.h",
     "browser_controls_state.h",
@@ -157,8 +156,6 @@ jumbo_source_set("common_sources") {
     "main_function_params.h",
     "manifest_util.cc",
     "manifest_util.h",
-    "media_stream_request.cc",
-    "media_stream_request.h",
     "menu_item.cc",
     "menu_item.h",
     "mhtml_generation_params.cc",
@@ -187,8 +184,7 @@ jumbo_source_set("common_sources") {
     "referrer.h",
     "referrer_type_converters.cc",
     "referrer_type_converters.h",
-    "renderer_preferences.cc",
-    "renderer_preferences.h",
+    "resource_intercept_policy.h",
     "resource_request_body_android.cc",
     "resource_request_body_android.h",
     "resource_type.cc",
@@ -297,6 +293,11 @@ jumbo_source_set("common_sources") {
     public_deps += [ "//media/capture/video/chromeos/public" ]
   }
 
+  if (rtc_use_pipewire) {
+    configs +=
+        [ "//third_party/webrtc/modules/desktop_capture:pipewire_config" ]
+  }
+
   # //content/common needs to include public headers.
   allow_circular_includes_from = [
     ":interfaces",
@@ -344,12 +345,10 @@ mojom("interfaces") {
   ]
 
   sources = [
-    "appcache_info.mojom",
+    "drop_data.mojom",
     "fullscreen_video_element.mojom",
     "load_timing_info.mojom",
     "push_messaging_status.mojom",
-    "renderer_preference_watcher.mojom",
-    "renderer_preferences.mojom",
     "resource_load_info.mojom",
     "resource_usage_reporter.mojom",
     "transferrable_url_loader.mojom",
@@ -359,13 +358,6 @@ mojom("interfaces") {
 
   if (is_win) {
     sources += [ "font_cache_win.mojom" ]
-  }
-
-  if (is_mac) {
-    sources += [
-      "ns_view_bridge_factory.mojom",
-      "web_contents_ns_view_bridge.mojom",
-    ]
   }
 
   public_deps = [
@@ -378,6 +370,14 @@ mojom("interfaces") {
     "//url/mojom:url_mojom_gurl",
     "//url/mojom:url_mojom_origin",
   ]
+
+  if (is_mac) {
+    sources += [
+      "ns_view_bridge_factory.mojom",
+      "web_contents_ns_view_bridge.mojom",
+    ]
+    public_deps += [ "//ui/gfx/geometry/mojo" ]
+  }
 
   component_output_prefix = "content_public_common_mojo_bindings"
   export_class_attribute = "CONTENT_EXPORT"

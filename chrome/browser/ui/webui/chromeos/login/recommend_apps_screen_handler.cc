@@ -73,8 +73,9 @@ void RecordUmaScreenAction(RecommendAppsScreenAction action) {
 
 namespace chromeos {
 
-RecommendAppsScreenHandler::RecommendAppsScreenHandler()
-    : BaseScreenHandler(kScreenId) {
+RecommendAppsScreenHandler::RecommendAppsScreenHandler(
+    JSCallsContainer* js_calls_container)
+    : BaseScreenHandler(kScreenId, js_calls_container) {
   set_call_js_prefix(kJsScreenPath);
 }
 
@@ -133,7 +134,7 @@ void RecommendAppsScreenHandler::Initialize() {}
 void RecommendAppsScreenHandler::LoadAppListInUI(const base::Value& app_list) {
   if (!page_is_ready()) {
     RecordUmaScreenState(RecommendAppsScreenState::ERROR);
-    CallJSWithPrefix("showError");
+    CallJS("login.RecommendAppsScreen.showError");
     return;
   }
 
@@ -142,13 +143,13 @@ void RecommendAppsScreenHandler::LoadAppListInUI(const base::Value& app_list) {
       ui::ResourceBundle::GetSharedInstance();
   base::StringPiece app_list_webview = resource_bundle.GetRawDataResource(
       IDR_ARC_SUPPORT_RECOMMEND_APP_LIST_VIEW_HTML);
-  CallJSWithPrefix("setWebview", app_list_webview.as_string());
-  CallJSWithPrefix("loadAppList", app_list);
+  CallJS("login.RecommendAppsScreen.setWebview", app_list_webview.as_string());
+  CallJS("login.RecommendAppsScreen.loadAppList", app_list);
 }
 
 void RecommendAppsScreenHandler::OnLoadError() {
   RecordUmaScreenState(RecommendAppsScreenState::ERROR);
-  CallJSWithPrefix("showError");
+  CallJS("login.RecommendAppsScreen.showError");
 }
 
 void RecommendAppsScreenHandler::OnLoadSuccess(const base::Value& app_list) {

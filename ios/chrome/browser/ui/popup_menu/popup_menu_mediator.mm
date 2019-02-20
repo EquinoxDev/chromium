@@ -10,10 +10,11 @@
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
-#include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/open_from_clipboard/clipboard_recent_content.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
 #import "ios/chrome/browser/find_in_page/find_tab_helper.h"
+#import "ios/chrome/browser/search_engines/search_engines_util.h"
 #import "ios/chrome/browser/ui/activity_services/canonical_url_retriever.h"
 #include "ios/chrome/browser/ui/bookmarks/bookmark_model_bridge_observer.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
@@ -26,6 +27,7 @@
 #import "ios/chrome/browser/ui/popup_menu/public/popup_menu_consumer.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_menu_notification_delegate.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_menu_notifier.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/chrome/browser/web_state_list/web_state_list_observer_bridge.h"
@@ -38,7 +40,7 @@
 #include "ios/web/public/navigation_manager.h"
 #include "ios/web/public/user_agent.h"
 #include "ios/web/public/web_client.h"
-#include "ios/web/public/web_state/web_state.h"
+#import "ios/web/public/web_state/web_state.h"
 #import "ios/web/public/web_state/web_state_observer_bridge.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image.h"
@@ -514,7 +516,8 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
   if (URL.SchemeIs(kChromeUIScheme) && URL.host() == kChromeUIOfflineHost) {
     return YES;
   }
-  return URL.is_valid() && !web::GetWebClient()->IsAppSpecificURL(URL);
+  return navItem->GetVirtualURL().is_valid() &&
+         !web::GetWebClient()->IsAppSpecificURL(navItem->GetVirtualURL());
 }
 
 // Whether the current page is a web page.
@@ -586,21 +589,29 @@ PopupMenuToolsItem* CreateTableViewItem(int titleID,
 - (void)createSearchMenuItems {
   NSMutableArray* items = [NSMutableArray array];
 
-  if (base::FeatureList::IsEnabled(omnibox::kCopiedTextBehavior)) {
+  if (base::FeatureList::IsEnabled(kCopiedContentBehavior)) {
     ClipboardRecentContent* clipboardRecentContent =
         ClipboardRecentContent::GetInstance();
-    NSNumber* titleID = nil;
-    if (clipboardRecentContent->GetRecentURLFromClipboard()) {
-      titleID = [NSNumber numberWithInt:IDS_IOS_TOOLS_MENU_VISIT_COPIED_LINK];
+    PopupMenuToolsItem* copiedContentItem = nil;
+
+    if (search_engines::SupportsSearchByImage(self.templateURLService) &&
+        clipboardRecentContent->GetRecentImageFromClipboard()) {
+      copiedContentItem = CreateTableViewItem(
+          IDS_IOS_TOOLS_MENU_SEARCH_COPIED_IMAGE,
+          PopupMenuActionSearchCopiedImage, @"popup_menu_paste_and_go",
+          kToolsMenuCopiedImageSearch);
+    } else if (clipboardRecentContent->GetRecentURLFromClipboard()) {
+      copiedContentItem = CreateTableViewItem(
+          IDS_IOS_TOOLS_MENU_VISIT_COPIED_LINK, PopupMenuActionPasteAndGo,
+          @"popup_menu_paste_and_go", kToolsMenuPasteAndGo);
     } else if (clipboardRecentContent->GetRecentTextFromClipboard()) {
-      titleID = [NSNumber numberWithInt:IDS_IOS_TOOLS_MENU_SEARCH_COPIED_TEXT];
+      copiedContentItem = CreateTableViewItem(
+          IDS_IOS_TOOLS_MENU_SEARCH_COPIED_TEXT, PopupMenuActionPasteAndGo,
+          @"popup_menu_paste_and_go", kToolsMenuPasteAndGo);
     }
 
-    if (titleID) {
-      PopupMenuToolsItem* pasteAndGo =
-          CreateTableViewItem(titleID.intValue, PopupMenuActionPasteAndGo,
-                              @"popup_menu_paste_and_go", kToolsMenuPasteAndGo);
-      [items addObject:pasteAndGo];
+    if (copiedContentItem) {
+      [items addObject:copiedContentItem];
     }
   } else {
     NSString* pasteboardString = [UIPasteboard generalPasteboard].string;

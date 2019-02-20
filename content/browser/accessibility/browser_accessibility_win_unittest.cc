@@ -12,8 +12,8 @@
 #include <utility>
 
 #include "base/macros.h"
-#include "base/test/scoped_task_environment.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/scoped_task_environment.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_variant.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
@@ -23,43 +23,40 @@
 #include "content/common/accessibility_messages.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/accessibility/accessibility_switches.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/base/win/atl_module.h"
 
 namespace content {
 
-// BrowserAccessibilityTest ---------------------------------------------------
+// BrowserAccessibilityWinTest ------------------------------------------------
 
-class BrowserAccessibilityTest : public testing::Test {
+class BrowserAccessibilityWinTest : public testing::Test {
  public:
-  BrowserAccessibilityTest();
-  ~BrowserAccessibilityTest() override;
+  BrowserAccessibilityWinTest();
+  ~BrowserAccessibilityWinTest() override;
 
  private:
   void SetUp() override;
-  
-  base::test::ScopedTaskEnvironment task_environment_;
+
   content::TestBrowserThreadBundle thread_bundle_;
 
-  DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityTest);
+  DISALLOW_COPY_AND_ASSIGN(BrowserAccessibilityWinTest);
 };
 
-BrowserAccessibilityTest::BrowserAccessibilityTest() {
-}
+BrowserAccessibilityWinTest::BrowserAccessibilityWinTest() {}
 
-BrowserAccessibilityTest::~BrowserAccessibilityTest() {
-}
+BrowserAccessibilityWinTest::~BrowserAccessibilityWinTest() {}
 
-void BrowserAccessibilityTest::SetUp() {
+void BrowserAccessibilityWinTest::SetUp() {
   ui::win::CreateATLModuleIfNeeded();
 }
-
 
 // Actual tests ---------------------------------------------------------------
 
 // Test that BrowserAccessibilityManager correctly releases the tree of
 // BrowserAccessibility instances upon delete.
-TEST_F(BrowserAccessibilityTest, TestNoLeaks) {
+TEST_F(BrowserAccessibilityWinTest, TestNoLeaks) {
   // Create ui::AXNodeData objects for a simple document tree,
   // representing the accessibility information used to initialize
   // BrowserAccessibilityManager.
@@ -118,7 +115,7 @@ TEST_F(BrowserAccessibilityTest, TestNoLeaks) {
   child1_iaccessible->Release();
 }
 
-TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
+TEST_F(BrowserAccessibilityWinTest, TestChildrenChange) {
   // Create ui::AXNodeData objects for a simple document tree,
   // representing the accessibility information used to initialize
   // BrowserAccessibilityManager.
@@ -195,7 +192,7 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
+TEST_F(BrowserAccessibilityWinTest, TestChildrenChangeNoLeaks) {
   // Create ui::AXNodeData objects for a simple document tree,
   // representing the accessibility information used to initialize
   // BrowserAccessibilityManager.
@@ -241,7 +238,7 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
+TEST_F(BrowserAccessibilityWinTest, TestTextBoundaries) {
   std::string line1 = "One two three.";
   std::string line2 = "Four five six.";
   std::string text_value = line1 + '\n' + line2;
@@ -407,7 +404,7 @@ TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
+TEST_F(BrowserAccessibilityWinTest, TestSimpleHypertext) {
   const std::string text1_name = "One two three.";
   const std::string text2_name = " Four five six.";
   const LONG text_name_len = text1_name.length() + text2_name.length();
@@ -474,7 +471,7 @@ TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
+TEST_F(BrowserAccessibilityWinTest, TestComplexHypertext) {
   const base::string16 text1_name = L"One two three.";
   const base::string16 combo_box_name = L"City:";
   const base::string16 combo_box_value = L"Happyland";
@@ -629,7 +626,7 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
+TEST_F(BrowserAccessibilityWinTest, TestCreateEmptyDocument) {
   // Try creating an empty document with busy state. Readonly is
   // set automatically.
   std::unique_ptr<BrowserAccessibilityManager> manager(
@@ -712,7 +709,7 @@ int32_t GetUniqueId(BrowserAccessibility* accessibility) {
 // its UniqueIDWin, because the AX Tree was loaded in
 // BrowserAccessibilityManager code before BrowserAccessibilityManagerWin
 // was initialized.
-TEST_F(BrowserAccessibilityTest, EmptyDocHasUniqueIdWin) {
+TEST_F(BrowserAccessibilityWinTest, EmptyDocHasUniqueIdWin) {
   std::unique_ptr<BrowserAccessibilityManagerWin> manager(
       new BrowserAccessibilityManagerWin(
           BrowserAccessibilityManagerWin::GetEmptyDocument(), nullptr,
@@ -735,7 +732,7 @@ TEST_F(BrowserAccessibilityTest, EmptyDocHasUniqueIdWin) {
   ASSERT_EQ(node, other_node);
 }
 
-TEST_F(BrowserAccessibilityTest, TestIA2Attributes) {
+TEST_F(BrowserAccessibilityWinTest, TestIA2Attributes) {
   ui::AXNodeData pseudo_before;
   pseudo_before.id = 2;
   pseudo_before.role = ax::mojom::Role::kGenericContainer;
@@ -795,7 +792,7 @@ TEST_F(BrowserAccessibilityTest, TestIA2Attributes) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestValueAttributeInTextControls) {
+TEST_F(BrowserAccessibilityWinTest, TestValueAttributeInTextControls) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -938,7 +935,7 @@ TEST_F(BrowserAccessibilityTest, TestValueAttributeInTextControls) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestWordBoundariesInTextControls) {
+TEST_F(BrowserAccessibilityWinTest, TestWordBoundariesInTextControls) {
   const base::string16 line1(L"This is a very LONG line of text that ");
   const base::string16 line2(L"should wrap on more than one lines ");
   const base::string16 text(line1 + line2);
@@ -1101,7 +1098,7 @@ TEST_F(BrowserAccessibilityTest, TestWordBoundariesInTextControls) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestCaretAndSelectionInSimpleFields) {
+TEST_F(BrowserAccessibilityWinTest, TestCaretAndSelectionInSimpleFields) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -1197,7 +1194,7 @@ TEST_F(BrowserAccessibilityTest, TestCaretAndSelectionInSimpleFields) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestCaretInContentEditables) {
+TEST_F(BrowserAccessibilityWinTest, TestCaretInContentEditables) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -1318,7 +1315,7 @@ TEST_F(BrowserAccessibilityTest, TestCaretInContentEditables) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestSelectionInContentEditables) {
+TEST_F(BrowserAccessibilityWinTest, TestSelectionInContentEditables) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -1474,7 +1471,7 @@ TEST_F(BrowserAccessibilityTest, TestSelectionInContentEditables) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestIAccessibleHyperlink) {
+TEST_F(BrowserAccessibilityWinTest, TestIAccessibleHyperlink) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -1635,7 +1632,7 @@ TEST_F(BrowserAccessibilityTest, TestIAccessibleHyperlink) {
   EXPECT_EQ(7, end_index);
 }
 
-TEST_F(BrowserAccessibilityTest, TestTextAttributesInContentEditables) {
+TEST_F(BrowserAccessibilityWinTest, TestTextAttributesInContentEditables) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -1867,7 +1864,8 @@ TEST_F(BrowserAccessibilityTest, TestTextAttributesInContentEditables) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestExistingMisspellingsInSimpleTextFields) {
+TEST_F(BrowserAccessibilityWinTest,
+       TestExistingMisspellingsInSimpleTextFields) {
   std::string value1("Testing .");
   // The word "helo" is misspelled.
   std::string value2("Helo there.");
@@ -1980,7 +1978,7 @@ TEST_F(BrowserAccessibilityTest, TestExistingMisspellingsInSimpleTextFields) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestNewMisspellingsInSimpleTextFields) {
+TEST_F(BrowserAccessibilityWinTest, TestNewMisspellingsInSimpleTextFields) {
   std::string value1("Testing .");
   // The word "helo" is misspelled.
   std::string value2("Helo there.");
@@ -2104,7 +2102,7 @@ TEST_F(BrowserAccessibilityTest, TestNewMisspellingsInSimpleTextFields) {
   manager.reset();
 }
 
-TEST_F(BrowserAccessibilityTest, TestDeepestFirstLastChild) {
+TEST_F(BrowserAccessibilityWinTest, TestDeepestFirstLastChild) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -2183,7 +2181,7 @@ TEST_F(BrowserAccessibilityTest, TestDeepestFirstLastChild) {
   EXPECT_EQ(nullptr, child2_child2_accessible->InternalDeepestLastChild());
 }
 
-TEST_F(BrowserAccessibilityTest, TestInheritedStringAttributes) {
+TEST_F(BrowserAccessibilityWinTest, TestInheritedStringAttributes) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -2262,14 +2260,14 @@ TEST_F(BrowserAccessibilityTest, TestInheritedStringAttributes) {
                          ax::mojom::StringAttribute::kFontFamily));
 }
 
-TEST_F(BrowserAccessibilityTest, TestSanitizeStringAttributeForIA2) {
+TEST_F(BrowserAccessibilityWinTest, TestSanitizeStringAttributeForIA2) {
   base::string16 input(L"\\:=,;");
   base::string16 output;
   BrowserAccessibilityComWin::SanitizeStringAttributeForIA2(input, &output);
   EXPECT_EQ(L"\\\\\\:\\=\\,\\;", output);
 }
 
-TEST_F(BrowserAccessibilityTest, UniqueIdWinInvalidAfterDeletingTree) {
+TEST_F(BrowserAccessibilityWinTest, UniqueIdWinInvalidAfterDeletingTree) {
   ui::AXNodeData root_node;
   root_node.id = 1;
   root_node.role = ax::mojom::Role::kRootWebArea;
@@ -2328,7 +2326,7 @@ TEST_F(BrowserAccessibilityTest, UniqueIdWinInvalidAfterDeletingTree) {
   EXPECT_EQ(S_OK, hr);
 }
 
-TEST_F(BrowserAccessibilityTest, AccChildOnlyReturnsDescendants) {
+TEST_F(BrowserAccessibilityWinTest, AccChildOnlyReturnsDescendants) {
   ui::AXNodeData root_node;
   root_node.id = 1;
   root_node.role = ax::mojom::Role::kRootWebArea;
@@ -2356,7 +2354,8 @@ TEST_F(BrowserAccessibilityTest, AccChildOnlyReturnsDescendants) {
                       child_unique_id_variant, result.GetAddressOf()));
 }
 
-TEST_F(BrowserAccessibilityTest, TestIAccessible2Relations) {
+// TODO(crbug.com/929563): Disabled due to flakiness.
+TEST_F(BrowserAccessibilityWinTest, DISABLED_TestIAccessible2Relations) {
   ui::AXNodeData root;
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
@@ -2486,6 +2485,15 @@ TEST_F(BrowserAccessibilityTest, TestIAccessible2Relations) {
   EXPECT_EQ(2, n_relations);
   EXPECT_HRESULT_SUCCEEDED(ax_child2->GetCOM()->get_nRelations(&n_relations));
   EXPECT_EQ(2, n_relations);
+}
+
+TEST_F(BrowserAccessibilityWinTest, TestUIASwitch) {
+  EXPECT_FALSE(::switches::IsExperimentalAccessibilityPlatformUIAEnabled());
+
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
+      ::switches::kEnableExperimentalUIAutomation);
+
+  EXPECT_TRUE(::switches::IsExperimentalAccessibilityPlatformUIAEnabled());
 }
 
 }  // namespace content

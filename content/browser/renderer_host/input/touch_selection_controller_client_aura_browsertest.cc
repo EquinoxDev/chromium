@@ -37,7 +37,7 @@ namespace content {
 namespace {
 
 bool JSONToPoint(const std::string& str, gfx::PointF* point) {
-  std::unique_ptr<base::Value> value = base::JSONReader::Read(str);
+  std::unique_ptr<base::Value> value = base::JSONReader::ReadDeprecated(str);
   if (!value)
     return false;
   base::DictionaryValue* root;
@@ -384,9 +384,9 @@ class FrameStableObserver {
   DISALLOW_COPY_AND_ASSIGN(FrameStableObserver);
 };
 
-INSTANTIATE_TEST_CASE_P(TouchSelectionForCrossProcessFramesTests,
-                        TouchSelectionControllerClientAuraSiteIsolationTest,
-                        testing::Bool());
+INSTANTIATE_TEST_SUITE_P(TouchSelectionForCrossProcessFramesTests,
+                         TouchSelectionControllerClientAuraSiteIsolationTest,
+                         testing::Bool());
 
 IN_PROC_BROWSER_TEST_P(TouchSelectionControllerClientAuraSiteIsolationTest,
                        BasicSelectionIsolatedIframe) {

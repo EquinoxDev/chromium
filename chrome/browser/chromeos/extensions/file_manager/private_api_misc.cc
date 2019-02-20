@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/i18n/encoding_detection.h"
@@ -218,12 +219,6 @@ FileManagerPrivateGetPreferencesFunction::Run() {
   result.search_suggest_enabled =
       service->GetBoolean(prefs::kSearchSuggestEnabled);
   result.use24hour_clock = service->GetBoolean(prefs::kUse24HourClock);
-  result.allow_redeem_offers = true;
-  if (!chromeos::CrosSettings::Get()->GetBoolean(
-          chromeos::kAllowRedeemChromeOsRegistrationOffers,
-          &result.allow_redeem_offers)) {
-    result.allow_redeem_offers = true;
-  }
   result.timezone =
       base::UTF16ToUTF8(chromeos::system::TimezoneSettings::GetInstance()
                             ->GetCurrentTimezoneID());
@@ -613,7 +608,7 @@ FileManagerPrivateConfigureVolumeFunction::Run() {
           service->GetProvidedFileSystem(volume->provider_id(),
                                          volume->file_system_id());
       if (file_system)
-        file_system->Configure(base::Bind(
+        file_system->Configure(base::BindOnce(
             &FileManagerPrivateConfigureVolumeFunction::OnCompleted, this));
       break;
     }
@@ -732,11 +727,16 @@ void FileManagerPrivateInternalUnsharePathWithCrostiniFunction::
 
 ExtensionFunction::ResponseAction
 FileManagerPrivateInternalGetCrostiniSharedPathsFunction::Run() {
+  using extensions::api::file_manager_private_internal::GetCrostiniSharedPaths::
+      Params;
+  const std::unique_ptr<Params> params(Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
   Profile* profile = Profile::FromBrowserContext(browser_context());
 
   auto* crostini_share_path =
       crostini::CrostiniSharePath::GetForProfile(profile);
-  bool first_for_session = crostini_share_path->GetAndSetFirstForSession();
+  bool first_for_session = params->observe_first_for_session &&
+                           crostini_share_path->GetAndSetFirstForSession();
   auto shared_paths = crostini_share_path->GetPersistedSharedPaths();
   auto entries = std::make_unique<base::ListValue>();
   for (const base::FilePath& path : shared_paths) {
@@ -946,7 +946,7 @@ FileManagerPrivateInternalExecuteCustomActionFunction::Run() {
   DCHECK(file_system);
   file_system->ExecuteAction(
       paths, params->action_id,
-      base::Bind(
+      base::BindOnce(
           &FileManagerPrivateInternalExecuteCustomActionFunction::OnCompleted,
           this));
   return RespondLater();

@@ -160,13 +160,14 @@ iframe.widget {
 button,
 input,
 select {
+    /* Form elements do not automatically inherit font style from ancestors. */
     font-family: inherit;
     font-size: inherit;
-    color: inherit;
 }
 
 input {
     background-color: white;
+    color: inherit;
 }
 
 :host-context(.-theme-with-dark-background) input[type="checkbox"]::not(.-theme-preserve) {
@@ -309,7 +310,7 @@ input {
     white-space: nowrap;
 }
 
-label[is=dt-icon-label] {
+span[is=dt-icon-label] {
     flex: none;
 }
 
@@ -435,6 +436,7 @@ label[is=dt-icon-label] {
     background-color: #bbdefb;
 }
 
-.-theme-with-dark-background *::selection {
-    background-color: #9e9e9e;;
+.-theme-with-dark-background *::selection,
+:host-context(.-theme-with-dark-background) *::selection {
+    background-color: #9e9e9e;
 }

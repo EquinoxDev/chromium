@@ -1861,3 +1861,106 @@ TEST_F('ChromeVoxBackgroundTest', 'HoverTargetsLeafNode', function() {
         .replay();
   });
 });
+
+TEST_F('ChromeVoxBackgroundTest', 'AriaSliderWithValueNow', function() {
+  var mockFeedback = this.createMockFeedback();
+  this.runWithLoadedTree(function(root) {/*
+    <div id="slider" role="slider" tabindex="0" aria-valuemin="0"
+             aria-valuenow="50" aria-valuemax="100"></div>
+    <script>
+      let slider = document.getElementById('slider');
+      slider.addEventListener('click', () => {
+        slider.setAttribute('aria-valuenow',
+            parseInt(slider.getAttribute('aria-valuenow'), 10) + 1);
+      });
+    </script>
+  */}, function(root) {
+    let slider = root.find({role: RoleType.SLIDER});
+    assertNotNullNorUndefined(slider);
+    mockFeedback
+        .call(slider.doDefault.bind(slider))
+        .expectSpeech('51')
+        .replay();
+  });
+});
+
+TEST_F('ChromeVoxBackgroundTest', 'AriaSliderWithValueText', function() {
+  var mockFeedback = this.createMockFeedback();
+  this.runWithLoadedTree(function(root) {/*
+    <div id="slider" role="slider" tabindex="0" aria-valuemin="0"
+             aria-valuenow="50" aria-valuemax="100" aria-valuetext="tiny"></div>
+    <script>
+      let slider = document.getElementById('slider');
+      slider.addEventListener('click', () => {
+        slider.setAttribute('aria-valuenow',
+            parseInt(slider.getAttribute('aria-valuenow'), 10) + 1);
+        slider.setAttribute('aria-valuetext', 'large');
+      });
+    </script>
+  */}, function(root) {
+    let slider = root.find({role: RoleType.SLIDER});
+    assertNotNullNorUndefined(slider);
+    mockFeedback
+        .clearPendingOutput()
+        .call(slider.doDefault.bind(slider))
+        .expectNextSpeechUtteranceIsNot('51')
+        .expectSpeech('large')
+        .replay();
+  });
+});
+
+// See https://crbug.com/924976
+TEST_F('ChromeVoxBackgroundTest', 'DISABLED_ValidationTest', function() {
+  var mockFeedback = this.createMockFeedback();
+  this.runWithLoadedTree(function() {/*
+    <label for="in1">Name:</label>
+    <input id="in1" required autofocus>
+    <script>
+      const in1 = document.querySelector('input');
+      in1.addEventListener('focus', () => {
+        setTimeout(() => {
+          in1.setCustomValidity('Please enter name');
+          in1.reportValidity();
+        }, 500);
+      });
+    </script>
+  */}, function(root) {
+    mockFeedback
+      .expectSpeech('Name:')
+      .expectSpeech('Edit text')
+      .expectSpeech('Required')
+      .expectSpeech('Alert')
+      .expectSpeech('Please enter name')
+      .replay();
+  });
+});
+
+TEST_F('ChromeVoxBackgroundTest', 'AutoCompleteChanged', function() {
+  var mockFeedback = this.createMockFeedback();
+  this.runWithLoadedTree(function() {/*
+    <div><input type="text" aria-autocomplete="off"></input></div>
+    <script>
+      var div = document.querySelector('div');
+      var input = div.firstElementChild;
+      var completion = input.getAttribute('aria-autocomplete');
+      div.addEventListener('click', () => {
+        completion = completion == 'off' ? 'both' : 'off';
+        input.setAttribute('aria-autocomplete', completion);
+      });
+    </script>
+  */}, function(root) {
+    var change = root.firstChild.doDefault.bind(root.firstChild);
+    mockFeedback.expectSpeech('Edit text')
+        .clearPendingOutput()
+        .call(change)
+        .expectSpeech('Edit text')
+        .call(change)
+        .expectSpeech('Edit text')
+        .call(change)
+        .expectNextSpeechUtteranceIsNot(
+            'Press up or down arrow for auto completions.')
+        .expectSpeech('Edit text')
+        .expectSpeech('Press up or down arrow for auto completions.')
+        .replay();
+  });
+});

@@ -56,7 +56,6 @@ void ShadowRoot::Distribute() {
 }
 
 struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope {
-  char empty_class_fields_due_to_gc_mixin_marker[1];
   Member<void*> member[3];
   unsigned counters_and_flags[1];
 };
@@ -139,22 +138,19 @@ void ShadowRoot::setInnerHTML(const StringOrTrustedHTML& stringOrHtml,
   }
 }
 
-void ShadowRoot::RecalcStyle(StyleRecalcChange change) {
+void ShadowRoot::RecalcStyle(const StyleRecalcChange change) {
   // ShadowRoot doesn't support custom callbacks.
   DCHECK(!HasCustomStyleCallbacks());
 
-  if (GetStyleChangeType() >= kSubtreeStyleChange) {
-    if (change < kForce)
-      change = kForce;
-    if (NeedsAttach() || change == kReattach)
-      SetNeedsReattachLayoutTree();
-  }
-  // There's no style to update so just calling RecalcStyle means we're updated.
-  if (change != kReattach)
-    ClearNeedsStyleRecalc();
+  StyleRecalcChange child_change = change;
+  if (GetStyleChangeType() == kSubtreeStyleChange)
+    child_change = child_change.ForceRecalcDescendants();
 
-  if (change >= kUpdatePseudoElements || ChildNeedsStyleRecalc())
-    RecalcDescendantStyles(change);
+  // There's no style to update so just calling RecalcStyle means we're updated.
+  ClearNeedsStyleRecalc();
+
+  if (child_change.TraverseChildren(*this))
+    RecalcDescendantStyles(child_change);
   ClearChildNeedsStyleRecalc();
 }
 
@@ -170,6 +166,9 @@ Node::InsertionNotificationRequest ShadowRoot::InsertedInto(
 
   if (!insertion_point.isConnected())
     return kInsertionDone;
+
+  if (HasAdoptedStyleSheets())
+    GetDocument().GetStyleEngine().SetNeedsActiveStyleUpdate(*this);
 
   GetDocument().GetSlotAssignmentEngine().Connected(*this);
 
@@ -253,7 +252,7 @@ void ShadowRoot::SetNeedsDistributionRecalc() {
     V0().ClearDistribution();
 }
 
-void ShadowRoot::Trace(blink::Visitor* visitor) {
+void ShadowRoot::Trace(Visitor* visitor) {
   visitor->Trace(style_sheet_list_);
   visitor->Trace(slot_assignment_);
   visitor->Trace(shadow_root_v0_);

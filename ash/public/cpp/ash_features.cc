@@ -13,11 +13,11 @@ namespace features {
 const base::Feature kDockedMagnifier{"DockedMagnifier",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
-const base::Feature kDragAppsInTabletMode{"DragAppsInTabletMode",
-                                          base::FEATURE_ENABLED_BY_DEFAULT};
-
 const base::Feature kDragTabsInTabletMode{"DragTabsInTabletMode",
                                           base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kEnableOverviewRoundedCorners{
+    "EnableOverviewRoundedCorners", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kLockScreenNotifications{"LockScreenNotifications",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
@@ -28,9 +28,6 @@ const base::Feature kLockScreenInlineReply{"LockScreenInlineReply",
 const base::Feature kLockScreenHideSensitiveNotificationsSupport{
     "LockScreenHideSensitiveNotificationsSupport",
     base::FEATURE_DISABLED_BY_DEFAULT};
-
-const base::Feature kMediaSessionAccelerators{
-    "MediaSessionAccelerators", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kMediaSessionNotification{
     "MediaSessionNotification", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -44,7 +41,7 @@ const base::Feature kNotificationScrollBar{"NotificationScrollBar",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kPipRoundedCorners{"PipRoundedCorners",
-                                       base::FEATURE_ENABLED_BY_DEFAULT};
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kSeparateNetworkIcons{"SeparateNetworkIcons",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
@@ -60,15 +57,14 @@ const base::Feature kContainedShell{"ContainedShell",
 
 const base::Feature kViewsLogin{"ViewsLogin", base::FEATURE_ENABLED_BY_DEFAULT};
 
+const base::Feature kVirtualDesks{"VirtualDesks",
+                                  base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kUseBluetoothSystemInAsh{"UseBluetoothSystemInAsh",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kSupervisedUserDeprecationNotice{
     "SupervisedUserDeprecationNotice", base::FEATURE_ENABLED_BY_DEFAULT};
-
-bool IsDockedMagnifierEnabled() {
-  return base::FeatureList::IsEnabled(kDockedMagnifier);
-}
 
 bool IsLockScreenNotificationsEnabled() {
   return base::FeatureList::IsEnabled(kLockScreenNotifications);
@@ -81,10 +77,6 @@ bool IsLockScreenInlineReplyEnabled() {
 bool IsLockScreenHideSensitiveNotificationsSupported() {
   return base::FeatureList::IsEnabled(
       kLockScreenHideSensitiveNotificationsSupport);
-}
-
-bool IsNightLightEnabled() {
-  return base::FeatureList::IsEnabled(kNightLight);
 }
 
 bool IsNotificationExpansionAnimationEnabled() {
@@ -107,6 +99,10 @@ bool IsTrilinearFilteringEnabled() {
   static bool use_trilinear_filtering =
       base::FeatureList::IsEnabled(kTrilinearFiltering);
   return use_trilinear_filtering;
+}
+
+bool IsVirtualDesksEnabled() {
+  return base::FeatureList::IsEnabled(kVirtualDesks);
 }
 
 bool IsViewsLoginEnabled() {

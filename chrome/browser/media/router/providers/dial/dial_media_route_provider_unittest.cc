@@ -4,6 +4,9 @@
 
 #include "chrome/browser/media/router/providers/dial/dial_media_route_provider.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/media/router/test/mock_mojo_media_router.h"
 
 #include "base/run_loop.h"
@@ -267,8 +270,7 @@ class DialMediaRouteProviderTest : public ::testing::Test {
     base::RunLoop().RunUntilIdle();
 
     ASSERT_EQ(1u, routes.size());
-    // TODO(https://crbug.com/867935): Replace with operator== / EXPECT_TRUE.
-    EXPECT_TRUE(routes[0].Equals(*route_));
+    EXPECT_EQ(routes[0], *route_);
   }
 
   // Note: |TestSendCustomDialLaunchMessage()| must be called first.

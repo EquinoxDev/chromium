@@ -247,7 +247,7 @@ Polymer({
   /**
    * Need to use common tooltip since the tooltip in the entry is cut off from
    * the iron-list.
-   * @param {!{detail: {target: HTMLElement, text: string}}} e
+   * @param {!CustomEvent<!{target: HTMLElement, text: string}>} e
    * @private
    */
   onShowTooltip_: function(e) {
@@ -255,11 +255,9 @@ Polymer({
     const target = e.detail.target;
     // paper-tooltip normally determines the target from the |for| property,
     // which is a selector. Here paper-tooltip is being reused by multiple
-    // potential targets. Since paper-tooltip does not expose a public property
-    // or method to update the target, the private property |_target| is
-    // updated directly.
+    // potential targets.
     const tooltip = this.$.tooltip;
-    tooltip._target = target;
+    tooltip.target = target;
     /** @type {{updatePosition: Function}} */ (tooltip).updatePosition();
     const hide = () => {
       this.$.tooltip.hide();

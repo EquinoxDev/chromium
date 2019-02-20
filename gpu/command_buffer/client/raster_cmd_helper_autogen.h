@@ -11,16 +11,6 @@
 #ifndef GPU_COMMAND_BUFFER_CLIENT_RASTER_CMD_HELPER_AUTOGEN_H_
 #define GPU_COMMAND_BUFFER_CLIENT_RASTER_CMD_HELPER_AUTOGEN_H_
 
-void DeleteTexturesImmediate(GLsizei n, const GLuint* textures) {
-  const uint32_t size = raster::cmds::DeleteTexturesImmediate::ComputeSize(n);
-  raster::cmds::DeleteTexturesImmediate* c =
-      GetImmediateCmdSpaceTotalSize<raster::cmds::DeleteTexturesImmediate>(
-          size);
-  if (c) {
-    c->Init(n, textures);
-  }
-}
-
 void Finish() {
   raster::cmds::Finish* c = GetCmdSpace<raster::cmds::Finish>();
   if (c) {
@@ -192,32 +182,20 @@ void ClearPaintCacheINTERNAL() {
   }
 }
 
-void CreateAndConsumeTextureINTERNALImmediate(GLuint texture_id,
-                                              bool use_buffer,
-                                              gfx::BufferUsage buffer_usage,
-                                              viz::ResourceFormat format,
-                                              const GLbyte* mailbox) {
+void CopySubTextureINTERNALImmediate(GLint xoffset,
+                                     GLint yoffset,
+                                     GLint x,
+                                     GLint y,
+                                     GLsizei width,
+                                     GLsizei height,
+                                     const GLbyte* mailboxes) {
   const uint32_t size =
-      raster::cmds::CreateAndConsumeTextureINTERNALImmediate::ComputeSize();
-  raster::cmds::CreateAndConsumeTextureINTERNALImmediate* c =
+      raster::cmds::CopySubTextureINTERNALImmediate::ComputeSize();
+  raster::cmds::CopySubTextureINTERNALImmediate* c =
       GetImmediateCmdSpaceTotalSize<
-          raster::cmds::CreateAndConsumeTextureINTERNALImmediate>(size);
+          raster::cmds::CopySubTextureINTERNALImmediate>(size);
   if (c) {
-    c->Init(texture_id, use_buffer, buffer_usage, format, mailbox);
-  }
-}
-
-void CopySubTexture(GLuint source_id,
-                    GLuint dest_id,
-                    GLint xoffset,
-                    GLint yoffset,
-                    GLint x,
-                    GLint y,
-                    GLsizei width,
-                    GLsizei height) {
-  raster::cmds::CopySubTexture* c = GetCmdSpace<raster::cmds::CopySubTexture>();
-  if (c) {
-    c->Init(source_id, dest_id, xoffset, yoffset, x, y, width, height);
+    c->Init(xoffset, yoffset, x, y, width, height, mailboxes);
   }
 }
 

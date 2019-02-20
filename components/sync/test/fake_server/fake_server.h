@@ -55,6 +55,9 @@ class FakeServer : public syncer::LoopbackServer::ObserverForTests {
   };
 
   FakeServer();
+  // A directory will be created under |user_data_dir| to persist sync server
+  // state. It's necessary for supporting PRE_ tests.
+  explicit FakeServer(const base::FilePath& user_data_dir);
   ~FakeServer() override;
 
   // Handles a /command POST (with the given |request|) to the server.
@@ -169,6 +172,9 @@ class FakeServer : public syncer::LoopbackServer::ObserverForTests {
 
   // Sets a maximum batch size for GetUpdates requests.
   void SetMaxGetUpdatesBatchSize(int batch_size);
+
+  // Sets the bag of chips returned by the server.
+  void SetBagOfChips(const sync_pb::ChipBag& bag_of_chips);
 
   // Implement LoopbackServer::ObserverForTests:
   void OnCommit(const std::string& committer_id,

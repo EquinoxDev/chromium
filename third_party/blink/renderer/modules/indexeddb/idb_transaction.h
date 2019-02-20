@@ -31,9 +31,9 @@
 #include "third_party/blink/public/common/indexeddb/web_idb_types.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/dom_string_list.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/modules/event_modules.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_metadata.h"
@@ -120,6 +120,8 @@ class MODULES_EXPORT IDBTransaction final
   bool IsVersionChange() const {
     return mode_ == mojom::IDBTransactionMode::VersionChange;
   }
+  int64_t NumErrorsHandled() const { return num_errors_handled_; }
+  void IncrementNumErrorsHandled() { ++num_errors_handled_; }
 
   // Implement the IDBTransaction IDL
   const String& mode() const;
@@ -156,9 +158,9 @@ class MODULES_EXPORT IDBTransaction final
   void SetActive(bool);
   void SetError(DOMException*);
 
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(abort, kAbort);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(complete, kComplete);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(abort, kAbort)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(complete, kComplete)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError)
 
   void OnAbort(DOMException*);
   void OnComplete();
@@ -225,6 +227,7 @@ class MODULES_EXPORT IDBTransaction final
 
   State state_ = kActive;
   bool has_pending_activity_ = true;
+  int64_t num_errors_handled_ = 0;
   Member<DOMException> error_;
 
   HeapListHashSet<Member<IDBRequest>> request_list_;

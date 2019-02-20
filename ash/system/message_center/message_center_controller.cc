@@ -127,6 +127,7 @@ MessageCenterController::MessageCenterController() {
   }
 
   message_center::RegisterVectorIcons({&kNotificationAssistantIcon,
+                                       &kAutoLaunchManagedGuestSessionIcon,
                                        &kNotificationCaptivePortalIcon,
                                        &kNotificationCellularAlertIcon,
                                        &kNotificationDownloadIcon,
@@ -136,6 +137,7 @@ MessageCenterController::MessageCenterController() {
                                        &kNotificationImageIcon,
                                        &kNotificationInstalledIcon,
                                        &kNotificationLinuxIcon,
+                                       &kNotificationMessagesIcon,
                                        &kNotificationMultiDeviceSetupIcon,
                                        &kNotificationMobileDataIcon,
                                        &kNotificationMobileDataOffIcon,

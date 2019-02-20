@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "base/android/scoped_hardware_buffer_fence_sync.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_context.h"
@@ -19,14 +20,23 @@ namespace {
 // Makes |texture_owner|'s context current if it isn't already.
 std::unique_ptr<ui::ScopedMakeCurrent> MakeCurrentIfNeeded(
     TextureOwner* texture_owner) {
+  gl::GLContext* context = texture_owner->GetContext();
   // Note: this works for virtual contexts too, because IsCurrent() returns true
   // if their shared platform context is current, regardless of which virtual
   // context is current.
-  return std::unique_ptr<ui::ScopedMakeCurrent>(
-      texture_owner->GetContext()->IsCurrent(nullptr)
-          ? nullptr
-          : new ui::ScopedMakeCurrent(texture_owner->GetContext(),
-                                      texture_owner->GetSurface()));
+  if (context->IsCurrent(nullptr))
+    return nullptr;
+
+  auto scoped_current = std::make_unique<ui::ScopedMakeCurrent>(
+      context, texture_owner->GetSurface());
+  // Log an error if ScopedMakeCurrent failed for debugging
+  // https://crbug.com/878042.
+  // TODO(ericrk): Remove this once debugging is completed.
+  if (!context->IsCurrent(nullptr)) {
+    LOG(ERROR) << "Failed to make context current in CodecImage. Subsequent "
+                  "UpdateTexImage may fail.";
+  }
+  return scoped_current;
 }
 
 }  // namespace
@@ -60,18 +70,24 @@ unsigned CodecImage::GetInternalFormat() {
   return GL_RGBA;
 }
 
-bool CodecImage::BindTexImage(unsigned target) {
+CodecImage::BindOrCopy CodecImage::ShouldBindOrCopy() {
   // If we're using an overlay, then pretend it's bound.  That way, we'll get
-  // calls to ScheduleOverlayPlane.  Otherwise, fail so that we will be asked
-  // to CopyTexImage.  Note that we could just CopyTexImage here.
-  return !texture_owner_;
+  // calls to ScheduleOverlayPlane.  Otherwise, CopyTexImage needs to be called.
+  return !texture_owner_ ? BIND : COPY;
+}
+
+bool CodecImage::BindTexImage(unsigned target) {
+  DCHECK_EQ(BIND, ShouldBindOrCopy());
+  return true;
 }
 
 void CodecImage::ReleaseTexImage(unsigned target) {}
 
 bool CodecImage::CopyTexImage(unsigned target) {
   TRACE_EVENT0("media", "CodecImage::CopyTexImage");
-  if (!texture_owner_ || target != GL_TEXTURE_EXTERNAL_OES)
+  DCHECK_EQ(COPY, ShouldBindOrCopy());
+
+  if (target != GL_TEXTURE_EXTERNAL_OES)
     return false;
 
   GLint bound_service_id = 0;
@@ -186,8 +202,11 @@ bool CodecImage::RenderToTextureOwnerBackBuffer() {
   return true;
 }
 
-bool CodecImage::RenderToTextureOwnerFrontBuffer(BindingsMode bindings_mode) {
+bool CodecImage::RenderToTextureOwnerFrontBuffer(BindingsMode bindings_mode,
+                                                 bool bind_egl_image) {
   DCHECK(texture_owner_);
+  DCHECK(bind_egl_image);
+
   if (phase_ == Phase::kInFrontBuffer)
     return true;
   if (phase_ == Phase::kInvalidated)
@@ -205,14 +224,17 @@ bool CodecImage::RenderToTextureOwnerFrontBuffer(BindingsMode bindings_mode) {
   std::unique_ptr<ui::ScopedMakeCurrent> scoped_make_current =
       MakeCurrentIfNeeded(texture_owner_.get());
   // If we have to switch contexts, then we always want to restore the
-  // bindings.
+  // bindings. Also if bind_egl_image is set to false, we do no need to restore
+  // any bindings since UpdateTexImage will not bind any egl image to the
+  // texture target.
   bool should_restore_bindings =
-      bindings_mode == BindingsMode::kRestore || !!scoped_make_current;
+      (bindings_mode == BindingsMode::kRestore || !!scoped_make_current) &&
+      bind_egl_image;
 
   GLint bound_service_id = 0;
   if (should_restore_bindings)
     glGetIntegerv(GL_TEXTURE_BINDING_EXTERNAL_OES, &bound_service_id);
-  texture_owner_->UpdateTexImage();
+  texture_owner_->UpdateTexImage(bind_egl_image);
   if (should_restore_bindings)
     glBindTexture(GL_TEXTURE_EXTERNAL_OES, bound_service_id);
   return true;
@@ -237,7 +259,7 @@ void CodecImage::ReleaseCodecBuffer() {
   phase_ = Phase::kInvalidated;
 }
 
-std::unique_ptr<gl::GLImage::ScopedHardwareBuffer>
+std::unique_ptr<base::android::ScopedHardwareBufferFenceSync>
 CodecImage::GetAHardwareBuffer() {
   DCHECK(texture_owner_);
 

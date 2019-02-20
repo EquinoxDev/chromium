@@ -9,7 +9,6 @@
 
 #include <string>
 
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -17,7 +16,7 @@
 #include "components/domain_reliability/clear_mode.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
-#include "services/network/public/mojom/network_service.mojom.h"
+#include "services/network/public/mojom/network_service.mojom-forward.h"
 
 #if !defined(OS_ANDROID)
 class ChromeZoomLevelPrefs;

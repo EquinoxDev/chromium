@@ -5,6 +5,7 @@
 #include "ios/web/web_state/web_frame_impl.h"
 
 #import "base/base64.h"
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -254,7 +255,7 @@ TEST_F(WebFrameImplTest, CallJavaScriptFunctionMessageProperlyEncoded) {
                         /*additional_data=*/nullptr, &plaintext));
 
   std::unique_ptr<base::Value> parsed_result(
-      base::JSONReader::Read(plaintext, false));
+      base::JSONReader::ReadDeprecated(plaintext, false));
   EXPECT_TRUE(parsed_result.get());
 
   base::DictionaryValue* result_dict;
@@ -325,7 +326,7 @@ TEST_F(WebFrameImplTest, CallJavaScriptFunctionRespondWithResult) {
                         /*additional_data=*/nullptr, &plaintext));
 
   std::unique_ptr<base::Value> parsed_result(
-      base::JSONReader::Read(plaintext, false));
+      base::JSONReader::ReadDeprecated(plaintext, false));
   EXPECT_TRUE(parsed_result.get());
 
   base::DictionaryValue* result_dict;

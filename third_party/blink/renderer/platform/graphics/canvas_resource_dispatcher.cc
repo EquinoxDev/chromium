@@ -11,6 +11,7 @@
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/resources/resource_format.h"
 #include "components/viz/common/resources/single_release_callback.h"
+#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom-blink.h"
 #include "third_party/blink/public/platform/interface_provider.h"
 #include "third_party/blink/public/platform/modules/frame_sinks/embedded_frame_sink.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -22,6 +23,7 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "ui/gfx/mojo/presentation_feedback.mojom-blink.h"
 
 namespace blink {
 
@@ -60,7 +62,7 @@ CanvasResourceDispatcher::CanvasResourceDispatcher(
       num_unreclaimed_frames_posted_(0),
       client_(client),
       enable_surface_synchronization_(
-          features::IsSurfaceSynchronizationEnabled()),
+          ::features::IsSurfaceSynchronizationEnabled()),
       weak_ptr_factory_(this) {
   // Frameless canvas pass an invalid |frame_sink_id_|; don't create mojo
   // channel for this special case.
@@ -75,8 +77,9 @@ CanvasResourceDispatcher::CanvasResourceDispatcher(
   DCHECK(provider);
   binding_.Bind(mojo::MakeRequest(&client_ptr_));
   provider->CreateCompositorFrameSink(frame_sink_id_, std::move(client_ptr_),
-                                      mojo::MakeRequest(&sink_),
-                                      mojo::MakeRequest(&surface_embedder_));
+                                      mojo::MakeRequest(&sink_));
+  provider->ConnectToEmbedder(frame_sink_id_,
+                              mojo::MakeRequest(&surface_embedder_));
 }
 
 CanvasResourceDispatcher::~CanvasResourceDispatcher() = default;

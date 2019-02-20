@@ -224,11 +224,19 @@ function sendReport() {
   feedbackInfo.email = $('user-email-drop-down').value;
 
   let useSystemInfo = false;
-  let useHistograms = false;
   if ($('sys-info-checkbox') != null && $('sys-info-checkbox').checked) {
-    // Send histograms along with system info.
-    useSystemInfo = useHistograms = true;
+    useSystemInfo = true;
   }
+
+  // <if expr="chromeos">
+  if ($('assistant-info-checkbox') != null &&
+      $('assistant-info-checkbox').checked &&
+      !$('assistant-checkbox-container').hidden) {
+    // User consent to link Assistant debug info on Assistant server.
+    feedbackInfo.assistantDebugInfoAllowed = true;
+  }
+  // </if>
+
   // <if expr="chromeos">
   if ($('bluetooth-logs-checkbox') != null &&
       $('bluetooth-logs-checkbox').checked &&
@@ -241,8 +249,6 @@ function sendReport() {
     feedbackInfo.traceId = null;
   }
   // </if>
-
-  feedbackInfo.sendHistograms = useHistograms;
 
   // If the user doesn't want to send the screenshot.
   if (!$('screenshot-checkbox').checked) {
@@ -389,6 +395,13 @@ function initialize() {
         $('srt-prompt').hidden = true;
       }
 
+      if ($('assistant-checkbox-container') != null &&
+          feedbackInfo.flow ==
+              chrome.feedbackPrivate.FeedbackFlow.GOOGLE_INTERNAL &&
+          feedbackInfo.fromAssistant) {
+        $('assistant-checkbox-container').hidden = false;
+      }
+
       $('description-text').textContent = feedbackInfo.description;
       if (feedbackInfo.descriptionPlaceholder) {
         $('description-text').placeholder = feedbackInfo.descriptionPlaceholder;
@@ -518,14 +531,6 @@ function initialize() {
           sysInfoUrlElement.onauxclick = function(e) {
             e.preventDefault();
           };
-        }
-
-        const histogramUrlElement = $('histograms-url');
-        if (histogramUrlElement) {
-          // Opens a new window showing the histogram metrics.
-          setupLinkHandlers(
-              histogramUrlElement, 'chrome://histograms',
-              true /* useAppWindow */);
         }
 
         const legalHelpPageUrlElement = $('legal-help-page-url');

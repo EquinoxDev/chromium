@@ -41,6 +41,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task_runner_util.h"
+#include "build/build_config.h"
 #include "components/download/database/in_progress/download_entry.h"
 #include "components/download/internal/common/download_job_impl.h"
 #include "components/download/internal/common/parallel_download_utils.h"
@@ -57,6 +58,10 @@
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+
+#if defined(OS_ANDROID)
+#include "components/download/internal/common/android/download_collection_bridge.h"
+#endif  // defined(OS_ANDROID)
 
 namespace download {
 
@@ -588,10 +593,12 @@ void DownloadItemImpl::Resume(bool user_resume) {
 }
 
 void DownloadItemImpl::UpdateResumptionInfo(bool user_resume) {
-  if (user_resume)
+  if (user_resume) {
     allow_metered_ |= delegate_->IsActiveNetworkMetered();
+    bytes_wasted_ = 0;
+  }
 
-  auto_resume_count_ = user_resume ? 0 : auto_resume_count_++;
+  auto_resume_count_ = user_resume ? 0 : ++auto_resume_count_;
 }
 
 void DownloadItemImpl::Cancel(bool user_cancel) {
@@ -1120,17 +1127,11 @@ void DownloadItemImpl::UpdateValidatorsOnResumption(
   // Record some stats. If the precondition failed (the server returned
   // HTTP_PRECONDITION_FAILED), then the download will automatically retried as
   // a full request rather than a partial. Full restarts clobber validators.
-  int origin_state = 0;
-  if (chain_iter != new_create_info.url_chain.end())
-    origin_state |= ORIGIN_STATE_ON_RESUMPTION_ADDITIONAL_REDIRECTS;
   if (etag_ != new_create_info.etag ||
       last_modified_time_ != new_create_info.last_modified) {
     received_slices_.clear();
     destination_info_.received_bytes = 0;
-    origin_state |= ORIGIN_STATE_ON_RESUMPTION_VALIDATORS_CHANGED;
   }
-  if (content_disposition_ != new_create_info.content_disposition)
-    origin_state |= ORIGIN_STATE_ON_RESUMPTION_CONTENT_DISPOSITION_CHANGED;
 
   request_info_.url_chain.insert(request_info_.url_chain.end(), chain_iter,
                                  new_create_info.url_chain.end());
@@ -1280,6 +1281,10 @@ void DownloadItemImpl::SetDelegate(DownloadItemImplDelegate* delegate) {
   delegate_->Detach();
   delegate_ = delegate;
   delegate_->Attach();
+}
+
+void DownloadItemImpl::SetDownloadId(uint32_t download_id) {
+  download_id_ = download_id;
 }
 
 // **** Download progression cascade
@@ -1561,6 +1566,19 @@ void DownloadItemImpl::OnDownloadTargetDetermined(
   DownloadFile::RenameCompletionCallback callback =
       base::Bind(&DownloadItemImpl::OnDownloadRenamedToIntermediateName,
                  weak_ptr_factory_.GetWeakPtr());
+#if defined(OS_ANDROID)
+  if (DownloadCollectionBridge::ShouldPublishDownload(GetTargetFilePath())) {
+    GetDownloadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&DownloadFile::CreateIntermediateUriForPublish,
+                       // Safe because we control download file lifetime.
+                       base::Unretained(download_file_.get()), GetOriginalUrl(),
+                       GetReferrerUrl(), GetTargetFilePath().BaseName(),
+                       GetMimeType(), std::move(callback)));
+    return;
+  }
+#endif  // defined(OS_ANDROID)
+
   GetDownloadTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&DownloadFile::RenameAndUniquify,
@@ -1672,6 +1690,17 @@ void DownloadItemImpl::OnDownloadCompleting() {
   DownloadFile::RenameCompletionCallback callback =
       base::Bind(&DownloadItemImpl::OnDownloadRenamedToFinalName,
                  weak_ptr_factory_.GetWeakPtr());
+#if defined(OS_ANDROID)
+  if (DownloadCollectionBridge::ShouldPublishDownload(GetTargetFilePath())) {
+    GetDownloadTaskRunner()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&DownloadFile::PublishDownload,
+                       // Safe because we control download file lifetime.
+                       base::Unretained(download_file_.get()),
+                       std::move(callback)));
+    return;
+  }
+#endif  // defined(OS_ANDROID)
   GetDownloadTaskRunner()->PostTask(
       FROM_HERE,
       base::BindOnce(&DownloadFile::RenameAndAnnotate,
@@ -1707,7 +1736,15 @@ void DownloadItemImpl::OnDownloadRenamedToFinalName(
     return;
   }
 
+#if defined(OS_ANDROID)
+  // Target file path may be different from the full path if the latter is a
+  // content Uri.
+  if (GetTargetFilePath() != full_path) {
+    DCHECK(full_path.IsContentUri());
+  }
+#else
   DCHECK(GetTargetFilePath() == full_path);
+#endif  // defined(OS_ANDROID)
 
   if (full_path != GetFullPath()) {
     // full_path is now the current and target file path.
@@ -2038,7 +2075,12 @@ bool DownloadItemImpl::IsDownloadReadyForCompletion(
   // directory.
   DCHECK(!GetTargetFilePath().empty());
   DCHECK(!GetFullPath().empty());
+#if defined(OS_ANDROID)
+  DCHECK(GetFullPath().IsContentUri() ||
+         GetTargetFilePath().DirName() == GetFullPath().DirName());
+#else
   DCHECK(GetTargetFilePath().DirName() == GetFullPath().DirName());
+#endif  // defined(OS_ANDROID)
 
   // Give the delegate a chance to hold up a stop sign.  It'll call
   // use back through the passed callback if it does and that state changes.
@@ -2081,6 +2123,16 @@ void DownloadItemImpl::TransitionTo(DownloadInternalState new_state) {
     case IN_PROGRESS_INTERNAL:
       DCHECK(!GetFullPath().empty()) << "Current output path must be known.";
       DCHECK(!GetTargetFilePath().empty()) << "Target path must be known.";
+#if defined(OS_ANDROID)
+      DCHECK(GetFullPath().IsContentUri() ||
+             GetFullPath().DirName() == GetTargetFilePath().DirName())
+          << "Current output directory must match target directory or current "
+             "output path is a content uri.";
+#else
+      DCHECK(GetFullPath().DirName() == GetTargetFilePath().DirName())
+          << "Current output directory must match target directory.";
+#endif  // defined(OS_ANDROID)
+
       DCHECK(GetFullPath().DirName() == GetTargetFilePath().DirName())
           << "Current output directory must match target directory.";
       DCHECK(download_file_) << "Output file must be owned by download item.";
@@ -2095,8 +2147,14 @@ void DownloadItemImpl::TransitionTo(DownloadInternalState new_state) {
       DCHECK(!download_file_)
           << "Download file must be released prior to completion.";
       DCHECK(!GetTargetFilePath().empty()) << "Target path must be known.";
+#if defined(OS_ANDROID)
+      DCHECK(GetFullPath().IsContentUri() ||
+             GetFullPath() == GetTargetFilePath())
+          << "Current output path must match target path or is a content Uri.";
+#else
       DCHECK(GetFullPath() == GetTargetFilePath())
           << "Current output path must match target path.";
+#endif  // defined(OS_ANDROID)
 
       TRACE_EVENT_INSTANT2("download", "DownloadItemCompleting",
                            TRACE_EVENT_SCOPE_THREAD, "bytes_so_far",

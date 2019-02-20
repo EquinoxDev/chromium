@@ -91,6 +91,11 @@ void FakeBaseTabStripController::ToggleSelected(int index) {
 void FakeBaseTabStripController::AddSelectionFromAnchorTo(int index) {
 }
 
+bool FakeBaseTabStripController::BeforeCloseTab(int index,
+                                                CloseTabSource source) {
+  return true;
+}
+
 void FakeBaseTabStripController::CloseTab(int index, CloseTabSource source) {
   RemoveTab(index);
 }
@@ -127,10 +132,6 @@ void FakeBaseTabStripController::CreateNewTabWithLocation(
 }
 
 void FakeBaseTabStripController::StackedLayoutMaybeChanged() {
-}
-
-bool FakeBaseTabStripController::IsSingleTabModeAvailable() {
-  return false;
 }
 
 void FakeBaseTabStripController::OnStartedDraggingTabs() {}

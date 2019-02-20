@@ -271,6 +271,9 @@ void ChromeBrowserMainExtraPartsAsh::PostProfileInit() {
   cast_config_client_media_router_ =
       std::make_unique<CastConfigClientMediaRouter>();
   login_screen_client_ = std::make_unique<LoginScreenClient>();
+  // https://crbug.com/884127 ensuring that LoginScreenClient is initialized before using it InitializeDeviceDisablingManager.
+  g_browser_process->platform_part()->InitializeDeviceDisablingManager();
+
   media_client_ = std::make_unique<MediaClient>();
 
   // Instantiate DisplaySettingsHandler after CrosSettings has been
@@ -309,11 +312,9 @@ void ChromeBrowserMainExtraPartsAsh::PostProfileInit() {
 void ChromeBrowserMainExtraPartsAsh::PostBrowserStart() {
   mobile_data_notifications_ = std::make_unique<MobileDataNotifications>();
 
-  if (ash::features::IsNightLightEnabled()) {
-    night_light_client_ = std::make_unique<NightLightClient>(
-        g_browser_process->shared_url_loader_factory());
-    night_light_client_->Start();
-  }
+  night_light_client_ = std::make_unique<NightLightClient>(
+      g_browser_process->shared_url_loader_factory());
+  night_light_client_->Start();
 }
 
 void ChromeBrowserMainExtraPartsAsh::PostMainMessageLoopRun() {

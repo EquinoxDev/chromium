@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -16,6 +17,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/plugins/plugin_test_utils.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"

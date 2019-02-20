@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/feature_list.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/bookmark_apps/bookmark_app_install_manager.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/web_applications/components/web_app_constants.h"
 #include "chrome/browser/web_applications/components/web_app_helpers.h"
 #include "chrome/browser/web_applications/extensions/bookmark_app_tab_helper.h"
+#include "chrome/browser/web_applications/extensions/bookmark_app_util.h"
 #include "chrome/browser/web_applications/extensions/pending_bookmark_app_manager.h"
 #include "chrome/browser/web_applications/extensions/web_app_extension_ids_map.h"
 #include "chrome/browser/web_applications/external_web_apps.h"
@@ -34,6 +36,8 @@
 #include "chrome/common/chrome_features.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/one_shot_event.h"
 
 namespace web_app {
 
@@ -51,24 +55,39 @@ WebAppProvider* WebAppProvider::GetForWebContents(
   return WebAppProvider::Get(profile);
 }
 
-WebAppProvider::WebAppProvider(Profile* profile) {
-  audio_focus_id_map_ = std::make_unique<WebAppAudioFocusIdMap>();
-
-  if (base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions))
-    CreateWebAppsSubsystems(profile);
-  else
-    CreateBookmarkAppsSubsystems(profile);
-
-  notification_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
-                              content::Source<Profile>(profile));
+WebAppProvider::WebAppProvider(Profile* profile) : profile_(profile) {
+  DCHECK(AreWebAppsEnabled(profile_));
+  // WebApp System must have only one instance in original profile.
+  // Exclude secondary off-the-record profiles.
+  DCHECK(!profile_->IsOffTheRecord());
 }
 
 WebAppProvider::~WebAppProvider() = default;
 
-void WebAppProvider::CreateWebAppsSubsystems(Profile* profile) {
-  if (!AllowWebAppInstallation(profile))
-    return;
+void WebAppProvider::Init() {
+  audio_focus_id_map_ = std::make_unique<WebAppAudioFocusIdMap>();
 
+  if (base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions))
+    CreateWebAppsSubsystems(profile_);
+  else
+    CreateBookmarkAppsSubsystems(profile_);
+}
+
+void WebAppProvider::StartRegistry() {
+  notification_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+                              content::Source<Profile>(profile_));
+
+  if (base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions)) {
+    registrar_->Init(base::BindOnce(&WebAppProvider::OnRegistryReady,
+                                    weak_ptr_factory_.GetWeakPtr()));
+  } else {
+    extensions::ExtensionSystem::Get(profile_)->ready().Post(
+        FROM_HERE, base::BindRepeating(&WebAppProvider::OnRegistryReady,
+                                       weak_ptr_factory_.GetWeakPtr()));
+  }
+}
+
+void WebAppProvider::CreateWebAppsSubsystems(Profile* profile) {
   database_factory_ = std::make_unique<WebAppDatabaseFactory>(profile);
   database_ = std::make_unique<WebAppDatabase>(database_factory_.get());
   registrar_ = std::make_unique<WebAppRegistrar>(database_.get());
@@ -79,8 +98,6 @@ void WebAppProvider::CreateWebAppsSubsystems(Profile* profile) {
       registrar_.get(), icon_manager_.get());
   install_manager_ = std::make_unique<WebAppInstallManager>(
       profile, std::move(install_finalizer));
-
-  registrar_->Init(base::DoNothing());
 }
 
 void WebAppProvider::CreateBookmarkAppsSubsystems(Profile* profile) {
@@ -89,17 +106,29 @@ void WebAppProvider::CreateBookmarkAppsSubsystems(Profile* profile) {
   pending_app_manager_ =
       std::make_unique<extensions::PendingBookmarkAppManager>(profile);
 
-  if (WebAppPolicyManager::ShouldEnableForProfile(profile)) {
-    web_app_policy_manager_ = std::make_unique<WebAppPolicyManager>(
-        profile, pending_app_manager_.get());
-  }
+  web_app_policy_manager_ = std::make_unique<WebAppPolicyManager>(
+      profile, pending_app_manager_.get());
 
   system_web_app_manager_ = std::make_unique<SystemWebAppManager>(
       profile, pending_app_manager_.get());
+}
 
-  web_app::ScanForExternalWebApps(
-      profile, base::BindOnce(&WebAppProvider::OnScanForExternalWebApps,
-                              weak_ptr_factory_.GetWeakPtr()));
+void WebAppProvider::OnRegistryReady() {
+  DCHECK(!registry_is_ready_);
+  registry_is_ready_ = true;
+
+  if (!base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions)) {
+    web_app_policy_manager_->Start();
+    system_web_app_manager_->Start();
+
+    // Start ExternalWebApps subsystem:
+    ScanForExternalWebApps(
+        profile_, base::BindOnce(&WebAppProvider::OnScanForExternalWebApps,
+                                 weak_ptr_factory_.GetWeakPtr()));
+  }
+
+  if (registry_ready_callback_)
+    std::move(registry_ready_callback_).Run();
 }
 
 // static
@@ -112,43 +141,55 @@ void WebAppProvider::RegisterProfilePrefs(
 // static
 WebAppTabHelperBase* WebAppProvider::CreateTabHelper(
     content::WebContents* web_contents) {
-  if (base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions))
-    WebAppTabHelper::CreateForWebContents(web_contents);
-  else
-    extensions::BookmarkAppTabHelper::CreateForWebContents(web_contents);
-
-  WebAppTabHelperBase* helper =
-      WebAppTabHelperBase::FromWebContents(web_contents);
-
   WebAppProvider* provider = WebAppProvider::GetForWebContents(web_contents);
-  if (provider) {
-    // In some tests where Reset() has been called |audio_focus_id_map_| will be
-    // a nullptr. Therefore, we should recreate it.
-    if (!provider->audio_focus_id_map_)
-      provider->audio_focus_id_map_ = std::make_unique<WebAppAudioFocusIdMap>();
+  if (!provider)
+    return nullptr;
 
-    helper->SetAudioFocusIdMap(provider->audio_focus_id_map_.get());
+  WebAppTabHelperBase* tab_helper =
+      WebAppTabHelperBase::FromWebContents(web_contents);
+  // Do nothing if already exists.
+  if (tab_helper)
+    return tab_helper;
+
+  if (base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions)) {
+    tab_helper = WebAppTabHelper::CreateForWebContents(web_contents);
+  } else {
+    tab_helper =
+        extensions::BookmarkAppTabHelper::CreateForWebContents(web_contents);
   }
 
-  return helper;
+  tab_helper->Init(provider->audio_focus_id_map_.get());
+  return tab_helper;
 }
 
-// static
-bool WebAppProvider::CanInstallWebApp(content::WebContents* web_contents) {
-  auto* provider = WebAppProvider::GetForWebContents(web_contents);
-  if (!provider || !provider->install_manager_)
-    return false;
-  return provider->install_manager_->CanInstallWebApp(web_contents);
+void WebAppProvider::Observe(int type,
+                             const content::NotificationSource& source,
+                             const content::NotificationDetails& detals) {
+  DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
+
+  // KeyedService::Shutdown() gets called when the profile is being destroyed,
+  // but after DCHECK'ing that no RenderProcessHosts are being leaked. The
+  // "chrome::NOTIFICATION_PROFILE_DESTROYED" notification gets sent before the
+  // DCHECK so we use that to clean up RenderProcessHosts instead.
+  Reset();
 }
 
-// static
-void WebAppProvider::InstallWebApp(content::WebContents* web_contents,
-                                   bool force_shortcut_app) {
-  auto* provider = WebAppProvider::GetForWebContents(web_contents);
-  if (!provider || !provider->install_manager_)
-    return;
-  provider->install_manager_->InstallWebApp(web_contents, force_shortcut_app,
-                                            base::DoNothing());
+void WebAppProvider::SetRegistryReadyCallback(base::OnceClosure callback) {
+  DCHECK(!registry_ready_callback_);
+  if (registry_is_ready_) {
+    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                  std::move(callback));
+  } else {
+    registry_ready_callback_ = std::move(callback);
+  }
+}
+
+int WebAppProvider::CountUserInstalledApps() const {
+  // TODO: Implement for new Web Apps system. crbug.com/918986.
+  if (base::FeatureList::IsEnabled(features::kDesktopPWAsWithoutExtensions))
+    return 0;
+
+  return extensions::CountUserInstalledBookmarkApps(profile_);
 }
 
 void WebAppProvider::Reset() {
@@ -169,18 +210,6 @@ void WebAppProvider::Reset() {
   database_.reset();
   database_factory_.reset();
   audio_focus_id_map_.reset();
-}
-
-void WebAppProvider::Observe(int type,
-                             const content::NotificationSource& source,
-                             const content::NotificationDetails& detals) {
-  DCHECK_EQ(chrome::NOTIFICATION_PROFILE_DESTROYED, type);
-
-  // KeyedService::Shutdown() gets called when the profile is being destroyed,
-  // but after DCHECK'ing that no RenderProcessHosts are being leaked. The
-  // "chrome::NOTIFICATION_PROFILE_DESTROYED" notification gets sent before the
-  // DCHECK so we use that to clean up RenderProcessHosts instead.
-  Reset();
 }
 
 void WebAppProvider::OnScanForExternalWebApps(

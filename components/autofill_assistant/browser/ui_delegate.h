@@ -5,23 +5,25 @@
 #ifndef COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_UI_DELEGATE_H_
 #define COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_UI_DELEGATE_H_
 
+#include <memory>
 #include <string>
+#include <vector>
+
+#include "base/optional.h"
+#include "components/autofill_assistant/browser/metrics.h"
+#include "components/autofill_assistant/browser/payment_request.h"
+#include "components/autofill_assistant/browser/rectf.h"
+#include "components/autofill_assistant/browser/state.h"
 
 namespace autofill_assistant {
+
 // UI delegate called for script executions.
 class UiDelegate {
  public:
   virtual ~UiDelegate() = default;
 
-  // Called when autofill assistant can start executing scripts.
-  virtual void Start(const GURL& initialUrl) = 0;
-
-  // Called when the overlay has been clicked.
-  virtual void OnClickOverlay() = 0;
-
-  // Called when the Autofill Assistant should be destroyed, e.g. the tab
-  // detached from the associated activity.
-  virtual void OnDestroy() = 0;
+  // Returns the current state of the controller.
+  virtual AutofillAssistantState GetState() = 0;
 
   // Asks for updated coordinates for the touchable area. This is called to
   // speed up update of the touchable areas when there are good reasons to think
@@ -32,27 +34,46 @@ class UiDelegate {
   // detected. This should cause rerun of preconditions check.
   virtual void OnUserInteractionInsideTouchableArea() = 0;
 
-  // Called when a script was selected for execution.
-  virtual void OnScriptSelected(const std::string& script_path) = 0;
-
   // Returns a string describing the current execution context. This is useful
   // when analyzing feedback forms and for debugging in general.
   virtual std::string GetDebugContext() = 0;
 
-  // Initiates a clean shutdown.
+  // Returns the current status message.
+  virtual std::string GetStatusMessage() const = 0;
+
+  // Returns the current contextual information. May be null if empty.
+  virtual const Details* GetDetails() const = 0;
+
+  // Returns the current progress; a percentage.
+  virtual int GetProgress() const = 0;
+
+  // Returns the current set of chips.
+  virtual const std::vector<Chip>& GetChips() const = 0;
+
+  // Selects a chip, from the set of chips returned by GetChips().
+  virtual void SelectChip(int chip) = 0;
+
+  // If the controller is waiting for payment request information, this
+  // field contains a non-null options describing the request.
+  virtual const PaymentRequestOptions* GetPaymentRequestOptions() const = 0;
+
+  // Sets payment information, in response to the current payment request
+  // options.
+  virtual void SetPaymentInformation(
+      std::unique_ptr<PaymentInformation> payment_information) = 0;
+
+  // Adds the rectangles that correspond to the current touchable area to the
+  // given vector.
   //
-  // This function returns false when it needs more time to properly shut down
-  // the script tracker. It usually means that it either has to wait for a
-  // script to find an appropriate moment to suspend execution or wait for a
-  // script checking round to complete.
+  // |areas| is expressed in coordinates relative to the width or height of the
+  // visible viewport, as a number between 0 and 1. It can be empty.
   //
-  // A caller is expected to try again later when this function returns false. A
-  // return value of true means that the scrip tracker can safely be destroyed.
-  //
-  // TODO(crbug.com/806868): Instead of this safety net, the proper fix is to
-  // switch to weak pointers everywhere so that dangling callbacks are not an
-  // issue.
-  virtual bool Terminate() = 0;
+  // Note that the vector is not cleared before rectangles are added.
+  virtual void GetTouchableArea(std::vector<RectF>* area) const = 0;
+
+  // Reports a fatal error to Autofill Assistant, which should then stop.
+  virtual void OnFatalError(const std::string& error_message,
+                            Metrics::DropOutReason reason) = 0;
 
  protected:
   UiDelegate() = default;

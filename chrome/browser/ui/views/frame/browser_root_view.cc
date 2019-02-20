@@ -7,6 +7,7 @@
 #include <cmath>
 #include <string>
 
+#include "base/bind.h"
 #include "base/metrics/user_metrics.h"
 #include "base/task/post_task.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
@@ -113,7 +114,7 @@ BrowserRootView::~BrowserRootView() = default;
 
 bool BrowserRootView::GetDropFormats(
     int* formats,
-    std::set<ui::Clipboard::FormatType>* format_types) {
+    std::set<ui::ClipboardFormatType>* format_types) {
   if (tabstrip()->visible() || toolbar()->visible()) {
     *formats = ui::OSExchangeData::URL | ui::OSExchangeData::STRING;
     return true;

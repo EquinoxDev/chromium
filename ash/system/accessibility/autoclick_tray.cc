@@ -18,6 +18,8 @@
 #include "ash/system/tray/tray_popup_item_style.h"
 #include "ash/system/tray/tray_popup_utils.h"
 #include "ash/system/tray/tray_utils.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/metrics/user_metrics.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/border.h"
@@ -40,11 +42,10 @@ class AutoclickTitleView : public views::View, public views::ButtonListener {
  public:
   explicit AutoclickTitleView(AutoclickTray* autoclick_tray)
       : autoclick_tray_(autoclick_tray) {
-    const int separator_width = TrayConstants::separator_width();
     SetBorder(views::CreatePaddedBorder(
-        views::CreateSolidSidedBorder(0, 0, separator_width, 0,
+        views::CreateSolidSidedBorder(0, 0, kTraySeparatorWidth, 0,
                                       kMenuSeparatorColor),
-        gfx::Insets(kMenuSeparatorVerticalPadding - separator_width, 0)));
+        gfx::Insets(kMenuSeparatorVerticalPadding - kTraySeparatorWidth, 0)));
     auto box_layout =
         std::make_unique<views::BoxLayout>(views::BoxLayout::kHorizontal);
     box_layout->set_minimum_cross_axis_size(kTrayPopupItemMinHeight);
@@ -125,6 +126,8 @@ bool AutoclickTray::PerformAction(const ui::Event& event) {
   } else {
     ShowBubble(true /* show by click */);
     SetIsActive(true);
+    base::RecordAction(
+        base::UserMetricsAction("Accessibility.Autoclick.TrayMenu.Open"));
   }
   return true;
 }
@@ -179,6 +182,11 @@ void AutoclickTray::HideBubble(const TrayBubbleView* bubble_view) {
   HideBubbleWithView(bubble_view);
 }
 
+void AutoclickTray::ClickedOutsideBubble() {
+  CloseBubble();
+  SetIsActive(false);
+}
+
 void AutoclickTray::OnAccessibilityStatusChanged() {
   CheckStatusAndUpdateIcon();
 }
@@ -188,21 +196,30 @@ void AutoclickTray::OnSessionStateChanged(session_manager::SessionState state) {
   CheckStatusAndUpdateIcon();
 }
 
+bool AutoclickTray::ContainsPointInScreen(const gfx::Point& point) {
+  if (GetBoundsInScreen().Contains(point))
+    return true;
+
+  return bubble_ && bubble_->bubble_view()->GetBoundsInScreen().Contains(point);
+}
+
 void AutoclickTray::OnSettingsPressed() {
-  // TODO(katie): Record a user action metic.
   CloseBubble();
   SetIsActive(false);
   // TODO(katie): Try to jump to autoclick's specific settings.
   Shell::Get()->system_tray_model()->client_ptr()->ShowAccessibilitySettings();
+  base::RecordAction(
+      base::UserMetricsAction("Accessibility.Autoclick.TrayMenu.Settings"));
 }
 
 void AutoclickTray::OnEventTypePressed(mojom::AutoclickEventType type) {
   // When the user selects an autoclick event type option, close the bubble
   // view and update the autoclick controller's state.
-  // TODO(katie): Record a user action metric.
   CloseBubble();
   SetIsActive(false);
   Shell::Get()->accessibility_controller()->SetAutoclickEventType(type);
+  UMA_HISTOGRAM_ENUMERATION("Accessibility.CrosAutoclick.TrayMenu.ChangeAction",
+                            type);
 }
 
 void AutoclickTray::UpdateIconsForSession() {

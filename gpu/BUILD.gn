@@ -159,8 +159,6 @@ jumbo_static_library("test_support") {
     "command_buffer/service/error_state_mock.h",
     "command_buffer/service/gles2_cmd_decoder_mock.cc",
     "command_buffer/service/gles2_cmd_decoder_mock.h",
-    "command_buffer/service/raster_decoder_mock.cc",
-    "command_buffer/service/raster_decoder_mock.h",
     "ipc/raster_in_process_context.cc",
     "ipc/raster_in_process_context.h",
     "ipc/service/gpu_memory_buffer_factory_test_template.h",
@@ -471,7 +469,7 @@ test("gpu_unittests") {
     ]
   }
 
-  if (is_fuchsia || (is_posix && !is_mac)) {
+  if (is_linux || is_android || is_chromeos) {
     sources += [ "command_buffer/service/gpu_fence_manager_unittest.cc" ]
   }
 
@@ -613,6 +611,7 @@ fuzzer_test("gpu_fuzzer") {
     ":gles2",
     ":gpu",
     "//base",
+    "//base:i18n",
     "//base/third_party/dynamic_annotations",
     "//ui/gfx/geometry",
     "//ui/gl",

@@ -31,10 +31,36 @@ Polymer({
       notify: true,
     },
 
+    /** @type {!print_preview_new.State} */
+    state: {
+      type: Number,
+      observer: 'onStateChanged_',
+    },
+
+    /** @private {string} */
+    activeUser_: {
+      type: String,
+      observer: 'onActiveUserChanged_',
+    },
+
+    /** @private {!print_preview.CloudPrintState} */
+    cloudPrintState_: {
+      type: Number,
+      value: print_preview.CloudPrintState.DISABLED,
+    },
+
+    /** @private {boolean} */
+    controlsDisabled_: {
+      type: Boolean,
+      notify: true,
+      computed: 'computeControlsDisabled_(state)',
+    },
+
     /** @private {print_preview.Destination} */
     destination_: {
       type: Object,
       notify: true,
+      value: null,
     },
 
     /** @private {?print_preview.DestinationStore} */
@@ -56,32 +82,6 @@ Polymer({
     /** @private {!print_preview.PrintableArea} */
     printableArea_: Object,
 
-    /** @private {?print_preview.InvitationStore} */
-    invitationStore_: {
-      type: Object,
-      notify: true,
-      value: null,
-    },
-
-    /** @private {!Array<print_preview.RecentDestination>} */
-    recentDestinations_: {
-      type: Array,
-      notify: true,
-    },
-
-    /** @type {!print_preview_new.State} */
-    state: {
-      type: Number,
-      observer: 'onStateChanged_',
-    },
-
-    /** @private {?print_preview.UserInfo} */
-    userInfo_: {
-      type: Object,
-      notify: true,
-      value: null,
-    },
-
     /** @private {string} */
     errorMessage_: {
       type: String,
@@ -89,15 +89,8 @@ Polymer({
       value: '',
     },
 
-    /** @private {boolean} */
-    controlsDisabled_: {
-      type: Boolean,
-      notify: true,
-      computed: 'computeControlsDisabled_(state)',
-    },
-
-    /** @private {?print_preview.MeasurementSystem} */
-    measurementSystem_: {
+    /** @private {?print_preview.InvitationStore} */
+    invitationStore_: {
       type: Object,
       notify: true,
       value: null,
@@ -110,10 +103,23 @@ Polymer({
       value: false,
     },
 
+    /** @private {?print_preview.MeasurementSystem} */
+    measurementSystem_: {
+      type: Object,
+      notify: true,
+      value: null,
+    },
+
     /** @private {!print_preview_new.PreviewAreaState} */
     previewState_: {
       type: String,
       observer: 'onPreviewAreaStateChanged_',
+    },
+
+    /** @private {!Array<print_preview.RecentDestination>} */
+    recentDestinations_: {
+      type: Array,
+      notify: true,
     },
 
     /** @private {boolean} */
@@ -145,6 +151,9 @@ Polymer({
         return loadTimeData.getBoolean('pagesPerSheetEnabled');
       },
     },
+
+    /** @private {!Array<string>} */
+    users_: Array,
   },
 
   listeners: {
@@ -184,15 +193,14 @@ Polymer({
   /** @override */
   attached: function() {
     this.nativeLayer_ = print_preview.NativeLayer.getInstance();
-    this.userInfo_ = new print_preview.UserInfo();
     this.addWebUIListener(
         'use-cloud-print', this.onCloudPrintEnable_.bind(this));
     this.addWebUIListener('print-failed', this.onPrintFailed_.bind(this));
     this.addWebUIListener(
         'print-preset-options', this.onPrintPresetOptions_.bind(this));
-    this.destinationStore_ = new print_preview.DestinationStore(
-        this.userInfo_, this.addWebUIListener.bind(this));
-    this.invitationStore_ = new print_preview.InvitationStore(this.userInfo_);
+    this.destinationStore_ =
+        new print_preview.DestinationStore(this.addWebUIListener.bind(this));
+    this.invitationStore_ = new print_preview.InvitationStore();
     this.tracker_.add(window, 'keydown', this.onKeyDown_.bind(this));
     this.$.previewArea.setPluginKeyEventCallback(this.onKeyDown_.bind(this));
     this.tracker_.add(
@@ -380,27 +388,28 @@ Polymer({
   onCloudPrintEnable_: function(cloudPrintUrl, appKioskMode) {
     assert(!this.cloudPrintInterface_);
     this.cloudPrintInterface_ = cloudprint.getCloudPrintInterface(
-        cloudPrintUrl, assert(this.nativeLayer_), assert(this.userInfo_),
-        appKioskMode);
+        cloudPrintUrl, assert(this.nativeLayer_), appKioskMode);
     this.tracker_.add(
         assert(this.cloudPrintInterface_).getEventTarget(),
         cloudprint.CloudPrintInterfaceEventType.SUBMIT_DONE,
         this.close_.bind(this));
+
     [cloudprint.CloudPrintInterfaceEventType.SEARCH_FAILED,
-     cloudprint.CloudPrintInterfaceEventType.SUBMIT_FAILED,
      cloudprint.CloudPrintInterfaceEventType.PRINTER_FAILED,
     ].forEach(eventType => {
       this.tracker_.add(
           assert(this.cloudPrintInterface_).getEventTarget(), eventType,
-          this.onCloudPrintError_.bind(this));
+          this.checkCloudPrintStatus_.bind(this));
     });
+    this.tracker_.add(
+        assert(this.cloudPrintInterface_).getEventTarget(),
+        cloudprint.CloudPrintInterfaceEventType.SUBMIT_FAILED,
+        this.onCloudPrintError_.bind(this));
 
     this.destinationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
     this.invitationStore_.setCloudPrintInterface(this.cloudPrintInterface_);
-    if (this.$.destinationSettings.isDialogOpen()) {
-      this.destinationStore_.startLoadCloudDestinations();
-      this.invitationStore_.startLoadingInvitations();
-    }
+    assert(this.cloudPrintState_ === print_preview.CloudPrintState.DISABLED);
+    this.cloudPrintState_ = print_preview.CloudPrintState.ENABLED;
   },
 
   /** @private */
@@ -439,11 +448,12 @@ Polymer({
   },
 
   /**
-   * @param {!CustomEvent} e Event containing the sticky settings string.
+   * @param {!CustomEvent<string>} e Event containing the sticky settings
+   *     string.
    * @private
    */
   onSaveStickySettings_: function(e) {
-    this.nativeLayer_.saveAppState(/** @type {string} */ (e.detail));
+    this.nativeLayer_.saveAppState(e.detail);
   },
 
   /** @private */
@@ -502,14 +512,13 @@ Polymer({
   },
 
   /**
-   * @param {!CustomEvent} e The event containing the new validity.
+   * @param {!CustomEvent<boolean>} e The event containing the new validity.
    * @private
    */
   onSettingValidChanged_: function(e) {
     this.$.state.transitTo(
-        /** @type {boolean} */ (e.detail) ?
-            print_preview_new.State.READY :
-            print_preview_new.State.INVALID_TICKET);
+        e.detail ? print_preview_new.State.READY :
+                   print_preview_new.State.INVALID_TICKET);
   },
 
   /** @private */
@@ -535,14 +544,14 @@ Polymer({
   // <if expr="not chromeos">
   /** @private */
   onPrintWithSystemDialog_: function() {
-    assert(!cr.isChromeOS);
-    if (cr.isWindows) {
-      this.showSystemDialogBeforePrint_ = true;
-      this.onPrintRequested_();
-      return;
-    }
+    // <if expr="is_win">
+    this.showSystemDialogBeforePrint_ = true;
+    this.onPrintRequested_();
+    // </if>
+    // <if expr="not is_win">
     this.nativeLayer_.showSystemDialog();
     this.$.state.transitTo(print_preview_new.State.SYSTEM_DIALOG);
+    // </if>
   },
   // </if>
 
@@ -603,23 +612,39 @@ Polymer({
   },
 
   /**
+   * Updates the cloud print status to NOT_SIGNED_IN if there is an
+   * authentication error.
+   * @param {!CustomEvent<!cloudprint.CloudPrintInterfaceErrorEventDetail>}
+   *     event Contains the error status
+   * @private
+   */
+  checkCloudPrintStatus_: function(event) {
+    if (event.detail.status != 403 || this.isInAppKioskMode_) {
+      return;
+    }
+
+    // Should not have sent a message to Cloud Print if cloud print is
+    // disabled.
+    assert(this.cloudPrintState_ !== print_preview.CloudPrintState.DISABLED);
+    this.cloudPrintState_ = print_preview.CloudPrintState.NOT_SIGNED_IN;
+    console.warn('Google Cloud Print Error: HTTP status 403');
+  },
+
+  /**
    * Called when there was an error communicating with Google Cloud print.
    * Displays an error message in the print header.
-   * @param {!CustomEvent} event Contains the error message.
+   * @param {!CustomEvent<!cloudprint.CloudPrintInterfaceErrorEventDetail>}
+   *     event Contains the error message.
    * @private
    */
   onCloudPrintError_: function(event) {
-    if (event.detail.status == 0) {
-      return;  // Ignore, the system does not have internet connectivity.
+    this.checkCloudPrintStatus_(event);
+    if (event.detail.status == 0 ||
+        (event.detail.status == 403 && !this.isInAppKioskMode_)) {
+      return;  // No internet connectivity or handled by checkCloudPrintStatus_.
     }
-    if (event.detail.status == 403) {
-      if (!this.isInAppKioskMode_) {
-        this.$.destinationSettings.showCloudPrintPromo();
-      }
-    } else {
-      this.errorMessage_ = event.detail.message;
-      this.$.state.transitTo(print_preview_new.State.FATAL_ERROR);
-    }
+    this.errorMessage_ = event.detail.message;
+    this.$.state.transitTo(print_preview_new.State.FATAL_ERROR);
     if (event.detail.status == 200) {
       console.error(
           'Google Cloud Print Error: ' +
@@ -686,11 +711,11 @@ Polymer({
   },
 
   /**
-   * @param {!CustomEvent} e Contains the new preview request ID.
+   * @param {!CustomEvent<number>} e Contains the new preview request ID.
    * @private
    */
   onPreviewStart_: function(e) {
-    this.$.documentInfo.inFlightRequestId = /** @type {number} */ (e.detail);
+    this.$.documentInfo.inFlightRequestId = e.detail;
   },
 
   // <if expr="chromeos">
@@ -705,6 +730,25 @@ Polymer({
   /** @private */
   close_: function() {
     this.$.state.transitTo(print_preview_new.State.CLOSING);
+  },
+
+  /**
+   * @param {!CustomEvent<string>} e Event containing the new active user
+   *     account.
+   * @private
+   */
+  onAccountChange_: function(e) {
+    this.$.userInfo.updateActiveUser(e.detail);
+  },
+
+  /** @private */
+  onActiveUserChanged_: function() {
+    if (!this.activeUser_) {
+      return;
+    }
+
+    assert(this.cloudPrintState_ !== print_preview.CloudPrintState.DISABLED);
+    this.cloudPrintState_ = print_preview.CloudPrintState.SIGNED_IN;
   },
 });
 })();

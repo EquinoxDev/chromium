@@ -340,6 +340,7 @@ TEST(CSSSelectorParserTest, InternalPseudo) {
                               ":-internal-list-box",
                               ":-internal-shadow-host-has-appearance",
                               ":-internal-spatial-navigation-focus",
+                              ":-internal-spatial-navigation-interest",
                               ":-internal-video-persistent",
                               ":-internal-video-persistent-ancestor"};
   for (auto* test_case : test_cases) {
@@ -548,6 +549,26 @@ TEST(CSSSelectorParserTest, ShadowPartPseudoElementValid) {
   const char* test_cases[] = {"::part(ident)",
                               "host::part(ident)",
                               "host::part(ident):hover"};
+
+  for (auto* test_case : test_cases) {
+    SCOPED_TRACE(test_case);
+    CSSTokenizer tokenizer(test_case);
+    const auto tokens = tokenizer.TokenizeToEOF();
+    CSSParserTokenRange range(tokens);
+    CSSSelectorList list = CSSSelectorParser::ParseSelector(
+        range,
+        CSSParserContext::Create(kHTMLStandardMode,
+                                 SecureContextMode::kInsecureContext),
+        nullptr);
+    EXPECT_STREQ(test_case, list.SelectorsText().Ascii().data());
+  }
+}
+
+TEST(CSSSelectorParserTest, ShadowPartAndBeforeAfterPseudoElementValid) {
+  const char* test_cases[] = {
+      "::part(ident)::before",       "::part(ident)::after",
+      "::part(ident)::placeholder",  "::part(ident)::first-line",
+      "::part(ident)::first-letter", "::part(ident)::selection"};
 
   for (auto* test_case : test_cases) {
     SCOPED_TRACE(test_case);

@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/events/scoped_event_queue.h"
 #include "third_party/blink/renderer/core/dom/id_target_observer.h"
+#include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/v0_insertion_point.h"
 #include "third_party/blink/renderer/core/editing/frame_selection.h"
@@ -87,7 +88,7 @@ class ListAttributeTargetObserver : public IdTargetObserver {
 
   ListAttributeTargetObserver(const AtomicString& id, HTMLInputElement*);
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
   void IdTargetChanged() override;
 
  private:
@@ -135,7 +136,7 @@ HTMLInputElement* HTMLInputElement::Create(Document& document,
   return input_element;
 }
 
-void HTMLInputElement::Trace(blink::Visitor* visitor) {
+void HTMLInputElement::Trace(Visitor* visitor) {
   visitor->Trace(input_type_);
   visitor->Trace(input_type_view_);
   visitor->Trace(list_attribute_target_observer_);
@@ -143,10 +144,12 @@ void HTMLInputElement::Trace(blink::Visitor* visitor) {
   TextControlElement::Trace(visitor);
 }
 
-const HashSet<AtomicString>& HTMLInputElement::GetCheckedAttributeNames()
+const AttrNameToTrustedType& HTMLInputElement::GetCheckedAttributeTypes()
     const {
-  DEFINE_STATIC_LOCAL(HashSet<AtomicString>, attribute_set, ({"src"}));
-  return attribute_set;
+  DEFINE_STATIC_LOCAL(AttrNameToTrustedType, attribute_map,
+                      ({{"formaction", SpecificTrustedType::kTrustedURL},
+                        {"src", SpecificTrustedType::kTrustedURL}}));
+  return attribute_map;
 }
 
 bool HTMLInputElement::HasPendingActivity() const {
@@ -458,7 +461,7 @@ void HTMLInputElement::UpdateType() {
 
   ValueMode new_value_mode = input_type_->GetValueMode();
 
-  // https://html.spec.whatwg.org/multipage/forms.html#input-type-change
+  // https://html.spec.whatwg.org/C/#input-type-change
   //
   // 1. If the previous state of the element's type attribute put the value IDL
   // attribute in the value mode, and the element's value is not the empty
@@ -880,11 +883,8 @@ LayoutObject* HTMLInputElement::CreateLayoutObject(const ComputedStyle& style) {
 
 void HTMLInputElement::AttachLayoutTree(AttachContext& context) {
   TextControlElement::AttachLayoutTree(context);
-  if (GetLayoutObject()) {
+  if (GetLayoutObject())
     input_type_->OnAttachWithLayoutObject();
-  }
-
-  input_type_view_->StartResourceLoading();
   input_type_->CountUsage();
 }
 
@@ -1807,7 +1807,7 @@ ListAttributeTargetObserver::ListAttributeTargetObserver(
                        id),
       element_(element) {}
 
-void ListAttributeTargetObserver::Trace(blink::Visitor* visitor) {
+void ListAttributeTargetObserver::Trace(Visitor* visitor) {
   visitor->Trace(element_);
   IdTargetObserver::Trace(visitor);
 }
@@ -1922,12 +1922,9 @@ scoped_refptr<ComputedStyle> HTMLInputElement::CustomStyleForLayoutObject() {
       OriginalStyleForLayoutObject());
 }
 
-void HTMLInputElement::DidRecalcStyle(StyleRecalcChange change) {
+void HTMLInputElement::DidRecalcStyle(const StyleRecalcChange change) {
   TextControlElement::DidRecalcStyle(change);
-  if (change != kReattach)
-    return;
-  ComputedStyle* style = GetNonAttachedStyle();
-  if (style && style->Display() != EDisplay::kNone)
+  if (NeedsReattachLayoutTree() && GetComputedStyle())
     input_type_view_->StartResourceLoading();
 }
 

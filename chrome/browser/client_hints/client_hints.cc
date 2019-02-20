@@ -12,19 +12,25 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/client_hints/client_hints.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings_utils.h"
+#include "components/language/core/browser/pref_names.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/origin_util.h"
 #include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_util.h"
 #include "net/nqe/effective_connection_type.h"
 #include "net/nqe/network_quality_estimator_params.h"
 #include "net/url_request/url_request.h"
@@ -154,6 +160,12 @@ GetWebHoldbackEffectiveConnectionType() {
   return effective_connection_type;
 }
 
+bool UserAgentClientHintEnabled() {
+  return base::FeatureList::IsEnabled(features::kUserAgentClientHint) ||
+         base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kEnableExperimentalWebPlatformFeatures);
+}
+
 }  // namespace
 
 namespace client_hints {
@@ -215,9 +227,9 @@ ClientHints::ClientHints(content::BrowserContext* context)
 
 ClientHints::~ClientHints() = default;
 
-std::unique_ptr<net::HttpRequestHeaders>
-ClientHints::GetAdditionalNavigationRequestClientHintsHeaders(
-    const GURL& url) const {
+void ClientHints::GetAdditionalNavigationRequestClientHintsHeaders(
+    const GURL& url,
+    net::HttpRequestHeaders* additional_headers) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK_EQ(blink::kWebEffectiveConnectionTypeMappingCount,
             net::EFFECTIVE_CONNECTION_TYPE_4G + 1u);
@@ -226,26 +238,25 @@ ClientHints::GetAdditionalNavigationRequestClientHintsHeaders(
 
   // Get the client hint headers.
   if (!url.is_valid())
-    return nullptr;
+    return;
 
   if (!url.SchemeIsHTTPOrHTTPS())
-    return nullptr;
+    return;
 
   if (url.SchemeIs(url::kHttpScheme) && !net::IsLocalhost(url))
-    return nullptr;
+    return;
 
   DCHECK(url.SchemeIs(url::kHttpsScheme) ||
          (url.SchemeIs(url::kHttpScheme) && net::IsLocalhost(url)));
 
   Profile* profile = Profile::FromBrowserContext(context_);
   if (!profile)
-    return nullptr;
+    return;
 
   // Check if |url| is allowed to run JavaScript. If not, client hints are not
   // attached to the requests that initiate on the browser side.
-  if (!IsJavaScriptAllowed(profile, url)) {
-    return nullptr;
-  }
+  if (!IsJavaScriptAllowed(profile, url))
+    return;
 
   ContentSettingsForOneType client_hints_host_settings;
   HostContentSettingsMapFactory::GetForProfile(profile)->GetSettingsForOneType(
@@ -256,9 +267,6 @@ ClientHints::GetAdditionalNavigationRequestClientHintsHeaders(
 
   GetAllowedClientHintsFromSource(
       url /* resource url */, client_hints_host_settings, &web_client_hints);
-
-  std::unique_ptr<net::HttpRequestHeaders> additional_headers(
-      std::make_unique<net::HttpRequestHeaders>());
 
   // Currently, only "device-memory" client hint request header is added from
   // the browser process.
@@ -371,12 +379,63 @@ ClientHints::GetAdditionalNavigationRequestClientHintsHeaders(
         blink::kWebEffectiveConnectionTypeMapping[effective_connection_type]);
   }
 
+  if (web_client_hints.IsEnabled(blink::mojom::WebClientHintsType::kLang)) {
+    additional_headers->SetHeader(
+        blink::kClientHintsHeaderMapping[static_cast<int>(
+            blink::mojom::WebClientHintsType::kLang)],
+        blink::SerializeLangClientHint(
+            profile->GetPrefs()->GetString(language::prefs::kAcceptLanguages)));
+  }
+
+  if (UserAgentClientHintEnabled()) {
+    blink::UserAgentMetadata ua = ::GetUserAgentMetadata();
+
+    // The `Sec-CH-UA` client hint is attached to all outgoing requests. The
+    // opt-in controls the header's value, not its presence. This is
+    // (intentionally) different than other client hints.
+    //
+    // https://tools.ietf.org/html/draft-west-ua-client-hints-00#section-2.4
+    std::string version =
+        web_client_hints.IsEnabled(blink::mojom::WebClientHintsType::kUA)
+            ? ua.full_version
+            : ua.major_version;
+    additional_headers->SetHeader(
+        blink::kClientHintsHeaderMapping[static_cast<int>(
+            blink::mojom::WebClientHintsType::kUA)],
+        version.empty()
+            ? ua.brand.c_str()
+            : base::StringPrintf("%s %s", ua.brand.c_str(), version.c_str()));
+
+    if (web_client_hints.IsEnabled(blink::mojom::WebClientHintsType::kUAArch)) {
+      additional_headers->SetHeader(
+          blink::kClientHintsHeaderMapping[static_cast<int>(
+              blink::mojom::WebClientHintsType::kUAArch)],
+          ua.architecture);
+    }
+
+    if (web_client_hints.IsEnabled(
+            blink::mojom::WebClientHintsType::kUAPlatform)) {
+      additional_headers->SetHeader(
+          blink::kClientHintsHeaderMapping[static_cast<int>(
+              blink::mojom::WebClientHintsType::kUAPlatform)],
+          ua.platform);
+    }
+
+    if (web_client_hints.IsEnabled(
+            blink::mojom::WebClientHintsType::kUAModel)) {
+      additional_headers->SetHeader(
+          blink::kClientHintsHeaderMapping[static_cast<int>(
+              blink::mojom::WebClientHintsType::kUAModel)],
+          ua.model);
+    }
+  }
+
   // Static assert that triggers if a new client hint header is added. If a
   // new client hint header is added, the following assertion should be updated.
   // If possible, logic should be added above so that the request headers for
   // the newly added client hint can be added to the request.
   static_assert(
-      blink::mojom::WebClientHintsType::kEct ==
+      blink::mojom::WebClientHintsType::kUAModel ==
           blink::mojom::WebClientHintsType::kMaxValue,
       "Consider adding client hint request headers from the browser process");
 
@@ -384,7 +443,6 @@ ClientHints::GetAdditionalNavigationRequestClientHintsHeaders(
   // headers stay attached to the redirected request. Consider removing/adding
   // the client hints headers if the request is redirected with a change in
   // scheme or a change in the origin.
-  return additional_headers;
 }
 
 }  // namespace client_hints

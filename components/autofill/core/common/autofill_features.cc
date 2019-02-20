@@ -16,10 +16,13 @@
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/prefs/pref_service.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_features.h"
 
 namespace autofill {
 namespace features {
+
+// Controls whether the Autocomplete Retention Policy is being enforced or not.
+const base::Feature kAutocompleteRetentionPolicyEnabled{
+    "AutocompleteRetentionPolicyEnabled", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Controls whether autofill activates on non-HTTP(S) pages. Useful for
 // automated with data URLS in cases where it's too difficult to use the
@@ -121,13 +124,16 @@ const base::Feature kAutofillEnforceMinRequiredFieldsForUpload{
     "AutofillEnforceMinRequiredFieldsForUpload",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kAutofillExpandedPopupViews{
-    "AutofillExpandedPopupViews", base::FEATURE_ENABLED_BY_DEFAULT};
-
 // When enabled, gets payment identity from sync service instead of
 // identity manager.
 const base::Feature kAutofillGetPaymentsIdentityFromSync{
     "AutofillGetPaymentsIdentityFromSync", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// When enabled, a credit card form that is hidden after receiving input can
+// import the card.
+const base::Feature kAutofillImportNonFocusableCreditCardForms{
+    "AutofillImportNonFocusableCreditCardForms",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // When enabled, autofill suggestions are displayed in the keyboard accessory
 // instead of the regular popup.
@@ -159,6 +165,11 @@ const base::Feature kAutofillPreferServerNamePredictions{
 // website.
 const base::Feature kAutofillPrefilledFields{"AutofillPrefilledFields",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Controls whether Autofill uses server-side validation to ensure that fields
+// with invalid data are not suggested.
+const base::Feature kAutofillProfileServerValidation{
+    "AutofillProfileServerValidation", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Controls whether or not a group of fields not enclosed in a form can be
 // considered a form. If this is enabled, unowned fields will only constitute
@@ -198,6 +209,12 @@ const base::Feature kAutofillSaveCreditCardUsesStrikeSystem{
     "AutofillSaveCreditCardUsesStrikeSystem",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Controls whether offering to save cards will consider data from the Autofill
+// strike database (new version).
+const base::Feature kAutofillSaveCreditCardUsesStrikeSystemV2{
+    "AutofillSaveCreditCardUsesStrikeSystemV2",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Controls whether experiment ids should be sent through
 // Google Payments RPCs or not.
 const base::Feature kAutofillSendExperimentIdsInPaymentsRPCs{
@@ -219,6 +236,11 @@ const base::Feature kAutofillSendOnlyCountryInGetUploadDetails{
 // i.e., https://other.autofill.server:port/tbproxy/af/
 const base::Feature kAutofillServerCommunication{
     "AutofillServerCommunication", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Controls whether the payments settings page should list the credit cards
+// split by type: Local of from Account.
+const base::Feature kAutofillSettingsCardTypeSplit{
+    "AutofillSettingsCardTypeSplit", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Controls whether autofill suggestions are filtered by field values previously
 // filled by website.
@@ -242,11 +264,11 @@ const base::Feature kAutofillShowTypePredictions{
 const base::Feature kAutofillSkipComparingInferredLabels{
     "AutofillSkipComparingInferredLabels", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kAutofillSuggestInvalidProfileData{
-    "AutofillSuggestInvalidProfileData", base::FEATURE_ENABLED_BY_DEFAULT};
-
 const base::Feature kAutofillSuppressDisusedAddresses{
     "AutofillSuppressDisusedAddresses", base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kAutofillProfileClientValidation{
+    "AutofillProfileClientValidation", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kAutofillSuppressDisusedCreditCards{
     "AutofillSuppressDisusedCreditCards", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -364,15 +386,6 @@ bool IsPasswordManualFallbackEnabled() {
 
 bool IsAutofillManualFallbackEnabled() {
   return base::FeatureList::IsEnabled(kAutofillManualFallbackPhaseTwo);
-}
-
-bool ShouldUseNativeViews() {
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
-  return base::FeatureList::IsEnabled(kAutofillExpandedPopupViews) ||
-         base::FeatureList::IsEnabled(::features::kExperimentalUi);
-#else
-  return false;
-#endif
 }
 
 bool IsAutofillSaveCardDialogUnlabeledExpirationDateEnabled() {

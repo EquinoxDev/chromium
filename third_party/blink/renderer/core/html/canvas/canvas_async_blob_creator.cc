@@ -20,10 +20,10 @@
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
-#include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 #include "third_party/skia/include/core/SkSurface.h"
@@ -330,7 +330,7 @@ void CanvasAsyncBlobCreator::ScheduleAsyncBlobCreation(const double& quality) {
                         WrapPersistent(this)));
 
     } else {
-      background_scheduler::PostOnBackgroundThread(
+      worker_pool::PostTask(
           FROM_HERE,
           CrossThreadBind(&CanvasAsyncBlobCreator::EncodeImageOnEncoderThread,
                           WrapCrossThreadPersistent(this), quality));
@@ -588,7 +588,7 @@ void CanvasAsyncBlobCreator::PostDelayedTaskToCurrentThread(
                         TimeDelta::FromMillisecondsD(delay_ms));
 }
 
-void CanvasAsyncBlobCreator::Trace(blink::Visitor* visitor) {
+void CanvasAsyncBlobCreator::Trace(Visitor* visitor) {
   visitor->Trace(context_);
   visitor->Trace(encode_options_);
   visitor->Trace(callback_);
@@ -597,12 +597,12 @@ void CanvasAsyncBlobCreator::Trace(blink::Visitor* visitor) {
 
 sk_sp<SkColorSpace> CanvasAsyncBlobCreator::BlobColorSpaceToSkColorSpace(
     String blob_color_space) {
-  SkColorSpace::Gamut gamut = SkColorSpace::kSRGB_Gamut;
+  skcms_Matrix3x3 gamut = SkNamedGamut::kSRGB;
   if (blob_color_space == kDisplayP3ImageColorSpaceName)
-    gamut = SkColorSpace::kDCIP3_D65_Gamut;
+    gamut = SkNamedGamut::kDCIP3;
   else if (blob_color_space == kRec2020ImageColorSpaceName)
-    gamut = SkColorSpace::kRec2020_Gamut;
-  return SkColorSpace::MakeRGB(SkColorSpace::kSRGB_RenderTargetGamma, gamut);
+    gamut = SkNamedGamut::kRec2020;
+  return SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, gamut);
 }
 
 bool CanvasAsyncBlobCreator::EncodeImageForConvertToBlobTest() {

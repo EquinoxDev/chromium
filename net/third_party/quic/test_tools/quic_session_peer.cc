@@ -18,6 +18,12 @@ QuicStreamId QuicSessionPeer::GetNextOutgoingBidirectionalStreamId(
 }
 
 // static
+QuicStreamId QuicSessionPeer::GetNextOutgoingUnidirectionalStreamId(
+    QuicSession* session) {
+  return session->GetNextOutgoingUnidirectionalStreamId();
+}
+
+// static
 void QuicSessionPeer::SetNextOutgoingBidirectionalStreamId(QuicSession* session,
                                                            QuicStreamId id) {
   if (session->connection()->transport_version() == QUIC_VERSION_99) {
@@ -176,6 +182,15 @@ QuicStreamIdManager* QuicSessionPeer::v99_bidirectional_stream_id_manager(
 QuicStreamIdManager* QuicSessionPeer::v99_unidirectional_stream_id_manager(
     QuicSession* session) {
   return &session->v99_streamid_manager_.unidirectional_stream_id_manager_;
+}
+
+// static
+void QuicSessionPeer::SendRstStreamInner(QuicSession* session,
+                                         QuicStreamId id,
+                                         QuicRstStreamErrorCode error,
+                                         QuicStreamOffset bytes_written,
+                                         bool close_write_side_only) {
+  session->SendRstStreamInner(id, error, bytes_written, close_write_side_only);
 }
 
 }  // namespace test

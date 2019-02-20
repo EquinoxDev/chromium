@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/containers/queue.h"
 #include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
@@ -30,6 +31,7 @@
 #include "device/usb/public/cpp/fake_usb_device_info.h"
 #include "device/usb/public/cpp/fake_usb_device_manager.h"
 #include "device/usb/public/mojom/device.mojom.h"
+#include "device/usb/public/mojom/device_enumeration_options.mojom.h"
 #include "device/usb/public/mojom/device_manager.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

@@ -4,6 +4,8 @@
 
 #include "chrome/browser/apps/app_shim/extension_app_shim_handler_mac.h"
 
+#include <Security/Security.h>
+
 #include <utility>
 
 #include "apps/app_lifetime_monitor_factory.h"
@@ -12,7 +14,10 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/mac/foundation_util.h"
+#include "base/mac/scoped_cftyperef.h"
 #include "base/macros.h"
+#include "base/sha1.h"
 #include "chrome/browser/apps/app_shim/app_shim_host_bootstrap_mac.h"
 #include "chrome/browser/apps/app_shim/app_shim_host_mac.h"
 #include "chrome/browser/apps/app_shim/app_shim_host_manager_mac.h"
@@ -101,6 +106,89 @@ bool FocusHostedAppWindows(const std::set<Browser*>& browsers) {
 
   ui::FocusWindowSet(native_windows);
   return true;
+}
+
+// Create a SHA1 hex digest of a certificate, for use specifically in building
+// a code signing requirement string in IsAcceptablyCodeSigned(), below.
+std::string CertificateSHA1Digest(SecCertificateRef certificate) {
+  base::ScopedCFTypeRef<CFDataRef> certificate_data(
+      SecCertificateCopyData(certificate));
+  char hash[base::kSHA1Length];
+  base::SHA1HashBytes(CFDataGetBytePtr(certificate_data),
+                      CFDataGetLength(certificate_data),
+                      reinterpret_cast<unsigned char*>(hash));
+  return base::HexEncode(hash, base::kSHA1Length);
+}
+
+// Returns whether |pid|'s code signature is trusted:
+// - True if the caller is unsigned (there's nothing to verify).
+// - True if |pid| satisfies the caller's designated requirement.
+// - False otherwise (|pid| does not satisfy caller's designated requirement).
+bool IsAcceptablyCodeSignedInternal(pid_t pid) {
+  base::ScopedCFTypeRef<SecCodeRef> own_code;
+  base::ScopedCFTypeRef<CFDictionaryRef> own_signing_info;
+
+  // Fetch the calling process's designated requirement. The shim can only be
+  // validated if the caller has one (i.e. if the caller is code signed).
+  //
+  // Note: Don't validate |own_code|: updates modify the browser's bundle and
+  // invalidate its code signature while an update is pending. This can be
+  // revisited after https://crbug.com/496298 is resolved.
+  if (SecCodeCopySelf(kSecCSDefaultFlags, own_code.InitializeInto()) !=
+          errSecSuccess ||
+      SecCodeCopySigningInformation(own_code.get(), kSecCSSigningInformation,
+                                    own_signing_info.InitializeInto()) !=
+          errSecSuccess) {
+    LOG(ERROR) << "Failed to get own code signing information.";
+    return false;
+  }
+
+  auto* own_certificates = base::mac::GetValueFromDictionary<CFArrayRef>(
+      own_signing_info, kSecCodeInfoCertificates);
+  if (!own_certificates || CFArrayGetCount(own_certificates) < 1) {
+    return true;
+  }
+
+  auto* own_certificate = base::mac::CFCast<SecCertificateRef>(
+      CFArrayGetValueAtIndex(own_certificates, 0));
+  auto own_certificate_hash = CertificateSHA1Digest(own_certificate);
+
+  base::ScopedCFTypeRef<CFStringRef> shim_requirement_string(
+      CFStringCreateWithFormat(
+          kCFAllocatorDefault, nullptr,
+          CFSTR(
+              "identifier \"app_mode_loader\" and certificate leaf = H\"%s\""),
+          own_certificate_hash.c_str()));
+
+  base::ScopedCFTypeRef<SecRequirementRef> shim_requirement;
+  if (SecRequirementCreateWithString(
+          shim_requirement_string, kSecCSDefaultFlags,
+          shim_requirement.InitializeInto()) != errSecSuccess) {
+    LOG(ERROR)
+        << "Failed to create a SecRequirementRef from the requirement string \""
+        << shim_requirement_string << "\"";
+    return false;
+  }
+
+  base::ScopedCFTypeRef<SecCodeRef> guest_code;
+
+  base::ScopedCFTypeRef<CFNumberRef> pid_cf(
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &pid));
+  const void* guest_attribute_keys[] = {kSecGuestAttributePid};
+  const void* guest_attribute_values[] = {pid_cf};
+  base::ScopedCFTypeRef<CFDictionaryRef> guest_attributes(CFDictionaryCreate(
+      nullptr, guest_attribute_keys, guest_attribute_values,
+      base::size(guest_attribute_keys), &kCFTypeDictionaryKeyCallBacks,
+      &kCFTypeDictionaryValueCallBacks));
+  if (SecCodeCopyGuestWithAttributes(nullptr, guest_attributes,
+                                     kSecCSDefaultFlags,
+                                     guest_code.InitializeInto())) {
+    LOG(ERROR) << "Failed to create a SecCodeRef from the app shim's pid.";
+    return false;
+  }
+
+  return SecCodeCheckValidity(guest_code, kSecCSDefaultFlags,
+                              shim_requirement) == errSecSuccess;
 }
 
 // Attempts to launch a packaged app, prompting the user to enable it if
@@ -248,19 +336,21 @@ void ExtensionAppShimHandler::Delegate::LaunchShim(
     Profile* profile,
     const Extension* extension,
     bool recreate_shims,
-    LaunchShimCallback launch_callback) {
+    apps::ShimLaunchedCallback launched_callback,
+    apps::ShimTerminatedCallback terminated_callback) {
   if (recreate_shims) {
     // Load the resources needed to build the app shim (icons, etc), and then
     // recreate the shim and launch it.
     web_app::GetShortcutInfoForApp(
         extension, profile,
-        base::BindOnce(&web_app::LaunchShim,
-                       web_app::LaunchShimUpdateBehavior::RECREATE,
-                       std::move(launch_callback)));
+        base::BindOnce(
+            &web_app::LaunchShim,
+            web_app::LaunchShimUpdateBehavior::RECREATE_UNCONDITIONALLY,
+            std::move(launched_callback), std::move(terminated_callback)));
   } else {
     web_app::LaunchShim(
-        web_app::LaunchShimUpdateBehavior::NO_UPDATE,
-        std::move(launch_callback),
+        web_app::LaunchShimUpdateBehavior::DO_NOT_RECREATE,
+        std::move(launched_callback), std::move(terminated_callback),
         web_app::ShortcutInfoForExtensionAndProfile(extension, profile));
   }
 }
@@ -448,13 +538,15 @@ void ExtensionAppShimHandler::OnChromeWillHide() {
 void ExtensionAppShimHandler::OnShimLaunchRequested(
     AppShimHost* host,
     bool recreate_shims,
-    LaunchShimCallback launch_callback) {
+    apps::ShimLaunchedCallback launched_callback,
+    apps::ShimTerminatedCallback terminated_callback) {
   Profile* profile = nullptr;
   const Extension* extension = MaybeGetExtensionOrCloseHost(host, &profile);
   if (!profile || !extension)
     return;
   delegate_->LaunchShim(profile, extension, recreate_shims,
-                        std::move(launch_callback));
+                        std::move(launched_callback),
+                        std::move(terminated_callback));
 }
 
 void ExtensionAppShimHandler::OnShimProcessConnected(
@@ -597,7 +689,16 @@ void ExtensionAppShimHandler::OnExtensionEnabled(
       bootstrap->OnFailedToConnectToHost(APP_SHIM_LAUNCH_DUPLICATE_HOST);
       return;
     }
-    host->OnBootstrapConnected(std::move(bootstrap));
+    if (IsAcceptablyCodeSigned(bootstrap->GetAppShimPid())) {
+      host->OnBootstrapConnected(std::move(bootstrap));
+    } else {
+      // If the connecting shim process doesn't have an acceptable code
+      // signature, reject the connection and re-launch the shim. The internal
+      // re-launch will likely fail, whereupon the shim will be recreated.
+      LOG(ERROR) << "The attaching app shim's code signature is invalid.";
+      bootstrap->OnFailedToConnectToHost(APP_SHIM_LAUNCH_FAILED_VALIDATION);
+      host->LaunchShim();
+    }
   } else {
     // If it's an app that has a shim to launch it but shouldn't use a host
     // (e.g, a hosted app that opens in a tab), terminate the shim, but still
@@ -609,6 +710,10 @@ void ExtensionAppShimHandler::OnExtensionEnabled(
   // a browser window for it).
   if (launch_type == APP_SHIM_LAUNCH_NORMAL)
     delegate_->LaunchApp(profile, extension, files);
+}
+
+bool ExtensionAppShimHandler::IsAcceptablyCodeSigned(pid_t pid) const {
+  return IsAcceptablyCodeSignedInternal(pid);
 }
 
 void ExtensionAppShimHandler::OnShimClose(AppShimHost* host) {
@@ -792,16 +897,23 @@ void ExtensionAppShimHandler::OnAppStop(content::BrowserContext* context,
 void ExtensionAppShimHandler::OnBrowserAdded(Browser* browser) {}
 
 void ExtensionAppShimHandler::OnBrowserRemoved(Browser* browser) {
-  const Extension* extension = MaybeGetAppForBrowser(browser);
-  if (!extension)
-    return;
-
-  AppBrowserMap::iterator it = app_browser_windows_.find(extension->id());
-  if (it != app_browser_windows_.end()) {
+  // Note that |browser| may no longer have an extension, if it was unloaded
+  // before |browser| was closed. Search for |browser| in all extensions in
+  // |app_browser_windows_|.
+  for (auto it = app_browser_windows_.begin(); it != app_browser_windows_.end();
+       ++it) {
+    const std::string& extension_id = it->first;
     BrowserSet& browsers = it->second;
-    browsers.erase(browser);
-    if (browsers.empty())
-      OnAppDeactivated(browser->profile(), extension->id());
+    auto found = browsers.find(browser);
+    if (found == browsers.end())
+      continue;
+
+    browsers.erase(found);
+    if (browsers.empty()) {
+      OnAppDeactivated(browser->profile(), extension_id);
+      app_browser_windows_.erase(it);
+    }
+    return;
   }
 }
 

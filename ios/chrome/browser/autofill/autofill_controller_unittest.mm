@@ -19,6 +19,8 @@
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/webdata/autofill_entry.h"
+#include "components/autofill/core/common/autofill_clock.h"
 #import "components/autofill/ios/browser/autofill_agent.h"
 #include "components/autofill/ios/browser/autofill_driver_ios.h"
 #import "components/autofill/ios/browser/form_suggestion.h"
@@ -34,7 +36,7 @@
 #include "ios/chrome/browser/ssl/ios_security_state_tab_helper.h"
 #import "ios/chrome/browser/ui/autofill/chrome_autofill_client_ios.h"
 #import "ios/chrome/browser/ui/autofill/form_input_accessory_mediator.h"
-#include "ios/chrome/browser/ui/settings/personal_data_manager_data_changed_observer.h"
+#include "ios/chrome/browser/ui/settings/personal_data_manager_finished_profile_tasks_waiter.h"
 #include "ios/chrome/browser/web/chrome_web_client.h"
 #import "ios/chrome/browser/web/chrome_web_test.h"
 #include "ios/chrome/browser/web_data_service_factory.h"
@@ -145,6 +147,12 @@ void CheckField(const FormStructure& form,
   FAIL() << "Missing field " << name;
 }
 
+AutofillEntry CreateAutofillEntry(const base::string16& value) {
+  const base::Time kNow = AutofillClock::Now();
+  return AutofillEntry(AutofillKey(base::ASCIIToUTF16("Name"), value), kNow,
+                       kNow);
+}
+
 // Forces rendering of a UIView. This is used in tests to make sure that UIKit
 // optimizations don't have the views return the previous values (such as
 // zoomScale).
@@ -170,10 +178,10 @@ class TestConsumer : public WebDataServiceConsumer {
       WebDataServiceBase::Handle handle,
       std::unique_ptr<WDTypedResult> result) override {
     DCHECK_EQ(result->GetType(), AUTOFILL_VALUE_RESULT);
-    result_ = static_cast<WDResult<std::vector<base::string16>>*>(result.get())
+    result_ = static_cast<WDResult<std::vector<AutofillEntry>>*>(result.get())
                   ->GetValue();
   }
-  std::vector<base::string16> result_;
+  std::vector<AutofillEntry> result_;
 };
 
 // Text fixture to test autofill.
@@ -452,6 +460,8 @@ TEST_F(AutofillControllerTest, MultipleProfileSuggestions) {
   PersonalDataManager* personal_data_manager =
       PersonalDataManagerFactory::GetForBrowserState(
           ios::ChromeBrowserState::FromBrowserState(GetBrowserState()));
+  PersonalDataManagerFinishedProfileTasksWaiter waiter(personal_data_manager);
+
   AutofillProfile profile(base::GenerateGUID(), "https://www.example.com/");
   profile.SetRawInfo(NAME_FULL, base::UTF8ToUTF16("Homer Simpson"));
   profile.SetRawInfo(ADDRESS_HOME_LINE1, base::UTF8ToUTF16("123 Main Street"));
@@ -459,7 +469,10 @@ TEST_F(AutofillControllerTest, MultipleProfileSuggestions) {
   profile.SetRawInfo(ADDRESS_HOME_STATE, base::UTF8ToUTF16("IL"));
   profile.SetRawInfo(ADDRESS_HOME_ZIP, base::UTF8ToUTF16("55123"));
   EXPECT_EQ(0U, personal_data_manager->GetProfiles().size());
+
   personal_data_manager->SaveImportedProfile(profile);
+  waiter.Wait();
+
   EXPECT_EQ(1U, personal_data_manager->GetProfiles().size());
   AutofillProfile profile2(base::GenerateGUID(), "https://www.example.com/");
   profile2.SetRawInfo(NAME_FULL, base::UTF8ToUTF16("Larry Page"));
@@ -492,8 +505,9 @@ TEST_F(AutofillControllerTest, KeyValueImport) {
           chrome_browser_state_.get(), ServiceAccessType::EXPLICIT_ACCESS);
   __block TestConsumer consumer;
   const int limit = 1;
-  consumer.result_ = {base::ASCIIToUTF16("Should"), base::ASCIIToUTF16("get"),
-                      base::ASCIIToUTF16("overwritten")};
+  consumer.result_ = {CreateAutofillEntry(base::ASCIIToUTF16("Should")),
+                      CreateAutofillEntry(base::ASCIIToUTF16("get")),
+                      CreateAutofillEntry(base::ASCIIToUTF16("overwritten"))};
   web_data_service->GetFormValuesForElementName(
       base::UTF8ToUTF16("greeting"), base::string16(), limit, &consumer);
   base::TaskScheduler::GetInstance()->FlushForTesting();
@@ -510,7 +524,7 @@ TEST_F(AutofillControllerTest, KeyValueImport) {
   WaitForBackgroundTasks();
   // One result should be returned, matching the filled value.
   ASSERT_EQ(1U, consumer.result_.size());
-  EXPECT_EQ(base::UTF8ToUTF16("Hello"), consumer.result_[0]);
+  EXPECT_EQ(base::UTF8ToUTF16("Hello"), consumer.result_[0].key().value());
 };
 
 void AutofillControllerTest::SetUpKeyValueData() {
@@ -637,9 +651,9 @@ TEST_F(AutofillControllerTest, CreditCardImport) {
 
   // This call cause a modification of the PersonalDataManager, so wait until
   // the asynchronous task complete in addition to waiting for the UI update.
-  PersonalDataManagerDataChangedObserver observer(personal_data_manager);
+  PersonalDataManagerFinishedProfileTasksWaiter waiter(personal_data_manager);
   confirm_infobar->Accept();
-  observer.Wait();
+  waiter.Wait();
 
   const std::vector<CreditCard*>& credit_cards =
       personal_data_manager->GetCreditCards();

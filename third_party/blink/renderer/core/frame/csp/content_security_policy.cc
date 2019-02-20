@@ -1082,8 +1082,8 @@ void ContentSecurityPolicy::TreatAsPublicAddress() {
 }
 
 void ContentSecurityPolicy::RequireTrustedTypes() {
-  if (!RuntimeEnabledFeatures::TrustedDOMTypesEnabled())
-    return;
+  // We store whether CSP demands a policy. The caller still needs to check
+  // whether the feature is enabled in the first place.
   require_safe_types_ = true;
 }
 
@@ -1577,6 +1577,9 @@ bool ContentSecurityPolicy::ShouldBypassMainWorld(
   v8::Isolate* isolate = context->GetIsolate();
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::Context> v8_context = isolate->GetCurrentContext();
+
+  // This can be called before we enter v8, hence the context might be empty,
+  // which implies we are not in an isolated world.
   if (v8_context.IsEmpty())
     return false;
 

@@ -4,6 +4,8 @@
 
 #include "content/browser/dom_storage/local_storage_context_mojo.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -185,8 +187,9 @@ class LocalStorageContextMojoTest : public testing::Test {
     const url::Origin kOrigin = url::Origin::Create(GURL("http://foobar.com"));
     blink::mojom::StorageAreaPtr area;
     blink::mojom::StorageAreaPtr dummy_area;  // To make sure values are cached.
-    context()->OpenLocalStorage(kOrigin, MakeRequest(&area));
-    context()->OpenLocalStorage(kOrigin, MakeRequest(&dummy_area));
+    context()->OpenLocalStorage(kOrigin, MakeRequest(&area), base::DoNothing());
+    context()->OpenLocalStorage(kOrigin, MakeRequest(&dummy_area),
+                                base::DoNothing());
     std::vector<uint8_t> result;
     bool success = test::GetSync(area.get(), key, &result);
     return success ? base::Optional<std::vector<uint8_t>>(result)
@@ -220,7 +223,7 @@ TEST_F(LocalStorageContextMojoTest, Basic) {
 
   blink::mojom::StorageAreaPtr area;
   context()->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area));
+                              MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -239,11 +242,11 @@ TEST_F(LocalStorageContextMojoTest, OriginsAreIndependent) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key1, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key2, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -259,8 +262,9 @@ TEST_F(LocalStorageContextMojoTest, WrapperOutlivesMojoConnection) {
   blink::mojom::StorageAreaPtr area;
   blink::mojom::StorageAreaPtr dummy_area;  // To make sure values are cached.
   const url::Origin kOrigin(url::Origin::Create(GURL("http://foobar.com")));
-  context()->OpenLocalStorage(kOrigin, MakeRequest(&area));
-  context()->OpenLocalStorage(kOrigin, MakeRequest(&dummy_area));
+  context()->OpenLocalStorage(kOrigin, MakeRequest(&area), base::DoNothing());
+  context()->OpenLocalStorage(kOrigin, MakeRequest(&dummy_area),
+                              base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
   dummy_area.reset();
@@ -288,7 +292,7 @@ TEST_F(LocalStorageContextMojoTest, OpeningWrappersPurgesInactiveWrappers) {
   // Write some data to the DB.
   blink::mojom::StorageAreaPtr area;
   context()->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area));
+                              MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
   base::RunLoop().RunUntilIdle();
@@ -301,7 +305,7 @@ TEST_F(LocalStorageContextMojoTest, OpeningWrappersPurgesInactiveWrappers) {
   for (int i = 1; i <= 100; ++i) {
     context()->OpenLocalStorage(url::Origin::Create(GURL(base::StringPrintf(
                                     "http://example.com:%d", i))),
-                                MakeRequest(&area));
+                                MakeRequest(&area), base::DoNothing());
     area.reset();
   }
 
@@ -346,12 +350,12 @@ TEST_F(LocalStorageContextMojoTest, GetStorageUsage_Data) {
   base::Time before_write = base::Time::Now();
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key1, value, base::nullopt, "source", base::DoNothing());
   area->Put(key2, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key2, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -393,13 +397,13 @@ TEST_F(LocalStorageContextMojoTest, MetaDataClearedOnDelete) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Delete(key, value, "source", base::DoNothing());
   area.reset();
 
@@ -426,14 +430,14 @@ TEST_F(LocalStorageContextMojoTest, MetaDataClearedOnDeleteAll) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->DeleteAll("source", base::DoNothing());
   area.reset();
 
@@ -460,7 +464,7 @@ TEST_F(LocalStorageContextMojoTest, MojoConnectionDisconnects) {
 
   {
     blink::mojom::StorageAreaPtr area;
-    context()->OpenLocalStorage(origin1, MakeRequest(&area));
+    context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
     area->Put(key, value, base::nullopt, "source", base::DoNothing());
     area.reset();
   }
@@ -476,7 +480,7 @@ TEST_F(LocalStorageContextMojoTest, MojoConnectionDisconnects) {
   // Check that local storage still works without a database.
   {
     blink::mojom::StorageAreaPtr area;
-    context()->OpenLocalStorage(origin1, MakeRequest(&area));
+    context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
     area->Put(key, value, base::nullopt, "source", base::DoNothing());
     area.reset();
   }
@@ -501,11 +505,11 @@ TEST_F(LocalStorageContextMojoTest, DeleteStorageWithoutConnection) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -536,11 +540,11 @@ TEST_F(LocalStorageContextMojoTest, DeleteStorageNotifiesWrapper) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -549,7 +553,7 @@ TEST_F(LocalStorageContextMojoTest, DeleteStorageNotifiesWrapper) {
   EXPECT_FALSE(mock_data().empty());
 
   TestLevelDBObserver observer;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->AddObserver(observer.Bind());
   base::RunLoop().RunUntilIdle();
 
@@ -580,11 +584,11 @@ TEST_F(LocalStorageContextMojoTest, DeleteStorageWithPendingWrites) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -593,7 +597,7 @@ TEST_F(LocalStorageContextMojoTest, DeleteStorageWithPendingWrites) {
   EXPECT_FALSE(mock_data().empty());
 
   TestLevelDBObserver observer;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->AddObserver(observer.Bind());
   area->Put(StdStringToUint8Vector("key2"), value, base::nullopt, "source",
             base::DoNothing());
@@ -643,9 +647,10 @@ TEST_F(LocalStorageContextMojoTest, Migration) {
 
   // Opening origin2 and accessing its data should not migrate anything.
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   blink::mojom::StorageAreaPtr dummy_area;  // To make sure values are cached.
-  context()->OpenLocalStorage(origin2, MakeRequest(&dummy_area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&dummy_area),
+                              base::DoNothing());
   area->Get(std::vector<uint8_t>(), base::DoNothing());
   area.reset();
   dummy_area.reset();
@@ -653,8 +658,9 @@ TEST_F(LocalStorageContextMojoTest, Migration) {
   EXPECT_TRUE(mock_data().empty());
 
   // Opening origin1 and accessing its data should migrate its storage.
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
-  context()->OpenLocalStorage(origin1, MakeRequest(&dummy_area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
+  context()->OpenLocalStorage(origin1, MakeRequest(&dummy_area),
+                              base::DoNothing());
   area->Get(std::vector<uint8_t>(), base::DoNothing());
   base::RunLoop().RunUntilIdle();
   EXPECT_FALSE(mock_data().empty());
@@ -709,9 +715,9 @@ TEST_F(LocalStorageContextMojoTest, FixUp) {
   blink::mojom::StorageAreaPtr area;
   blink::mojom::StorageAreaPtr dummy_area;  // To make sure values are cached.
   context()->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area));
+                              MakeRequest(&area), base::DoNothing());
   context()->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&dummy_area));
+                              MakeRequest(&dummy_area), base::DoNothing());
 
   {
     std::vector<uint8_t> result;
@@ -747,12 +753,12 @@ TEST_F(LocalStorageContextMojoTest, ShutdownClearsData) {
   auto value = StdStringToUint8Vector("value");
 
   blink::mojom::StorageAreaPtr area;
-  context()->OpenLocalStorage(origin1, MakeRequest(&area));
+  context()->OpenLocalStorage(origin1, MakeRequest(&area), base::DoNothing());
   area->Put(key1, value, base::nullopt, "source", base::DoNothing());
   area->Put(key2, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
-  context()->OpenLocalStorage(origin2, MakeRequest(&area));
+  context()->OpenLocalStorage(origin2, MakeRequest(&area), base::DoNothing());
   area->Put(key2, value, base::nullopt, "source", base::DoNothing());
   area.reset();
 
@@ -789,7 +795,7 @@ class LocalStorageContextMojoTestWithService
     bool success = false;
     base::RunLoop run_loop;
     context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area));
+                              MakeRequest(&area), base::DoNothing());
     area->Put(key, value, base::nullopt, "source",
               test::MakeSuccessCallback(run_loop.QuitClosure(), &success));
     run_loop.Run();
@@ -803,7 +809,7 @@ class LocalStorageContextMojoTestWithService
                  std::vector<uint8_t>* result) {
     blink::mojom::StorageAreaPtr area;
     context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area));
+                              MakeRequest(&area), base::DoNothing());
 
     base::RunLoop run_loop;
     std::vector<blink::mojom::KeyValuePtr> data;
@@ -855,7 +861,7 @@ TEST_F(LocalStorageContextMojoTestWithService, InMemory) {
 
   blink::mojom::StorageAreaPtr area;
   context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                            MakeRequest(&area));
+                            MakeRequest(&area), base::DoNothing());
   DoTestPut(context, key, value);
   std::vector<uint8_t> result;
   EXPECT_TRUE(DoTestGet(context, key, &result));
@@ -885,7 +891,7 @@ TEST_F(LocalStorageContextMojoTestWithService, InMemoryInvalidPath) {
 
   blink::mojom::StorageAreaPtr area;
   context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                            MakeRequest(&area));
+                            MakeRequest(&area), base::DoNothing());
 
   DoTestPut(context, key, value);
   std::vector<uint8_t> result;
@@ -1059,11 +1065,11 @@ TEST_F(LocalStorageContextMojoTestWithService, RecreateOnCommitFailure) {
     base::RunLoop loop;
     mock_leveldb_service.SetOnOpenCallback(loop.QuitClosure());
     context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area1));
+                              MakeRequest(&area1), base::DoNothing());
     context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area2));
+                              MakeRequest(&area2), base::DoNothing());
     context->OpenLocalStorage(url::Origin::Create(GURL("http://example.com")),
-                              MakeRequest(&area3));
+                              MakeRequest(&area3), base::DoNothing());
     loop.Run();
   }
 
@@ -1133,7 +1139,7 @@ TEST_F(LocalStorageContextMojoTestWithService, RecreateOnCommitFailure) {
 
   // Reconnect area1 to the database, and try to read a value.
   context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                            MakeRequest(&area1));
+                            MakeRequest(&area1), base::DoNothing());
   base::RunLoop delete_loop;
   bool success = true;
   TestLevelDBObserver observer3;
@@ -1205,7 +1211,7 @@ TEST_F(LocalStorageContextMojoTestWithService,
     base::RunLoop loop;
     mock_leveldb_service.SetOnOpenCallback(loop.QuitClosure());
     context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                              MakeRequest(&area));
+                              MakeRequest(&area), base::DoNothing());
     loop.Run();
   }
 
@@ -1273,7 +1279,7 @@ TEST_F(LocalStorageContextMojoTestWithService,
   // This time all should just keep getting written, and commit errors are
   // getting ignored.
   context->OpenLocalStorage(url::Origin::Create(GURL("http://foobar.com")),
-                            MakeRequest(&area));
+                            MakeRequest(&area), base::DoNothing());
   old_value = base::nullopt;
   for (int i = 0; i < 64; ++i) {
     base::RunLoop put_loop;

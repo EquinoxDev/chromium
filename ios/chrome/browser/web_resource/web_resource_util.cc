@@ -28,7 +28,7 @@ void PostErrorTask(base::TaskRunner* task_runner,
                    const WebResourceService::ErrorCallback& error_callback,
                    const char error[]) {
   task_runner->PostTask(FROM_HERE,
-                        base::Bind(error_callback, std::string(error)));
+                        base::BindOnce(error_callback, std::string(error)));
 }
 
 // Parses |data| as a JSON string and calls back on |task_runner|.
@@ -43,7 +43,7 @@ void ParseJSONOnBackgroundThread(
     return;
   }
 
-  std::unique_ptr<base::Value> value(base::JSONReader::Read(data));
+  std::unique_ptr<base::Value> value(base::JSONReader::ReadDeprecated(data));
   if (!value.get()) {
     // Page information not properly read, or corrupted.
     PostErrorTask(task_runner, error_callback, kInvalidDataTypeError);
@@ -56,7 +56,7 @@ void ParseJSONOnBackgroundThread(
   }
 
   task_runner->PostTask(FROM_HERE,
-                        base::Bind(success_callback, base::Passed(&value)));
+                        base::BindOnce(success_callback, std::move(value)));
 }
 
 // Starts the parsing of |data| as a JSON string asynchronously on a background

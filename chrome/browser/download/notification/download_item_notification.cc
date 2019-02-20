@@ -9,6 +9,7 @@
 
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/public/cpp/vector_icons/vector_icons.h"
+#include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/metrics/user_metrics.h"
 #include "base/strings/utf_string_conversions.h"
@@ -440,7 +441,6 @@ void DownloadItemNotification::UpdateNotificationData(bool display,
     button_actions_->push_back(*it);
     message_center::ButtonInfo button_info =
         message_center::ButtonInfo(GetCommandLabel(*it));
-    button_info.icon = command.GetCommandIcon(*it);
     notification_actions.push_back(button_info);
   }
   notification_->set_buttons(notification_actions);

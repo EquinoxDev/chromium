@@ -16,7 +16,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/containers/hash_tables.h"
 #include "base/hash.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
@@ -102,7 +101,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "storage/browser/fileapi/isolated_context.h"
 #include "third_party/blink/public/web/web_ime_text_span.h"
-#include "ui/base/clipboard/clipboard.h"
+#include "ui/base/clipboard/clipboard_constants.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/display/display_switches.h"
 #include "ui/display/screen.h"
@@ -227,20 +226,17 @@ std::vector<DropData::Metadata> DropDataToMetaData(const DropData& drop_data) {
   std::vector<DropData::Metadata> metadata;
   if (!drop_data.text.is_null()) {
     metadata.push_back(DropData::Metadata::CreateForMimeType(
-        DropData::Kind::STRING,
-        base::ASCIIToUTF16(ui::Clipboard::kMimeTypeText)));
+        DropData::Kind::STRING, base::ASCIIToUTF16(ui::kMimeTypeText)));
   }
 
   if (drop_data.url.is_valid()) {
     metadata.push_back(DropData::Metadata::CreateForMimeType(
-        DropData::Kind::STRING,
-        base::ASCIIToUTF16(ui::Clipboard::kMimeTypeURIList)));
+        DropData::Kind::STRING, base::ASCIIToUTF16(ui::kMimeTypeURIList)));
   }
 
   if (!drop_data.html.is_null()) {
     metadata.push_back(DropData::Metadata::CreateForMimeType(
-        DropData::Kind::STRING,
-        base::ASCIIToUTF16(ui::Clipboard::kMimeTypeHTML)));
+        DropData::Kind::STRING, base::ASCIIToUTF16(ui::kMimeTypeHTML)));
   }
 
   // On Aura, filenames are available before drop.
@@ -318,6 +314,9 @@ class UnboundWidgetInputHandler : public mojom::WidgetInputHandler {
   }
   void DispatchNonBlockingEvent(
       std::unique_ptr<content::InputEvent> event) override {
+    DLOG(WARNING) << "Input request on unbound interface";
+  }
+  void WaitForInputProcessed(WaitForInputProcessedCallback callback) override {
     DLOG(WARNING) << "Input request on unbound interface";
   }
   void AttachSynchronousCompositor(
@@ -535,15 +534,15 @@ RenderWidgetHost::GetRenderWidgetHosts() {
   auto hosts = std::make_unique<RenderWidgetHostIteratorImpl>();
   for (auto& it : g_routing_id_widget_map.Get()) {
     RenderWidgetHostImpl* widget = it.second;
-    RenderViewHost* rvh = widget->GetRenderViewHost();
+    RenderWidgetHostOwnerDelegate* owner_delegate = widget->owner_delegate();
     // If the widget is not for a main frame, add to |hosts|.
-    if (!rvh) {
+    if (!owner_delegate) {
       hosts->Add(widget);
       continue;
     }
 
-    // If the widget is for a main frame, add only if active.
-    if (static_cast<RenderViewHostImpl*>(rvh)->is_active())
+    // If the widget is for a main frame, only add if it's not swapped out.
+    if (owner_delegate->IsMainFrameActive())
       hosts->Add(widget);
   }
 
@@ -564,10 +563,6 @@ RenderWidgetHostImpl::GetAllRenderWidgetHosts() {
 // static
 RenderWidgetHostImpl* RenderWidgetHostImpl::From(RenderWidgetHost* rwh) {
   return static_cast<RenderWidgetHostImpl*>(rwh);
-}
-
-RenderViewHost* RenderWidgetHostImpl::GetRenderViewHost() {
-  return owner_delegate_ ? owner_delegate_->GetRenderViewHost() : nullptr;
 }
 
 void RenderWidgetHostImpl::SetView(RenderWidgetHostViewBase* view) {
@@ -677,6 +672,10 @@ void RenderWidgetHostImpl::InitForFrame() {
 
   if (view_)
     view_->OnRenderWidgetInit();
+}
+
+bool RenderWidgetHostImpl::ShouldShowStaleContentOnEviction() {
+  return delegate_->ShouldShowStaleContentOnEviction();
 }
 
 void RenderWidgetHostImpl::ShutdownAndDestroyWidget(bool also_delete) {
@@ -793,7 +792,8 @@ void RenderWidgetHostImpl::WasShown(bool record_presentation_time) {
   if (!is_hidden_)
     return;
 
-  TRACE_EVENT0("renderer_host", "RenderWidgetHostImpl::WasShown");
+  TRACE_EVENT_WITH_FLOW0("renderer_host", "RenderWidgetHostImpl::WasShown",
+                         routing_id_, TRACE_EVENT_FLAG_FLOW_OUT);
   is_hidden_ = false;
 
   // If we navigated in background, clear the displayed graphics of the
@@ -851,20 +851,39 @@ void RenderWidgetHostImpl::SetImportance(ChildProcessImportance importance) {
 bool RenderWidgetHostImpl::GetVisualProperties(
     VisualProperties* visual_properties,
     bool* needs_ack) {
+  // This is only called while the RenderWidgetHost is attached to a delegate
+  // still.
+  DCHECK(delegate_);
+
   *visual_properties = VisualProperties();
 
   GetScreenInfo(&visual_properties->screen_info);
 
-  if (delegate_) {
-    visual_properties->is_fullscreen_granted =
-        delegate_->IsFullscreenForCurrentTab();
-    visual_properties->display_mode = delegate_->GetDisplayMode(this);
-    visual_properties->zoom_level = delegate_->GetPendingPageZoomLevel();
-  } else {
-    visual_properties->is_fullscreen_granted = false;
-    visual_properties->display_mode = blink::kWebDisplayModeBrowser;
-    visual_properties->zoom_level = 0;
+  visual_properties->is_fullscreen_granted =
+      delegate_->IsFullscreenForCurrentTab();
+  visual_properties->display_mode = delegate_->GetDisplayMode(this);
+  visual_properties->zoom_level = delegate_->GetPendingPageZoomLevel();
+
+  RenderViewHostDelegateView* rvh_delegate_view = delegate_->GetDelegateView();
+  DCHECK(rvh_delegate_view);
+
+  visual_properties->browser_controls_shrink_blink_size =
+      rvh_delegate_view->DoBrowserControlsShrinkRendererSize();
+
+  float top_controls_height = rvh_delegate_view->GetTopControlsHeight();
+  float bottom_controls_height = rvh_delegate_view->GetBottomControlsHeight();
+  float browser_controls_dsf_multiplier = 1.f;
+  // The top and bottom control sizes are physical pixels but the IPC wants
+  // DIPs *when not using page zoom for DSF* because blink layout is working
+  // in DIPs then.
+  if (!IsUseZoomForDSFEnabled()) {
+    browser_controls_dsf_multiplier =
+        visual_properties->screen_info.device_scale_factor;
   }
+  visual_properties->top_controls_height =
+      top_controls_height / browser_controls_dsf_multiplier;
+  visual_properties->bottom_controls_height =
+      bottom_controls_height / browser_controls_dsf_multiplier;
 
   visual_properties->auto_resize_enabled = auto_resize_enabled_;
   visual_properties->min_size_for_auto_resize = min_size_for_auto_resize_;
@@ -878,16 +897,6 @@ bool RenderWidgetHostImpl::GetVisualProperties(
         view_->GetCaptureSequenceNumber();
     visual_properties->compositor_viewport_pixel_size =
         view_->GetCompositorViewportPixelSize();
-    visual_properties->top_controls_height = view_->GetTopControlsHeight();
-    visual_properties->bottom_controls_height =
-        view_->GetBottomControlsHeight();
-    if (IsUseZoomForDSFEnabled()) {
-      float device_scale = visual_properties->screen_info.device_scale_factor;
-      visual_properties->top_controls_height *= device_scale;
-      visual_properties->bottom_controls_height *= device_scale;
-    }
-    visual_properties->browser_controls_shrink_blink_size =
-        view_->DoBrowserControlsShrinkRendererSize();
     visual_properties->visible_viewport_size = view_->GetVisibleViewportSize();
     // TODO(ccameron): GetLocalSurfaceId is not synchronized with the device
     // scale factor of the surface. Fix this.
@@ -939,10 +948,8 @@ bool RenderWidgetHostImpl::GetVisualProperties(
 
   const bool parent_local_surface_id_changed =
       !old_visual_properties_ ||
-      old_parent_local_surface_id.parent_sequence_number() !=
-          new_parent_local_surface_id.parent_sequence_number() ||
-      old_parent_local_surface_id.embed_token() !=
-          new_parent_local_surface_id.embed_token();
+      old_parent_local_surface_id.parent_component() !=
+          new_parent_local_surface_id.parent_component();
 
   const bool zoom_changed =
       !old_visual_properties_ ||
@@ -1002,9 +1009,12 @@ void RenderWidgetHostImpl::SynchronizeVisualPropertiesIgnoringPendingAck() {
 bool RenderWidgetHostImpl::SynchronizeVisualProperties(
     bool scroll_focused_node_into_view) {
   // Skip if the |delegate_| has already been detached because
-  // it's web contents is being deleted.
+  // it's web contents is being deleted, or if LocalSurfaceIdAllocation is
+  // suppressed, as we are first updating our internal state from a child's
+  // request, before subsequently merging ids to send.
   if (visual_properties_ack_pending_ || !process_->IsInitializedAndNotDead() ||
-      !view_ || !view_->HasSize() || !renderer_initialized_ || !delegate_) {
+      !view_ || !view_->HasSize() || !renderer_initialized_ || !delegate_ ||
+      surface_id_allocation_suppressed_) {
     return false;
   }
 
@@ -1019,6 +1029,34 @@ bool RenderWidgetHostImpl::SynchronizeVisualProperties(
   bool width_changed =
       !old_visual_properties_ || old_visual_properties_->new_size.width() !=
                                      visual_properties->new_size.width();
+
+  // TODO(jonross): Enable on ChromeOS once blocking mus bugs are fixed:
+  // https://crbug.com/920642 https://crbug.com/920006
+  // TODO(jonross): Enable on Android once root cause of crash is found and
+  // fixed: https://crbug.com/923742
+#if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
+  // When the size has changed, we must ensure that there is a new, updated
+  // viz::LocalSurfaceId. Otherwise we encounter Surface Invariants Violation at
+  // the time of frame submission. Check for this violation here in order to
+  // detect the source of the bug.
+  if (old_visual_properties_ &&
+      old_visual_properties_->new_size != visual_properties->new_size &&
+      old_visual_properties_->local_surface_id_allocation &&
+      visual_properties->local_surface_id_allocation) {
+    // We suspect that we may not be updating viz::LocalSurfaceIds correctly
+    // when auto-resize is enabled. Logging this additional information to
+    // confirm if that is the case. https://crbug.com/900948
+    CHECK_NE(old_visual_properties_->local_surface_id_allocation.value(),
+             visual_properties->local_surface_id_allocation.value())
+        << "Invalid Surface Id State: size changed without a change in "
+           "LocalSurfaceId: auto_resize_enabled "
+        << visual_properties->auto_resize_enabled << " old "
+        << old_visual_properties_->local_surface_id_allocation->ToString()
+        << " new "
+        << visual_properties->local_surface_id_allocation->ToString();
+  }
+#endif
+
   bool sent_visual_properties = false;
   if (Send(new WidgetMsg_SynchronizeVisualProperties(routing_id_,
                                                      *visual_properties))) {
@@ -1278,6 +1316,18 @@ void RenderWidgetHostImpl::ForwardWheelEventWithLatencyInfo(
   MouseWheelEventWithLatencyInfo wheel_with_latency(wheel_event, latency);
   DispatchInputEventWithLatencyInfo(wheel_event, &wheel_with_latency.latency);
   input_router_->SendWheelEvent(wheel_with_latency);
+}
+
+void RenderWidgetHostImpl::WaitForInputProcessed(
+    SyntheticGestureParams::GestureType type,
+    SyntheticGestureParams::GestureSourceType source,
+    base::OnceClosure callback) {
+  // TODO(bokan): Input can be queued and delayed in InputRouterImpl based on
+  // the kind of events we're getting. To be truly robust, we should wait until
+  // those queues are flushed before issuing this message. This will be done in
+  // a follow-up and is the reason for the currently unused type and source
+  // params. https://crbug.com/902446.
+  input_router_->WaitForInputProcessed(std::move(callback));
 }
 
 void RenderWidgetHostImpl::ForwardEmulatedGestureEvent(
@@ -2116,6 +2166,8 @@ void RenderWidgetHostImpl::Destroy(bool also_delete) {
   g_routing_id_widget_map.Get().erase(
       RenderWidgetHostID(process_->GetID(), routing_id_));
 
+  // The |delegate_| may have been destroyed (or is in the process of being
+  // destroyed) and detached first.
   if (delegate_)
     delegate_->RenderWidgetDeleted(this);
 
@@ -2330,6 +2382,7 @@ void RenderWidgetHostImpl::DidUpdateVisualProperties(
 
   viz::ScopedSurfaceIdAllocator scoped_allocator =
       view_->DidUpdateVisualProperties(metadata);
+  base::AutoReset<bool> auto_reset(&surface_id_allocation_suppressed_, true);
 
   if (auto_resize_enabled_ && delegate_) {
     // TODO(fsamuel): The fact that we translate the viewport_size from pixels
@@ -2347,10 +2400,12 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
 void RenderWidgetHostImpl::OnAutoscrollStart(const gfx::PointF& position) {
   GetView()->OnAutoscrollStart();
   sent_autoscroll_scroll_begin_ = false;
+  autoscroll_in_progress_ = true;
   autoscroll_start_position_ = position;
 }
 
 void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
+  DCHECK(autoscroll_in_progress_);
   if (!sent_autoscroll_scroll_begin_ && velocity != gfx::Vector2dF()) {
     // Send a GSB event with valid delta hints.
     WebGestureEvent scroll_begin = SyntheticWebGestureEventBuilder::Build(
@@ -2368,6 +2423,7 @@ void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
   WebGestureEvent event = SyntheticWebGestureEventBuilder::Build(
       WebInputEvent::kGestureFlingStart,
       blink::kWebGestureDeviceSyntheticAutoscroll);
+  event.SetPositionInWidget(autoscroll_start_position_);
   event.data.fling_start.velocity_x = velocity.x();
   event.data.fling_start.velocity_y = velocity.y();
 
@@ -2376,6 +2432,7 @@ void RenderWidgetHostImpl::OnAutoscrollFling(const gfx::Vector2dF& velocity) {
 }
 
 void RenderWidgetHostImpl::OnAutoscrollEnd() {
+  autoscroll_in_progress_ = false;
   // Don't send a GFC if no GSB is sent.
   if (!sent_autoscroll_scroll_begin_)
     return;
@@ -2385,9 +2442,14 @@ void RenderWidgetHostImpl::OnAutoscrollEnd() {
       WebInputEvent::kGestureFlingCancel,
       blink::kWebGestureDeviceSyntheticAutoscroll);
   cancel_event.data.fling_cancel.prevent_boosting = true;
+  cancel_event.SetPositionInWidget(autoscroll_start_position_);
 
   ForwardGestureEventWithLatencyInfo(
       cancel_event, ui::LatencyInfo(ui::SourceEventType::OTHER));
+}
+
+bool RenderWidgetHostImpl::IsAutoscrollInProgress() {
+  return autoscroll_in_progress_;
 }
 
 TouchEmulator* RenderWidgetHostImpl::GetTouchEmulator() {

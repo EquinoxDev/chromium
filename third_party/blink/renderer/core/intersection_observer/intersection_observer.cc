@@ -85,16 +85,16 @@ void ParseRootMargin(String root_margin_parameter,
     const CSSParserToken& token = token_range.ConsumeIncludingWhitespace();
     switch (token.GetType()) {
       case kPercentageToken:
-        root_margin.push_back(Length(token.NumericValue(), kPercent));
+        root_margin.push_back(Length::Percent(token.NumericValue()));
         break;
       case kDimensionToken:
         switch (token.GetUnitType()) {
           case CSSPrimitiveValue::UnitType::kPixels:
             root_margin.push_back(
-                Length(static_cast<int>(floor(token.NumericValue())), kFixed));
+                Length::Fixed(static_cast<int>(floor(token.NumericValue()))));
             break;
           case CSSPrimitiveValue::UnitType::kPercentage:
-            root_margin.push_back(Length(token.NumericValue(), kPercent));
+            root_margin.push_back(Length::Percent(token.NumericValue()));
             break;
           default:
             exception_state.ThrowDOMException(
@@ -177,7 +177,7 @@ IntersectionObserver* IntersectionObserver::Create(
 
   return MakeGarbageCollected<IntersectionObserver>(
       delegate, root, root_margin, thresholds, kFractionOfTarget, delay,
-      track_visibility);
+      track_visibility, false);
 }
 
 IntersectionObserver* IntersectionObserver::Create(
@@ -199,13 +199,14 @@ IntersectionObserver* IntersectionObserver::Create(
     ThresholdInterpretation semantics,
     DOMHighResTimeStamp delay,
     bool track_visibility,
+    bool always_report_root_bounds,
     ExceptionState& exception_state) {
   IntersectionObserverDelegateImpl* intersection_observer_delegate =
       MakeGarbageCollected<IntersectionObserverDelegateImpl>(
           document, std::move(callback));
   return MakeGarbageCollected<IntersectionObserver>(
       *intersection_observer_delegate, nullptr, root_margin, thresholds,
-      semantics, delay, track_visibility);
+      semantics, delay, track_visibility, always_report_root_bounds);
 }
 
 IntersectionObserver::IntersectionObserver(
@@ -215,19 +216,21 @@ IntersectionObserver::IntersectionObserver(
     const Vector<float>& thresholds,
     ThresholdInterpretation semantics,
     DOMHighResTimeStamp delay,
-    bool track_visibility)
+    bool track_visibility,
+    bool always_report_root_bounds)
     : ContextClient(delegate.GetExecutionContext()),
       delegate_(&delegate),
       root_(root),
       thresholds_(thresholds),
       delay_(delay),
-      top_margin_(kFixed),
-      right_margin_(kFixed),
-      bottom_margin_(kFixed),
-      left_margin_(kFixed),
+      top_margin_(Length::Fixed(0)),
+      right_margin_(Length::Fixed(0)),
+      bottom_margin_(Length::Fixed(0)),
+      left_margin_(Length::Fixed(0)),
       root_is_implicit_(root ? 0 : 1),
       track_visibility_(track_visibility ? 1 : 0),
-      track_fraction_of_root_(semantics == kFractionOfRoot) {
+      track_fraction_of_root_(semantics == kFractionOfRoot),
+      always_report_root_bounds_(always_report_root_bounds ? 1 : 0) {
   switch (root_margin.size()) {
     case 0:
       break;
@@ -336,7 +339,7 @@ HeapVector<Member<IntersectionObserverEntry>> IntersectionObserver::takeRecords(
 
 static void AppendLength(StringBuilder& string_builder, const Length& length) {
   string_builder.AppendNumber(length.IntValue());
-  if (length.GetType() == kPercent)
+  if (length.IsPercent())
     string_builder.Append('%');
   else
     string_builder.Append("px", 2);

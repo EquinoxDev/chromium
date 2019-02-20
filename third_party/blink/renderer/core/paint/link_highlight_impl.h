@@ -89,7 +89,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
 
   CompositorElementId element_id() const;
 
-  const EffectPaintPropertyNode* effect() const override;
+  const EffectPaintPropertyNode& Effect() const override;
 
   void Paint(GraphicsContext&);
 
@@ -111,9 +111,12 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
   // changed size since the last call to this function.
   bool ComputeHighlightLayerPathAndPosition(const LayoutBoxModelObject&);
 
+  void SetPaintArtifactCompositorNeedsUpdate();
+
   class LinkHighlightFragment : private cc::ContentLayerClient {
    public:
     LinkHighlightFragment(CompositorElementId);
+    ~LinkHighlightFragment() override;
 
     cc::PictureLayer* Layer() const { return layer_.get(); }
     const Path& GetPath() const { return path_; }
@@ -138,6 +141,7 @@ class CORE_EXPORT LinkHighlightImpl final : public LinkHighlight,
   GraphicsLayer* current_graphics_layer_;
   bool is_scrolling_graphics_layer_;
   std::unique_ptr<CompositorAnimation> compositor_animation_;
+  scoped_refptr<EffectPaintPropertyNode> effect_;
 
   bool geometry_needs_update_;
   bool is_animating_;

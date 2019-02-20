@@ -85,7 +85,7 @@ class AutocompleteResultTest : public testing::Test {
  public:
   struct TestData {
     // Used to build a url for the AutocompleteMatch. The URL becomes
-    // "http://" + ('a' + |url_id|) (e.g. an ID of 2 yields "http://b").
+    // "http://" + ('a' + |url_id|) (e.g. an ID of 2 yields "http://c").
     int url_id;
 
     // ID of the provider.
@@ -166,7 +166,7 @@ void AutocompleteResultTest::PopulateAutocompleteMatch(
     const TestData& data,
     AutocompleteMatch* match) {
   match->provider = GetProvider(data.provider_id);
-  match->fill_into_edit = base::IntToString16(data.url_id);
+  match->fill_into_edit = base::NumberToString16(data.url_id);
   std::string url_id(1, data.url_id + 'a');
   match->destination_url = GURL("http://" + url_id);
   match->relevance = data.relevance;
@@ -803,9 +803,12 @@ TEST_F(AutocompleteResultTest, SortAndCullPromoteDefaultMatch) {
   ASSERT_EQ(3U, result.size());
   EXPECT_EQ("http://c/", result.match_at(0)->destination_url.spec());
   EXPECT_EQ(1100, result.match_at(0)->relevance);
+  EXPECT_TRUE(result.match_at(0)->allowed_to_be_default_match);
   EXPECT_EQ(GetProvider(4), result.match_at(0)->provider);
   EXPECT_EQ("http://a/", result.match_at(1)->destination_url.spec());
+  EXPECT_FALSE(result.match_at(1)->allowed_to_be_default_match);
   EXPECT_EQ("http://b/", result.match_at(2)->destination_url.spec());
+  EXPECT_FALSE(result.match_at(2)->allowed_to_be_default_match);
 }
 
 TEST_F(AutocompleteResultTest, SortAndCullPromoteUnconsecutiveMatches) {
@@ -839,6 +842,118 @@ TEST_F(AutocompleteResultTest, SortAndCullPromoteUnconsecutiveMatches) {
   EXPECT_EQ(GetProvider(3), result.match_at(2)->provider);
   EXPECT_EQ("http://c/", result.match_at(3)->destination_url.spec());
   EXPECT_EQ("http://e/", result.match_at(4)->destination_url.spec());
+}
+
+struct EntityTestData {
+  AutocompleteMatchType::Type type;
+  std::string destination_url;
+  int relevance;
+  bool allowed_to_be_default_match;
+  std::string fill_into_edit;
+  std::string inline_autocompletion;
+};
+
+void PopulateEntityTestCases(std::vector<EntityTestData>& test_cases,
+                             ACMatches* matches) {
+  for (const auto& test_case : test_cases) {
+    AutocompleteMatch match;
+    match.type = test_case.type;
+    match.destination_url = GURL(test_case.destination_url);
+    match.relevance = test_case.relevance;
+    match.allowed_to_be_default_match = test_case.allowed_to_be_default_match;
+    match.fill_into_edit = base::UTF8ToUTF16(test_case.fill_into_edit);
+    match.inline_autocompletion =
+        base::UTF8ToUTF16(test_case.inline_autocompletion);
+    matches->push_back(match);
+  }
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullPreferEntities) {
+  // clang-format off
+  std::vector<EntityTestData> test_cases = {
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST,
+      "http://search/?q=foo", 1100, false, "foo", ""
+    },
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
+      "http://search/?q=foo", 1000, false, "foo", ""
+    },
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST,
+      "http://search/?q=foo", 900, true, "foo", "oo"
+    },
+    // This match will be the first result but it won't affect the entity
+    // deduping because it has a different URL.
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED,
+      "http://search/?q=bar", 1200, true, "foo", "oo"
+    },
+  };
+  // clang-format on
+  ACMatches matches;
+  PopulateEntityTestCases(test_cases, &matches);
+
+  AutocompleteInput input(base::ASCIIToUTF16("f"),
+                          metrics::OmniboxEventProto::OTHER,
+                          TestSchemeClassifier());
+  AutocompleteResult result;
+  result.AppendMatches(input, matches);
+  result.SortAndCull(input, template_url_service_.get());
+
+  // The first result will be the personalized suggestion.
+  EXPECT_EQ(2UL, result.size());
+  EXPECT_EQ(AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED,
+            result.match_at(0)->type);
+  EXPECT_EQ(1200, result.match_at(0)->relevance);
+
+  // The second result will be the result of deduping the other three.
+  // The chosen match should be the entity suggestion and it should have been
+  // promoted to receive the first match's relevance and the last match's
+  // allowed_to_be_default_match and inline_autocompletion values.
+  EXPECT_EQ(AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
+            result.match_at(1)->type);
+  EXPECT_EQ(1100, result.match_at(1)->relevance);
+  EXPECT_TRUE(result.match_at(1)->allowed_to_be_default_match);
+  EXPECT_EQ(base::ASCIIToUTF16("oo"),
+            result.match_at(1)->inline_autocompletion);
+}
+
+TEST_F(AutocompleteResultTest, SortAndCullPreferEntitiesFillIntoEditMustMatch) {
+  // clang-format off
+  std::vector<EntityTestData> test_cases = {
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED,
+      "http://search/?q=foo", 1100, false, "foo", ""
+    },
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
+      "http://search/?q=foo", 1000, false, "foobar", ""
+    },
+    {
+      AutocompleteMatchType::SEARCH_SUGGEST,
+      "http://search/?q=foo", 900, true, "foo", "oo"
+    },
+  };
+  // clang-format on
+  ACMatches matches;
+  PopulateEntityTestCases(test_cases, &matches);
+
+  AutocompleteInput input(base::ASCIIToUTF16("f"),
+                          metrics::OmniboxEventProto::OTHER,
+                          TestSchemeClassifier());
+  AutocompleteResult result;
+  result.AppendMatches(input, matches);
+  result.SortAndCull(input, template_url_service_.get());
+
+  // The entity suggestion won't be chosen in this case because it has a non-
+  // matching value for fill_into_edit.
+  EXPECT_EQ(1UL, result.size());
+  EXPECT_EQ(AutocompleteMatchType::SEARCH_SUGGEST, result.match_at(0)->type);
+  EXPECT_EQ(1100, result.match_at(0)->relevance);
+  EXPECT_TRUE(result.match_at(0)->allowed_to_be_default_match);
+  EXPECT_EQ(base::ASCIIToUTF16("oo"),
+            result.match_at(0)->inline_autocompletion);
 }
 
 TEST_F(AutocompleteResultTest, SortAndCullPromoteDuplicateSearchURLs) {
@@ -952,7 +1067,7 @@ TEST_F(AutocompleteResultTest, InlineTailPrefixes) {
           "a recording",
           "... a recording",
           {{0, ACMatchClassification::MATCH}},
-          {{0, ACMatchClassification::MATCH}},
+          {{0, ACMatchClassification::NONE}, {4, ACMatchClassification::MATCH}},
       },
   };
   ACMatches matches;
@@ -970,6 +1085,14 @@ TEST_F(AutocompleteResultTest, InlineTailPrefixes) {
                                   "this is a test");
   AutocompleteResult result;
   result.AppendMatches(AutocompleteInput(), matches);
+  result.InlineTailPrefixes();
+  for (size_t i = 0; i < base::size(cases); ++i) {
+    EXPECT_EQ(result.match_at(i)->contents,
+              base::UTF8ToUTF16(cases[i].after_contents));
+    EXPECT_TRUE(EqualClassifications(result.match_at(i)->contents_class,
+                                     cases[i].after_contents_class));
+  }
+  // Run twice and make sure that it doesn't re-prepend ellipsis.
   result.InlineTailPrefixes();
   for (size_t i = 0; i < base::size(cases); ++i) {
     EXPECT_EQ(result.match_at(i)->contents,
@@ -1002,162 +1125,78 @@ TEST_F(AutocompleteResultTest, ConvertsOpenTabsCorrectly) {
   EXPECT_FALSE(result.match_at(2)->has_tab_match);
 }
 
-namespace {
+TEST_F(AutocompleteResultTest, PedalSuggestionsCantBeDefaultMatch) {
+  TestData data[] = {
+      {1, 1, 500, true},
+      {0, 1, 1100, true},
+  };
 
-void CheckRelevanceExpectations(const AutocompleteMatch& first,
-                                const AutocompleteMatch& second,
-                                int first_expected_relevance,
-                                int second_expected_relevance,
-                                const char* first_expected_boosted_from,
-                                const char* second_expected_boosted_from) {
-  EXPECT_EQ(first_expected_relevance, first.relevance);
-  EXPECT_EQ(second_expected_relevance, second.relevance);
-  EXPECT_EQ(std::string(first_expected_boosted_from),
-            first.GetAdditionalInfo(kACMatchPropertyScoreBoostedFrom));
-  EXPECT_EQ(std::string(second_expected_boosted_from),
-            second.GetAdditionalInfo(kACMatchPropertyScoreBoostedFrom));
+  ACMatches matches;
+  PopulateAutocompleteMatches(data, base::size(data), &matches);
+  matches[0].contents = base::UTF8ToUTF16("clear chrome history");
+  matches[1].contents = base::UTF8ToUTF16("open incognito tab");
+
+  AutocompleteInput input(base::ASCIIToUTF16("a"),
+                          metrics::OmniboxEventProto::OTHER,
+                          TestSchemeClassifier());
+  AutocompleteResult result;
+  result.AppendMatches(input, matches);
+
+  FakeAutocompleteProviderClient client;
+  result.AppendDedicatedPedalMatches(&client, input);
+
+  // Two distinct Pedals should be appended.
+  EXPECT_EQ(result.size(), 4u);
+  EXPECT_NE(result.match_at(2)->pedal, nullptr);
+  EXPECT_NE(result.match_at(3)->pedal, nullptr);
+
+  // Neither should be allowed to be default match, even though they were both
+  // derived from suggestions where the field is set true.
+  EXPECT_TRUE(result.match_at(0)->allowed_to_be_default_match);
+  EXPECT_TRUE(result.match_at(1)->allowed_to_be_default_match);
+  EXPECT_FALSE(result.match_at(2)->allowed_to_be_default_match);
+  EXPECT_FALSE(result.match_at(3)->allowed_to_be_default_match);
 }
 
-}  // namespace
+TEST_F(AutocompleteResultTest, PedalSuggestionsRemainUnique) {
+  TestData data[] = {
+      {1, 1, 500, true},
+      {0, 1, 1100, true},
+      {2, 1, 1000, true},
+      {0, 1, 1200, true},
+  };
 
-TEST_F(AutocompleteResultTest, IsBetterMatchEntityWithHigherRelevance) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  first.relevance = 1000;
+  ACMatches matches;
+  PopulateAutocompleteMatches(data, base::size(data), &matches);
+  matches[0].contents = base::UTF8ToUTF16("clear chrome history");
+  matches[1].contents = base::UTF8ToUTF16("open incognito tab");
+  matches[2].contents = base::UTF8ToUTF16("clear chrome history");
 
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  second.relevance = 600;
+  AutocompleteInput input(base::ASCIIToUTF16("a"),
+                          metrics::OmniboxEventProto::OTHER,
+                          TestSchemeClassifier());
+  AutocompleteResult result;
+  result.AppendMatches(input, matches);
 
-  // Expect the entity suggestion to be better and its relevance unchanged.
-  // HOME_PAGE is used here because it doesn't trigger the special logic in
-  // OmniboxFieldTrial::GetDemotionsByType. There should otherwise be no
-  // demotions since the field trial params are cleared in the test setup.
-  EXPECT_TRUE(AutocompleteResult::IsBetterMatch(first, second,
-                                                OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 600, "", "");
-}
+  FakeAutocompleteProviderClient client;
+  result.AppendDedicatedPedalMatches(&client, input);
 
-TEST_F(AutocompleteResultTest, IsBetterMatchEntityWithLowerRelevance) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  first.relevance = 600;
+  // Exactly 2 (not 3) unique Pedals should be added with relevance close to max
+  // of the triggering suggestions.
+  EXPECT_EQ(result.size(), 6u);
+  EXPECT_NE(result.match_at(4)->pedal, nullptr);
+  EXPECT_NE(result.match_at(5)->pedal, nullptr);
+  EXPECT_NE(result.match_at(4)->pedal, result.match_at(5)->pedal);
+  EXPECT_EQ(result.match_at(4)->relevance, 999);
+  EXPECT_EQ(result.match_at(5)->relevance, 1099);
 
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  second.relevance = 1000;
-
-  // Expect the entity suggestion to be better and its relevance to have been
-  // boosted to that of the non-entity suggestion.
-  EXPECT_TRUE(AutocompleteResult::IsBetterMatch(first, second,
-                                                OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 1000, "600", "");
-}
-
-TEST_F(AutocompleteResultTest, IsBetterMatchEntityWithEqualRelevance) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  first.relevance = 1000;
-
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  second.relevance = 1000;
-
-  // Expect the entity suggestion to be better and the relevance scores
-  // unchanged.
-  EXPECT_TRUE(AutocompleteResult::IsBetterMatch(first, second,
-                                                OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 1000, "", "");
-}
-
-TEST_F(AutocompleteResultTest, IsBetterMatchNonEntityWithHigherRelevance) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  first.relevance = 1000;
-
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  second.relevance = 600;
-
-  // Expect the non-entity suggestion to *not* be better and the relevance of
-  // the entity suggestion to have been boosted.
-  EXPECT_FALSE(AutocompleteResult::IsBetterMatch(first, second,
-                                                 OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 1000, "", "600");
-}
-
-TEST_F(AutocompleteResultTest, IsBetterMatchNonEntityWithLowerRelevance) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  first.relevance = 600;
-
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  second.relevance = 1000;
-
-  // Expect the non-entity suggestion to *not* be better and the relevance
-  // scores unchanged.
-  EXPECT_FALSE(AutocompleteResult::IsBetterMatch(first, second,
-                                                 OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 600, 1000, "", "");
-}
-
-TEST_F(AutocompleteResultTest, IsBetterMatchNonEntityWithEqualRelevance) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  first.relevance = 1000;
-
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  second.relevance = 1000;
-
-  // Expect the non-entity suggestion to *not* be better and the relevance
-  // scores unchanged.
-  EXPECT_FALSE(AutocompleteResult::IsBetterMatch(first, second,
-                                                 OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 1000, "", "");
-}
-
-TEST_F(AutocompleteResultTest, IsBetterMatchBothEntities) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  first.relevance = 1000;
-
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST_ENTITY;
-  second.relevance = 600;
-
-  // Expect the first suggestion to be better since its relevance is higher and
-  // the relevance scores unchanged.
-  EXPECT_TRUE(AutocompleteResult::IsBetterMatch(first, second,
-                                                OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 600, "", "");
-
-  // Expect the reversed condition to be false and the relevance scores
-  // unchanged.
-  EXPECT_FALSE(AutocompleteResult::IsBetterMatch(second, first,
-                                                 OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 600, "", "");
-}
-
-TEST_F(AutocompleteResultTest, IsBetterMatchBothNonEntities) {
-  AutocompleteMatch first;
-  first.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  first.relevance = 1000;
-
-  AutocompleteMatch second;
-  second.type = AutocompleteMatchType::SEARCH_SUGGEST;
-  second.relevance = 600;
-
-  // Expect the first suggestion to be better since its relevance is higher and
-  // the relevance scores unchanged.
-  EXPECT_TRUE(AutocompleteResult::IsBetterMatch(first, second,
-                                                OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 600, "", "");
-
-  // Expect the reversed condition to be false and the relevance scores
-  // unchanged.
-  EXPECT_FALSE(AutocompleteResult::IsBetterMatch(second, first,
-                                                 OmniboxEventProto::HOME_PAGE));
-  CheckRelevanceExpectations(first, second, 1000, 600, "", "");
+  // Now artificially modify existing suggestions and run again to ensure that
+  // no duplicates are added, but the existing Pedal suggestion is updated.
+  result.match_at(3)->contents = base::UTF8ToUTF16("open incognito tab");
+  result.AppendDedicatedPedalMatches(&client, input);
+  EXPECT_EQ(result.size(), 6u);
+  EXPECT_NE(result.match_at(4)->pedal, nullptr);
+  EXPECT_NE(result.match_at(5)->pedal, nullptr);
+  EXPECT_NE(result.match_at(4)->pedal, result.match_at(5)->pedal);
+  EXPECT_EQ(result.match_at(5)->relevance, 1199);
 }

@@ -20,7 +20,10 @@ class RenderViewHost;
 class RenderWidgetHostImpl;
 class WebContentsImpl;
 class WebDragDestDelegate;
-}
+namespace mojom {
+class DraggingInfo;
+}  // namespace mojom
+}  // namespace content
 
 // A typedef for a RenderViewHost used for comparison purposes only.
 typedef content::RenderViewHost* RenderViewHostIdentifier;
@@ -33,7 +36,7 @@ namespace content {
 void CONTENT_EXPORT PopulateDropDataFromPasteboard(content::DropData* data,
                                                    NSPasteboard* pboard);
 
-}
+}  // namespace content
 
 // A class that handles tracking and event processing for a drag and drop
 // over the content area. Assumes something else initiates the drag, this is
@@ -95,17 +98,15 @@ CONTENT_EXPORT
 // Messages to send during the tracking of a drag, ususally upon receiving
 // calls from the view system. Communicates the drag messages to WebCore.
 - (void)setDropData:(const content::DropData&)dropData;
-- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info
-                              view:(NSView*)view;
+- (NSDragOperation)draggingEntered:(const content::mojom::DraggingInfo*)info;
 - (void)draggingExited;
-- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)info
-                              view:(NSView*)view;
-- (BOOL)performDragOperation:(id<NSDraggingInfo>)info view:(NSView*)view;
+- (NSDragOperation)draggingUpdated:(const content::mojom::DraggingInfo*)info;
+- (BOOL)performDragOperation:(const content::mojom::DraggingInfo*)info;
 
 // Helper to call WebWidgetHostInputEventRouter::GetRenderWidgetHostAtPoint().
 - (content::RenderWidgetHostImpl*)
-GetRenderWidgetHostAtPoint:(const NSPoint&)viewPoint
-             transformedPt:(gfx::PointF*)transformedPt;
+    GetRenderWidgetHostAtPoint:(const gfx::PointF&)viewPoint
+                 transformedPt:(gfx::PointF*)transformedPt;
 
 // Sets |dragStartProcessID_| and |dragStartViewID_|.
 - (void)setDragStartTrackersForProcess:(int)processID;

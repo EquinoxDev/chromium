@@ -68,12 +68,9 @@ class OmniboxEditModel {
     OmniboxFocusState focus_state;
     FocusSource focus_source;
     const AutocompleteInput autocomplete_input;
+   private:
+    DISALLOW_ASSIGN(State);
   };
-
-  // This is a mirror of content::kMaxURLDisplayChars because ios cannot depend
-  // on content. If clipboard contains more than kMaxPasteAndGoTextLength
-  // characters, then the paste & go option will be disabled.
-  static const size_t kMaxPasteAndGoTextLength = 32 * 1024;
 
   OmniboxEditModel(OmniboxView* view,
                    OmniboxEditController* controller,
@@ -170,11 +167,13 @@ class OmniboxEditModel {
   // Sets the user_text_ to |text|.
   void SetUserText(const base::string16& text);
 
-  // Unapplies any Steady State Elisions by setting the user text to be
-  // url_for_editing_. This also selects all and enters user-input-in-progress
-  // mode. If |exit_query_in_omnibox| is set to true, this will alse exit
-  // Query in Omnibox mode if the omnibox is showing a query.
-  void Unelide(bool exit_query_in_omnibox);
+  // If the omnibox is currently displaying elided text, this method will
+  // restore the full URL into the user text. After unelision, this selects-all,
+  // enters user-input-in-progress mode, and then returns true.
+  //
+  // If the omnibox is not currently displaying elided text, this method will
+  // no-op and return false.
+  bool Unelide(bool exit_query_in_omnibox);
 
   // Invoked any time the text may have changed in the edit. Notifies the
   // controller.

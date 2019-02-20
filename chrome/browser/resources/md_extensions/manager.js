@@ -133,6 +133,13 @@ cr.define('extensions', function() {
       /** @private */
       showOptionsDialog_: Boolean,
 
+      /**
+       * Whether the last page the user navigated from was the activity log
+       * page.
+       * @private
+       */
+      fromActivityLog_: Boolean,
+
       // <if expr="chromeos">
       /** @private */
       kioskEnabled_: {
@@ -150,6 +157,8 @@ cr.define('extensions', function() {
 
     listeners: {
       'load-error': 'onLoadError_',
+      'view-enter-start': 'onViewEnterStart_',
+      'view-exit-start': 'onViewExitStart_',
       'view-exit-finish': 'onViewExitFinish_',
     },
 
@@ -275,14 +284,14 @@ cr.define('extensions', function() {
     },
 
     /**
-     * @param {!CustomEvent} event
+     * @param {!CustomEvent<string>} event
      * @private
      */
     onFilterChanged_: function(event) {
       if (this.currentPage_.page !== Page.LIST) {
         extensions.navigation.navigateTo({page: Page.LIST});
       }
-      this.filter = /** @type {string} */ (event.detail);
+      this.filter = event.detail;
     },
 
     /** @private */
@@ -397,8 +406,6 @@ cr.define('extensions', function() {
           this.errorPageItem_ && this.errorPageItem_.id == item.id &&
           this.currentPage_.page == Page.ERRORS) {
         this.errorPageItem_ = item;
-      } else if (this.currentPage_.page == Page.ACTIVITY_LOG) {
-        this.activityLogItemId_ = item.id;
       }
     },
 
@@ -429,16 +436,14 @@ cr.define('extensions', function() {
     },
 
     /**
-     * @param {!CustomEvent} e
+     * @param {!CustomEvent<!chrome.developerPrivate.LoadError>} e
      * @private
      */
     onLoadError_: function(e) {
-      const loadError =
-          /** @type {!chrome.developerPrivate.LoadError} */ (e.detail);
       this.showLoadErrorDialog_ = true;
       this.async(() => {
         const dialog = this.$$('#load-error');
-        dialog.loadError = loadError;
+        dialog.loadError = e.detail;
         dialog.show();
       });
     },
@@ -453,7 +458,6 @@ cr.define('extensions', function() {
 
       const optionsDialog = this.$$('#options-dialog');
       if (optionsDialog && optionsDialog.open) {
-        optionsDialog.close();
         this.showOptionsDialog_ = false;
       }
 
@@ -530,18 +534,36 @@ cr.define('extensions', function() {
     /** @private */
     onOptionsDialogClose_: function() {
       this.showOptionsDialog_ = false;
+      this.$$('extensions-detail-view').focusOptionsButton();
     },
 
     /** @private */
+    onViewEnterStart_: function() {
+      this.fromActivityLog_ = false;
+    },
+
+    /**
+     * @param {!Event} e
+     * @private
+     */
+    onViewExitStart_: function(e) {
+      const viewType = e.composedPath()[0].tagName;
+      this.fromActivityLog_ = viewType == 'EXTENSIONS-ACTIVITY-LOG';
+    },
+
+    /**
+     * @param {!Event} e
+     * @private
+     */
     onViewExitFinish_: function(e) {
-      const viewType = e.path[0].tagName;
+      const viewType = e.composedPath()[0].tagName;
       if (viewType == 'EXTENSIONS-ITEM-LIST' ||
           viewType == 'EXTENSIONS-KEYBOARD-SHORTCUTS' ||
           viewType == 'EXTENSIONS-ACTIVITY-LOG') {
         return;
       }
 
-      const extensionId = e.path[0].data.id;
+      const extensionId = e.composedPath()[0].data.id;
       const list = this.$$('extensions-item-list');
       const button = viewType == 'EXTENSIONS-DETAIL-VIEW' ?
           list.getDetailsButton(extensionId) :
@@ -555,14 +577,14 @@ cr.define('extensions', function() {
     },
 
     /**
-     * @param {!CustomEvent} e
+     * @param {!CustomEvent<!Array<string>>} e
      * @private
      */
     onShowInstallWarnings_: function(e) {
       // Leverage Polymer data bindings instead of just assigning the
       // installWarnings on the dialog since the dialog hasn't been stamped
       // in the DOM yet.
-      this.installWarnings_ = /** @type{!Array<string>} */ (e.detail);
+      this.installWarnings_ = e.detail;
       this.showInstallWarningsDialog_ = true;
     },
 

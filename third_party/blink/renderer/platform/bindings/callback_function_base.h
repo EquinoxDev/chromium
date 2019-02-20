@@ -68,6 +68,16 @@ class PLATFORM_EXPORT CallbackFunctionBase
   // Returns true if the ES function has a [[Construct]] internal method.
   bool IsConstructor() const { return CallbackFunction()->IsConstructor(); }
 
+  // Makes the underlying V8 function collectable by V8 Scavenger GC.  Do not
+  // use this function unless you really need a hacky performance optimization.
+  // The V8 function is collectable by V8 Full GC whenever this instance is no
+  // longer referenced, so there is no need to call this function unless you
+  // really need V8 *Scavenger* GC to collect the V8 function before V8 Full GC
+  // runs.
+  void DisposeV8FunctionImmediatelyToReduceMemoryFootprint() {
+    callback_function_.Clear();
+  }
+
  protected:
   explicit CallbackFunctionBase(v8::Local<v8::Object>);
 
@@ -91,9 +101,6 @@ class PLATFORM_EXPORT CallbackFunctionBase
   Member<ScriptState> incumbent_script_state_;
 
   friend class V8PersistentCallbackFunctionBase;
-  friend v8::Local<v8::Value> ToV8(CallbackFunctionBase* callback,
-                                   v8::Local<v8::Object> creation_context,
-                                   v8::Isolate*);
 };
 
 // V8PersistentCallbackFunctionBase retains the underlying v8::Function of a

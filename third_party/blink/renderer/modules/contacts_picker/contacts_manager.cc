@@ -8,8 +8,10 @@
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/modules/contacts_picker/contact_info.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
@@ -26,25 +28,39 @@ struct TypeConverter<blink::ContactInfo*, blink::mojom::blink::ContactInfoPtr> {
 blink::ContactInfo*
 TypeConverter<blink::ContactInfo*, blink::mojom::blink::ContactInfoPtr>::
     Convert(const blink::mojom::blink::ContactInfoPtr& contact) {
-  Vector<String> names;
-  Vector<String> emails;
-  Vector<String> numbers;
+  blink::ContactInfo* contact_info = blink::ContactInfo::Create();
+
   if (contact->name.has_value()) {
-    for (const auto& name : *contact->name)
+    Vector<String> names;
+    names.ReserveInitialCapacity(contact->name->size());
+
+    for (const String& name : *contact->name)
       names.push_back(name);
+
+    contact_info->setName(names);
   }
+
   if (contact->email.has_value()) {
-    for (const auto& email : *contact->email)
+    Vector<String> emails;
+    emails.ReserveInitialCapacity(contact->email->size());
+
+    for (const String& email : *contact->email)
       emails.push_back(email);
+
+    contact_info->setEmail(emails);
   }
+
   if (contact->tel.has_value()) {
-    for (const auto& number : *contact->tel)
+    Vector<String> numbers;
+    numbers.ReserveInitialCapacity(contact->tel->size());
+
+    for (const String& number : *contact->tel)
       numbers.push_back(number);
+
+    contact_info->setTel(numbers);
   }
-  return blink::MakeGarbageCollected<blink::ContactInfo>(
-      names.IsEmpty() ? base::Optional<Vector<String>>() : names,
-      emails.IsEmpty() ? base::Optional<Vector<String>>() : emails,
-      numbers.IsEmpty() ? base::Optional<Vector<String>>() : numbers);
+
+  return contact_info;
 }
 
 }  // namespace mojo
@@ -66,28 +82,57 @@ mojom::blink::ContactsManagerPtr& ContactsManager::GetContactsManager(
 
 ScriptPromise ContactsManager::select(ScriptState* script_state,
                                       ContactsSelectOptions* options) {
+  Document* document = To<Document>(ExecutionContext::From(script_state));
+  if (!LocalFrame::HasTransientUserActivation(document ? document->GetFrame()
+                                                       : nullptr)) {
+    return ScriptPromise::Reject(
+        script_state, V8ThrowException::CreateTypeError(
+                          script_state->GetIsolate(),
+                          "A user gesture is required to call this method"));
+  }
+
+  if (!options->hasProperties() || !options->properties().size()) {
+    return ScriptPromise::Reject(script_state,
+                                 V8ThrowException::CreateTypeError(
+                                     script_state->GetIsolate(),
+                                     "At least one property must be provided"));
+  }
+
   ScriptPromiseResolver* resolver = ScriptPromiseResolver::Create(script_state);
   ScriptPromise promise = resolver->Promise();
 
-  // TODO(finnur): Use |options|.
+  bool include_names = false;
+  bool include_emails = false;
+  bool include_tel = false;
+
+  for (const String& property : options->properties()) {
+    if (property == "name")
+      include_names = true;
+    else if (property == "email")
+      include_emails = true;
+    else if (property == "tel")
+      include_tel = true;
+  }
+
   GetContactsManager(script_state)
-      ->Select(
-          /* names=*/true, /* emails=*/true, /* telephones=*/true,
-          WTF::Bind(&ContactsManager::OnContactsSelected, WrapPersistent(this),
-                    WrapPersistent(resolver)));
+      ->Select(options->multiple(), include_names, include_emails, include_tel,
+               WTF::Bind(&ContactsManager::OnContactsSelected,
+                         WrapPersistent(this), WrapPersistent(resolver)));
+
   return promise;
 }
 
 void ContactsManager::OnContactsSelected(
     ScriptPromiseResolver* resolver,
     base::Optional<Vector<mojom::blink::ContactInfoPtr>> contacts) {
+  ScriptState* script_state = resolver->GetScriptState();
+  ScriptState::Scope scope(script_state);
+
   if (!contacts.has_value()) {
-    resolver->Reject(DOMException::Create(DOMExceptionCode::kAbortError,
-                                          "Unable to open a contact selector"));
+    resolver->Reject(V8ThrowException::CreateTypeError(
+        script_state->GetIsolate(), "Unable to open a contact selector"));
     return;
   }
-
-  ScriptState::Scope scope(resolver->GetScriptState());
 
   HeapVector<Member<ContactInfo>> contacts_list;
   for (const auto& contact : *contacts)

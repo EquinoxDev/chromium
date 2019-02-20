@@ -13,9 +13,11 @@
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "content/app/strings/grit/content_strings.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/common/accessibility_messages.h"
+#include "content/public/common/content_client.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/ax_text_utils.h"
 #include "ui/accessibility/platform/ax_unique_id.h"
@@ -860,6 +862,23 @@ BrowserAccessibility::CreatePositionAt(int offset,
       manager_->ax_tree_id(), GetId(), offset, affinity);
 }
 
+// |offset| could either be a text character or a child index in case of
+// non-text objects.
+// Currently, to be safe, we convert to text leaf equivalents and we don't use
+// tree positions.
+// TODO(nektar): Remove this function once selection fixes in Blink are
+// thoroughly tested and convert to tree positions.
+BrowserAccessibilityPosition::AXPositionInstance
+BrowserAccessibility::CreatePositionForSelectionAt(int offset) const {
+  BrowserAccessibilityPositionInstance position =
+      CreatePositionAt(offset)->AsLeafTextPosition();
+  if (position->GetAnchor() &&
+      position->GetAnchor()->GetRole() == ax::mojom::Role::kInlineTextBox) {
+    return position->CreateParentPosition();
+  }
+  return position;
+}
+
 base::string16 BrowserAccessibility::GetInnerText() const {
   if (IsTextOnlyObject())
     return GetString16Attribute(ax::mojom::StringAttribute::kName);
@@ -907,18 +926,59 @@ bool BrowserAccessibility::IsOffscreen() const {
   return offscreen;
 }
 
-std::set<int32_t> BrowserAccessibility::GetReverseRelations(
-    ax::mojom::IntAttribute attr,
-    int32_t dst_id) {
-  DCHECK(manager_);
-  return manager_->ax_tree()->GetReverseRelations(attr, dst_id);
+std::set<ui::AXPlatformNode*> BrowserAccessibility::GetNodesForNodeIdSet(
+    const std::set<int32_t>& ids) {
+  std::set<ui::AXPlatformNode*> nodes;
+  for (int32_t node_id : ids) {
+    if (ui::AXPlatformNode* node = GetFromNodeID(node_id)) {
+      nodes.insert(node);
+    }
+  }
+  return nodes;
 }
 
-std::set<int32_t> BrowserAccessibility::GetReverseRelations(
-    ax::mojom::IntListAttribute attr,
-    int32_t dst_id) {
+ui::AXPlatformNode* BrowserAccessibility::GetTargetNodeForRelation(
+    ax::mojom::IntAttribute attr) {
+  DCHECK(ui::IsNodeIdIntAttribute(attr));
+
+  if (!node_)
+    return nullptr;
+
+  int target_id;
+  if (!GetData().GetIntAttribute(attr, &target_id))
+    return nullptr;
+
+  return GetFromNodeID(target_id);
+}
+
+std::set<ui::AXPlatformNode*> BrowserAccessibility::GetTargetNodesForRelation(
+    ax::mojom::IntListAttribute attr) {
+  DCHECK(ui::IsNodeIdIntListAttribute(attr));
+
+  std::vector<int32_t> target_ids;
+  if (!GetIntListAttribute(attr, &target_ids))
+    return std::set<ui::AXPlatformNode*>();
+
+  std::set<int32_t> target_id_set(target_ids.begin(), target_ids.end());
+  return GetNodesForNodeIdSet(target_id_set);
+}
+
+std::set<ui::AXPlatformNode*> BrowserAccessibility::GetReverseRelations(
+    ax::mojom::IntAttribute attr) {
   DCHECK(manager_);
-  return manager_->ax_tree()->GetReverseRelations(attr, dst_id);
+  DCHECK(node_);
+  DCHECK(ui::IsNodeIdIntAttribute(attr));
+  return GetNodesForNodeIdSet(
+      manager_->ax_tree()->GetReverseRelations(attr, GetData().id));
+}
+
+std::set<ui::AXPlatformNode*> BrowserAccessibility::GetReverseRelations(
+    ax::mojom::IntListAttribute attr) {
+  DCHECK(manager_);
+  DCHECK(node_);
+  DCHECK(ui::IsNodeIdIntListAttribute(attr));
+  return GetNodesForNodeIdSet(
+      manager_->ax_tree()->GetReverseRelations(attr, GetData().id));
 }
 
 const ui::AXUniqueId& BrowserAccessibility::GetUniqueId() const {
@@ -1173,6 +1233,9 @@ bool BrowserAccessibility::AccessibilityPerformAction(
     case ax::mojom::Action::kScrollToMakeVisible:
       manager_->ScrollToMakeVisible(*this, data.target_rect);
       return true;
+    case ax::mojom::Action::kSetSelection:
+      manager_->SetSelection(data);
+      return true;
     case ax::mojom::Action::kSetValue:
       manager_->SetValue(*this, data.value);
       return true;
@@ -1181,10 +1244,57 @@ bool BrowserAccessibility::AccessibilityPerformAction(
   }
 }
 
+base::string16 BrowserAccessibility::GetLocalizedStringForImageAnnotationStatus(
+    ax::mojom::ImageAnnotationStatus status) const {
+  const ContentClient* content_client = content::GetContentClient();
+
+  int message_id = 0;
+  switch (status) {
+    case ax::mojom::ImageAnnotationStatus::kEligibleForAnnotation:
+      message_id = IDS_AX_IMAGE_ELIGIBLE_FOR_ANNOTATION;
+      break;
+    case ax::mojom::ImageAnnotationStatus::kAnnotationPending:
+      message_id = IDS_AX_IMAGE_ANNOTATION_PENDING;
+      break;
+    case ax::mojom::ImageAnnotationStatus::kAnnotationEmpty:
+      message_id = IDS_AX_IMAGE_ANNOTATION_EMPTY;
+      break;
+    case ax::mojom::ImageAnnotationStatus::kAnnotationAdult:
+      message_id = IDS_AX_IMAGE_ANNOTATION_ADULT;
+      break;
+    case ax::mojom::ImageAnnotationStatus::kAnnotationProcessFailed:
+      message_id = IDS_AX_IMAGE_ANNOTATION_PROCESS_FAILED;
+      break;
+    case ax::mojom::ImageAnnotationStatus::kNone:
+    case ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationSucceeded:
+      return base::string16();
+  }
+
+  DCHECK(message_id);
+
+  return content_client->GetLocalizedString(message_id);
+}
+
+base::string16
+BrowserAccessibility::GetLocalizedRoleDescriptionForUnlabeledImage() const {
+  const ContentClient* content_client = content::GetContentClient();
+  return content_client->GetLocalizedString(
+      IDS_AX_UNLABELED_IMAGE_ROLE_DESCRIPTION);
+}
+
 bool BrowserAccessibility::ShouldIgnoreHoveredStateForTesting() {
   BrowserAccessibilityStateImpl* accessibility_state =
       BrowserAccessibilityStateImpl::GetInstance();
   return accessibility_state->disable_hot_tracking_for_testing();
+}
+
+bool BrowserAccessibility::IsOrderedSetItem() const {
+  return node()->IsOrderedSetItem();
+}
+
+bool BrowserAccessibility::IsOrderedSet() const {
+  return node()->IsOrderedSet();
 }
 
 int32_t BrowserAccessibility::GetPosInSet() const {

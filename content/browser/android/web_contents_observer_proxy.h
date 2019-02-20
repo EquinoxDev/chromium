@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_ANDROID_WEB_CONTENTS_OBSERVER_PROXY_H_
 
 #include <jni.h>
+#include <memory>
 
 #include "base/android/jni_weak_ref.h"
 #include "base/macros.h"
@@ -44,6 +45,7 @@ class WebContentsObserverProxy : public WebContentsObserver {
   void TitleWasSet(NavigationEntry* entry) override;
 
   void DidStartNavigation(NavigationHandle* navigation_handle) override;
+  void DidRedirectNavigation(NavigationHandle* navigation_handle) override;
   void DidFinishNavigation(NavigationHandle* navigation_handle) override;
 
   void DidFinishLoad(RenderFrameHost* render_frame_host,

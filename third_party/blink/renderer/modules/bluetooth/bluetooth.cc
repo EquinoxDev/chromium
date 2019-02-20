@@ -122,7 +122,7 @@ static void ConvertRequestDeviceOptions(
       if (exception_state.HadException())
         return;
 
-      result->filters.value().push_back(std::move(canonicalized_filter));
+      result->filters->push_back(std::move(canonicalized_filter));
     }
   }
 
@@ -220,23 +220,60 @@ ScriptPromise Bluetooth::requestDevice(ScriptState* script_state,
   return promise;
 }
 
+static void ConvertRequestLEScanOptions(
+    const BluetoothLEScanOptions* options,
+    mojom::blink::WebBluetoothRequestLEScanOptionsPtr& result,
+    ExceptionState& exception_state) {
+  if (!(options->hasFilters() ^ options->acceptAllAdvertisements())) {
+    exception_state.ThrowTypeError(
+        "Either 'filters' should be present or 'acceptAllAdvertisements' "
+        "should be true, but not both.");
+    return;
+  }
+
+  result->accept_all_advertisements = options->acceptAllAdvertisements();
+  result->keep_repeated_devices = options->keepRepeatedDevices();
+
+  if (options->hasFilters()) {
+    if (options->filters().IsEmpty()) {
+      exception_state.ThrowTypeError(
+          "'filters' member must be non-empty to find any devices.");
+      return;
+    }
+
+    result->filters.emplace();
+
+    for (const BluetoothLEScanFilterInit* filter : options->filters()) {
+      auto canonicalized_filter = mojom::blink::WebBluetoothLeScanFilter::New();
+
+      CanonicalizeFilter(filter, canonicalized_filter, exception_state);
+
+      if (exception_state.HadException())
+        return;
+
+      result->filters->push_back(std::move(canonicalized_filter));
+    }
+  }
+}
+
 void Bluetooth::RequestScanningCallback(
     ScriptPromiseResolver* resolver,
     mojo::BindingId id,
-    mojom::blink::WebBluetoothResult result) {
+    mojom::blink::RequestScanningStartResultPtr result) {
   if (!resolver->GetExecutionContext() ||
       resolver->GetExecutionContext()->IsContextDestroyed()) {
     return;
   }
 
-  if (result == mojom::blink::WebBluetoothResult::SUCCESS) {
-    auto* scan = BluetoothLEScan::Create(id, this,
-                                         /*keep_repeated_device=*/true,
-                                         /*accept_all_advertisements=*/true);
-    resolver->Resolve(scan);
-  } else {
-    resolver->Reject(BluetoothError::CreateDOMException(result));
+  if (result->is_error_result()) {
+    resolver->Reject(
+        BluetoothError::CreateDOMException(result->get_error_result()));
+    return;
   }
+
+  auto* scan =
+      BluetoothLEScan::Create(id, this, std::move(result->get_options()));
+  resolver->Resolve(scan);
 }
 
 // https://webbluetoothcg.github.io/web-bluetooth/scanning.html#dom-bluetooth-requestlescan
@@ -280,7 +317,11 @@ ScriptPromise Bluetooth::requestLEScan(ScriptState* script_state,
         &service_, context->GetTaskRunner(TaskType::kMiscPlatformAPI)));
   }
 
-  // TODO(dougt) deal with |options| here.
+  auto scan_options = mojom::blink::WebBluetoothRequestLEScanOptions::New();
+  ConvertRequestLEScanOptions(options, scan_options, exception_state);
+
+  if (exception_state.HadException())
+    return ScriptPromise();
 
   // Record the eTLD+1 of the frame using the API.
   Platform::Current()->RecordRapporURL("Bluetooth.APIUsage.Origin", doc.Url());
@@ -290,11 +331,13 @@ ScriptPromise Bluetooth::requestLEScan(ScriptState* script_state,
   ScriptPromise promise = resolver->Promise();
 
   mojom::blink::WebBluetoothScanClientAssociatedPtrInfo client;
-  mojo::BindingId id =
-      client_bindings_.AddBinding(this, mojo::MakeRequest(&client));
+  // See https://bit.ly/2S0zRAS for task types.
+  mojo::BindingId id = client_bindings_.AddBinding(
+      this, mojo::MakeRequest(&client),
+      context->GetTaskRunner(TaskType::kMiscPlatformAPI));
 
   service_->RequestScanningStart(
-      std::move(client),
+      std::move(client), std::move(scan_options),
       WTF::Bind(&Bluetooth::RequestScanningCallback, WrapPersistent(this),
                 WrapPersistent(resolver), id));
 
@@ -320,10 +363,21 @@ void Bluetooth::ScanEvent(mojom::blink::WebBluetoothScanResultPtr result) {
   auto* service_data =
       MakeGarbageCollected<BluetoothServiceDataMap>(result->service_data);
 
+  base::Optional<int8_t> rssi;
+  if (result->rssi_is_set)
+    rssi = result->rssi;
+
+  base::Optional<int8_t> tx_power;
+  if (result->tx_power_is_set)
+    tx_power = result->tx_power;
+
+  base::Optional<int16_t> appearance;
+  if (result->appearance_is_set)
+    appearance = result->appearance;
+
   auto* event = BluetoothAdvertisingEvent::Create(
       event_type_names::kAdvertisementreceived, bluetooth_device, result->name,
-      uuids, result->appearance, result->tx_power, result->rssi,
-      manufacturer_data, service_data);
+      uuids, appearance, tx_power, rssi, manufacturer_data, service_data);
   DispatchEvent(*event);
 }
 

@@ -35,16 +35,6 @@ namespace gles2 {
 
 namespace {
 
-struct FormatInfo {
-  GLenum format;
-  const GLenum* types;
-  size_t count;
-};
-
-}  // anonymous namespace.
-
-namespace {
-
 class ScopedPixelUnpackBufferOverride {
  public:
   explicit ScopedPixelUnpackBufferOverride(bool has_pixel_buffers,
@@ -1572,6 +1562,15 @@ void FeatureInfo::InitializeFeatures() {
       AddExtensionString("GL_WEBGL_multi_draw_instanced");
     }
   }
+
+  if (gfx::HasExtension(extensions, "GL_NV_internalformat_sample_query")) {
+    feature_flags_.nv_internalformat_sample_query = true;
+  }
+
+  if (gfx::HasExtension(extensions,
+                        "GL_AMD_framebuffer_multisample_advanced")) {
+    feature_flags_.amd_framebuffer_multisample_advanced = true;
+  }
 }
 
 void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
@@ -1782,6 +1781,15 @@ void FeatureInfo::InitializeFloatAndHalfFloatFeatures(
     ext_color_buffer_half_float_available_ = true;
     if (!disallowed_features_.ext_color_buffer_half_float)
       EnableEXTColorBufferHalfFloat();
+  }
+
+  // assume all desktop (!gl_version_info_->is_es) supports float blend
+  if (gfx::HasExtension(extensions, "GL_EXT_float_blend") &&
+      !gl_version_info_->is_es) {
+    if (!disallowed_features_.ext_float_blend) {
+      AddExtensionString("GL_EXT_float_blend");
+      feature_flags_.ext_float_blend = true;
+    }
   }
 
   if (enable_texture_float) {

@@ -60,6 +60,13 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
   if (child.HasOrthogonalFlowRoots())
     has_orthogonal_flow_roots_ = true;
 
+  // We only need to report if inflow or floating elements depend on the
+  // percentage resolution block-size. OOF-positioned children resolve their
+  // percentages against the "final" size of their parent.
+  if (child.DependsOnPercentageBlockSize() &&
+      !child.PhysicalFragment()->IsOutOfFlowPositioned())
+    has_child_that_depends_on_percentage_block_size_ = true;
+
   return AddChild(child.PhysicalFragment(), child_offset);
 }
 
@@ -67,10 +74,12 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
     scoped_refptr<const NGPhysicalFragment> child,
     const NGLogicalOffset& child_offset) {
   NGBreakToken* child_break_token = child->BreakToken();
-  if (child_break_token) {
+  if (child_break_token && has_block_fragmentation_) {
     switch (child->Type()) {
       case NGPhysicalFragment::kFragmentBox:
       case NGPhysicalFragment::kFragmentRenderedLegend:
+        if (ToNGBlockBreakToken(child_break_token)->HasLastResortBreak())
+          has_last_resort_break_ = true;
         child_break_tokens_.push_back(child_break_token);
         break;
       case NGPhysicalFragment::kFragmentLineBox:
@@ -90,20 +99,13 @@ NGContainerFragmentBuilder& NGContainerFragmentBuilder::AddChild(
                              Style().GetWritingMode()))
     has_orthogonal_flow_roots_ = true;
 
-  if (!has_last_resort_break_) {
-    if (const auto* token = child->BreakToken()) {
-      if (token->IsBlockType() &&
-          ToNGBlockBreakToken(token)->HasLastResortBreak())
-        has_last_resort_break_ = true;
-    }
-  }
   children_.emplace_back(std::move(child));
   offsets_.push_back(child_offset);
   return *this;
 }
 
 NGLogicalOffset NGContainerFragmentBuilder::GetChildOffset(
-    const LayoutObject* child) {
+    const LayoutObject* child) const {
   for (wtf_size_t i = 0; i < children_.size(); ++i) {
     if (children_[i]->GetLayoutObject() == child)
       return offsets_[i];

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
@@ -28,6 +29,7 @@
 #include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/display_util.h"
 #include "content/browser/renderer_host/frame_connector_delegate.h"
+#include "content/browser/renderer_host/input/synthetic_gesture_target.h"
 #include "content/browser/renderer_host/input/touch_selection_controller_client_child_frame.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -40,7 +42,6 @@
 #include "content/public/browser/guest_mode.h"
 #include "content/public/browser/render_process_host.h"
 #include "gpu/ipc/common/gpu_messages.h"
-#include "services/service_manager/runner/common/client_util.h"
 #include "third_party/blink/public/platform/web_touch_event.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/dip_util.h"
@@ -197,6 +198,13 @@ void RenderWidgetHostViewChildFrame::UpdateIntrinsicSizingInfo(
     frame_connector_->SendIntrinsicSizingInfoToParent(sizing_info);
 }
 
+std::unique_ptr<SyntheticGestureTarget>
+RenderWidgetHostViewChildFrame::CreateSyntheticGestureTarget() {
+  // Sythetic gestures should be sent to the root view.
+  NOTREACHED();
+  return nullptr;
+}
+
 void RenderWidgetHostViewChildFrame::OnManagerWillDestroy(
     TouchSelectionControllerClientManager* manager) {
   // We get the manager via the observer callback instead of through the
@@ -293,11 +301,11 @@ gfx::Rect RenderWidgetHostViewChildFrame::GetViewBounds() const {
       // offset.
       rect.Offset(parent_view->GetViewBounds().OffsetFromOrigin());
     }
-    // TODO(fsamuel): GetViewBounds is a bit of a mess. It's used to determine
+    // TODO(wjmaclean): GetViewBounds is a bit of a mess. It's used to determine
     // the size of the renderer content and where to place context menus and so
     // on. We want the location of the frame in screen coordinates to place
     // popups but we want the size in local coordinates to produce the right-
-    // sized CompositorFrames.
+    // sized CompositorFrames. https://crbug.com/928825.
     rect.set_size(frame_connector_->local_frame_size_in_dip());
   }
   return rect;
@@ -558,9 +566,11 @@ void RenderWidgetHostViewChildFrame::GestureEventAck(
       (event.GetType() == blink::WebInputEvent::kGestureScrollBegin ||
        event.GetType() == blink::WebInputEvent::kGestureScrollUpdate ||
        event.GetType() == blink::WebInputEvent::kGestureScrollEnd)) {
-    frame_connector_->BubbleScrollEvent(event);
-    if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd)
+    const bool can_continue = frame_connector_->BubbleScrollEvent(event);
+    if (event.GetType() == blink::WebInputEvent::kGestureScrollEnd ||
+        !can_continue) {
       is_scroll_sequence_bubbling_ = false;
+    }
   }
 }
 
@@ -921,6 +931,8 @@ void RenderWidgetHostViewChildFrame::SetNeedsBeginFrames(
 
 TouchSelectionControllerClientManager*
 RenderWidgetHostViewChildFrame::GetTouchSelectionControllerClientManager() {
+  if (!frame_connector_)
+    return nullptr;
   auto* root_view = frame_connector_->GetRootRenderWidgetHostView();
   if (!root_view)
     return nullptr;

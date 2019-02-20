@@ -84,12 +84,30 @@ ASSERT_SIZE(BorderValue, SameSizeAsBorderValue);
 
 // Since different compilers/architectures pack ComputedStyle differently,
 // re-create the same structure for an accurate size comparison.
-struct SameSizeAsComputedStyle : public RefCounted<SameSizeAsComputedStyle> {
-  struct ComputedStyleBase {
-    void* data_refs[7];
-    unsigned bitfields_[4];
-  } base_;
+//
+// Keep a separate struct for ComputedStyleBase so that we can recreate the
+// inheritance structure. Make sure the fields have the same access specifiers
+// as in the "real" class since it can affect the layout. Reference the fields
+// so that they are not seen as unused (-Wunused-private-field).
+struct SameSizeAsComputedStyleBase {
+  SameSizeAsComputedStyleBase() {
+    base::debug::Alias(&data_refs);
+    base::debug::Alias(&bitfields);
+  }
 
+ private:
+  void* data_refs[7];
+  unsigned bitfields[5];
+};
+
+struct SameSizeAsComputedStyle : public SameSizeAsComputedStyleBase,
+                                 public RefCounted<SameSizeAsComputedStyle> {
+  SameSizeAsComputedStyle() {
+    base::debug::Alias(&own_ptrs);
+    base::debug::Alias(&data_ref_svg_style);
+  }
+
+ private:
   void* own_ptrs[1];
   void* data_ref_svg_style;
 };
@@ -156,12 +174,11 @@ ALWAYS_INLINE ComputedStyle::ComputedStyle(const ComputedStyle& o)
       RefCounted<ComputedStyle>(),
       svg_style_(o.svg_style_) {}
 
-static StyleRecalcChange DiffPseudoStyles(const ComputedStyle& old_style,
-                                          const ComputedStyle& new_style) {
-  // If the pseudoStyles have changed, ensure layoutObject triggers setStyle.
+static bool PseudoStylesEqual(const ComputedStyle& old_style,
+                              const ComputedStyle& new_style) {
   if (!old_style.HasAnyPublicPseudoStyles() &&
       !new_style.HasAnyPublicPseudoStyles())
-    return kNoChange;
+    return true;
   for (PseudoId pseudo_id = kFirstPublicPseudoId;
        pseudo_id < kFirstInternalPseudoId;
        pseudo_id = static_cast<PseudoId>(pseudo_id + 1)) {
@@ -171,72 +188,88 @@ static StyleRecalcChange DiffPseudoStyles(const ComputedStyle& old_style,
     const ComputedStyle* new_pseudo_style =
         new_style.GetCachedPseudoStyle(pseudo_id);
     if (!new_pseudo_style)
-      return kNoInherit;
+      return false;
     const ComputedStyle* old_pseudo_style =
         old_style.GetCachedPseudoStyle(pseudo_id);
     if (old_pseudo_style && *old_pseudo_style != *new_pseudo_style)
-      return kNoInherit;
+      return false;
   }
-  return kNoChange;
+  return true;
 }
 
-StyleRecalcChange ComputedStyle::StylePropagationDiff(
-    const ComputedStyle* old_style,
-    const ComputedStyle* new_style) {
-  // If the style has changed from display none or to display none, then the
-  // layout subtree needs to be reattached
-  if ((!old_style && new_style) || (old_style && !new_style))
-    return kReattach;
-
-  if (!old_style && !new_style)
-    return kNoChange;
-
-  if (old_style->Display() != new_style->Display() ||
-      old_style->HasPseudoStyle(kPseudoIdFirstLetter) !=
-          new_style->HasPseudoStyle(kPseudoIdFirstLetter) ||
-      !old_style->ContentDataEquivalent(*new_style) ||
-      old_style->HasTextCombine() != new_style->HasTextCombine())
-    return kReattach;
-
+bool ComputedStyle::NeedsReattachLayoutTree(const ComputedStyle* old_style,
+                                            const ComputedStyle* new_style) {
+  if (old_style == new_style)
+    return false;
+  if (!old_style || !new_style)
+    return true;
+  if (old_style->Display() != new_style->Display())
+    return true;
+  if (old_style->HasPseudoStyle(kPseudoIdFirstLetter) !=
+      new_style->HasPseudoStyle(kPseudoIdFirstLetter))
+    return true;
+  if (!old_style->ContentDataEquivalent(*new_style))
+    return true;
+  if (old_style->HasTextCombine() != new_style->HasTextCombine())
+    return true;
   // We need to perform a reattach if a "display: layout(foo)" has changed to a
   // "display: layout(bar)". This is because one custom layout could be
   // registered and the other may not, affecting the box-tree construction.
   if (old_style->DisplayLayoutCustomName() !=
-      new_style->DisplayLayoutCustomName()) {
-    return kReattach;
+      new_style->DisplayLayoutCustomName())
+    return true;
+  if (!RuntimeEnabledFeatures::LayoutNGEnabled())
+    return false;
+
+  // LayoutNG needs an anonymous inline wrapper if ::first-line is applied.
+  // Also see |LayoutBlockFlow::NeedsAnonymousInlineWrapper()|.
+  if (new_style->HasPseudoStyle(kPseudoIdFirstLine) &&
+      !old_style->HasPseudoStyle(kPseudoIdFirstLine))
+    return true;
+
+  return old_style->ForceLegacyLayout() != new_style->ForceLegacyLayout();
+}
+
+ComputedStyle::Difference ComputedStyle::ComputeDifference(
+    const ComputedStyle* old_style,
+    const ComputedStyle* new_style) {
+  if (old_style == new_style)
+    return Difference::kEqual;
+  if (!old_style || !new_style)
+    return Difference::kInherited;
+  if (old_style->Display() != new_style->Display() &&
+      (old_style->IsDisplayFlexibleOrGridBox() ||
+       old_style->IsDisplayLayoutCustomBox() ||
+       new_style->IsDisplayFlexibleOrGridBox() ||
+       old_style->IsDisplayLayoutCustomBox())) {
+    return Difference::kDisplayAffectingDescendantStyles;
   }
-
-  if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
-    // LayoutNG needs an anonymous inline wrapper if ::first-line is applied.
-    // Also see |LayoutBlockFlow::NeedsAnonymousInlineWrapper()|.
-    if (new_style->HasPseudoStyle(kPseudoIdFirstLine) &&
-        !old_style->HasPseudoStyle(kPseudoIdFirstLine))
-      return kReattach;
-
-    if (old_style->ForceLegacyLayout() != new_style->ForceLegacyLayout())
-      return kReattach;
-  }
-
   bool independent_equal = old_style->IndependentInheritedEqual(*new_style);
   bool non_independent_equal =
       old_style->NonIndependentInheritedEqual(*new_style);
   if (!independent_equal || !non_independent_equal) {
     if (non_independent_equal && !old_style->HasExplicitlyInheritedProperties())
-      return kIndependentInherit;
-    return kInherit;
+      return Difference::kIndependentInherited;
+    return Difference::kInherited;
   }
 
   if (!old_style->LoadingCustomFontsEqual(*new_style) ||
       old_style->JustifyItems() != new_style->JustifyItems())
-    return kInherit;
+    return Difference::kInherited;
 
-  if (*old_style == *new_style)
-    return DiffPseudoStyles(*old_style, *new_style);
+  if (*old_style == *new_style) {
+    if (PseudoStylesEqual(*old_style, *new_style))
+      return Difference::kEqual;
+    return Difference::kPseudoStyle;
+  }
 
   if (old_style->HasExplicitlyInheritedProperties())
-    return kInherit;
+    return Difference::kInherited;
 
-  return kNoInherit;
+  if (new_style->HasAnyPublicPseudoStyles() ||
+      old_style->HasAnyPublicPseudoStyles())
+    return Difference::kPseudoStyle;
+  return Difference::kNonInherited;
 }
 
 void ComputedStyle::PropagateIndependentInheritedProperties(
@@ -443,18 +476,6 @@ const ComputedStyle* ComputedStyle::AddCachedPseudoStyle(
   cached_pseudo_styles_->push_back(std::move(pseudo));
 
   return result;
-}
-
-void ComputedStyle::RemoveCachedPseudoStyle(PseudoId pid) {
-  if (!cached_pseudo_styles_)
-    return;
-  for (wtf_size_t i = 0; i < cached_pseudo_styles_->size(); ++i) {
-    const ComputedStyle* pseudo_style = cached_pseudo_styles_->at(i).get();
-    if (pseudo_style->StyleType() == pid) {
-      cached_pseudo_styles_->EraseAt(i);
-      return;
-    }
-  }
 }
 
 bool ComputedStyle::InheritedEqual(const ComputedStyle& other) const {
@@ -1799,9 +1820,8 @@ Length ComputedStyle::LineHeight() const {
   // too, though this involves messily poking into CalcExpressionLength.
   if (lh.IsFixed()) {
     float multiplier = TextAutosizingMultiplier();
-    return Length(TextAutosizer::ComputeAutosizedFontSize(
-                      lh.Value(), multiplier, EffectiveZoom()),
-                  kFixed);
+    return Length::Fixed(TextAutosizer::ComputeAutosizedFontSize(
+        lh.Value(), multiplier, EffectiveZoom()));
   }
 
   return lh;
@@ -2049,7 +2069,8 @@ int ComputedStyle::OutlineOutsetExtent() const {
     return 0;
   if (OutlineStyleIsAuto()) {
     return GraphicsContext::FocusRingOutsetExtent(
-        OutlineOffset(), std::ceil(GetOutlineStrokeWidthForFocusRing()));
+        OutlineOffset(), std::ceil(GetOutlineStrokeWidthForFocusRing()),
+        LayoutTheme::GetTheme().IsFocusRingOutset());
   }
   return ClampAdd(OutlineWidth(), OutlineOffset()).Max(0);
 }
@@ -2059,8 +2080,9 @@ float ComputedStyle::GetOutlineStrokeWidthForFocusRing() const {
   return OutlineWidth();
 #else
   // Draw an outline with thickness in proportion to the zoom level, but never
-  // less than 1 pixel so that it remains visible.
-  return std::max(EffectiveZoom(), 1.f);
+  // so narrow that it becomes invisible.
+  return std::max(EffectiveZoom(),
+                  LayoutTheme::GetTheme().MinimumStrokeWidthForFocusRing());
 #endif
 }
 

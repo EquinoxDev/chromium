@@ -19,7 +19,8 @@ void DeviceCloudExternalDataPolicyObserver::Delegate::
 
 void DeviceCloudExternalDataPolicyObserver::Delegate::
     OnDeviceExternalDataFetched(const std::string& policy,
-                                std::unique_ptr<std::string> data) {}
+                                std::unique_ptr<std::string> data,
+                                const base::FilePath& file_path) {}
 
 DeviceCloudExternalDataPolicyObserver::Delegate::~Delegate() {}
 
@@ -67,7 +68,7 @@ void DeviceCloudExternalDataPolicyObserver::HandleExternalDataPolicyUpdate(
   // Invalidate any pending callbacks. They are fetching outdated data.
   weak_factory_.InvalidateWeakPtrs();
   if (entry->external_data_fetcher) {
-    entry->external_data_fetcher->Fetch(base::BindRepeating(
+    entry->external_data_fetcher->Fetch(base::BindOnce(
         &DeviceCloudExternalDataPolicyObserver::OnDeviceExternalDataFetched,
         weak_factory_.GetWeakPtr()));
   } else {
@@ -76,8 +77,9 @@ void DeviceCloudExternalDataPolicyObserver::HandleExternalDataPolicyUpdate(
 }
 
 void DeviceCloudExternalDataPolicyObserver::OnDeviceExternalDataFetched(
-    std::unique_ptr<std::string> data) {
-  delegate_->OnDeviceExternalDataFetched(policy_, std::move(data));
+    std::unique_ptr<std::string> data,
+    const base::FilePath& file_path) {
+  delegate_->OnDeviceExternalDataFetched(policy_, std::move(data), file_path);
 }
 
 }  // namespace policy

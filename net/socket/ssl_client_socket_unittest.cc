@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
@@ -17,6 +18,7 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -60,6 +62,7 @@
 #include "net/socket/tcp_client_socket.h"
 #include "net/socket/tcp_server_socket.h"
 #include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_client_session_cache.h"
 #include "net/ssl/ssl_config_service.h"
 #include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
@@ -790,14 +793,16 @@ class SSLClientSocketTest : public PlatformTest,
         cert_verifier_(new MockCertVerifier),
         transport_security_state_(new TransportSecurityState),
         ct_verifier_(new DoNothingCTVerifier),
-        ct_policy_enforcer_(new MockCTPolicyEnforcer) {
+        ct_policy_enforcer_(new MockCTPolicyEnforcer),
+        ssl_client_session_cache_(
+            new SSLClientSessionCache(SSLClientSessionCache::Config())),
+        context_(cert_verifier_.get(),
+                 nullptr /* channel_id_service */,
+                 transport_security_state_.get(),
+                 ct_verifier_.get(),
+                 ct_policy_enforcer_.get(),
+                 ssl_client_session_cache_.get()) {
     cert_verifier_->set_default_result(OK);
-    context_.cert_verifier = cert_verifier_.get();
-    context_.transport_security_state = transport_security_state_.get();
-    context_.cert_transparency_verifier = ct_verifier_.get();
-    context_.ct_policy_enforcer = ct_policy_enforcer_.get();
-    // Set a dummy session cache shard to enable session caching.
-    context_.ssl_session_cache_shard = "shard";
 
     EXPECT_CALL(*ct_policy_enforcer_, CheckCompliance(_, _, _))
         .WillRepeatedly(
@@ -910,6 +915,7 @@ class SSLClientSocketTest : public PlatformTest,
   std::unique_ptr<TransportSecurityState> transport_security_state_;
   std::unique_ptr<DoNothingCTVerifier> ct_verifier_;
   std::unique_ptr<MockCTPolicyEnforcer> ct_policy_enforcer_;
+  std::unique_ptr<SSLClientSessionCache> ssl_client_session_cache_;
   SSLClientSocketContext context_;
   std::unique_ptr<SSLClientSocket> sock_;
   TestNetLog log_;
@@ -978,9 +984,9 @@ class SSLClientSocketReadTest : public SSLClientSocketTest,
   const bool read_if_ready_enabled_;
 };
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        SSLClientSocketReadTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         SSLClientSocketReadTest,
+                         ::testing::Bool());
 
 // Verifies the correctness of GetSSLCertRequestInfo.
 class SSLClientSocketCertRequestInfoTest : public SSLClientSocketTest {
@@ -2434,12 +2440,6 @@ TEST_F(SSLClientSocketTest, ExportKeyingMaterial) {
   EXPECT_NE(memcmp(client_out1, client_out2, kKeyingMaterialSize), 0);
 }
 
-// Verifies that SSLClientSocket::ClearSessionCache can be called without
-// explicit NSS initialization.
-TEST(SSLClientSocket, ClearSessionCache) {
-  SSLClientSocket::ClearSessionCache();
-}
-
 TEST(SSLClientSocket, SerializeNextProtos) {
   NextProtoVector next_protos;
   next_protos.push_back(kProtoHTTP11);
@@ -2609,6 +2609,19 @@ TEST_F(SSLClientSocketTest, VerifyReturnChainProperlyOrdered) {
 
   sock_->Disconnect();
   EXPECT_FALSE(sock_->IsConnected());
+}
+
+TEST_F(SSLClientSocketCertRequestInfoTest,
+       DontRequestClientCertsIfServerCertInvalid) {
+  SpawnedTestServer::SSLOptions ssl_options(
+      SpawnedTestServer::SSLOptions::CERT_EXPIRED);
+  ssl_options.request_client_certificate = true;
+  ASSERT_TRUE(StartTestServer(ssl_options));
+
+  cert_verifier_->set_default_result(ERR_CERT_DATE_INVALID);
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
+  EXPECT_THAT(rv, IsError(ERR_CERT_DATE_INVALID));
 }
 
 TEST_F(SSLClientSocketCertRequestInfoTest, NoAuthorities) {
@@ -3004,7 +3017,7 @@ TEST_F(SSLClientSocketTest, SessionResumption) {
   EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
   sock.reset();
 
-  SSLClientSocket::ClearSessionCache();
+  context_.ssl_client_session_cache->Flush();
 
   // After clearing the session cache, the next handshake doesn't resume.
   ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
@@ -3579,6 +3592,50 @@ TEST_F(SSLClientSocketTest, CTIsRequired) {
   EXPECT_TRUE(ssl_info.cert_status &
               CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
   EXPECT_FALSE(sock_->IsConnected());
+}
+
+// Test that when CT is required, setting ignore_certificate_errors
+// ignores errors in CT.
+TEST_F(SSLClientSocketTest, IgnoreCertificateErrorsBypassesRequiredCT) {
+  SpawnedTestServer::SSLOptions ssl_options;
+  ASSERT_TRUE(StartTestServer(ssl_options));
+  scoped_refptr<X509Certificate> server_cert =
+      spawned_test_server()->GetCertificate();
+
+  // Certificate is trusted and chains to a public root.
+  CertVerifyResult verify_result;
+  verify_result.is_issued_by_known_root = true;
+  verify_result.verified_cert = server_cert;
+  verify_result.public_key_hashes =
+      MakeHashValueVector(kGoodHashValueVectorInput);
+  cert_verifier_->AddResultForCert(server_cert.get(), verify_result, OK);
+
+  // Set up CT
+  MockRequireCTDelegate require_ct_delegate;
+  transport_security_state_->SetRequireCTDelegate(&require_ct_delegate);
+  EXPECT_CALL(require_ct_delegate, IsCTRequiredForHost(_, _, _))
+      .WillRepeatedly(Return(TransportSecurityState::RequireCTDelegate::
+                                 CTRequirementLevel::NOT_REQUIRED));
+  EXPECT_CALL(
+      require_ct_delegate,
+      IsCTRequiredForHost(spawned_test_server()->host_port_pair().host(), _, _))
+      .WillRepeatedly(Return(TransportSecurityState::RequireCTDelegate::
+                                 CTRequirementLevel::REQUIRED));
+  EXPECT_CALL(*ct_policy_enforcer_, CheckCompliance(server_cert.get(), _, _))
+      .WillRepeatedly(
+          Return(ct::CTPolicyCompliance::CT_POLICY_NOT_ENOUGH_SCTS));
+
+  SSLConfig ssl_config;
+  ssl_config.ignore_certificate_errors = true;
+  int rv;
+  ASSERT_TRUE(CreateAndConnectSSLClientSocket(ssl_config, &rv));
+  SSLInfo ssl_info;
+  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
+
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(ssl_info.cert_status &
+              CERT_STATUS_CERTIFICATE_TRANSPARENCY_REQUIRED);
+  EXPECT_TRUE(sock_->IsConnected());
 }
 
 // Test that the CT compliance status is recorded in a histogram.
@@ -4733,52 +4790,6 @@ TEST_P(SSLClientSocketReadTest, IdleAfterRead) {
   EXPECT_EQ(stats.cert_size, stats.total_size);
 }
 
-// Test that session caches are properly sharded.
-TEST_F(SSLClientSocketTest, SessionCacheShard) {
-  ASSERT_TRUE(StartTestServer(SpawnedTestServer::SSLOptions()));
-
-  // Perform a full handshake.
-  context_.ssl_session_cache_shard = "A";
-  int rv;
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-  ASSERT_THAT(rv, IsOk());
-  SSLInfo ssl_info;
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
-
-  // The next connection resumes the session.
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-  ASSERT_THAT(rv, IsOk());
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_RESUME, ssl_info.handshake_type);
-
-  // A different shard does not resume.
-  context_.ssl_session_cache_shard = "B";
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-  ASSERT_THAT(rv, IsOk());
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
-
-  // The original shard still resumes.
-  context_.ssl_session_cache_shard = "A";
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-  ASSERT_THAT(rv, IsOk());
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_RESUME, ssl_info.handshake_type);
-
-  // The empty shard never resumes.
-  context_.ssl_session_cache_shard = "";
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-  ASSERT_THAT(rv, IsOk());
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
-
-  ASSERT_TRUE(CreateAndConnectSSLClientSocket(SSLConfig(), &rv));
-  ASSERT_THAT(rv, IsOk());
-  ASSERT_TRUE(sock_->GetSSLInfo(&ssl_info));
-  EXPECT_EQ(SSLInfo::HANDSHAKE_FULL, ssl_info.handshake_type);
-}
-
 TEST_F(SSLClientSocketTest, Tag) {
   ASSERT_TRUE(StartTestServer(SpawnedTestServer::SSLOptions()));
 
@@ -5103,9 +5114,9 @@ class TLS13DowngradeMetricsTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        TLS13DowngradeMetricsTest,
-                        ::testing::ValuesIn(kTLS13DowngradeMetricsParams));
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         TLS13DowngradeMetricsTest,
+                         ::testing::ValuesIn(kTLS13DowngradeMetricsParams));
 
 TEST_P(TLS13DowngradeMetricsTest, Metrics) {
   const TLS13DowngradeMetricsParams& params = GetParam();

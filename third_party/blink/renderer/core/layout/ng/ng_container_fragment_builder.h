@@ -88,7 +88,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
 
   // Returns offset for given child. DCHECK if child not found.
   // Warning: Do not call unless necessary.
-  NGLogicalOffset GetChildOffset(const LayoutObject* child);
+  NGLogicalOffset GetChildOffset(const LayoutObject* child) const;
 
   // Builder has non-trivial out-of-flow descendant methods.
   // These methods are building blocks for implementation of
@@ -159,11 +159,19 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   }
   NGFloatTypes AdjoiningFloatTypes() const { return adjoining_floats_; }
 
+  NGContainerFragmentBuilder& SetHasBlockFragmentation() {
+    has_block_fragmentation_ = true;
+    return *this;
+  }
+
 #ifndef NDEBUG
   String ToString() const;
 #endif
 
  protected:
+  friend class NGPhysicalContainerFragment;
+  friend class NGLayoutResult;
+
   // An out-of-flow positioned-candidate is a temporary data structure used
   // within the NGBoxFragmentBuilder.
   //
@@ -188,10 +196,14 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
         : descendant(descendant), child_offset(child_offset) {}
   };
 
-  NGContainerFragmentBuilder(scoped_refptr<const ComputedStyle> style,
+  NGContainerFragmentBuilder(NGLayoutInputNode node,
+                             scoped_refptr<const ComputedStyle> style,
                              WritingMode writing_mode,
                              TextDirection direction)
-      : NGFragmentBuilder(std::move(style), writing_mode, direction) {}
+      : NGFragmentBuilder(std::move(style), writing_mode, direction),
+        node_(node) {}
+
+  NGLayoutInputNode node_;
 
   LayoutUnit bfc_line_offset_;
   base::Optional<LayoutUnit> bfc_block_offset_;
@@ -220,10 +232,11 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   bool has_last_resort_break_ = false;
 
   bool is_pushed_by_floats_ = false;
+  bool is_old_layout_root_ = false;
 
   bool has_orthogonal_flow_roots_ = false;
-
-  friend class NGPhysicalContainerFragment;
+  bool has_child_that_depends_on_percentage_block_size_ = false;
+  bool has_block_fragmentation_ = false;
 };
 
 }  // namespace blink

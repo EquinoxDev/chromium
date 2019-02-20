@@ -34,6 +34,9 @@ cr.define('extensions', function() {
 
       /** Whether "View Activity Log" link should be shown. */
       showActivityLog: Boolean,
+
+      /** Whether the user navigated to this page from the activity log page. */
+      fromActivityLog: Boolean,
     },
 
     observers: [
@@ -45,12 +48,24 @@ cr.define('extensions', function() {
     },
 
     /**
+     * Focuses the extensions options button. This should be used after the
+     * dialog closes.
+     */
+    focusOptionsButton: function() {
+      this.$$('#extensions-options').focus();
+    },
+
+    /**
      * Focuses the back button when page is loaded.
      * @private
      */
     onViewEnterStart_: function() {
+      const elementToFocus = this.fromActivityLog ?
+          this.$.extensionsActivityLogLink :
+          this.$.closeButton;
+
       Polymer.RenderStatus.afterNextRender(
-          this, () => cr.ui.focusWithoutInk(this.$.closeButton));
+          this, () => cr.ui.focusWithoutInk(elementToFocus));
     },
 
     /** @private */
@@ -106,6 +121,16 @@ cr.define('extensions', function() {
      */
     isEnableToggleEnabled_: function() {
       return extensions.userCanChangeEnablement(this.data);
+    },
+
+    /**
+     * Returns true if the extension is in the terminated state.
+     * @return {boolean}
+     * @private
+     */
+    isTerminated_: function() {
+      return this.data.state ==
+          chrome.developerPrivate.ExtensionState.TERMINATED;
     },
 
     /**

@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
@@ -27,7 +28,7 @@
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/user_prefs/user_prefs.h"
-#include "content/public/browser/navigation_handle.h"
+#include "content/public/test/mock_navigation_handle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -46,7 +47,7 @@ class TestSaveCardBubbleControllerImpl : public SaveCardBubbleControllerImpl {
 
   // Overriding because parent function requires a browser window to redirect
   // properly, which is not available in unit tests.
-  void ShowPaymentsSettingsPage() override{};
+  void ShowPaymentsSettingsPage() override {}
 
   explicit TestSaveCardBubbleControllerImpl(content::WebContents* web_contents)
       : SaveCardBubbleControllerImpl(web_contents) {}
@@ -56,11 +57,9 @@ class TestSaveCardBubbleControllerImpl : public SaveCardBubbleControllerImpl {
   }
 
   void SimulateNavigation() {
-    content::RenderFrameHost* rfh = web_contents()->GetMainFrame();
-    std::unique_ptr<content::NavigationHandle> navigation_handle =
-        content::NavigationHandle::CreateNavigationHandleForTesting(
-            GURL(), rfh, true);
-    // Destructor calls DidFinishNavigation.
+    content::MockNavigationHandle handle;
+    handle.set_has_committed(true);
+    DidFinishNavigation(&handle);
   }
 
  protected:
@@ -101,7 +100,8 @@ class SaveCardBubbleControllerImplTest : public BrowserWithTestWindowTest {
                        bool should_request_name_from_user = false,
                        bool should_request_expiration_date_from_user = false,
                        bool show_bubble = true) {
-    std::unique_ptr<base::Value> value(base::JSONReader::Read(message_json));
+    std::unique_ptr<base::Value> value(
+        base::JSONReader::ReadDeprecated(message_json));
     ASSERT_TRUE(value);
     base::DictionaryValue* dictionary;
     ASSERT_TRUE(value->GetAsDictionary(&dictionary));

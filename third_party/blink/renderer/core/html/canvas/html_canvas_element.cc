@@ -33,15 +33,18 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
 #include "build/build_config.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
@@ -145,9 +148,6 @@ intptr_t HTMLCanvasElement::global_gpu_memory_usage_ = 0;
 unsigned HTMLCanvasElement::global_accelerated_context_count_ = 0;
 
 HTMLCanvasElement::~HTMLCanvasElement() {
-  CanvasRenderingContextHost::RecordCanvasSizeToUMA(
-      size_.Width(), size_.Height(),
-      CanvasRenderingContextHost::HostType::kCanvasHost);
   if (surface_layer_bridge_ && surface_layer_bridge_->GetCcLayer())
     GraphicsLayer::UnregisterContentsLayer(surface_layer_bridge_->GetCcLayer());
   v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
@@ -275,9 +275,8 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
   }
 
   // Log the aliased context type used.
-  if (!context_) {
+  if (!context_)
     UMA_HISTOGRAM_ENUMERATION("Blink.Canvas.ContextType", context_type);
-  }
 
   context_type =
       CanvasRenderingContext::ResolveContextTypeAliases(context_type);
@@ -319,7 +318,7 @@ CanvasRenderingContext* HTMLCanvasElement::GetCanvasRenderingContextInternal(
     DidDraw();
   }
 
-  if (attributes.low_latency &&
+  if (context_->CreationAttributes().low_latency &&
       origin_trials::LowLatencyCanvasEnabled(&GetDocument())) {
     CreateLayer();
     SetNeedsUnbufferedInputEvents(true);
@@ -396,6 +395,8 @@ void HTMLCanvasElement::DidDraw() {
 
 void HTMLCanvasElement::FinalizeFrame() {
   TRACE_EVENT0("blink", "HTMLCanvasElement::FinalizeFrame");
+  RecordCanvasSizeToUMA(size_,
+                        CanvasRenderingContextHost::HostType::kCanvasHost);
 
   // FinalizeFrame indicates the end of a script task that may have rendered
   // into the canvas, now is a good time to unlock cache entries.
@@ -407,7 +408,8 @@ void HTMLCanvasElement::FinalizeFrame() {
     // Compute to determine whether disable accleration is needed
     if (IsAccelerated() &&
         canvas_heuristic_parameters::kGPUReadbackForcesNoAcceleration &&
-        !RuntimeEnabledFeatures::Canvas2dFixedRenderingModeEnabled()) {
+        !RuntimeEnabledFeatures::Canvas2dFixedRenderingModeEnabled() &&
+        !base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas)) {
       if (gpu_readback_invoked_in_current_frame_) {
         gpu_readback_successive_frames_++;
         gpu_readback_invoked_in_current_frame_ = false;
@@ -427,14 +429,23 @@ void HTMLCanvasElement::FinalizeFrame() {
 
   if (LowLatencyEnabled() && !dirty_rect_.IsEmpty()) {
     if (GetOrCreateCanvasResourceProvider(kPreferAcceleration)) {
-      ResourceProvider()->TryEnableSingleBuffering();
-      if (canvas2d_bridge_)
+      // TryEnableSingleBuffering() the first time we FinalizeFrame().
+      if (!ResourceProvider()->IsSingleBuffered()) {
+        ResourceProvider()->TryEnableSingleBuffering();
+        if (Is3d() && RuntimeEnabledFeatures::WebGLImageChromiumEnabled())
+          context_->ProvideBackBufferToResourceProvider();
+      }
+
+      if (canvas2d_bridge_) {
         canvas2d_bridge_->FlushRecording();
-      // Push a frame
-      base::TimeTicks start_time = WTF::CurrentTimeTicks();
-      if (Is3d())
-        context_->PaintRenderingResultsToCanvas(kBackBuffer);
-      scoped_refptr<CanvasResource> canvas_resource =
+      } else {
+        DCHECK(Is3d());
+        if (!RuntimeEnabledFeatures::WebGLImageChromiumEnabled())
+          context_->PaintRenderingResultsToCanvas(kBackBuffer);
+      }
+
+      const base::TimeTicks start_time = WTF::CurrentTimeTicks();
+      const scoped_refptr<CanvasResource> canvas_resource =
           ResourceProvider()->ProduceFrame();
       const FloatRect src_rect(0, 0, Size().Width(), Size().Height());
       dirty_rect_.Intersect(src_rect);
@@ -449,13 +460,12 @@ void HTMLCanvasElement::FinalizeFrame() {
     }
   }
 
-  // If the canvas is visible, notifying listeners is taken
-  // care of in the in doDeferredPaintInvalidation, which allows
-  // the frame to be grabbed prior to compositing, which is
-  // critically important because compositing may clear the canvas's
-  // image. (e.g. WebGL context with preserveDrawingBuffer=false).
-  // If the canvas is not visible, doDeferredPaintInvalidation
-  // will not get called, so we need to take care of business here.
+  // If the canvas is visible, notifying listeners is taken care of in
+  // DoDeferredPaintInvalidation(), which allows the frame to be grabbed prior
+  // to compositing, which is critically important because compositing may clear
+  // the canvas's image. (e.g. WebGL context with preserveDrawingBuffer=false).
+  // If the canvas is not visible, DoDeferredPaintInvalidation will not get
+  // called, so we need to take care of business here.
   if (!did_notify_listeners_for_current_frame_)
     NotifyListenersCanvasChanged();
   did_notify_listeners_for_current_frame_ = false;
@@ -464,6 +474,9 @@ void HTMLCanvasElement::FinalizeFrame() {
 void HTMLCanvasElement::DisableAcceleration(
     std::unique_ptr<Canvas2DLayerBridge>
         unaccelerated_bridge_used_for_testing) {
+  if (base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas)) {
+    NOTREACHED();
+  }
   // Create and configure an unaccelerated Canvas2DLayerBridge.
   std::unique_ptr<Canvas2DLayerBridge> bridge;
   if (unaccelerated_bridge_used_for_testing)
@@ -981,6 +994,9 @@ void HTMLCanvasElement::PushFrame(scoped_refptr<CanvasResource> image,
 }
 
 bool HTMLCanvasElement::ShouldAccelerate(AccelerationCriteria criteria) const {
+  if (base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas))
+    return true;
+
   if (context_ && !Is2d())
     return false;
 
@@ -1036,12 +1052,20 @@ unsigned HTMLCanvasElement::GetMSAASampleCountFor2dContext() const {
 
 std::unique_ptr<Canvas2DLayerBridge>
 HTMLCanvasElement::CreateAccelerated2dBuffer() {
+  base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper =
+      SharedGpuContext::ContextProviderWrapper();
+  const bool needs_vertical_flip =
+      !(context_provider_wrapper && context_provider_wrapper->ContextProvider()
+                                        ->GetCapabilities()
+                                        .mesa_framebuffer_flip_y);
+
   auto surface = std::make_unique<Canvas2DLayerBridge>(
-      Size(), Canvas2DLayerBridge::kEnableAcceleration, ColorParams());
+      Size(), Canvas2DLayerBridge::kEnableAcceleration, ColorParams(),
+      needs_vertical_flip);
   if (!surface->IsValid())
     return nullptr;
 
-  if (MemoryCoordinator::IsLowEndDevice())
+  if (MemoryPressureListenerRegistry::IsLowEndDevice())
     surface->DisableDeferral(kDisableDeferralReasonLowEndDevice);
 
   return surface;
@@ -1101,7 +1125,7 @@ void HTMLCanvasElement::NotifyGpuContextLost() {
     context_->LoseContext(CanvasRenderingContext::kRealLostContext);
 }
 
-void HTMLCanvasElement::Trace(blink::Visitor* visitor) {
+void HTMLCanvasElement::Trace(Visitor* visitor) {
   visitor->Trace(listeners_);
   visitor->Trace(context_);
   ContextLifecycleObserver::Trace(visitor);
@@ -1234,7 +1258,8 @@ scoped_refptr<Image> HTMLCanvasElement::GetSourceImageForCanvas(
     if (canvas_heuristic_parameters::kDisableAccelerationToAvoidReadbacks &&
         !RuntimeEnabledFeatures::Canvas2dFixedRenderingModeEnabled() &&
         hint == kPreferNoAcceleration && canvas2d_bridge_ &&
-        canvas2d_bridge_->IsAccelerated()) {
+        canvas2d_bridge_->IsAccelerated() &&
+        !base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas)) {
       DisableAcceleration();
     }
     image = RenderingContext()->GetImage(hint);
@@ -1303,7 +1328,7 @@ bool HTMLCanvasElement::IsSupportedInteractiveCanvasFallback(
 
   // An element is a supported interactive canvas fallback element if it is one
   // of the following:
-  // https://html.spec.whatwg.org/multipage/scripting.html#supported-interactive-canvas-fallback-element
+  // https://html.spec.whatwg.org/C/#supported-interactive-canvas-fallback-element
 
   // An a element that represents a hyperlink and that does not have any img
   // descendants.
@@ -1520,6 +1545,9 @@ void HTMLCanvasElement::OnContentsCcLayerChanged() {
   if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() &&
       GetLayoutObject() && GetLayoutObject()->HasLayer())
     GetLayoutBoxModelObject()->Layer()->SetNeedsRepaint();
+
+  if (auto* layer = ContentsCcLayer())
+    layer->set_owner_node_id(DOMNodeIds::IdForNode(this));
 }
 
 }  // namespace blink

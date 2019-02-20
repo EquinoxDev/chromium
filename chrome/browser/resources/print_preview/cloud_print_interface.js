@@ -18,7 +18,18 @@ cloudprint.CloudPrintInterfaceEventType = {
   SEARCH_FAILED: 'cloudprint.CloudPrintInterface.SEARCH_FAILED',
   SUBMIT_DONE: 'cloudprint.CloudPrintInterface.SUBMIT_DONE',
   SUBMIT_FAILED: 'cloudprint.CloudPrintInterface.SUBMIT_FAILED',
+  UPDATE_USERS: 'cloudprint.CloudPrintInterface.UPDATE_USERS',
 };
+
+/**
+ * @typedef {{
+ *   status: number,
+ *   errorCode: number,
+ *   message: string,
+ *   origin: !print_preview.DestinationOrigin,
+ * }}
+ */
+cloudprint.CloudPrintInterfaceErrorEventDetail;
 
 /**
  * @typedef {{

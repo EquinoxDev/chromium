@@ -26,7 +26,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_HTML_VIDEO_ELEMENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_HTML_MEDIA_HTML_VIDEO_ELEMENT_H_
 
-#include "third_party/blink/public/common/picture_in_picture/picture_in_picture_control_info.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_image_source.h"
 #include "third_party/blink/renderer/core/html/html_image_loader.h"
@@ -56,7 +55,7 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
   static HTMLVideoElement* Create(Document&);
 
   HTMLVideoElement(Document&);
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
   bool HasPendingActivity() const final;
 
@@ -153,6 +152,7 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
   bool IsVideoElement() const override { return true; }
   bool WouldTaintOrigin() const override;
   FloatSize ElementSize(const FloatSize&) const override;
+  const KURL& SourceURL() const override { return currentSrc(); }
   bool IsHTMLVideoElement() const override { return true; }
   // Video elements currently always go through RAM when used as a canvas image
   // source.
@@ -174,25 +174,16 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
 
   void MediaRemotingStarted(const WebString& remote_device_friendly_name) final;
   bool SupportsPictureInPicture() const final;
-  void enterPictureInPicture(WebMediaPlayer::PipWindowOpenedCallback callback);
-  void exitPictureInPicture(WebMediaPlayer::PipWindowClosedCallback callback);
-  void SendCustomControlsToPipWindow();
   void PictureInPictureStopped() final;
-  void PictureInPictureControlClicked(const WebString& control_id) final;
   void MediaRemotingStopped(WebLocalizedString::Name error_msg) final;
   WebMediaPlayer::DisplayType DisplayType() const final;
   bool IsInAutoPIP() const final;
+  void OnPictureInPictureStateChange() final;
 
   // Used by the PictureInPictureController as callback when the video element
   // enters or exits Picture-in-Picture state.
   void OnEnteredPictureInPicture();
   void OnExitedPictureInPicture();
-
-  void SetPictureInPictureCustomControls(
-      const std::vector<PictureInPictureControlInfo>& pip_custom_controls);
-  const std::vector<PictureInPictureControlInfo>&
-  GetPictureInPictureCustomControls() const;
-  bool HasPictureInPictureCustomControls() const;
 
   void SetIsEffectivelyFullscreen(blink::WebFullscreenVideoStatus);
 
@@ -213,7 +204,7 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
   friend class HTMLMediaElementEventListenersTest;
   friend class HTMLVideoElementPersistentTest;
 
-  // PausableObject functions.
+  // ContextLifecycleStateObserver functions.
   void ContextDestroyed(ExecutionContext*) final;
 
   bool LayoutObjectIsNeeded(const ComputedStyle&) const override;
@@ -253,10 +244,6 @@ class CORE_EXPORT HTMLVideoElement final : public HTMLMediaElement,
 
   // Whether this element is in overlay fullscreen mode.
   bool in_overlay_fullscreen_video_;
-
-  // Holds the most recently set custom controls. These will be persistent
-  // across active/inactive windows until new controls are passed in.
-  std::vector<PictureInPictureControlInfo> pip_custom_controls_;
 
   // Whether the video element should be considered as fullscreen with regards
   // to display type and other UI features. This does not mean the DOM element

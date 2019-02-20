@@ -11,7 +11,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -86,7 +85,7 @@ class SpellCheckHostMetrics {
   int last_replaced_word_count_;
 
   // Last recorded number of unique words.
-  int last_unique_word_count_;
+  size_t last_unique_word_count_;
 
   // Time when first spellcheck happened.
   base::TimeTicks start_time_;

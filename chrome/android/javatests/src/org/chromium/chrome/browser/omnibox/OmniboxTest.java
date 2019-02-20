@@ -46,7 +46,7 @@ import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.omnibox.status.StatusViewCoordinator;
 import org.chromium.chrome.browser.omnibox.suggestions.AutocompleteController.OnSuggestionsReceivedListener;
 import org.chromium.chrome.browser.omnibox.suggestions.OmniboxSuggestion;
-import org.chromium.chrome.browser.omnibox.suggestions.SuggestionView;
+import org.chromium.chrome.browser.omnibox.suggestions.basic.SuggestionView;
 import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabObserver;
@@ -710,7 +710,12 @@ public class OmniboxTest {
                     testServer.getURL("/chrome/test/data/android/theme_color_test.html");
 
             mActivityTestRule.loadUrl(testHttpsUrl);
-            didThemeColorChangedCallbackHelper.waitForCallback(0);
+
+            // Tablets don't have website theme colors.
+            if (!mActivityTestRule.getActivity().isTablet()) {
+                didThemeColorChangedCallbackHelper.waitForCallback(0);
+            }
+
             onSSLStateUpdatedCallbackHelper.waitForCallback(0);
 
             LocationBarLayout locationBarLayout =

@@ -16,7 +16,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -35,11 +34,15 @@ class ProgressReporter;
 
 namespace gpu {
 class DecoderContext;
+class ExternalVkImageBacking;
+class ExternalVkImageGlRepresentation;
 class ServiceDiscardableManager;
 class SharedImageBackingGLTexture;
 class SharedImageBackingFactoryGLTexture;
 class SharedImageBackingAHB;
 class SharedImageRepresentationGLTexture;
+class SharedImageRepresentationGLTextureAHB;
+class SharedImageRepresentationSkiaGLAHB;
 
 namespace gles2 {
 class GLStreamTextureImage;
@@ -254,6 +257,7 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   // Set the ImageState for the image bound to the given level.
   void SetLevelImageState(GLenum target, GLint level, ImageState state);
 
+  bool CompatibleWithSamplerUniformType(GLenum type) const;
 
   // Get the image associated with a particular level. Returns NULL if level
   // does not exist.
@@ -313,6 +317,11 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   // rectangle if level does not exist.
   gfx::Rect GetLevelClearedRect(GLenum target, GLint level) const;
 
+  // Marks a |rect| of a particular level as cleared.
+  void SetLevelClearedRect(GLenum target,
+                           GLint level,
+                           const gfx::Rect& cleared_rect);
+
   // Whether a particular level/face is cleared.
   bool IsLevelCleared(GLenum target, GLint level) const;
   // Whether a particular level/face is partially cleared.
@@ -353,12 +362,19 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
 
   MemoryTypeTracker* GetMemTracker();
 
+  // Returns GL_NONE on error.
+  GLenum GetInternalFormatOfBaseLevel() const;
+
  private:
   friend class MailboxManagerSync;
   friend class MailboxManagerTest;
+  friend class gpu::ExternalVkImageBacking;
+  friend class gpu::ExternalVkImageGlRepresentation;
   friend class gpu::SharedImageBackingGLTexture;
   friend class gpu::SharedImageBackingFactoryGLTexture;
   friend class gpu::SharedImageBackingAHB;
+  friend class gpu::SharedImageRepresentationGLTextureAHB;
+  friend class gpu::SharedImageRepresentationSkiaGLAHB;
   friend class TextureDefinition;
   friend class TextureManager;
   friend class TextureRef;
@@ -427,6 +443,8 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
 
   // Returns the LevelInfo for |target| and |level| if it's set, else NULL.
   const LevelInfo* GetLevelInfo(GLint target, GLint level) const;
+  // Returns NULL if the base level is not defined.
+  const LevelInfo* GetBaseLevelInfo() const;
 
   // Set the info for a particular level.
   void SetLevelInfo(GLenum target,
@@ -459,11 +477,6 @@ class GPU_GLES2_EXPORT Texture final : public TextureBase {
   bool npot() const {
     return npot_;
   }
-
-  // Marks a |rect| of a particular level as cleared.
-  void SetLevelClearedRect(GLenum target,
-                           GLint level,
-                           const gfx::Rect& cleared_rect);
 
   // Updates the cleared flag for this texture by inspecting all the mips.
   void UpdateCleared();
@@ -930,10 +943,15 @@ class GPU_GLES2_EXPORT TextureManager
   bool ClearRenderableLevels(DecoderContext* decoder, TextureRef* ref);
 
   // Clear a specific level.
-  bool ClearTextureLevel(DecoderContext* decoder,
-                         TextureRef* ref,
-                         GLenum target,
-                         GLint level);
+  static bool ClearTextureLevel(DecoderContext* decoder,
+                                TextureRef* ref,
+                                GLenum target,
+                                GLint level);
+
+  static bool ClearTextureLevel(DecoderContext* decoder,
+                                Texture* texture,
+                                GLenum target,
+                                GLint level);
 
   // Creates a new texture info.
   TextureRef* CreateTexture(GLuint client_id, GLuint service_id);

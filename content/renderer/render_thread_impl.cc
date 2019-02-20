@@ -12,6 +12,8 @@
 
 #include "base/allocator/allocator_extension.h"
 #include "base/at_exit.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -68,7 +70,6 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/gpu_stream_constants.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/resource_usage_reporter.mojom.h"
 #include "content/public/common/resource_usage_reporter_type_converters.h"
 #include "content/public/common/service_manager_connection.h"
@@ -109,10 +110,10 @@
 #include "content/renderer/renderer_blink_platform_impl.h"
 #include "content/renderer/service_worker/embedded_worker_instance_client_impl.h"
 #include "content/renderer/service_worker/service_worker_context_client.h"
-#include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
-#include "content/renderer/shared_worker/shared_worker_factory_impl.h"
 #include "content/renderer/web_database_observer_impl.h"
-#include "content/renderer/worker_thread_registry.h"
+#include "content/renderer/worker/embedded_shared_worker_stub.h"
+#include "content/renderer/worker/shared_worker_factory_impl.h"
+#include "content/renderer/worker/worker_thread_registry.h"
 #include "device/gamepad/public/cpp/gamepads.h"
 #include "gin/public/debug.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -138,16 +139,18 @@
 #include "net/base/url_util.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "services/metrics/public/cpp/mojo_ukm_recorder.h"
+#include "services/network/public/cpp/network_switches.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/ws/public/cpp/gpu/context_provider_command_buffer.h"
 #include "services/ws/public/cpp/gpu/gpu.h"
 #include "services/ws/public/mojom/constants.mojom.h"
 #include "skia/ext/skia_memory_dump_provider.h"
+#include "third_party/blink/public/common/page/launching_process_state.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/web_cache.h"
 #include "third_party/blink/public/platform/web_image_generator.h"
-#include "third_party/blink/public/platform/web_memory_coordinator.h"
+#include "third_party/blink/public/platform/web_memory_pressure_listener.h"
 #include "third_party/blink/public/platform/web_network_state_notifier.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
 #include "third_party/blink/public/platform/web_string.h"
@@ -751,6 +754,8 @@ void RenderThreadImpl::Init() {
   auto registry = std::make_unique<service_manager::BinderRegistry>();
   InitializeWebKit(registry.get());
 
+  is_backgrounded_ = blink::kLaunchingProcessIsBackgrounded;
+
   // In single process the single process is all there is.
   widget_count_ = 0;
   hidden_widget_count_ = 0;
@@ -1233,9 +1238,9 @@ void RenderThreadImpl::InitializeWebKit(
   SkGraphics::SetImageGeneratorFromEncodedDataFactory(
       blink::WebImageGenerator::CreateAsSkImageGenerator);
 
-  if (command_line.HasSwitch(switches::kExplicitlyAllowedPorts)) {
-    std::string allowed_ports =
-        command_line.GetSwitchValueASCII(switches::kExplicitlyAllowedPorts);
+  if (command_line.HasSwitch(network::switches::kExplicitlyAllowedPorts)) {
+    std::string allowed_ports = command_line.GetSwitchValueASCII(
+        network::switches::kExplicitlyAllowedPorts);
     net::SetExplicitlyAllowedPorts(allowed_ports);
   }
 }
@@ -1274,8 +1279,9 @@ RenderThreadImpl::HostAllocateSharedMemoryBuffer(size_t size) {
   return ChildThreadImpl::AllocateSharedMemory(size);
 }
 
-void RenderThreadImpl::RegisterExtension(v8::Extension* extension) {
-  WebScriptController::RegisterExtension(extension);
+void RenderThreadImpl::RegisterExtension(
+    std::unique_ptr<v8::Extension> extension) {
+  WebScriptController::RegisterExtension(std::move(extension));
 }
 
 int RenderThreadImpl::PostTaskToAllWebWorkers(const base::Closure& closure) {
@@ -1364,9 +1370,9 @@ media::GpuVideoAcceleratorFactories* RenderThreadImpl::GetGpuFactories() {
   return gpu_factories_.back().get();
 }
 
-scoped_refptr<viz::ContextProvider>
+scoped_refptr<viz::RasterContextProvider>
 RenderThreadImpl::GetVideoFrameCompositorContextProvider(
-    scoped_refptr<viz::ContextProvider> unwanted_context_provider) {
+    scoped_refptr<viz::RasterContextProvider> unwanted_context_provider) {
   DCHECK(video_frame_compositor_task_runner_);
   if (video_frame_compositor_context_provider_ &&
       video_frame_compositor_context_provider_ != unwanted_context_provider) {
@@ -1390,7 +1396,7 @@ RenderThreadImpl::GetVideoFrameCompositorContextProvider(
 
   bool support_locking = false;
   bool support_gles2_interface = true;
-  bool support_raster_interface = false;
+  bool support_raster_interface = true;
   bool support_oop_rasterization = false;
   bool support_grcontext = false;
   bool automatic_flushes = false;
@@ -1494,6 +1500,10 @@ void RenderThreadImpl::SetRendererProcessType(
 blink::WebString RenderThreadImpl::GetUserAgent() {
   DCHECK(!user_agent_.IsNull());
   return user_agent_;
+}
+
+const blink::UserAgentMetadata& RenderThreadImpl::GetUserAgentMetadata() {
+  return user_agent_metadata_;
 }
 
 void RenderThreadImpl::OnAssociatedInterfaceRequest(
@@ -1670,6 +1680,7 @@ void RenderThreadImpl::SetProcessBackgrounded(bool backgrounded) {
   } else {
     process_foregrounded_count_++;
   }
+  is_backgrounded_ = backgrounded;
 }
 
 void RenderThreadImpl::ProcessPurgeAndSuspend() {
@@ -2131,14 +2142,19 @@ void RenderThreadImpl::CreateView(mojom::CreateViewParamsPtr params) {
 void RenderThreadImpl::CreateFrame(mojom::CreateFrameParamsPtr params) {
   CompositorDependencies* compositor_deps = this;
   service_manager::mojom::InterfaceProviderPtr interface_provider(
-      std::move(params->interface_provider));
+      std::move(params->interface_bundle->interface_provider));
+  blink::mojom::DocumentInterfaceBrokerPtr document_interface_broker_content(
+      std::move(params->interface_bundle->document_interface_broker_content));
+  blink::mojom::DocumentInterfaceBrokerPtr document_interface_broker_blink(
+      std::move(params->interface_bundle->document_interface_broker_blink));
   RenderFrameImpl::CreateFrame(
       params->routing_id, std::move(interface_provider),
-      params->proxy_routing_id, params->opener_routing_id,
-      params->parent_routing_id, params->previous_sibling_routing_id,
-      params->devtools_frame_token, params->replication_state, compositor_deps,
-      *params->widget_params, params->frame_owner_properties,
-      params->has_committed_real_load);
+      std::move(document_interface_broker_content),
+      std::move(document_interface_broker_blink), params->proxy_routing_id,
+      params->opener_routing_id, params->parent_routing_id,
+      params->previous_sibling_routing_id, params->devtools_frame_token,
+      params->replication_state, compositor_deps, *params->widget_params,
+      params->frame_owner_properties, params->has_committed_real_load);
 }
 
 void RenderThreadImpl::CreateFrameProxy(
@@ -2155,9 +2171,8 @@ void RenderThreadImpl::CreateFrameProxy(
 }
 
 void RenderThreadImpl::SetUpEmbeddedWorkerChannelForServiceWorker(
-    mojom::EmbeddedWorkerInstanceClientRequest client_request) {
-  EmbeddedWorkerInstanceClientImpl::Create(GetIOTaskRunner(),
-                                           std::move(client_request));
+    blink::mojom::EmbeddedWorkerInstanceClientRequest client_request) {
+  EmbeddedWorkerInstanceClientImpl::Create(std::move(client_request));
 }
 
 void RenderThreadImpl::OnNetworkConnectionChanged(
@@ -2202,6 +2217,11 @@ void RenderThreadImpl::SetUserAgent(const std::string& user_agent) {
   GetContentClient()->renderer()->DidSetUserAgent(user_agent);
 }
 
+void RenderThreadImpl::SetUserAgentMetadata(
+    const blink::UserAgentMetadata& user_agent_metadata) {
+  user_agent_metadata_ = user_agent_metadata;
+}
+
 void RenderThreadImpl::UpdateScrollbarTheme(
     mojom::UpdateScrollbarThemeParamsPtr params) {
 #if defined(OS_MACOSX)
@@ -2243,7 +2263,7 @@ void RenderThreadImpl::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
   TRACE_EVENT0("memory", "RenderThreadImpl::OnMemoryPressure");
   if (blink_platform_impl_) {
-    blink::WebMemoryCoordinator::OnMemoryPressure(
+    blink::WebMemoryPressureListener::OnMemoryPressure(
         static_cast<blink::WebMemoryPressureLevel>(memory_pressure_level));
   }
   if (memory_pressure_level ==
@@ -2268,10 +2288,11 @@ RenderThreadImpl::GetMediaThreadTaskRunner() {
   DCHECK(main_thread_runner()->BelongsToCurrentThread());
   if (!media_thread_) {
     media_thread_.reset(new base::Thread("Media"));
-    base::Thread::Options options;
 #if defined(OS_FUCHSIA)
     // Start IO thread on Fuchsia to make that thread usable for FIDL.
-    options = base::Thread::Options(base::MessageLoop::TYPE_IO, 0);
+    base::Thread::Options options(base::MessageLoop::TYPE_IO, 0);
+#else
+    base::Thread::Options options;
 #endif
     media_thread_->StartWithOptions(options);
   }
@@ -2422,7 +2443,7 @@ void RenderThreadImpl::ReleaseFreeMemory() {
   if (blink_platform_impl_) {
     // Purge Skia font cache, resource cache, and image filter.
     SkGraphics::PurgeAllCaches();
-    blink::WebMemoryCoordinator::OnPurgeMemory();
+    blink::WebMemoryPressureListener::OnPurgeMemory();
   }
 }
 

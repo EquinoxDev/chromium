@@ -13,9 +13,11 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "net/base/address_list.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/winsock_init.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/http/http_proxy_connect_job.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/log/net_log_event_type.h"
@@ -24,9 +26,15 @@
 #include "net/log/test_net_log_entry.h"
 #include "net/log/test_net_log_util.h"
 #include "net/socket/client_socket_factory.h"
+#include "net/socket/connect_job_test_util.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
+#include "net/socket/socks_connect_job.h"
+#include "net/socket/ssl_client_socket.h"
+#include "net/socket/ssl_connect_job.h"
+#include "net/socket/stream_socket.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/socket/transport_connect_job.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session_pool.h"
@@ -35,7 +43,7 @@
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
 #include "net/test/test_with_scoped_task_environment.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -45,6 +53,8 @@ using net::test::IsError;
 using net::test::IsOk;
 
 //-----------------------------------------------------------------------------
+
+namespace net {
 
 namespace {
 
@@ -72,9 +82,61 @@ static const int kLen333 = kLen3 + kLen3 + kLen3;
 
 static const char kRedirectUrl[] = "https://example.com/";
 
-}  // anonymous namespace
+// Creates a SpdySession with a StreamSocket, instead of a ClientSocketHandle.
+base::WeakPtr<SpdySession> CreateSpdyProxySession(
+    HttpNetworkSession* http_session,
+    SpdySessionDependencies* session_deps,
+    const SpdySessionKey& key) {
+  EXPECT_FALSE(http_session->spdy_session_pool()->FindAvailableSession(
+      key, true /* enable_ip_based_pooling */, false /* is_websocket */,
+      NetLogWithSource()));
 
-namespace net {
+  auto transport_params = base::MakeRefCounted<TransportSocketParams>(
+      key.host_port_pair(), false /* disable_resolver_cache */,
+      OnHostResolutionCallback());
+
+  SSLConfig ssl_config;
+  auto ssl_params = base::MakeRefCounted<SSLSocketParams>(
+      transport_params, nullptr, nullptr, key.host_port_pair(), ssl_config,
+      key.privacy_mode());
+  TestConnectJobDelegate connect_job_delegate;
+  SSLConnectJob connect_job(
+      MEDIUM,
+      CommonConnectJobParams(
+          "group_name", SocketTag(), true /* respect_limits */,
+          session_deps->socket_factory.get(), session_deps->host_resolver.get(),
+          nullptr /* proxy_delegate */,
+          SSLClientSocketContext(session_deps->cert_verifier.get(),
+                                 session_deps->channel_id_service.get(),
+                                 session_deps->transport_security_state.get(),
+                                 session_deps->cert_transparency_verifier.get(),
+                                 session_deps->ct_policy_enforcer.get(),
+                                 nullptr /* ssl_client_session_cache_arg */),
+          SSLClientSocketContext(session_deps->cert_verifier.get(),
+                                 session_deps->channel_id_service.get(),
+                                 session_deps->transport_security_state.get(),
+                                 session_deps->cert_transparency_verifier.get(),
+                                 session_deps->ct_policy_enforcer.get(),
+                                 nullptr /* ssl_client_session_cache_arg */),
+          nullptr /* socket_performance_watcher_factory */,
+          nullptr /* network_quality_estimator */, session_deps->net_log,
+          nullptr /* websocket_endpoint_lock_manager */),
+      ssl_params, nullptr /* http_proxy_pool */, &connect_job_delegate);
+  connect_job_delegate.StartJobExpectingResult(&connect_job, OK,
+                                               false /* expect_sync_result */);
+
+  base::WeakPtr<SpdySession> spdy_session =
+      http_session->spdy_session_pool()->CreateAvailableSessionFromSocket(
+          key, false /* is_trusted_proxy */,
+          connect_job_delegate.ReleaseSocket(), LoadTimingInfo::ConnectTiming(),
+          NetLogWithSource());
+  // Failure is reported asynchronously.
+  EXPECT_TRUE(spdy_session);
+  EXPECT_TRUE(HasSpdySession(http_session->spdy_session_pool(), key));
+  return spdy_session;
+}
+
+}  // namespace
 
 class SpdyProxyClientSocketTest : public PlatformTest,
                                   public WithScopedTaskEnvironment,
@@ -206,8 +268,9 @@ void SpdyProxyClientSocketTest::Initialize(base::span<const MockRead> reads,
   session_ = SpdySessionDependencies::SpdyCreateSession(&session_deps_);
 
   // Creates the SPDY session and stream.
-  spdy_session_ = CreateSpdySession(session_.get(), endpoint_spdy_session_key_,
-                                    NetLogWithSource());
+  spdy_session_ = CreateSpdyProxySession(session_.get(), &session_deps_,
+                                         endpoint_spdy_session_key_);
+
   base::WeakPtr<SpdyStream> spdy_stream(
       CreateStreamSynchronously(
           SPDY_BIDIRECTIONAL_STREAM, spdy_session_, url_, LOWEST,
@@ -413,16 +476,15 @@ SpdyProxyClientSocketTest::ConstructConnectErrorReplyFrame() {
 spdy::SpdySerializedFrame SpdyProxyClientSocketTest::ConstructBodyFrame(
     const char* data,
     int length) {
-  return spdy_util_.ConstructSpdyDataFrame(kStreamId,
-                                           base::StringPiece(data, length),
-                                           /*fin=*/false);
+  return spdy_util_.ConstructSpdyDataFrame(
+      kStreamId, base::StringPiece(data, length), false /* fin */);
 }
 
 // ----------- Connect
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        SpdyProxyClientSocketTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         SpdyProxyClientSocketTest,
+                         ::testing::Bool());
 
 TEST_P(SpdyProxyClientSocketTest, ConnectSendsCorrectRequest) {
   spdy::SpdySerializedFrame conn(ConstructConnectRequestFrame());

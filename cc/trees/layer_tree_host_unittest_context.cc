@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "base/bind.h"
 #include "base/stl_util.h"
 #include "build/build_config.h"
 #include "cc/layers/heads_up_display_layer.h"
@@ -936,9 +937,9 @@ class LayerTreeHostContextTestDontUseLostResources
     auto resource = viz::TransferableResource::MakeGL(
         mailbox, GL_LINEAR, GL_TEXTURE_2D, sync_token);
     texture->SetTransferableResource(
-        resource, viz::SingleReleaseCallback::Create(
-                      base::Bind(&LayerTreeHostContextTestDontUseLostResources::
-                                     EmptyReleaseCallback)));
+        resource, viz::SingleReleaseCallback::Create(base::BindOnce(
+                      &LayerTreeHostContextTestDontUseLostResources::
+                          EmptyReleaseCallback)));
     root->AddChild(texture);
 
     scoped_refptr<PictureLayer> mask = PictureLayer::Create(&client_);

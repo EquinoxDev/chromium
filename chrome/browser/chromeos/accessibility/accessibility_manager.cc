@@ -18,6 +18,7 @@
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/sticky_keys/sticky_keys_controller.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
@@ -80,10 +81,9 @@
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/host_id.h"
-#include "mash/public/mojom/launchable.mojom.h"
 #include "media/audio/sounds/sounds_manager.h"
 #include "mojo/public/cpp/bindings/binding.h"
-#include "services/media_session/public/cpp/switches.h"
+#include "services/media_session/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/accessibility/accessibility_switches.h"
 #include "ui/accessibility/ax_enum_util.h"
@@ -321,6 +321,12 @@ AccessibilityManager::AccessibilityManager()
       ->GetConnector()
       ->BindInterface(ash::mojom::kServiceName,
                       &accessibility_focus_ring_controller_);
+
+  // Connect to the media session service.
+  content::ServiceManagerConnection::GetForProcess()
+      ->GetConnector()
+      ->BindInterface(media_session::mojom::kServiceName,
+                      &audio_focus_manager_ptr_);
 
   CrasAudioHandler::Get()->AddAudioObserver(this);
 }
@@ -1325,11 +1331,8 @@ void AccessibilityManager::PostLoadChromeVox() {
                        base::Unretained(this))));
   }
 
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          media_session::switches::kEnableAudioFocus)) {
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        media_session::switches::kEnableAudioFocus);
-  }
+  audio_focus_manager_ptr_->SetEnforcementMode(
+      media_session::mojom::EnforcementMode::kSingleSession);
 }
 
 void AccessibilityManager::PostUnloadChromeVox() {
@@ -1355,6 +1358,9 @@ void AccessibilityManager::PostUnloadChromeVox() {
 
   // Stop speech.
   content::TtsController::GetInstance()->Stop();
+
+  audio_focus_manager_ptr_->SetEnforcementMode(
+      media_session::mojom::EnforcementMode::kDefault);
 }
 
 void AccessibilityManager::PostSwitchChromeVoxProfile() {
@@ -1431,9 +1437,10 @@ void AccessibilityManager::HideSwitchAccessMenu() {
   switch_access_panel_->Hide();
 }
 
-void AccessibilityManager::ShowSwitchAccessMenu(
-    const gfx::Rect& element_bounds) {
-  switch_access_panel_->Show(element_bounds);
+void AccessibilityManager::ShowSwitchAccessMenu(const gfx::Rect& element_bounds,
+                                                int menu_width,
+                                                int menu_height) {
+  switch_access_panel_->Show(element_bounds, menu_width, menu_height);
 }
 
 bool AccessibilityManager::ToggleDictation() {

@@ -18,7 +18,7 @@
 
 using base::checked_cast;
 using base::DictionaryValue;
-using base::UintToString;
+using base::NumberToString;
 using base::Value;
 
 namespace autofill {
@@ -72,19 +72,19 @@ void SavePasswordProgressLogger::LogPasswordForm(
                 ScrubElementID(form.username_element));
   if (form.has_renderer_ids) {
     log.SetString(GetStringFromID(STRING_USERNAME_ELEMENT_RENDERER_ID),
-                  UintToString(form.username_element_renderer_id));
+                  NumberToString(form.username_element_renderer_id));
   }
   log.SetString(GetStringFromID(STRING_PASSWORD_ELEMENT),
                 ScrubElementID(form.password_element));
   if (form.has_renderer_ids) {
     log.SetString(GetStringFromID(STRING_PASSWORD_ELEMENT_RENDERER_ID),
-                  UintToString(form.password_element_renderer_id));
+                  NumberToString(form.password_element_renderer_id));
   }
   log.SetString(GetStringFromID(STRING_NEW_PASSWORD_ELEMENT),
                 ScrubElementID(form.new_password_element));
   if (form.has_renderer_ids) {
     log.SetString(GetStringFromID(STRING_NEW_PASSWORD_ELEMENT_RENDERER_ID),
-                  UintToString(form.new_password_element_renderer_id));
+                  NumberToString(form.new_password_element_renderer_id));
   }
   if (!form.confirmation_password_element.empty()) {
     log.SetString(GetStringFromID(STRING_CONFIRMATION_PASSWORD_ELEMENT),
@@ -92,7 +92,7 @@ void SavePasswordProgressLogger::LogPasswordForm(
     if (form.has_renderer_ids) {
       log.SetString(
           GetStringFromID(STRING_CONFIRMATION_PASSWORD_ELEMENT_RENDERER_ID),
-          UintToString(form.confirmation_password_element_renderer_id));
+          NumberToString(form.confirmation_password_element_renderer_id));
     }
   }
   log.SetBoolean(GetStringFromID(STRING_PASSWORD_GENERATED),
@@ -277,7 +277,7 @@ std::string SavePasswordProgressLogger::GetStringFromID(
     case SavePasswordProgressLogger::STRING_PROVISIONALLY_SAVE_PASSWORD_FORM:
       return "ProvisionallySavePassword form";
     case SavePasswordProgressLogger::STRING_IS_SAVING_ENABLED:
-      return "IsSavingAndFillingEnabledForCurrentPage";
+      return "IsSavingAndFillingEnabled";
     case SavePasswordProgressLogger::STRING_EMPTY_PASSWORD:
       return "Empty password";
     case SavePasswordProgressLogger::STRING_EXACT_MATCH:
@@ -305,7 +305,7 @@ std::string SavePasswordProgressLogger::GetStringFromID(
     case SavePasswordProgressLogger::STRING_ON_ASK_USER_OR_SAVE_PASSWORD:
       return "PasswordManager::AskUserOrSavePassword";
     case SavePasswordProgressLogger::STRING_CAN_PROVISIONAL_MANAGER_SAVE_METHOD:
-      return "PasswordManager::IsReadyForAutomaticSaving";
+      return "PasswordManager::IsAutomaticSavePromptAvailable";
     case SavePasswordProgressLogger::STRING_NO_PROVISIONAL_SAVE_MANAGER:
       return "No provisional save manager";
     case SavePasswordProgressLogger::STRING_NUMBER_OF_VISIBLE_FORMS:

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/macros.h"
@@ -25,10 +26,10 @@
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/color_chooser.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -115,7 +116,7 @@ bool FindInspectedBrowserAndTabIndex(
 
 void SetPreferencesFromJson(Profile* profile, const std::string& json) {
   base::DictionaryValue* dict = nullptr;
-  std::unique_ptr<base::Value> parsed = base::JSONReader::Read(json);
+  std::unique_ptr<base::Value> parsed = base::JSONReader::ReadDeprecated(json);
   if (!parsed || !parsed->GetAsDictionary(&dict))
     return;
   DictionaryPrefUpdate update(profile->GetPrefs(), prefs::kDevToolsPreferences);
@@ -265,7 +266,8 @@ class DevToolsEventForwarder {
 
 void DevToolsEventForwarder::SetWhitelistedShortcuts(
     const std::string& message) {
-  std::unique_ptr<base::Value> parsed_message = base::JSONReader::Read(message);
+  std::unique_ptr<base::Value> parsed_message =
+      base::JSONReader::ReadDeprecated(message);
   base::ListValue* shortcut_list;
   if (!parsed_message || !parsed_message->GetAsList(&shortcut_list))
       return;
@@ -1126,7 +1128,8 @@ WebContents* DevToolsWindow::OpenURLFromTab(
     modified.referrer = content::Referrer();
     return inspected_web_contents->OpenURL(modified);
   }
-  bindings_->Reload();
+  main_web_contents_->GetController().Reload(content::ReloadType::NORMAL,
+                                             false);
   return main_web_contents_;
 }
 
@@ -1447,7 +1450,8 @@ void DevToolsWindow::RenderProcessGone(bool crashed) {
 }
 
 void DevToolsWindow::ShowCertificateViewer(const std::string& cert_chain) {
-  std::unique_ptr<base::Value> value = base::JSONReader::Read(cert_chain);
+  std::unique_ptr<base::Value> value =
+      base::JSONReader::ReadDeprecated(cert_chain);
   if (!value || value->type() != base::Value::Type::LIST) {
     NOTREACHED();
     return;

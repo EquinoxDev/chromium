@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/macros.h"
 #include "base/test/scoped_feature_list.h"
@@ -39,7 +40,7 @@ class SaveCardBubbleControllerImplTest : public DialogBrowserTest {
   }
 
   std::unique_ptr<base::DictionaryValue> GetTestLegalMessage() {
-    std::unique_ptr<base::Value> value(base::JSONReader::Read(
+    std::unique_ptr<base::Value> value(base::JSONReader::ReadDeprecated(
         "{"
         "  \"line\" : [ {"
         "     \"template\": \"The legal documents are: {0} and {1}.\","

@@ -236,8 +236,11 @@ class XMLHttpRequest::BlobLoader final
 
   BlobLoader(XMLHttpRequest* xhr, scoped_refptr<BlobDataHandle> handle)
       : xhr_(xhr),
-        loader_(
-            FileReaderLoader::Create(FileReaderLoader::kReadByClient, this)) {
+        loader_(std::make_unique<FileReaderLoader>(
+            FileReaderLoader::kReadByClient,
+            this,
+            xhr->GetExecutionContext()->GetTaskRunner(
+                TaskType::kFileReading))) {
     loader_->Start(std::move(handle));
   }
 
@@ -355,7 +358,7 @@ void XMLHttpRequest::InitResponseDocument() {
 
   DocumentInit init = DocumentInit::Create()
                           .WithContextDocument(GetDocument()->ContextDocument())
-                          .WithURL(response_.CurrentRequestUrl());
+                          .WithURL(response_.ResponseUrl());
   if (is_html)
     response_document_ = HTMLDocument::Create(init);
   else
@@ -540,7 +543,7 @@ String XMLHttpRequest::responseType() {
 }
 
 String XMLHttpRequest::responseURL() {
-  KURL response_url(response_.CurrentRequestUrl());
+  KURL response_url(response_.ResponseUrl());
   if (!response_url.IsNull())
     response_url.RemoveFragmentIdentifier();
   return response_url.GetString();
@@ -1128,17 +1131,25 @@ void XMLHttpRequest::CreateRequest(scoped_refptr<EncodedFormData> http_body,
       // Update histogram for usage of sync xhr within pagedismissal.
       auto pagedismissal = GetDocument()->PageDismissalEventBeingDispatched();
       if (pagedismissal != Document::kNoDismissal) {
-        UseCounter::Count(GetDocument(), WebFeature::kSyncXhrInPageDismissal);
-        DEFINE_STATIC_LOCAL(EnumerationHistogram, syncxhr_pagedismissal_histogram,
-                            ("XHR.Sync.PageDismissal", 5));
-        syncxhr_pagedismissal_histogram.Count(pagedismissal);
         // Disallow synchronous requests on page dismissal
         if (base::FeatureList::IsEnabled(
                 features::kForbidSyncXHRInPageDismissal)) {
+          UseCounter::Count(GetDocument(),
+                            WebFeature::kForbiddenSyncXhrInPageDismissal);
+          DEFINE_STATIC_LOCAL(EnumerationHistogram,
+                              forbidden_syncxhr_pagedismissal_histogram,
+                              ("XHR.Sync.PageDismissal_forbidden", 5));
+          forbidden_syncxhr_pagedismissal_histogram.Count(pagedismissal);
           HandleNetworkError();
           ThrowForLoadFailureIfNeeded(exception_state,
                                       "Synchronous XHR in page dismissal.");
           return;
+        } else {
+          UseCounter::Count(GetDocument(), WebFeature::kSyncXhrInPageDismissal);
+          DEFINE_STATIC_LOCAL(EnumerationHistogram,
+                              syncxhr_pagedismissal_histogram,
+                              ("XHR.Sync.PageDismissal", 5));
+          syncxhr_pagedismissal_histogram.Count(pagedismissal);
         }
       }
     }
@@ -1375,8 +1386,6 @@ void XMLHttpRequest::HandleRequestError(DOMExceptionCode exception_code,
   // false|, when |handleRequestError| is called after |internalAbort()|.  This
   // is safe, however, as |this| will be kept alive from a strong ref
   // |Event::m_target|.
-  DispatchProgressEvent(event_type_names::kProgress, received_length,
-                        expected_length);
   DispatchProgressEvent(type, received_length, expected_length);
   DispatchProgressEvent(event_type_names::kLoadend, received_length,
                         expected_length);
@@ -1548,12 +1557,33 @@ AtomicString XMLHttpRequest::FinalResponseMIMETypeWithFallback() const {
   return AtomicString("text/xml");
 }
 
-String XMLHttpRequest::FinalResponseCharset() const {
+// https://xhr.spec.whatwg.org/#final-charset
+WTF::TextEncoding XMLHttpRequest::FinalResponseCharset() const {
+  // 1. Let label be null. [spec text]
+  //
+  // 2. If response MIME type's parameters["charset"] exists, then set label to
+  // it. [spec text]
+  String label = response_.TextEncodingName();
+
+  // 3. If override MIME type's parameters["charset"] exists, then set label to
+  // it. [spec text]
   String override_response_charset =
       ExtractCharsetFromMediaType(mime_type_override_);
   if (!override_response_charset.IsEmpty())
-    return override_response_charset;
-  return response_.TextEncodingName();
+    label = override_response_charset;
+
+  // 4. If label is null, then return null. [spec text]
+  //
+  // 5. Let encoding be the result of getting an encoding from label. [spec
+  // text]
+  //
+  // 6. If encoding is failure, then return null. [spec text]
+  //
+  // 7. Return encoding. [spec text]
+  //
+  // We rely on WTF::TextEncoding() to return invalid TextEncoding for
+  // null, empty, or invalid/unsupported |label|.
+  return WTF::TextEncoding(label);
 }
 
 void XMLHttpRequest::UpdateContentTypeAndCharset(
@@ -1767,15 +1797,11 @@ void XMLHttpRequest::DidSendData(unsigned long long bytes_sent,
   }
 }
 
-void XMLHttpRequest::DidReceiveResponse(
-    unsigned long identifier,
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
+void XMLHttpRequest::DidReceiveResponse(unsigned long identifier,
+                                        const ResourceResponse& response) {
   // TODO(yhirano): Remove this CHECK: see https://crbug.com/570946.
   CHECK(&response);
 
-  ALLOW_UNUSED_LOCAL(handle);
-  DCHECK(!handle);
   NETWORK_DVLOG(1) << this << " didReceiveResponse(" << identifier << ")";
   ScopedEventDispatchProtect protect(&event_dispatch_recursion_level_);
 
@@ -1807,15 +1833,12 @@ std::unique_ptr<TextResourceDecoder> XMLHttpRequest::CreateDecoder() const {
   if (response_type_code_ == kResponseTypeJSON)
     return TextResourceDecoder::Create(decoder_options_for_utf8_plain_text);
 
-  String final_response_charset = FinalResponseCharset();
-  if (!final_response_charset.IsEmpty()) {
-    // If the final charset is given, use the charset without sniffing the
-    // content.
-    // TODO(crbug/905968): If WTF::TextEncoding::IsValid() is false, this
-    // currently falls back to Latin1Encoding(). Fallback to UTF-8 instead.
+  WTF::TextEncoding final_response_charset = FinalResponseCharset();
+  if (final_response_charset.IsValid()) {
+    // If the final charset is given and valid, use the charset without
+    // sniffing the content.
     return TextResourceDecoder::Create(TextResourceDecoderOptions(
-        TextResourceDecoderOptions::kPlainTextContent,
-        WTF::TextEncoding(final_response_charset)));
+        TextResourceDecoderOptions::kPlainTextContent, final_response_charset));
   }
 
   TextResourceDecoderOptions decoder_options_for_xml(
@@ -1897,7 +1920,7 @@ void XMLHttpRequest::DidReceiveData(const char* data, unsigned len) {
   TrackProgress(len);
 }
 
-void XMLHttpRequest::DidDownloadData(int data_length) {
+void XMLHttpRequest::DidDownloadData(unsigned long long data_length) {
   ScopedEventDispatchProtect protect(&event_dispatch_recursion_level_);
   if (error_)
     return;

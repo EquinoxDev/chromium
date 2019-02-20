@@ -6,8 +6,10 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/no_destructor.h"
 #include "base/task/post_task.h"
 #include "base/unguessable_token.h"
 #include "content/browser/appcache/appcache_navigation_handle.h"
@@ -25,17 +27,26 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/renderer_preference_watcher.mojom.h"
 #include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
 #include "third_party/blink/public/common/messaging/message_port_channel.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
+#include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
+#include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
+#include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
+#include "third_party/blink/public/mojom/worker/worker_content_settings_proxy.mojom.h"
 #include "third_party/blink/public/platform/web_feature.mojom.h"
-#include "third_party/blink/public/web/worker_content_settings_proxy.mojom.h"
 
 namespace content {
 namespace {
+
+SharedWorkerHost::CreateNetworkFactoryCallback&
+GetCreateNetworkFactoryCallback() {
+  static base::NoDestructor<SharedWorkerHost::CreateNetworkFactoryCallback>
+      s_callback;
+  return *s_callback;
+}
 
 void AllowFileSystemOnIOThreadResponse(base::OnceCallback<void(bool)> callback,
                                        bool result) {
@@ -139,9 +150,21 @@ SharedWorkerHost::~SharedWorkerHost() {
   }
 }
 
+// static
+void SharedWorkerHost::SetNetworkFactoryForTesting(
+    const CreateNetworkFactoryCallback& create_network_factory_callback) {
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
+         BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(create_network_factory_callback.is_null() ||
+         GetCreateNetworkFactoryCallback().is_null())
+      << "It is not expected that this is called with non-null callback when "
+      << "another overriding callback is already set.";
+  GetCreateNetworkFactoryCallback() = create_network_factory_callback;
+}
+
 void SharedWorkerHost::Start(
-    mojom::SharedWorkerFactoryPtr factory,
-    blink::mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
+    blink::mojom::SharedWorkerFactoryPtr factory,
+    blink::mojom::ServiceWorkerProviderInfoForWorkerPtr
         service_worker_provider_info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         main_script_loader_factory,
@@ -192,14 +215,14 @@ void SharedWorkerHost::Start(
   devtools_handle_ = std::make_unique<ScopedDevToolsHandle>(
       this, &pause_on_start, &devtools_worker_token);
 
-  RendererPreferences renderer_preferences;
+  auto renderer_preferences = blink::mojom::RendererPreferences::New();
   GetContentClient()->browser()->UpdateRendererPreferencesForWorker(
       RenderProcessHost::FromID(process_id_)->GetBrowserContext(),
-      &renderer_preferences);
+      renderer_preferences.get());
 
   // Create a RendererPreferenceWatcher to observe updates in the preferences.
-  mojom::RendererPreferenceWatcherPtr watcher_ptr;
-  mojom::RendererPreferenceWatcherRequest preference_watcher_request =
+  blink::mojom::RendererPreferenceWatcherPtr watcher_ptr;
+  blink::mojom::RendererPreferenceWatcherRequest preference_watcher_request =
       mojo::MakeRequest(&watcher_ptr);
   GetContentClient()->browser()->RegisterRendererPreferenceWatcherForWorkers(
       RenderProcessHost::FromID(process_id_)->GetBrowserContext(),
@@ -217,21 +240,14 @@ void SharedWorkerHost::Start(
   // Set up interface provider interface.
   service_manager::mojom::InterfaceProviderPtr interface_provider;
   interface_provider_binding_.Bind(FilterRendererExposedInterfaces(
-      mojom::kNavigation_SharedWorkerSpec, process_id_,
+      blink::mojom::kNavigation_SharedWorkerSpec, process_id_,
       mojo::MakeRequest(&interface_provider)));
 
   // Set the default factory to the bundle for subresource loading to pass to
   // the renderer when NetworkService is on. When S13nServiceWorker is on, the
-  // default factory is already provided by SharedWorkerServiceImpl.
+  // default factory is already provided by
+  // WorkerScriptFetchInitiator::CreateFactoryBundle().
   if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-    // If the caller has supplied a URLLoaderFactory for AppCache, use that.
-    if (subresource_loader_params &&
-        subresource_loader_params->appcache_loader_factory_info.is_valid()) {
-      subresource_loader_factories->appcache_factory_info() =
-          std::move(subresource_loader_params->appcache_loader_factory_info);
-    }
-
-    // Set-up the default network loader factory.
     network::mojom::URLLoaderFactoryPtrInfo default_factory_info;
     CreateNetworkFactory(mojo::MakeRequest(&default_factory_info));
     subresource_loader_factories->default_factory_info() =
@@ -263,10 +279,10 @@ void SharedWorkerHost::Start(
   factory_ = std::move(factory);
   factory_->CreateSharedWorker(
       std::move(info), pause_on_start, devtools_worker_token,
-      renderer_preferences, std::move(preference_watcher_request),
+      std::move(renderer_preferences), std::move(preference_watcher_request),
       std::move(content_settings), std::move(service_worker_provider_info),
       appcache_handle_ ? appcache_handle_->appcache_host_id()
-                       : kAppCacheNoHostId,
+                       : blink::mojom::kAppCacheNoHostId,
       std::move(main_script_loader_factory), std::move(main_script_load_params),
       std::move(subresource_loader_factories), std::move(controller),
       std::move(host), std::move(worker_request_),
@@ -297,14 +313,21 @@ void SharedWorkerHost::Start(
 //  the connection error and terminates the worker.
 void SharedWorkerHost::CreateNetworkFactory(
     network::mojom::URLLoaderFactoryRequest request) {
-  network::mojom::URLLoaderFactoryParamsPtr params =
-      network::mojom::URLLoaderFactoryParams::New();
-  params->process_id = process_id_;
-  // TODO(lukasza): https://crbug.com/792546: Start using CORB.
-  params->is_corb_enabled = false;
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  service_->storage_partition()->GetNetworkContext()->CreateURLLoaderFactory(
-      std::move(request), std::move(params));
+  RenderProcessHost* process = RenderProcessHost::FromID(process_id_);
+  url::Origin origin = instance_->constructor_origin();
+  network::mojom::TrustedURLLoaderHeaderClientPtrInfo no_header_client;
+  if (GetCreateNetworkFactoryCallback().is_null()) {
+    process->CreateURLLoaderFactory(origin, std::move(no_header_client),
+                                    std::move(request));
+  } else {
+    network::mojom::URLLoaderFactoryPtr original_factory;
+    process->CreateURLLoaderFactory(origin, std::move(no_header_client),
+                                    mojo::MakeRequest(&original_factory));
+    GetCreateNetworkFactoryCallback().Run(std::move(request), process_id_,
+                                          original_factory.PassInterface());
+  }
 }
 
 void SharedWorkerHost::AllowFileSystem(

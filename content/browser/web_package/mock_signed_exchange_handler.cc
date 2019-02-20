@@ -4,6 +4,7 @@
 
 #include "content/browser/web_package/mock_signed_exchange_handler.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/web_package/signed_exchange_cert_fetcher_factory.h"
@@ -33,7 +34,7 @@ MockSignedExchangeHandler::MockSignedExchangeHandler(
   }
   base::SequencedTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::BindOnce(std::move(headers_callback), result, error,
-                                request_url, "GET", head, std::move(body)));
+                                request_url, head, std::move(body)));
 }
 
 MockSignedExchangeHandler::~MockSignedExchangeHandler() {}

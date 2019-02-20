@@ -194,7 +194,6 @@ void PaintOpWriter::Write(const SkPath& path) {
 }
 
 void PaintOpWriter::Write(const PaintFlags& flags) {
-  Write(flags.text_size_);
   WriteSimple(flags.color_);
   Write(flags.width_);
   Write(flags.miter_limit_);
@@ -248,7 +247,7 @@ void PaintOpWriter::Write(const DrawImage& draw_image,
   }
 
   // Default mode uses the transfer cache.
-  auto decoded_image = options_.image_provider->GetDecodedDrawImage(draw_image);
+  auto decoded_image = options_.image_provider->GetRasterContent(draw_image);
   DCHECK(!decoded_image.decoded_image().image())
       << "Use transfer cache for image serialization";
   const DecodedDrawImage& decoded_draw_image = decoded_image.decoded_image();
@@ -398,8 +397,10 @@ void PaintOpWriter::Write(const PaintShader* shader, SkFilterQuality quality) {
   WriteSimple(shader->flags_);
   WriteSimple(shader->end_radius_);
   WriteSimple(shader->start_radius_);
-  WriteSimple(shader->tx_);
-  WriteSimple(shader->ty_);
+  // SkShader::TileMode does not have an explicitly defined backing type, so
+  // write a consistently sized value.
+  Write(static_cast<int32_t>(shader->tx_));
+  Write(static_cast<int32_t>(shader->ty_));
   WriteSimple(shader->fallback_color_);
   WriteSimple(shader->scaling_behavior_);
   if (shader->local_matrix_) {

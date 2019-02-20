@@ -30,6 +30,7 @@
 #include "components/autofill/core/browser/autofill_data_util.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_metadata.h"
+#include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/validation.h"
 #include "components/autofill/core/common/autofill_clock.h"
@@ -655,10 +656,27 @@ bool CreditCard::IsLocalDuplicateOfServerCard(const CreditCard& other) const {
 }
 
 bool CreditCard::HasSameNumberAs(const CreditCard& other) const {
-  // For masked cards, this is the best we can do to compare card numbers.
+  // Masked cards are considered to have the same number if their last four
+  // digits match and if any expiration date information available for both
+  // cards matches.
   if (record_type() == MASKED_SERVER_CARD ||
       other.record_type() == MASKED_SERVER_CARD) {
-    return NetworkAndLastFourDigits() == other.NetworkAndLastFourDigits();
+    // The below metric is logged because this function previously compared
+    // cards' last four digits and networks if one card was masked. It may be
+    // useful to know how often networks match; however, it is expected that the
+    // number of discrepanies will be low.
+    AutofillMetrics::LogMaskedCardComparisonNetworksMatch(
+        NetworkForDisplay() == other.NetworkForDisplay());
+
+    bool months_match = expiration_month() == other.expiration_month() ||
+                        expiration_month() == 0 ||
+                        other.expiration_month() == 0;
+
+    bool years_match = expiration_year() == other.expiration_year() ||
+                       expiration_year() == 0 || other.expiration_year() == 0;
+
+    return LastFourDigits() == other.LastFourDigits() && months_match &&
+           years_match;
   }
 
   return StripSeparators(number_) == StripSeparators(other.number_);
@@ -869,7 +887,7 @@ base::string16 CreditCard::ExpirationMonthAsString() const {
   if (expiration_month_ == 0)
     return base::string16();
 
-  base::string16 month = base::IntToString16(expiration_month_);
+  base::string16 month = base::NumberToString16(expiration_month_);
   if (expiration_month_ >= 10)
     return month;
 
@@ -882,7 +900,7 @@ base::string16 CreditCard::Expiration4DigitYearAsString() const {
   if (expiration_year_ == 0)
     return base::string16();
 
-  return base::IntToString16(Expiration4DigitYear());
+  return base::NumberToString16(Expiration4DigitYear());
 }
 
 bool CreditCard::HasFirstAndLastName() const {
@@ -898,7 +916,7 @@ base::string16 CreditCard::Expiration2DigitYearAsString() const {
   if (expiration_year_ == 0)
     return base::string16();
 
-  return base::IntToString16(Expiration2DigitYear());
+  return base::NumberToString16(Expiration2DigitYear());
 }
 
 void CreditCard::GetSupportedTypes(ServerFieldTypeSet* supported_types) const {
@@ -1029,7 +1047,11 @@ bool CreditCard::ShouldUpdateExpiration(const base::Time& current_time) const {
 // So we can compare CreditCards with EXPECT_EQ().
 std::ostream& operator<<(std::ostream& os, const CreditCard& credit_card) {
   return os << base::UTF16ToUTF8(credit_card.Label()) << " "
-            << credit_card.guid() << " " << credit_card.origin() << " "
+            << (credit_card.record_type() == CreditCard::LOCAL_CARD
+                    ? credit_card.guid()
+                    : base::HexEncode(credit_card.server_id().data(),
+                                      credit_card.server_id().size()))
+            << " " << credit_card.origin() << " "
             << base::UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_NAME_FULL))
             << " "
             << base::UTF16ToUTF8(credit_card.GetRawInfo(CREDIT_CARD_TYPE))
@@ -1040,7 +1062,10 @@ std::ostream& operator<<(std::ostream& os, const CreditCard& credit_card) {
             << " "
             << base::UTF16ToUTF8(
                    credit_card.GetRawInfo(CREDIT_CARD_EXP_4_DIGIT_YEAR))
-            << " " << credit_card.use_count() << " " << credit_card.use_date();
+            << " " << credit_card.bank_name() << " "
+            << " " << credit_card.record_type() << " "
+            << credit_card.use_count() << " " << credit_card.use_date() << " "
+            << credit_card.billing_address_id();
 }
 
 void CreditCard::SetNameOnCardFromSeparateParts() {

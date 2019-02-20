@@ -8,15 +8,18 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind_helpers.h"
 #include "base/debug/stack_trace.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/common/frame_messages.h"
 #include "content/common/navigation_params.h"
 #include "content/common/navigation_params.mojom.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/test/mock_render_thread.h"
 #include "content/renderer/input/frame_input_handler_impl.h"
 #include "content/renderer/loader/web_url_loader_impl.h"
+#include "net/base/data_url.h"
 #include "services/network/public/cpp/resource_response.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/web/web_local_frame.h"
@@ -39,6 +42,11 @@ class MockFrameHost : public mojom::FrameHost {
     return std::move(last_interface_provider_request_);
   }
 
+  blink::mojom::DocumentInterfaceBrokerRequest
+  TakeLastDocumentInterfaceBrokerRequest() {
+    return std::move(last_document_interface_broker_request_);
+  }
+
   // Holds on to the request end of the InterfaceProvider interface whose client
   // end is bound to the corresponding RenderFrame's |remote_interfaces_| to
   // facilitate retrieving the most recent |interface_provider_request| in
@@ -47,6 +55,17 @@ class MockFrameHost : public mojom::FrameHost {
       service_manager::mojom::InterfaceProviderRequest
           interface_provider_request) {
     last_interface_provider_request_ = std::move(interface_provider_request);
+  }
+
+  // Holds on to the request end of the DocumentInterfaceBroker interface whose
+  // client end is bound to the corresponding RenderFrame's
+  // |document_interface_broker_| to facilitate retrieving the most recent
+  // |document_interface_broker_request| in tests.
+  void PassLastDocumentInterfaceBrokerRequest(
+      blink::mojom::DocumentInterfaceBrokerRequest
+          document_interface_broker_request) {
+    last_document_interface_broker_request_ =
+        std::move(document_interface_broker_request);
   }
 
  protected:
@@ -76,9 +95,16 @@ class MockFrameHost : public mojom::FrameHost {
 
   void DidCommitProvisionalLoad(
       std::unique_ptr<FrameHostMsg_DidCommitProvisionalLoad_Params> params,
-      service_manager::mojom::InterfaceProviderRequest request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr interface_params)
+      override {
     last_commit_params_ = std::move(params);
-    last_interface_provider_request_ = std::move(request);
+    if (interface_params) {
+      last_interface_provider_request_ =
+          std::move(interface_params->interface_provider_request);
+      last_document_interface_broker_request_ =
+          blink::mojom::DocumentInterfaceBrokerRequest(std::move(
+              interface_params->document_interface_broker_content_request));
+    }
   }
 
   void DidCommitSameDocumentNavigation(
@@ -119,6 +145,8 @@ class MockFrameHost : public mojom::FrameHost {
 
   void FullscreenStateChanged(bool is_fullscreen) override {}
 
+  void VisibilityChanged(blink::mojom::FrameVisibility visibility) override {}
+
 #if defined(OS_ANDROID)
   void UpdateUserGestureCarryoverInfo() override {}
 #endif
@@ -128,6 +156,8 @@ class MockFrameHost : public mojom::FrameHost {
       last_commit_params_;
   service_manager::mojom::InterfaceProviderRequest
       last_interface_provider_request_;
+  blink::mojom::DocumentInterfaceBrokerRequest
+      last_document_interface_broker_request_;
 
   DISALLOW_COPY_AND_ASSIGN(MockFrameHost);
 };
@@ -146,18 +176,16 @@ TestRenderFrame::TestRenderFrame(RenderFrameImpl::CreateParams params)
   mock_frame_host_->PassLastInterfaceProviderRequest(
       mock_render_thread->TakeInitialInterfaceProviderRequestForFrame(
           params.routing_id));
+  mock_frame_host_->PassLastDocumentInterfaceBrokerRequest(
+      mock_render_thread->TakeInitialDocumentInterfaceBrokerRequestForFrame(
+          params.routing_id));
 }
 
 TestRenderFrame::~TestRenderFrame() {}
 
-void TestRenderFrame::SetURLOverrideForNextWebURLRequest(const GURL& url) {
-  next_request_url_override_ = url;
-}
-
-void TestRenderFrame::WillSendRequest(blink::WebURLRequest& request) {
-  if (next_request_url_override_.has_value())
-    request.SetURL(std::move(next_request_url_override_).value());
-  RenderFrameImpl::WillSendRequest(request);
+void TestRenderFrame::SetHTMLOverrideForNextNavigation(
+    const std::string& html) {
+  next_navigation_html_override_ = html;
 }
 
 void TestRenderFrame::Navigate(const network::ResourceResponseHead& head,
@@ -175,6 +203,16 @@ void TestRenderFrame::Navigate(const network::ResourceResponseHead& head,
 void TestRenderFrame::Navigate(const CommonNavigationParams& common_params,
                                const CommitNavigationParams& commit_params) {
   Navigate(network::ResourceResponseHead(), common_params, commit_params);
+}
+
+void TestRenderFrame::NavigateWithError(
+    const CommonNavigationParams& common_params,
+    const CommitNavigationParams& commit_params,
+    int error_code,
+    const base::Optional<std::string>& error_page_content) {
+  CommitFailedNavigation(common_params, commit_params,
+                         false /* has_stale_copy_in_cache */, error_code,
+                         error_page_content, nullptr, base::DoNothing());
 }
 
 void TestRenderFrame::SwapOut(
@@ -218,14 +256,36 @@ void TestRenderFrame::SetCompositionFromExistingText(
 
 void TestRenderFrame::BeginNavigation(
     std::unique_ptr<blink::WebNavigationInfo> info) {
+  if (next_navigation_html_override_.has_value()) {
+    auto navigation_params = blink::WebNavigationParams::CreateWithHTMLString(
+        next_navigation_html_override_.value(), info->url_request.Url());
+    next_navigation_html_override_ = base::nullopt;
+    frame_->CommitNavigation(std::move(navigation_params),
+                             nullptr /* extra_data */);
+    return;
+  }
   if (info->navigation_policy == blink::kWebNavigationPolicyCurrentTab &&
-      ((GetWebFrame()->Parent() && info->form.IsNull()) ||
-       next_request_url_override_.has_value())) {
+      GetWebFrame()->Parent() && info->form.IsNull()) {
     // RenderViewTest::LoadHTML immediately commits navigation for the main
-    // frame. However if the loaded html has a subframe,
+    // frame. However if the loaded html has an empty or data subframe,
     // BeginNavigation will be called from Blink and we should avoid
     // going through browser process in this case.
-    frame_->CommitNavigation(blink::WebNavigationParams::CreateFromInfo(*info),
+    GURL url = info->url_request.Url();
+    auto navigation_params = std::make_unique<blink::WebNavigationParams>();
+    navigation_params->url = url;
+    if (!url.IsAboutBlank() && url != content::kAboutSrcDocURL) {
+      std::string mime_type, charset, data;
+      if (!net::DataURL::Parse(url, &mime_type, &charset, &data)) {
+        // This case is only here to allow cluster fuzz pass any url,
+        // to unblock further fuzzing.
+        mime_type = "text/html";
+        charset = "UTF-8";
+      }
+      blink::WebNavigationParams::FillStaticResponse(
+          navigation_params.get(), blink::WebString::FromUTF8(mime_type),
+          blink::WebString::FromUTF8(charset), data);
+    }
+    frame_->CommitNavigation(std::move(navigation_params),
                              nullptr /* extra_data */);
     return;
   }
@@ -240,6 +300,11 @@ TestRenderFrame::TakeLastCommitParams() {
 service_manager::mojom::InterfaceProviderRequest
 TestRenderFrame::TakeLastInterfaceProviderRequest() {
   return mock_frame_host_->TakeLastInterfaceProviderRequest();
+}
+
+blink::mojom::DocumentInterfaceBrokerRequest
+TestRenderFrame::TakeLastDocumentInterfaceBrokerRequest() {
+  return mock_frame_host_->TakeLastDocumentInterfaceBrokerRequest();
 }
 
 mojom::FrameHost* TestRenderFrame::GetFrameHost() {

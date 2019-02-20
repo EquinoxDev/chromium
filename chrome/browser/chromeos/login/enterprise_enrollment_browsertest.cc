@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/string_escape.h"
 #include "base/stl_util.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/chromeos/login/enrollment/enterprise_enrollment_helper_mock.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/test/hid_controller_mixin.h"
 #include "chrome/browser/chromeos/login/test/js_checker.h"
 #include "chrome/browser/chromeos/login/test/oobe_configuration_waiter.h"
 #include "chrome/browser/chromeos/login/test/oobe_screen_waiter.h"
@@ -24,7 +26,7 @@
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/enrollment_status_chromeos.h"
 #include "chromeos/constants/chromeos_switches.h"
-#include "chromeos/dbus/dbus_switches.h"
+#include "chromeos/dbus/constants/dbus_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_auth_policy_client.h"
 #include "chromeos/dbus/fake_update_engine_client.h"
@@ -39,7 +41,6 @@
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ime/chromeos/input_method_util.h"
 
-using chromeos::test::SetupDummyOfflinePolicyDir;
 using testing::_;
 using testing::Invoke;
 using testing::InvokeWithoutArgs;
@@ -386,7 +387,7 @@ class ActiveDirectoryJoinTest : public EnterpriseEnrollmentTest {
   // which does not set any fields.
   void CheckPossibleConfiguration(const std::string& configuration) {
     std::unique_ptr<base::ListValue> options =
-        base::ListValue::From(base::JSONReader::Read(
+        base::ListValue::From(base::JSONReader::ReadDeprecated(
             configuration,
             base::JSONParserOptions::JSON_ALLOW_TRAILING_COMMAS));
     base::DictionaryValue custom_option;
@@ -560,6 +561,11 @@ class ActiveDirectoryJoinTest : public EnterpriseEnrollmentTest {
   DISALLOW_COPY_AND_ASSIGN(ActiveDirectoryJoinTest);
 };
 
+// This test case will use
+// src/chromeos/test/data/oobe_configuration/<TestName>.json file as
+// OOBE configuration for each of the tests and verify that relevant parts
+// of OOBE automation took place. OOBE WebUI will not be started until
+// LoadConfiguration() is called to allow configure relevant stubs.
 class EnterpriseEnrollmentConfigurationTest
     : public EnterpriseEnrollmentTestBase {
  public:
@@ -604,8 +610,10 @@ class EnterpriseEnrollmentConfigurationTest
         WizardController::default_controller()->demo_setup_controller();
 
     // Simulate offline data directory.
-    ASSERT_TRUE(test::SetupDummyOfflinePolicyDir("test", &fake_policy_dir_));
-    controller->SetOfflineDataDirForTest(fake_policy_dir_.GetPath());
+    ASSERT_TRUE(
+        chromeos::test::SetupDummyOfflinePolicyDir("test", &fake_policy_dir_));
+    controller->SetPreinstalledOfflineResourcesPathForTesting(
+        fake_policy_dir_.GetPath());
   }
 
   void SetUpInProcessBrowserTestFixture() override {
@@ -630,7 +638,6 @@ class EnterpriseEnrollmentConfigurationTest
     command_line->AppendSwitchPath(chromeos::switches::kFakeOobeConfiguration,
                                    file);
 
-    command_line->AppendSwitch(chromeos::switches::kEnableOfflineDemoMode);
     command_line->AppendSwitchASCII(switches::kArcAvailability,
                                     "officially-supported");
     EnterpriseEnrollmentTestBase::SetUpCommandLine(command_line);
@@ -694,6 +701,21 @@ class EnterpriseEnrollmentConfigurationTest
 
  private:
   DISALLOW_COPY_AND_ASSIGN(EnterpriseEnrollmentConfigurationTest);
+};
+
+// EnterpriseEnrollmentConfigurationTest with no input devices.
+class EnterpriseEnrollmentConfigurationTestNoHID
+    : public EnterpriseEnrollmentConfigurationTest {
+ public:
+  EnterpriseEnrollmentConfigurationTestNoHID() = default;
+
+  ~EnterpriseEnrollmentConfigurationTestNoHID() override = default;
+
+ protected:
+  test::HIDControllerMixin hid_controller_{&mixin_host_};
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(EnterpriseEnrollmentConfigurationTestNoHID);
 };
 
 #if defined(MEMORY_SANITIZER)
@@ -1025,6 +1047,8 @@ IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
 IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
                        TestDemoModeOfflineNetwork) {
   LoadConfiguration();
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_PREFERENCES).Wait();
+  SimulateOfflineEnvironment();
   OobeScreenWaiter(OobeScreen::SCREEN_OOBE_EULA).Wait();
 }
 
@@ -1033,6 +1057,8 @@ IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
 IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
                        TestDemoModeAcceptEula) {
   LoadConfiguration();
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_PREFERENCES).Wait();
+  SimulateOfflineEnvironment();
   OobeScreenWaiter(OobeScreen::SCREEN_ARC_TERMS_OF_SERVICE).Wait();
 }
 
@@ -1042,11 +1068,11 @@ IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
                        TestDemoModeAcceptArcTos) {
   LoadConfiguration();
   OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_PREFERENCES).Wait();
+  SimulateOfflineEnvironment();
 
   test::OobeJS().Evaluate(
       "login.ArcTermsOfServiceScreen.setTosForTesting('Test "
       "Play Store Terms of Service');");
-  SimulateOfflineEnvironment();
   test::OobeJS().Evaluate(
       "$('demo-preferences-content').$$('oobe-dialog')."
       "querySelector('oobe-text-button').click();");
@@ -1121,6 +1147,22 @@ IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTest,
   OobeScreenWaiter(OobeScreen::SCREEN_OOBE_ENROLLMENT).Wait();
   ExecutePendingJavaScript();
   EXPECT_TRUE(IsStepDisplayed("success"));
+}
+
+// Check that HID detection screen is shown if it is not specified by
+// configuration.
+IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTestNoHID,
+                       TestLeaveWelcomeScreen) {
+  LoadConfiguration();
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_HID_DETECTION).Wait();
+}
+
+// Check that HID detection screen is really skipped and rest of configuration
+// is applied.
+IN_PROC_BROWSER_TEST_F(EnterpriseEnrollmentConfigurationTestNoHID,
+                       TestSkipHIDDetection) {
+  LoadConfiguration();
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_NETWORK).Wait();
 }
 
 }  // namespace chromeos

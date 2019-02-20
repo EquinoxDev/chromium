@@ -17,9 +17,9 @@ import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.AccessorySheetTabModel.AccessorySheetDataPiece;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.AccessorySheetData;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.Provider;
-import org.chromium.chrome.browser.modelutil.ListModel;
-import org.chromium.chrome.browser.modelutil.RecyclerViewAdapter;
-import org.chromium.chrome.browser.modelutil.SimpleRecyclerViewMcp;
+import org.chromium.ui.modelutil.ListModel;
+import org.chromium.ui.modelutil.RecyclerViewAdapter;
+import org.chromium.ui.modelutil.SimpleRecyclerViewMcp;
 
 /**
  * This component is a tab that can be added to the {@link ManualFillingCoordinator} which shows it
@@ -63,7 +63,8 @@ public class PasswordAccessorySheetCoordinator extends AccessorySheetTabCoordina
      */
     public PasswordAccessorySheetCoordinator(
             Context context, @Nullable RecyclerView.OnScrollListener scrollListener) {
-        super(IconProvider.getInstance().getIcon(context),
+        super(context.getString(R.string.prefs_saved_passwords_title),
+                IconProvider.getInstance().getIcon(context),
                 context.getString(R.string.password_accessory_sheet_toggle),
                 context.getString(R.string.password_accessory_sheet_opened),
                 R.layout.password_accessory_sheet, AccessoryTabType.PASSWORDS, scrollListener);

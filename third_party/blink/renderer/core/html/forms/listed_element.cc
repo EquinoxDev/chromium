@@ -28,15 +28,20 @@
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/id_target_observer.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/html/custom/element_internals.h"
+#include "third_party/blink/renderer/core/html/forms/form_controller.h"
 #include "third_party/blink/renderer/core/html/forms/html_data_list_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_control_element_with_state.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_legend_element.h"
 #include "third_party/blink/renderer/core/html/forms/validity_state.h"
 #include "third_party/blink/renderer/core/html/html_object_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/validation_message_client.h"
@@ -54,7 +59,7 @@ class FormAttributeTargetObserver : public IdTargetObserver {
 
   FormAttributeTargetObserver(const AtomicString& id, ListedElement*);
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
   void IdTargetChanged() override;
 
  private:
@@ -73,7 +78,7 @@ ListedElement::~ListedElement() {
   // We can't call setForm here because it contains virtual calls.
 }
 
-void ListedElement::Trace(blink::Visitor* visitor) {
+void ListedElement::Trace(Visitor* visitor) {
   visitor->Trace(form_attribute_target_observer_);
   visitor->Trace(form_);
   visitor->Trace(validity_state_);
@@ -113,6 +118,13 @@ void ListedElement::InsertedInto(ContainerNode& insertion_point) {
   FieldSetAncestorsSetNeedsValidityCheck(&insertion_point);
   DisabledStateMightBeChanged();
 
+  if (ClassSupportsStateRestore() && insertion_point.isConnected() &&
+      !element->ContainingShadowRoot()) {
+    element->GetDocument()
+        .GetFormController()
+        .InvalidateStatefulFormControlList();
+  }
+
   // Trigger for elements outside of forms.
   if (!form_ && insertion_point.isConnected())
     element->GetDocument().DidAssociateFormControl(element);
@@ -130,16 +142,24 @@ void ListedElement::RemovedFrom(ContainerNode& insertion_point) {
   if (insertion_point.isConnected() && element->FastHasAttribute(kFormAttr)) {
     SetFormAttributeTargetObserver(nullptr);
     ResetFormOwner();
-    return;
+  } else {
+    // If the form and element are both in the same tree, preserve the
+    // connection to the form.  Otherwise, null out our form and remove
+    // ourselves from the form's list of elements.
+    if (form_ && NodeTraversal::HighestAncestorOrSelf(*element) !=
+                     NodeTraversal::HighestAncestorOrSelf(*form_.Get()))
+      ResetFormOwner();
   }
-  // If the form and element are both in the same tree, preserve the connection
-  // to the form.  Otherwise, null out our form and remove ourselves from the
-  // form's list of elements.
-  if (form_ && NodeTraversal::HighestAncestorOrSelf(*element) !=
-                   NodeTraversal::HighestAncestorOrSelf(*form_.Get()))
-    ResetFormOwner();
 
   DisabledStateMightBeChanged();
+
+  if (ClassSupportsStateRestore() && insertion_point.isConnected() &&
+      !element->ContainingShadowRoot() &&
+      !insertion_point.ContainingShadowRoot()) {
+    element->GetDocument()
+        .GetFormController()
+        .InvalidateStatefulFormControlList();
+  }
 }
 
 HTMLFormElement* ListedElement::FindAssociatedForm(
@@ -569,6 +589,38 @@ bool ListedElement::IsActuallyDisabled() const {
   return ancestor_disabled_state_ == AncestorDisabledState::kDisabled;
 }
 
+bool ListedElement::ClassSupportsStateRestore() const {
+  return false;
+}
+
+bool ListedElement::ShouldSaveAndRestoreFormControlState() const {
+  return false;
+}
+
+FormControlState ListedElement::SaveFormControlState() const {
+  return FormControlState();
+}
+
+void ListedElement::RestoreFormControlState(const FormControlState& state) {}
+
+void ListedElement::NotifyFormStateChanged() {
+  Document& doc = ToHTMLElement(*this).GetDocument();
+  // This can be called during fragment parsing as a result of option
+  // selection before the document is active (or even in a frame).
+  if (!doc.IsActive())
+    return;
+  doc.GetFrame()->Client()->DidUpdateCurrentHistoryItem();
+}
+
+void ListedElement::TakeStateAndRestore() {
+  if (ClassSupportsStateRestore()) {
+    ToHTMLElement(*this)
+        .GetDocument()
+        .GetFormController()
+        .RestoreControlStateFor(*this);
+  }
+}
+
 void ListedElement::SetFormAttributeTargetObserver(
     FormAttributeTargetObserver* new_observer) {
   if (form_attribute_target_observer_)
@@ -602,6 +654,19 @@ bool ListedElement::IsFormControlElementWithState() const {
 
 bool ListedElement::IsElementInternals() const {
   return false;
+}
+
+ListedElement* ListedElement::From(Element& element) {
+  auto* html_element = ToHTMLElementOrNull(element);
+  if (!html_element)
+    return nullptr;
+  if (html_element->IsFormControlElement())
+    return ToHTMLFormControlElement(&element);
+  if (html_element->IsFormAssociatedCustomElement())
+    return &element.EnsureElementInternals();
+  if (auto* object = ToHTMLObjectElementOrNull(html_element))
+    return object;
+  return nullptr;
 }
 
 const HTMLElement& ToHTMLElement(const ListedElement& listed_element) {
@@ -640,7 +705,7 @@ FormAttributeTargetObserver::FormAttributeTargetObserver(const AtomicString& id,
           id),
       element_(element) {}
 
-void FormAttributeTargetObserver::Trace(blink::Visitor* visitor) {
+void FormAttributeTargetObserver::Trace(Visitor* visitor) {
   visitor->Trace(element_);
   IdTargetObserver::Trace(visitor);
 }

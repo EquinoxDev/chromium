@@ -14,8 +14,6 @@
 
 namespace storage {
 
-class SandboxOriginDatabase;
-
 // This origin database implementation supports only one origin
 // (therefore is expected to run very fast).
 class COMPONENT_EXPORT(STORAGE_BROWSER) SandboxIsolatedOriginDatabase
@@ -38,19 +36,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) SandboxIsolatedOriginDatabase
   bool RemovePathForOrigin(const std::string& origin) override;
   bool ListAllOrigins(std::vector<OriginRecord>* origins) override;
   void DropDatabase() override;
-
-  // TODO(kinuko): Deprecate this after a few release cycles, e.g. around M33.
-  static void MigrateBackFromObsoleteOriginDatabase(
-      const std::string& origin,
-      const base::FilePath& file_system_directory,
-      SandboxOriginDatabase* origin_database);
+  void RewriteDatabase() override;
 
   const std::string& origin() const { return origin_; }
 
  private:
-  void MigrateDatabaseIfNeeded();
-
-  bool migration_checked_;
   const std::string origin_;
   const base::FilePath file_system_directory_;
   const base::FilePath origin_directory_;

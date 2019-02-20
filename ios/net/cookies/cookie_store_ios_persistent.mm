@@ -26,11 +26,12 @@ namespace {
 // callback.
 void CookieListCallbackWithMetricsLogging(
     CookieMonster::GetCookieListCallback callback,
-    const CookieList& cookies) {
+    const CookieList& cookies,
+    const CookieStatusList& excluded_cookies) {
   net::ReportGetCookiesForURLResult(SystemCookieStoreType::kCookieMonster,
                                     !cookies.empty());
   if (!callback.is_null()) {
-    std::move(callback).Run(cookies);
+    std::move(callback).Run(cookies, excluded_cookies);
   }
 }
 }  // namespace
@@ -95,14 +96,6 @@ void CookieStoreIOSPersistent::GetAllCookiesAsync(
     GetCookieListCallback callback) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   cookie_monster()->GetAllCookiesAsync(std::move(callback));
-}
-
-void CookieStoreIOSPersistent::DeleteCookieAsync(const GURL& url,
-                                                 const std::string& cookie_name,
-                                                 base::OnceClosure callback) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  cookie_monster()->DeleteCookieAsync(url, cookie_name,
-                                      WrapClosure(std::move(callback)));
 }
 
 void CookieStoreIOSPersistent::DeleteCanonicalCookieAsync(

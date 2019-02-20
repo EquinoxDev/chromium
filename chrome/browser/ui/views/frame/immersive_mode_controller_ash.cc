@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/frame/immersive_mode_controller_ash.h"
 
 #include "ash/public/cpp/immersive/immersive_revealed_lock.h"
+#include "ash/public/cpp/window_pin_type.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/cpp/window_state_type.h"
 #include "ash/public/interfaces/window_state_type.mojom.h"
@@ -53,24 +54,18 @@ class LocatedEventRetargeter : public ui::EventRewriter {
   LocatedEventRetargeter() {}
   ~LocatedEventRetargeter() override {}
 
-  ui::EventRewriteStatus RewriteEvent(
+  ui::EventDispatchDetails RewriteEvent(
       const ui::Event& event,
-      std::unique_ptr<ui::Event>* rewritten_event) override {
+      const Continuation continuation) override {
     if (!event.IsLocatedEvent())
-      return ui::EVENT_REWRITE_CONTINUE;
+      return SendEvent(continuation, &event);
 
-    *rewritten_event = ui::Event::Clone(event);
+    std::unique_ptr<ui::Event> replacement_event = ui::Event::Clone(event);
     // Cloning strips the EventTarget. The only goal of this EventRewriter is to
     // null the target, so there's no need to do anything extra here.
-    DCHECK(!(*rewritten_event)->target());
+    DCHECK(!replacement_event->target());
 
-    return ui::EVENT_REWRITE_REWRITTEN;
-  }
-
-  ui::EventRewriteStatus NextDispatchEvent(
-      const ui::Event& last_event,
-      std::unique_ptr<ui::Event>* new_event) override {
-    return ui::EVENT_REWRITE_CONTINUE;
+    return SendEventFinally(continuation, replacement_event.get());
   }
 
  private:
@@ -118,7 +113,7 @@ ImmersiveModeControllerAsh::~ImmersiveModeControllerAsh() = default;
 void ImmersiveModeControllerAsh::Init(BrowserView* browser_view) {
   browser_view_ = browser_view;
   controller_->Init(this, browser_view_->frame(),
-      browser_view_->top_container());
+                    browser_view_->top_container());
 
   observed_windows_.Add(
       !features::IsUsingWindowService()
@@ -193,6 +188,13 @@ void ImmersiveModeControllerAsh::OnWidgetActivationChanged(
     return;
 
   if (!TabletModeClient::Get()->tablet_mode_enabled())
+    return;
+
+  // Don't use immersive mode as long as we are in the locked fullscreen mode
+  // since immersive shows browser controls which allow exiting the mode.
+  aura::Window* window = widget->GetNativeWindow();
+  window = features::IsUsingWindowService() ? window->GetRootWindow() : window;
+  if (ash::IsWindowTrustedPinned(window))
     return;
 
   // Enable immersive mode if the widget is activated. Do not disable immersive
@@ -273,15 +275,15 @@ void ImmersiveModeControllerAsh::SetVisibleFraction(double visible_fraction) {
   browser_view_->frame()->GetFrameView()->UpdateClientArea();
 }
 
-std::vector<gfx::Rect>
-ImmersiveModeControllerAsh::GetVisibleBoundsInScreen() const {
+std::vector<gfx::Rect> ImmersiveModeControllerAsh::GetVisibleBoundsInScreen()
+    const {
   views::View* top_container_view = browser_view_->top_container();
   gfx::Rect top_container_view_bounds = top_container_view->GetVisibleBounds();
   // TODO(tdanderson): Implement View::ConvertRectToScreen().
   gfx::Point top_container_view_bounds_in_screen_origin(
       top_container_view_bounds.origin());
-  views::View::ConvertPointToScreen(top_container_view,
-      &top_container_view_bounds_in_screen_origin);
+  views::View::ConvertPointToScreen(
+      top_container_view, &top_container_view_bounds_in_screen_origin);
   gfx::Rect top_container_view_bounds_in_screen(
       top_container_view_bounds_in_screen_origin,
       top_container_view_bounds.size());
@@ -301,8 +303,8 @@ void ImmersiveModeControllerAsh::Observe(
     return;
 
   // Auto hide the shelf in immersive browser fullscreen.
-  bool in_tab_fullscreen = content::Source<FullscreenController>(source)->
-      IsWindowFullscreenForTabOrPending();
+  bool in_tab_fullscreen = content::Source<FullscreenController>(source)
+                               ->IsWindowFullscreenForTabOrPending();
   browser_view_->GetNativeWindow()->SetProperty(
       ash::kHideShelfWhenFullscreenKey, in_tab_fullscreen);
 }

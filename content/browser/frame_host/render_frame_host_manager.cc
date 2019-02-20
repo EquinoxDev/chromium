@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/containers/adapters.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/logging.h"
@@ -48,6 +49,7 @@
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/site_isolation_policy.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/url_constants.h"
@@ -510,6 +512,14 @@ RenderFrameHostImpl* RenderFrameHostManager::GetFrameHostForNavigation(
       << "Don't call this method for JavaScript URLs as those create a "
          "temporary  NavigationRequest and we don't want to reset an ongoing "
          "navigation's speculative RFH.";
+  // A frame that's pending deletion should never be navigated. If this happens,
+  // log a DumpWithoutCrashing to understand the root cause.
+  // See https://crbug.com/926820 and https://crbug.com/927705.
+  if (!current_frame_host()->is_active()) {
+    NOTREACHED() << "Navigation in an inactive frame";
+    DEBUG_ALIAS_FOR_GURL(url, request.common_params().url);
+    base::debug::DumpWithoutCrashing();
+  }
 
   // The appropriate RenderFrameHost to commit the navigation.
   RenderFrameHostImpl* navigation_rfh = nullptr;
@@ -1051,7 +1061,7 @@ RenderFrameHostManager::GetSiteInstanceForNavigation(
   // using the NavigationEntry. This can happen when a tab crashed, and a new
   // RenderFrameHost was swapped in at the beginning of the navigation. See
   // https://crbug.com/766630.
-  const NavigationEntry* current_entry =
+  NavigationEntry* current_entry =
       delegate_->GetLastCommittedNavigationEntryForRenderManager();
   bool current_is_view_source_mode = current_entry ?
       current_entry->IsViewSourceMode() : dest_is_view_source_mode;
@@ -1245,8 +1255,9 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
     // thus use the correct process.
     bool use_process_per_site =
         RenderProcessHost::ShouldUseProcessPerSite(browser_context, dest_url) &&
-        RenderProcessHostImpl::GetSoleProcessHostForURL(browser_context,
-                                                        dest_url);
+        RenderProcessHostImpl::GetSoleProcessHostForURL(
+            browser_context, current_instance_impl->GetIsolationContext(),
+            dest_url);
     if (current_instance_impl->HasRelatedSiteInstance(dest_url) ||
         use_process_per_site) {
       return SiteInstanceDescriptor(browser_context, dest_url,
@@ -1391,15 +1402,23 @@ RenderFrameHostManager::DetermineSiteInstanceForURL(
   // OOPIFs; see https://crbug.com/711006.
   //
   // TODO(alexmos): Remove this check after fixing https://crbug.com/787576.
-  if (!frame_tree_node_->IsMainFrame()) {
-    RenderFrameHostImpl* parent =
-        frame_tree_node_->parent()->current_frame_host();
-    bool dest_url_requires_dedicated_process =
-        SiteInstanceImpl::DoesSiteRequireDedicatedProcess(browser_context,
-                                                          dest_url);
-    if (!parent->GetSiteInstance()->RequiresDedicatedProcess() &&
-        !dest_url_requires_dedicated_process) {
-      return SiteInstanceDescriptor(parent->GetSiteInstance());
+  //
+  // Also if kProcessSharingWithStrictSiteInstances is enabled, don't lump the
+  // subframe into the same SiteInstance as the parent. These separate
+  // SiteInstances can get assigned to the same process later.
+  if (!base::FeatureList::IsEnabled(
+          features::kProcessSharingWithStrictSiteInstances)) {
+    if (!frame_tree_node_->IsMainFrame()) {
+      RenderFrameHostImpl* parent =
+          frame_tree_node_->parent()->current_frame_host();
+      bool dest_url_requires_dedicated_process =
+          SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
+              browser_context, parent->GetSiteInstance()->GetIsolationContext(),
+              dest_url);
+      if (!parent->GetSiteInstance()->RequiresDedicatedProcess() &&
+          !dest_url_requires_dedicated_process) {
+        return SiteInstanceDescriptor(parent->GetSiteInstance());
+      }
     }
   }
 
@@ -1481,11 +1500,19 @@ bool RenderFrameHostManager::IsRendererTransferNeededForNavigation(
     return false;
   }
 
+  // Attempting a transfer with kProcessSharingWithStrictSiteInstances allows
+  // us to "swap" from the renderer's perspective and create the full OOPIF
+  // plumbing, even if this subframe is eventually assigned to the same process
+  // as its cross-site parent.
+  if (base::FeatureList::IsEnabled(
+          features::kProcessSharingWithStrictSiteInstances))
+    return true;
+
   // The sites differ. If either one requires a dedicated process,
   // then a transfer is needed.
   if (rfh->GetSiteInstance()->RequiresDedicatedProcess() ||
-      SiteInstanceImpl::DoesSiteRequireDedicatedProcess(context,
-                                                        dest_url)) {
+      SiteInstanceImpl::DoesSiteRequireDedicatedProcess(
+          context, rfh->GetSiteInstance()->GetIsolationContext(), dest_url)) {
     return true;
   }
 
@@ -1526,8 +1553,11 @@ scoped_refptr<SiteInstance> RenderFrameHostManager::ConvertToSiteInstance(
   if (candidate_instance &&
       !current_instance->IsRelatedSiteInstance(candidate_instance) &&
       candidate_instance->GetSiteURL() ==
-          SiteInstance::GetSiteForURL(descriptor.browser_context,
-                                      descriptor.dest_url)) {
+          SiteInstanceImpl::GetSiteForURL(
+              descriptor.browser_context,
+              static_cast<SiteInstanceImpl*>(candidate_instance)
+                  ->GetIsolationContext(),
+              descriptor.dest_url)) {
     return candidate_instance;
   }
 
@@ -1570,8 +1600,9 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
       should_compare_effective_urls ||
       (!src_has_effective_url && !dest_has_effective_url);
   if (should_check_for_wrong_process &&
-      candidate->GetSiteInstance()->HasWrongProcessForURL(dest_url))
+      candidate->GetSiteInstance()->HasWrongProcessForURL(dest_url)) {
     return false;
+  }
 
   // If we don't have a last successful URL, we can't trust the origin or URL
   // stored on the frame, so we fall back to the SiteInstance URL.  This case
@@ -1581,7 +1612,8 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
   // without the effective URL resolution if needed.
   if (candidate->last_successful_url().is_empty()) {
     return SiteInstanceImpl::IsSameWebSite(
-        browser_context, candidate->GetSiteInstance()->original_url(), dest_url,
+        browser_context, candidate->GetSiteInstance()->GetIsolationContext(),
+        candidate->GetSiteInstance()->original_url(), dest_url,
         should_compare_effective_urls);
   }
 
@@ -1589,7 +1621,8 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
   // we compare against the last successful commit when deciding whether to swap
   // this time.
   if (SiteInstanceImpl::IsSameWebSite(
-          browser_context, candidate->last_successful_url(), dest_url,
+          browser_context, candidate->GetSiteInstance()->GetIsolationContext(),
+          candidate->last_successful_url(), dest_url,
           should_compare_effective_urls)) {
     return true;
   }
@@ -1599,7 +1632,7 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
   // the site.
   if (!candidate->GetLastCommittedOrigin().opaque() &&
       SiteInstanceImpl::IsSameWebSite(
-          browser_context,
+          browser_context, candidate->GetSiteInstance()->GetIsolationContext(),
           GURL(candidate->GetLastCommittedOrigin().Serialize()), dest_url,
           should_compare_effective_urls)) {
     return true;
@@ -1614,8 +1647,9 @@ bool RenderFrameHostManager::IsCurrentlySameSite(RenderFrameHostImpl* candidate,
   if (candidate->last_successful_url().IsAboutBlank() &&
       candidate->GetLastCommittedOrigin().opaque() &&
       SiteInstanceImpl::IsSameWebSite(
-          browser_context, candidate->GetSiteInstance()->original_url(),
-          dest_url, should_compare_effective_urls)) {
+          browser_context, candidate->GetSiteInstance()->GetIsolationContext(),
+          candidate->GetSiteInstance()->original_url(), dest_url,
+          should_compare_effective_urls)) {
     return true;
   }
 
@@ -1952,8 +1986,15 @@ bool RenderFrameHostManager::InitRenderView(
       frame_tree_node_->devtools_frame_token(),
       frame_tree_node_->current_replication_state());
 
-  if (created && proxy)
+  if (created && proxy) {
     proxy->set_render_frame_proxy_created(true);
+
+    // If this main frame proxy was created for a frame that hasn't yet
+    // finished loading, let the renderer know so it can also mark the proxy as
+    // loading. See https://crbug.com/916137.
+    if (frame_tree_node_->IsLoading())
+      proxy->Send(new FrameMsg_DidStartLoading(proxy->GetRoutingID()));
+  }
 
   return created;
 }
@@ -2141,7 +2182,7 @@ void RenderFrameHostManager::CommitPendingWebUI() {
   render_frame_host_->CommitPendingWebUI();
 
   if (will_focus_location_bar)
-    delegate_->SetFocusToLocationBar(false);
+    delegate_->SetFocusToLocationBar();
 }
 
 void RenderFrameHostManager::CommitPending(
@@ -2237,7 +2278,7 @@ void RenderFrameHostManager::CommitPending(
   delegate_->UpdateRenderViewSizeForRenderManager(is_main_frame);
 
   if (will_focus_location_bar) {
-    delegate_->SetFocusToLocationBar(false);
+    delegate_->SetFocusToLocationBar();
   } else if (focus_render_view && render_frame_host_->GetView()) {
     if (is_main_frame) {
       render_frame_host_->GetView()->Focus();
@@ -2428,7 +2469,7 @@ RenderFrameProxyHost* RenderFrameHostManager::GetRenderFrameProxyHost(
   return nullptr;
 }
 
-int RenderFrameHostManager::GetProxyCount() {
+size_t RenderFrameHostManager::GetProxyCount() {
   return proxy_hosts_.size();
 }
 
@@ -2486,11 +2527,9 @@ void RenderFrameHostManager::CreateOpenerProxies(
   // this node first and this node last.  In the common case without cycles,
   // this will ensure that each tree's openers are created before the tree's
   // nodes need to reference them.
-  for (int i = opener_frame_trees.size() - 1; i >= 0; i--) {
-    opener_frame_trees[i]
-        ->root()
-        ->render_manager()
-        ->CreateOpenerProxiesForFrameTree(instance, skip_this_node);
+  for (FrameTree* tree : base::Reversed(opener_frame_trees)) {
+    tree->root()->render_manager()->CreateOpenerProxiesForFrameTree(
+        instance, skip_this_node);
   }
 
   // Set openers for nodes in |nodes_with_back_links| in a second pass.

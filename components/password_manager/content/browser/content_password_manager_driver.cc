@@ -135,10 +135,6 @@ void ContentPasswordManagerDriver::ClearPreviewedForm() {
   GetAutofillAgent()->ClearPreviewedForm();
 }
 
-void ContentPasswordManagerDriver::GeneratePassword() {
-  GetPasswordGenerationAgent()->UserTriggeredGeneratePassword();
-}
-
 PasswordGenerationManager*
 ContentPasswordManagerDriver::GetPasswordGenerationManager() {
   return &password_generation_manager_;
@@ -167,6 +163,10 @@ bool ContentPasswordManagerDriver::IsMainFrame() const {
   return is_main_frame_;
 }
 
+GURL ContentPasswordManagerDriver::GetLastCommittedURL() const {
+  return render_frame_host_->GetLastCommittedURL();
+}
+
 void ContentPasswordManagerDriver::DidNavigateFrame(
     content::NavigationHandle* navigation_handle) {
   // Clear page specific data after main frame navigation.
@@ -178,6 +178,13 @@ void ContentPasswordManagerDriver::DidNavigateFrame(
                                GetPasswordManager());
     GetPasswordAutofillManager()->DidNavigateMainFrame();
   }
+}
+
+void ContentPasswordManagerDriver::GeneratePassword(
+    autofill::mojom::PasswordGenerationAgent::
+        UserTriggeredGeneratePasswordCallback callback) {
+  GetPasswordGenerationAgent()->UserTriggeredGeneratePassword(
+      std::move(callback));
 }
 
 const autofill::mojom::AutofillAgentAssociatedPtr&

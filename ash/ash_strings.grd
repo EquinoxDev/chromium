@@ -689,9 +689,9 @@ This file contains the strings for ash.
         No recent items
       </message>
 
-      <!-- Window Selector -->
-      <message name="IDS_ASH_WINDOW_SELECTOR_INPUT_FILTER_ACCESSIBLE_NAME" desc="The accessible name for the window selector filter search input box.">
-        Type the name of an app or document
+      <!-- Virtual Desks -->
+      <message name="IDS_ASH_DESKS_NEW_DESK_BUTTON" desc="The label of the new virtual desk (a.k.a. workspaces) button.">
+        New Desk
       </message>
 
       <!-- Status tray charging strings. -->
@@ -821,7 +821,7 @@ This file contains the strings for ash.
         Disconnected
       </message>
       <message name="IDS_ASH_STATUS_TRAY_NETWORK_NOT_CONNECTED_A11Y" desc="The message used by accessibility for telling that currently the device is not connected to a network.">
-        Not connected to netowrk
+        Not connected to network
       </message>
       <message name="IDS_ASH_STATUS_TRAY_NETWORK_CONNECTING_TOOLTIP" desc="The tooltip text used when network is connecting.">
         Connecting to <ph name="NETWORK_NAME">$1<ex>public wifi</ex></ph>
@@ -876,6 +876,9 @@ This file contains the strings for ash.
       <!-- Status tray screen capture strings. -->
       <message name="IDS_ASH_STATUS_TRAY_SCREEN_CAPTURE_STOP" desc="label used for screen capture stop button">
         Stop
+      </message>
+      <message name="IDS_ASH_STATUS_TRAY_SCREEN_CAPTURE_CHANGE_SOURCE" desc="label used for screen capture change source button">
+        Change source
       </message>
 
       <!-- Status tray media recording state strings. -->
@@ -1188,9 +1191,6 @@ This file contains the strings for ash.
       <message name="IDS_ASH_STATUS_TRAY_NETWORK_LIST_CONNECTING" desc="Message for the network list when connecting to a network.">
         <ph name="NAME">$1<ex>GoogleGuest</ex></ph>: Connecting...
       </message>
-      <message name="IDS_ASH_STATUS_TRAY_NETWORK_LIST_RECONNECTING" desc="Message for the network list when reconnecting to a network.">
-        <ph name="NAME">$1<ex>Company VPN</ex></ph>: Reconnecting...
-      </message>
       <message name="IDS_ASH_STATUS_TRAY_NETWORK_NOT_CONNECTED" desc="Description in status area or network list when no network is connected.">
         No network
       </message>
@@ -1269,9 +1269,6 @@ This file contains the strings for ash.
       </message>
       <message name="IDS_ASH_DISPLAY_FAILURE_SEND_FEEDBACK" desc="Button text below error report to allow user to send feedback report.">
         Send feedback
-      </message>
-      <message name="IDS_ASH_DISPLAY_MIRRORING_NOT_SUPPORTED" desc="A message used to explain that mirroring with more than two displays is not supported.">
-        Mirroring with more than two displays is not supported.
       </message>
       <message name="IDS_ASH_DISPLAY_RESOLUTION_CHANGE_ACCEPT" desc="A button label shown in the notification for the resolution change to accept the change">
         Accept
@@ -1482,7 +1479,7 @@ This file contains the strings for ash.
         Remove this user
       </message>
       <message name="IDS_ASH_LOGIN_POD_LEGACY_SUPERVISED_EXPIRATION_WARNING" desc="Text shown as a warning that supervised users will be deprecated.">
-        Your supervised user account is expiring soon.
+        Your supervised user profile will be removed soon. Sign in to learn more.
       </message>
       <message name="IDS_ASH_LOGIN_POD_LEGACY_SUPERVISED_USER_REMOVE_WARNING" desc="Text shown as a warning when attempting to remove legacy supervised user.">
         All files and local data associated with the supervised user will be permanently deleted once this supervised user is removed. Visited websites and settings for this supervised user may still be visible by the manager at <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
@@ -1500,7 +1497,7 @@ This file contains the strings for ash.
         The device admin may monitor your browsing activity.
       </message>
       <message name="IDS_ASH_LOGIN_MANAGED_SESSION_MONITORING_WARNING" desc="Text shown in the public account user pod, informing the user that this session is managed and admin can monitor all activity.">
-        The administrator of this device has access to all activity, including passwords and communications.
+        The device administrator has access to all activity, including passwords and communications.
       </message>
       <message name="IDS_ASH_LOGIN_PUBLIC_ACCOUNT_SIGNOUT_REMINDER" desc="Text shown in the public account user pod, reminding the user to log out.">
         Your internet session will be cleared when you sign out. <ph name="LEARN_MORE">$1<ex>Learn more</ex></ph>
@@ -1582,6 +1579,15 @@ This file contains the strings for ash.
       </message>
       <message name="IDS_ASH_LOGIN_PUBLIC_ACCOUNT_MONITORING_INFO_ITEM_4" desc="Text shown in the warning dialog after user clicks on the learn more link, notifying the user of potential security and privacy implications of using the device">
         Adjust privacy settings
+      </message>
+      <message name="IDS_ASH_LOGIN_PARENT_ACCESS_TITLE" desc="Title of the parent access input dialog that allows to unlock child's device with a code.">
+        Unlock device with parent code
+      </message>
+      <message name="IDS_ASH_LOGIN_PARENT_ACCESS_DESCRIPTION" desc="Description shown on the parent access input dialog. Explains what code should be used to unlock the device.">
+        To unlock the device, enter your Family Link parent access code
+      </message>
+      <message name="IDS_ASH_LOGIN_PARENT_ACCESS_HELP" desc="Label of a button shown on the parent access input dialog.">
+        Need help?
       </message>
 
       <!-- Multi-profiles intro dialog -->
@@ -1726,6 +1732,9 @@ This file contains the strings for ash.
       <message name="IDS_ASH_ASSISTANT_WINDOW" desc="The accessible description of the Assistant window.">
         Assistant
       </message>
+      <message name="IDS_ASH_ASSISTANT_DIALOG_PLATE_BACK_ACCNAME" desc="Accessibility name for a back image button when clicked back to previous launcher state.">
+        Back to launcher
+      </message>
       <message name="IDS_ASH_ASSISTANT_DIALOG_PLATE_HINT" desc="Message shown as a placeholder in Assistant's input textfield when empty.">
         Type a message
       </message>
@@ -1792,7 +1801,7 @@ This file contains the strings for ash.
       <message name="IDS_ASSISTANT_TIMER_NOTIFICATION_TITLE" desc="Title for Assistant timer notification.">
         Time's up
       </message>
-      <message name="IDS_ASSISTANT_TIMER_NOTIFICATION_MESSAGE" desc="Message for Assistant timer notification. Example: -01:23s. [ICU Syntax]">
+      <message name="IDS_ASSISTANT_TIMER_NOTIFICATION_MESSAGE" desc="Message for Assistant timer notification. Example: -01:23s.">
         <ph name="SIGN">{0}<ex>-</ex></ph><ph name="MINUTES_REMAINING">{1,number,00}<ex>01</ex></ph>:<ph name="SECONDS_REMAINING">{2,number,00}<ex>02</ex></ph>s
       </message>
       <message name="IDS_ASSISTANT_TIMER_NOTIFICATION_ADD_1_MIN_BUTTON" desc="Label for button to add 1 minute to timer in Assistant timer notification.">

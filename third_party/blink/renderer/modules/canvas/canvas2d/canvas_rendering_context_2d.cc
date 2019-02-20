@@ -33,6 +33,7 @@
 
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h"
 
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
@@ -51,6 +52,7 @@
 #include "third_party/blink/renderer/core/layout/hit_test_canvas_result.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_style.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/hit_region.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/path_2d.h"
@@ -453,7 +455,7 @@ String CanvasRenderingContext2D::font() const {
   if (font_description.VariantCaps() == FontDescription::kSmallCaps)
     serialized_font.Append("small-caps ");
 
-  serialized_font.AppendNumber(font_description.ComputedPixelSize());
+  serialized_font.AppendNumber(font_description.ComputedSize());
   serialized_font.Append("px");
 
   const FontFamily& first_font_family = font_description.Family();
@@ -865,16 +867,14 @@ void CanvasRenderingContext2D::DrawTextInternal(
       break;
   }
 
-  // The slop built in to this mask rect matches the heuristic used in
-  // FontCGWin.cpp for GDI text.
   TextRunPaintInfo text_run_paint_info(text_run);
-  text_run_paint_info.bounds =
-      FloatRect(location.X() - font_metrics.Height() / 2,
-                location.Y() - font_metrics.Ascent() - font_metrics.LineGap(),
-                clampTo<float>(width + font_metrics.Height()),
-                font_metrics.LineSpacing());
+  FloatRect bounds(
+      location.X() - font_metrics.Height() / 2,
+      location.Y() - font_metrics.Ascent() - font_metrics.LineGap(),
+      clampTo<float>(width + font_metrics.Height()),
+      font_metrics.LineSpacing());
   if (paint_type == CanvasRenderingContext2DState::kStrokePaintType)
-    InflateStrokeRect(text_run_paint_info.bounds);
+    InflateStrokeRect(bounds);
 
   CanvasRenderingContext2DAutoRestoreSkCanvas state_restorer(this);
   if (use_max_width) {
@@ -897,7 +897,7 @@ void CanvasRenderingContext2D::DrawTextInternal(
       },
       [](const SkIRect& rect)  // overdraw test lambda
       { return false; },
-      text_run_paint_info.bounds, paint_type);
+      bounds, paint_type);
 }
 
 const Font& CanvasRenderingContext2D::AccessFont() {
@@ -931,8 +931,12 @@ CanvasRenderingContext2D::getContextAttributes() const {
   CanvasRenderingContext2DSettings* settings =
       CanvasRenderingContext2DSettings::Create();
   settings->setAlpha(CreationAttributes().alpha);
-  settings->setColorSpace(ColorSpaceAsString());
-  settings->setPixelFormat(PixelFormatAsString());
+  if (RuntimeEnabledFeatures::CanvasColorManagementEnabled()) {
+    settings->setColorSpace(ColorSpaceAsString());
+    settings->setPixelFormat(PixelFormatAsString());
+  }
+  if (origin_trials::LowLatencyCanvasEnabled(&canvas()->GetDocument()))
+    settings->setLowLatency(canvas()->LowLatencyEnabled());
   return settings;
 }
 
@@ -1098,6 +1102,9 @@ unsigned CanvasRenderingContext2D::HitRegionsCount() const {
 }
 
 void CanvasRenderingContext2D::DisableAcceleration() {
+  if (base::FeatureList::IsEnabled(features::kAlwaysAccelerateCanvas)) {
+    NOTREACHED();
+  }
   canvas()->DisableAcceleration();
 }
 

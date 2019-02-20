@@ -26,7 +26,6 @@ class KeyboardUIFactory;
 
 namespace ash {
 
-class RootWindowController;
 class SessionController;
 class VirtualKeyboardController;
 
@@ -101,14 +100,10 @@ class ASH_EXPORT AshKeyboardController
     return virtual_keyboard_controller_.get();
   }
 
-  // Activates the keyboard controller for the primary root window controller.
-  void ActivateKeyboard();
-
-  // Activates the keyboard controller for |controller|.
-  void ActivateKeyboardForRoot(RootWindowController* controller);
-
-  // Deactivates the keyboard controller.
-  void DeactivateKeyboard();
+  // Called whenever a root window is closing.
+  // If the root window contains the virtual keyboard window, deactivates
+  // the keyboard so that its window doesn't get destroyed as well.
+  void OnRootWindowClosing(aura::Window* root_window);
 
  private:
   // Called whenever the enable flags may have changed the enabled state from

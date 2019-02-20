@@ -24,7 +24,6 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
-#include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "crypto/ec_private_key.h"
@@ -72,6 +71,9 @@ namespace {
 // This constant can be any non-negative/non-zero value (eg: it does not
 // overlap with any value of the net::Error range, including net::OK).
 const int kSSLClientSocketNoPendingResult = 1;
+// This constant can be any non-negative/non-zero value (eg: it does not
+// overlap with any value of the net::Error range, including net::OK).
+const int kCertVerifyPending = 1;
 
 // Default size of the internal BoringSSL buffers.
 const int kDefaultOpenSSLBufferSize = 17 * 1024;
@@ -270,7 +272,6 @@ class SSLClientSocketImpl::SSLContext {
                            base::LeakySingletonTraits<SSLContext>>::get();
   }
   SSL_CTX* ssl_ctx() { return ssl_ctx_.get(); }
-  SSLClientSessionCache* session_cache() { return &session_cache_; }
 
   SSLClientSocketImpl* GetClientSocketFromSSL(const SSL* ssl) {
     DCHECK(ssl);
@@ -295,17 +296,17 @@ class SSLClientSocketImpl::SSLContext {
  private:
   friend struct base::DefaultSingletonTraits<SSLContext>;
 
-  SSLContext() : session_cache_(SSLClientSessionCache::Config()) {
+  SSLContext() {
     crypto::EnsureOpenSSLInit();
     ssl_socket_data_index_ = SSL_get_ex_new_index(0, 0, 0, 0, 0);
     DCHECK_NE(ssl_socket_data_index_, -1);
     ssl_ctx_.reset(SSL_CTX_new(TLS_with_buffers_method()));
     SSL_CTX_set_cert_cb(ssl_ctx_.get(), ClientCertRequestCallback, NULL);
 
-    // The server certificate is verified after the handshake in DoVerifyCert.
+    // Verifies the server certificate even on resumed sessions.
+    SSL_CTX_set_reverify_on_resume(ssl_ctx_.get(), 1);
     SSL_CTX_set_custom_verify(ssl_ctx_.get(), SSL_VERIFY_PEER,
-                              CertVerifyCallback);
-
+                              VerifyCertCallback);
     // Disable the internal session cache. Session caching is handled
     // externally (i.e. by SSLClientSessionCache).
     SSL_CTX_set_session_cache_mode(
@@ -326,17 +327,18 @@ class SSLClientSocketImpl::SSLContext {
         ssl_ctx_.get(), TLSEXT_cert_compression_brotli,
         nullptr /* compression not supported */, DecompressBrotliCert);
 #endif
+
+    if (base::FeatureList::IsEnabled(features::kPostQuantumCECPQ2)) {
+      static const int kCurves[] = {NID_CECPQ2, NID_X25519,
+                                    NID_X9_62_prime256v1, NID_secp384r1};
+      SSL_CTX_set1_curves(ssl_ctx_.get(), kCurves, base::size(kCurves));
+    }
   }
 
   static int ClientCertRequestCallback(SSL* ssl, void* arg) {
     SSLClientSocketImpl* socket = GetInstance()->GetClientSocketFromSSL(ssl);
     DCHECK(socket);
     return socket->ClientCertRequestCallback(ssl);
-  }
-
-  static ssl_verify_result_t CertVerifyCallback(SSL* ssl, uint8_t* out_alert) {
-    // The certificate is verified after the handshake in DoVerifyCert.
-    return ssl_verify_ok;
   }
 
   static int NewSessionCallback(SSL* ssl, SSL_SESSION* session) {
@@ -391,13 +393,6 @@ class SSLClientSocketImpl::SSLContext {
   bssl::UniquePtr<SSL_CTX> ssl_ctx_;
 
   std::unique_ptr<SSLKeyLogger> ssl_key_logger_;
-
-  // TODO(davidben): Use a separate cache per URLRequestContext.
-  // https://crbug.com/458365
-  //
-  // TODO(davidben): Sessions should be invalidated on fatal
-  // alerts. https://crbug.com/466352
-  SSLClientSessionCache session_cache_;
 };
 
 const SSL_PRIVATE_KEY_METHOD
@@ -406,13 +401,6 @@ const SSL_PRIVATE_KEY_METHOD
         nullptr /* decrypt */,
         &SSLClientSocketImpl::SSLContext::PrivateKeyCompleteCallback,
 };
-
-// static
-void SSLClientSocket::ClearSessionCache() {
-  SSLClientSocketImpl::SSLContext* context =
-      SSLClientSocketImpl::SSLContext::GetInstance();
-  context->session_cache()->Flush();
-}
 
 SSLClientSocketImpl::SSLClientSocketImpl(
     std::unique_ptr<ClientSocketHandle> transport_socket,
@@ -424,23 +412,59 @@ SSLClientSocketImpl::SSLClientSocketImpl(
       completed_connect_(false),
       was_ever_used_(false),
       cert_verifier_(context.cert_verifier),
+      cert_verification_result_(kCertVerifyPending),
       cert_transparency_verifier_(context.cert_transparency_verifier),
-      transport_(std::move(transport_socket)),
+      client_socket_handle_(std::move(transport_socket)),
+      stream_socket_(client_socket_handle_->socket()),
       host_and_port_(host_and_port),
       ssl_config_(ssl_config),
-      ssl_session_cache_shard_(context.ssl_session_cache_shard),
+      ssl_client_session_cache_(context.ssl_client_session_cache),
       next_handshake_state_(STATE_NONE),
       in_confirm_handshake_(false),
       disconnected_(false),
       negotiated_protocol_(kProtoUnknown),
-      certificate_verified_(false),
       certificate_requested_(false),
       signature_result_(kSSLClientSocketNoPendingResult),
       transport_security_state_(context.transport_security_state),
       policy_enforcer_(context.ct_policy_enforcer),
       pkp_bypassed_(false),
       is_fatal_cert_error_(false),
-      net_log_(transport_->socket()->NetLog()),
+      net_log_(stream_socket_->NetLog()),
+      weak_factory_(this) {
+  CHECK(cert_verifier_);
+  CHECK(transport_security_state_);
+  CHECK(cert_transparency_verifier_);
+  CHECK(policy_enforcer_);
+}
+
+SSLClientSocketImpl::SSLClientSocketImpl(
+    std::unique_ptr<StreamSocket> nested_socket,
+    const HostPortPair& host_and_port,
+    const SSLConfig& ssl_config,
+    const SSLClientSocketContext& context)
+    : pending_read_error_(kSSLClientSocketNoPendingResult),
+      pending_read_ssl_error_(SSL_ERROR_NONE),
+      completed_connect_(false),
+      was_ever_used_(false),
+      cert_verifier_(context.cert_verifier),
+      cert_verification_result_(kCertVerifyPending),
+      cert_transparency_verifier_(context.cert_transparency_verifier),
+      nested_socket_(std::move(nested_socket)),
+      stream_socket_(nested_socket_.get()),
+      host_and_port_(host_and_port),
+      ssl_config_(ssl_config),
+      ssl_client_session_cache_(context.ssl_client_session_cache),
+      next_handshake_state_(STATE_NONE),
+      in_confirm_handshake_(false),
+      disconnected_(false),
+      negotiated_protocol_(kProtoUnknown),
+      certificate_requested_(false),
+      signature_result_(kSSLClientSocketNoPendingResult),
+      transport_security_state_(context.transport_security_state),
+      policy_enforcer_(context.ct_policy_enforcer),
+      pkp_bypassed_(false),
+      is_fatal_cert_error_(false),
+      net_log_(stream_socket_->NetLog()),
       weak_factory_(this) {
   CHECK(cert_verifier_);
   CHECK(transport_security_state_);
@@ -527,7 +551,7 @@ void SSLClientSocketImpl::Disconnect() {
   user_write_buf_ = NULL;
   user_write_buf_len_ = 0;
 
-  transport_->socket()->Disconnect();
+  stream_socket_->Disconnect();
 }
 
 // ConfirmHandshake may only be called on a connected socket and, like other
@@ -563,7 +587,7 @@ bool SSLClientSocketImpl::IsConnected() const {
   if (user_read_buf_.get() || user_write_buf_.get())
     return true;
 
-  return transport_->socket()->IsConnected();
+  return stream_socket_->IsConnected();
 }
 
 bool SSLClientSocketImpl::IsConnectedAndIdle() const {
@@ -585,15 +609,15 @@ bool SSLClientSocketImpl::IsConnectedAndIdle() const {
   if (transport_adapter_->HasPendingReadData())
     return false;
 
-  return transport_->socket()->IsConnectedAndIdle();
+  return stream_socket_->IsConnectedAndIdle();
 }
 
 int SSLClientSocketImpl::GetPeerAddress(IPEndPoint* addressList) const {
-  return transport_->socket()->GetPeerAddress(addressList);
+  return stream_socket_->GetPeerAddress(addressList);
 }
 
 int SSLClientSocketImpl::GetLocalAddress(IPEndPoint* addressList) const {
-  return transport_->socket()->GetLocalAddress(addressList);
+  return stream_socket_->GetLocalAddress(addressList);
 }
 
 const NetLogWithSource& SSLClientSocketImpl::NetLog() const {
@@ -656,7 +680,7 @@ void SSLClientSocketImpl::GetConnectionAttempts(ConnectionAttempts* out) const {
 }
 
 int64_t SSLClientSocketImpl::GetTotalReceivedBytes() const {
-  return transport_->socket()->GetTotalReceivedBytes();
+  return stream_socket_->GetTotalReceivedBytes();
 }
 
 void SSLClientSocketImpl::DumpMemoryStats(SocketMemoryStats* stats) const {
@@ -702,13 +726,7 @@ void SSLClientSocketImpl::GetSSLCertRequestInfo(
 }
 
 void SSLClientSocketImpl::ApplySocketTag(const SocketTag& tag) {
-  return transport_->socket()->ApplySocketTag(tag);
-}
-
-// static
-void SSLClientSocketImpl::DumpSSLClientSessionMemoryStats(
-    base::trace_event::ProcessMemoryDump* pmd) {
-  SSLContext::GetInstance()->session_cache()->DumpMemoryStats(pmd);
+  return stream_socket_->ApplySocketTag(tag);
 }
 
 int SSLClientSocketImpl::Read(IOBuffer* buf,
@@ -737,7 +755,7 @@ int SSLClientSocketImpl::ReadIfReady(IOBuffer* buf,
 }
 
 int SSLClientSocketImpl::CancelReadIfReady() {
-  int result = transport_->socket()->CancelReadIfReady();
+  int result = stream_socket_->CancelReadIfReady();
   // Cancel |user_read_callback_|, because caller does not expect the callback
   // to be invoked after they have canceled the ReadIfReady.
   user_read_callback_.Reset();
@@ -767,11 +785,11 @@ int SSLClientSocketImpl::Write(
 }
 
 int SSLClientSocketImpl::SetReceiveBufferSize(int32_t size) {
-  return transport_->socket()->SetReceiveBufferSize(size);
+  return stream_socket_->SetReceiveBufferSize(size);
 }
 
 int SSLClientSocketImpl::SetSendBufferSize(int32_t size) {
-  return transport_->socket()->SetSendBufferSize(size);
+  return stream_socket_->SetSendBufferSize(size);
 }
 
 void SSLClientSocketImpl::OnReadReady() {
@@ -813,15 +831,15 @@ int SSLClientSocketImpl::Init() {
     return ERR_UNEXPECTED;
   }
 
-  if (!ssl_session_cache_shard_.empty()) {
+  if (IsCachingEnabled()) {
     bssl::UniquePtr<SSL_SESSION> session =
-        context->session_cache()->Lookup(GetSessionCacheKey());
+        ssl_client_session_cache_->Lookup(GetSessionCacheKey());
     if (session)
       SSL_set_session(ssl_.get(), session.get());
   }
 
   transport_adapter_.reset(
-      new SocketBIOAdapter(transport_->socket(), kDefaultOpenSSLBufferSize,
+      new SocketBIOAdapter(stream_socket_, kDefaultOpenSSLBufferSize,
                            kDefaultOpenSSLBufferSize, this));
   BIO* transport_bio = transport_adapter_->bio();
 
@@ -947,6 +965,11 @@ int SSLClientSocketImpl::DoHandshake() {
       next_handshake_state_ = STATE_HANDSHAKE;
       return ERR_IO_PENDING;
     }
+    if (ssl_error == SSL_ERROR_WANT_CERTIFICATE_VERIFY) {
+      DCHECK(cert_verifier_request_);
+      next_handshake_state_ = STATE_HANDSHAKE;
+      return ERR_IO_PENDING;
+    }
 
     OpenSSLErrorInfo error_info;
     net_error = MapLastOpenSSLError(ssl_error, err_tracer, &error_info);
@@ -981,9 +1004,8 @@ int SSLClientSocketImpl::DoHandshakeComplete(int result) {
     return ERR_SSL_VERSION_INTERFERENCE;
   }
 
-  if (!ssl_session_cache_shard_.empty()) {
-    SSLContext::GetInstance()->session_cache()->ResetLookupCount(
-        GetSessionCacheKey());
+  if (IsCachingEnabled()) {
+    ssl_client_session_cache_->ResetLookupCount(GetSessionCacheKey());
   }
 
   const uint8_t* alpn_proto = NULL;
@@ -1015,117 +1037,11 @@ int SSLClientSocketImpl::DoHandshakeComplete(int result) {
     base::UmaHistogramSparse("Net.SSLSignatureAlgorithm", signature_algorithm);
   }
 
-  // Verify the certificate.
-  next_handshake_state_ = STATE_VERIFY_CERT;
-  return OK;
-}
-
-int SSLClientSocketImpl::DoVerifyCert(int result) {
-  DCHECK(start_cert_verification_time_.is_null());
-
-  server_cert_ = x509_util::CreateX509CertificateFromBuffers(
-      SSL_get0_peer_certificates(ssl_.get()));
-
-  // OpenSSL decoded the certificate, but the X509Certificate implementation
-  // could not. This is treated as a fatal SSL-level protocol error rather than
-  // a certificate error. See https://crbug.com/91341.
-  if (!server_cert_)
-    return ERR_SSL_SERVER_CERT_BAD_FORMAT;
-
-  net_log_.AddEvent(NetLogEventType::SSL_CERTIFICATES_RECEIVED,
-                    base::Bind(&NetLogX509CertificateCallback,
-                               base::Unretained(server_cert_.get())));
-
-  next_handshake_state_ = STATE_VERIFY_CERT_COMPLETE;
-
-  // If the certificate is bad and has been previously accepted, use
-  // the previous status and bypass the error.
-  CertStatus cert_status;
-  if (ssl_config_.IsAllowedBadCert(server_cert_.get(), &cert_status)) {
-    server_cert_verify_result_.Reset();
-    server_cert_verify_result_.cert_status = cert_status;
-    server_cert_verify_result_.verified_cert = server_cert_;
-    return OK;
-  }
-
-  start_cert_verification_time_ = base::TimeTicks::Now();
-
-  const uint8_t* ocsp_response_raw;
-  size_t ocsp_response_len;
-  SSL_get0_ocsp_response(ssl_.get(), &ocsp_response_raw, &ocsp_response_len);
-  base::StringPiece ocsp_response(
-      reinterpret_cast<const char*>(ocsp_response_raw), ocsp_response_len);
-
-  return cert_verifier_->Verify(
-      CertVerifier::RequestParams(server_cert_, host_and_port_.host(),
-                                  ssl_config_.GetCertVerifyFlags(),
-                                  ocsp_response.as_string()),
-      &server_cert_verify_result_,
-      base::Bind(&SSLClientSocketImpl::OnHandshakeIOComplete,
-                 base::Unretained(this)),
-      &cert_verifier_request_, net_log_);
-}
-
-int SSLClientSocketImpl::DoVerifyCertComplete(int result) {
-  cert_verifier_request_.reset();
-
-  if (!start_cert_verification_time_.is_null()) {
-    base::TimeDelta verify_time =
-        base::TimeTicks::Now() - start_cert_verification_time_;
-    if (result == OK) {
-      UMA_HISTOGRAM_TIMES("Net.SSLCertVerificationTime", verify_time);
-    } else {
-      UMA_HISTOGRAM_TIMES("Net.SSLCertVerificationTimeError", verify_time);
-    }
-  }
-
-  // If the connection was good, check HPKP and CT status simultaneously,
-  // but prefer to treat the HPKP error as more serious, if there was one.
-  const CertStatus cert_status = server_cert_verify_result_.cert_status;
-  if ((result == OK ||
-       (IsCertificateError(result) && IsCertStatusMinorError(cert_status)))) {
-    int ct_result = VerifyCT();
-    TransportSecurityState::PKPStatus pin_validity =
-        transport_security_state_->CheckPublicKeyPins(
-            host_and_port_, server_cert_verify_result_.is_issued_by_known_root,
-            server_cert_verify_result_.public_key_hashes, server_cert_.get(),
-            server_cert_verify_result_.verified_cert.get(),
-            TransportSecurityState::ENABLE_PIN_REPORTS, &pinning_failure_log_);
-    switch (pin_validity) {
-      case TransportSecurityState::PKPStatus::VIOLATED:
-        server_cert_verify_result_.cert_status |=
-            CERT_STATUS_PINNED_KEY_MISSING;
-        result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
-        break;
-      case TransportSecurityState::PKPStatus::BYPASSED:
-        pkp_bypassed_ = true;
-        FALLTHROUGH;
-      case TransportSecurityState::PKPStatus::OK:
-        // Do nothing.
-        break;
-    }
-    if (result != ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN && ct_result != OK)
-      result = ct_result;
-  }
-
-  is_fatal_cert_error_ =
-      IsCertStatusError(cert_status) && !IsCertStatusMinorError(cert_status) &&
-      transport_security_state_->ShouldSSLErrorsBeFatal(host_and_port_.host());
-
-  if (IsCertificateError(result) && ssl_config_.ignore_certificate_errors) {
-    result = OK;
-  }
-
-  if (result < 0) {
-    return result;
-  }
-
-  DCHECK(!certificate_verified_);
-  certificate_verified_ = true;
-  MaybeCacheSession();
   SSLInfo ssl_info;
   bool ok = GetSSLInfo(&ssl_info);
-  DCHECK(ok);
+  // Ensure the verify callback was called, and got far enough to fill
+  // in server_cert_.
+  CHECK(ok);
 
   // See how feasible enforcing RSA key usage would be. See
   // https://crbug.com/795089.
@@ -1203,9 +1119,159 @@ int SSLClientSocketImpl::DoVerifyCertComplete(int result) {
   }
 
   completed_connect_ = true;
-  // Exit DoHandshakeLoop and return the result to the caller to Connect.
-  DCHECK_EQ(STATE_NONE, next_handshake_state_);
+  next_handshake_state_ = STATE_NONE;
   return OK;
+}
+
+ssl_verify_result_t SSLClientSocketImpl::VerifyCertCallback(
+    SSL* ssl,
+    uint8_t* out_alert) {
+  SSLClientSocketImpl* socket =
+      SSLContext::GetInstance()->GetClientSocketFromSSL(ssl);
+  DCHECK(socket);
+  return socket->VerifyCert();
+}
+
+// This function is called by BoringSSL, so it has to return an
+// ssl_verify_result_t. When specific //net errors need to be
+// returned, use OpenSSLPutNetError to add them directly to the
+// OpenSSL error queue.
+ssl_verify_result_t SSLClientSocketImpl::VerifyCert() {
+  if (cert_verification_result_ != kCertVerifyPending) {
+    // The certificate verifier updates cert_verification_result_ when
+    // it returns asynchronously. If there is a result in
+    // cert_verification_result_, return it instead of triggering
+    // another verify.
+    return HandleVerifyResult();
+  }
+
+  // In this configuration, BoringSSL will perform exactly one certificate
+  // verification, so there cannot be state from a previous verification.
+  CHECK(!server_cert_);
+  server_cert_ = x509_util::CreateX509CertificateFromBuffers(
+      SSL_get0_peer_certificates(ssl_.get()));
+
+  // OpenSSL decoded the certificate, but the X509Certificate implementation
+  // could not. This is treated as a fatal SSL-level protocol error rather than
+  // a certificate error. See https://crbug.com/91341.
+  if (!server_cert_) {
+    OpenSSLPutNetError(FROM_HERE, ERR_SSL_SERVER_CERT_BAD_FORMAT);
+    return ssl_verify_invalid;
+  }
+
+  net_log_.AddEvent(NetLogEventType::SSL_CERTIFICATES_RECEIVED,
+                    base::Bind(&NetLogX509CertificateCallback,
+                               base::Unretained(server_cert_.get())));
+
+  // If the certificate is bad and has been previously accepted, use
+  // the previous status and bypass the error.
+  CertStatus cert_status;
+  if (ssl_config_.IsAllowedBadCert(server_cert_.get(), &cert_status)) {
+    server_cert_verify_result_.Reset();
+    server_cert_verify_result_.cert_status = cert_status;
+    server_cert_verify_result_.verified_cert = server_cert_;
+    cert_verification_result_ = OK;
+    return HandleVerifyResult();
+  }
+
+  start_cert_verification_time_ = base::TimeTicks::Now();
+
+  const uint8_t* ocsp_response_raw;
+  size_t ocsp_response_len;
+  SSL_get0_ocsp_response(ssl_.get(), &ocsp_response_raw, &ocsp_response_len);
+  base::StringPiece ocsp_response(
+      reinterpret_cast<const char*>(ocsp_response_raw), ocsp_response_len);
+
+  cert_verification_result_ = cert_verifier_->Verify(
+      CertVerifier::RequestParams(server_cert_, host_and_port_.host(),
+                                  ssl_config_.GetCertVerifyFlags(),
+                                  ocsp_response.as_string()),
+      &server_cert_verify_result_,
+      base::BindOnce(&SSLClientSocketImpl::OnVerifyComplete,
+                     base::Unretained(this)),
+      &cert_verifier_request_, net_log_);
+
+  return HandleVerifyResult();
+}
+
+void SSLClientSocketImpl::OnVerifyComplete(int result) {
+  cert_verification_result_ = result;
+  // In handshake phase. The parameter to OnHandshakeIOComplete is unused.
+  OnHandshakeIOComplete(OK);
+}
+
+ssl_verify_result_t SSLClientSocketImpl::HandleVerifyResult() {
+  // Verification is in progress. Inform BoringSSL it should retry the
+  // callback later. The next call to VerifyCertCallback will be a
+  // continuation of the same verification, so leave
+  // cert_verification_result_ as-is.
+  if (cert_verification_result_ == ERR_IO_PENDING)
+    return ssl_verify_retry;
+
+  // In BoringSSL's calling convention for asynchronous callbacks,
+  // after a callback returns a non-retry value, the operation has
+  // completed. Subsequent calls are of new operations with potentially
+  // different arguments. Reset cert_verification_result_ to inform
+  // VerifyCertCallback not to replay the result on subsequent calls.
+  int result = cert_verification_result_;
+  cert_verification_result_ = kCertVerifyPending;
+
+  cert_verifier_request_.reset();
+
+  if (!start_cert_verification_time_.is_null()) {
+    base::TimeDelta verify_time =
+        base::TimeTicks::Now() - start_cert_verification_time_;
+    if (result == OK) {
+      UMA_HISTOGRAM_TIMES("Net.SSLCertVerificationTime", verify_time);
+    } else {
+      UMA_HISTOGRAM_TIMES("Net.SSLCertVerificationTimeError", verify_time);
+    }
+  }
+
+  // If the connection was good, check HPKP and CT status simultaneously,
+  // but prefer to treat the HPKP error as more serious, if there was one.
+  if ((result == OK ||
+       (IsCertificateError(result) &&
+        IsCertStatusMinorError(server_cert_verify_result_.cert_status)))) {
+    int ct_result = VerifyCT();
+    TransportSecurityState::PKPStatus pin_validity =
+        transport_security_state_->CheckPublicKeyPins(
+            host_and_port_, server_cert_verify_result_.is_issued_by_known_root,
+            server_cert_verify_result_.public_key_hashes, server_cert_.get(),
+            server_cert_verify_result_.verified_cert.get(),
+            TransportSecurityState::ENABLE_PIN_REPORTS, &pinning_failure_log_);
+    switch (pin_validity) {
+      case TransportSecurityState::PKPStatus::VIOLATED:
+        server_cert_verify_result_.cert_status |=
+            CERT_STATUS_PINNED_KEY_MISSING;
+        result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
+        break;
+      case TransportSecurityState::PKPStatus::BYPASSED:
+        pkp_bypassed_ = true;
+        FALLTHROUGH;
+      case TransportSecurityState::PKPStatus::OK:
+        // Do nothing.
+        break;
+    }
+    if (result != ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN && ct_result != OK)
+      result = ct_result;
+  }
+
+  is_fatal_cert_error_ =
+      IsCertStatusError(server_cert_verify_result_.cert_status) &&
+      !IsCertStatusMinorError(server_cert_verify_result_.cert_status) &&
+      transport_security_state_->ShouldSSLErrorsBeFatal(host_and_port_.host());
+
+  if (IsCertificateError(result) && ssl_config_.ignore_certificate_errors) {
+    result = OK;
+  }
+
+  if (result == OK) {
+    return ssl_verify_ok;
+  }
+
+  OpenSSLPutNetError(FROM_HERE, result);
+  return ssl_verify_invalid;
 }
 
 void SSLClientSocketImpl::DoConnectCallback(int rv) {
@@ -1244,13 +1310,6 @@ int SSLClientSocketImpl::DoHandshakeLoop(int last_io_result) {
         break;
       case STATE_HANDSHAKE_COMPLETE:
         rv = DoHandshakeComplete(rv);
-        break;
-      case STATE_VERIFY_CERT:
-        DCHECK_EQ(OK, rv);
-        rv = DoVerifyCert(rv);
-        break;
-      case STATE_VERIFY_CERT_COMPLETE:
-        rv = DoVerifyCertComplete(rv);
         break;
       case STATE_NONE:
       default:
@@ -1364,6 +1423,14 @@ int SSLClientSocketImpl::DoPayloadWrite() {
   if (rv >= 0) {
     net_log_.AddByteTransferEvent(NetLogEventType::SSL_SOCKET_BYTES_SENT, rv,
                                   user_write_buf_->data());
+    if (first_post_handshake_write_ && SSL_is_init_finished(ssl_.get())) {
+      if (base::FeatureList::IsEnabled(features::kTLS13KeyUpdate) &&
+          SSL_version(ssl_.get()) == TLS1_3_VERSION) {
+        const int ok = SSL_key_update(ssl_.get(), SSL_KEY_UPDATE_REQUESTED);
+        DCHECK(ok);
+      }
+      first_post_handshake_write_ = false;
+    }
     return rv;
   }
 
@@ -1569,27 +1636,14 @@ int SSLClientSocketImpl::ClientCertRequestCallback(SSL* ssl) {
   return 1;
 }
 
-void SSLClientSocketImpl::MaybeCacheSession() {
-  // Only cache the session once both a new session has been established and the
-  // certificate has been verified. Due to False Start, these events may happen
-  // in either order.
-  if (!pending_session_ || !certificate_verified_ ||
-      ssl_session_cache_shard_.empty()) {
-    return;
-  }
-
-  SSLContext::GetInstance()->session_cache()->Insert(GetSessionCacheKey(),
-                                                     pending_session_.get());
-  pending_session_ = nullptr;
-}
-
 int SSLClientSocketImpl::NewSessionCallback(SSL_SESSION* session) {
-  if (ssl_session_cache_shard_.empty())
+  if (!IsCachingEnabled())
     return 0;
 
-  // OpenSSL passes a reference to |session|.
-  pending_session_.reset(session);
-  MaybeCacheSession();
+  // OpenSSL optionally passes ownership of |session|. Returning one signals
+  // that this function has claimed it.
+  ssl_client_session_cache_->Insert(GetSessionCacheKey(),
+                                    bssl::UniquePtr<SSL_SESSION>(session));
   return 1;
 }
 
@@ -1598,14 +1652,7 @@ void SSLClientSocketImpl::AddCTInfoToSSLInfo(SSLInfo* ssl_info) const {
 }
 
 std::string SSLClientSocketImpl::GetSessionCacheKey() const {
-  // If there is no session cache shard configured, disable session
-  // caching. GetSessionCacheKey may not be called. When
-  // https://crbug.com/458365 is fixed, this check will not be needed.
-  DCHECK(!ssl_session_cache_shard_.empty());
-
   std::string result = host_and_port_.ToString();
-  result.push_back('/');
-  result.append(ssl_session_cache_shard_);
 
   result.push_back('/');
   result.push_back(ssl_config_.version_interference_probe ? '1' : '0');
@@ -1621,6 +1668,10 @@ bool SSLClientSocketImpl::IsRenegotiationAllowed() const {
       return true;
   }
   return false;
+}
+
+bool SSLClientSocketImpl::IsCachingEnabled() const {
+  return ssl_client_session_cache_ != nullptr;
 }
 
 ssl_private_key_result_t SSLClientSocketImpl::PrivateKeySignCallback(

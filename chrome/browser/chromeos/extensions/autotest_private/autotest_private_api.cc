@@ -12,6 +12,7 @@
 #include "ash/public/interfaces/constants.mojom.h"
 #include "ash/shell.h"
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram_base.h"
@@ -43,6 +44,7 @@
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/shelf_spinner_controller.h"
 #include "chrome/browser/ui/ash/login_screen_client.h"
+#include "chrome/browser/ui/ash/tablet_mode_client.h"
 #include "chrome/browser/ui/views/crostini/crostini_installer_view.h"
 #include "chrome/browser/ui/views/crostini/crostini_uninstaller_view.h"
 #include "chrome/common/chrome_features.h"
@@ -69,7 +71,9 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/base/filename_util.h"
 #include "services/service_manager/public/cpp/connector.h"
+#include "services/ws/public/mojom/constants.mojom.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/message_center/public/cpp/notification.h"
 
@@ -162,6 +166,28 @@ std::string GetPrinterType(chromeos::CupsPrintersManager::PrinterClass type) {
     default:
       return "unknown";
   }
+}
+
+// Helper function to set whitelisted user pref based on |pref_name| with any
+// specific pref validations. Returns error messages if any.
+std::string SetWhitelistedPref(Profile* profile,
+                               const std::string& pref_name,
+                               const base::Value& value) {
+  if (pref_name == arc::prefs::kVoiceInteractionHotwordEnabled) {
+    DCHECK(value.is_bool());
+
+    if (arc::IsAssistantAllowedForProfile(profile) !=
+        ash::mojom::AssistantAllowedState::ALLOWED) {
+      return "Assistant is not available for the current user";
+    }
+  } else {
+    return "The pref " + pref_name + "is not whitelisted.";
+  }
+
+  // Set value for the specified user pref after validation.
+  profile->GetPrefs()->Set(pref_name, value);
+
+  return std::string();
 }
 
 }  // namespace
@@ -261,7 +287,7 @@ void AutotestPrivateLoginStatusFunction::OnIsReadyForPassword(bool is_ready) {
           break;
 
         default:
-          user_image = base::IntToString(user->image_index());
+          user_image = base::NumberToString(user->image_index());
           break;
       }
       result->SetString("userImage", user_image);
@@ -555,6 +581,27 @@ void AutotestPrivateGetVisibleNotificationsFunction::OnGotNotifications(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// AutotestPrivateGetArcStateFunction
+///////////////////////////////////////////////////////////////////////////////
+
+AutotestPrivateGetArcStateFunction::~AutotestPrivateGetArcStateFunction() =
+    default;
+
+ExtensionFunction::ResponseAction AutotestPrivateGetArcStateFunction::Run() {
+  DVLOG(1) << "AutotestPrivateGetArcStateFunction";
+
+  api::autotest_private::ArcState arc_state;
+  Profile* const profile = Profile::FromBrowserContext(browser_context());
+
+  if (!arc::IsArcAllowedForProfile(profile))
+    return RespondNow(Error("ARC is not available for the current user"));
+
+  arc_state.provisioned = arc::IsArcProvisioned(profile);
+  arc_state.tos_needed = arc::IsArcTermsOfServiceNegotiationNeeded(profile);
+  return RespondNow(OneArgument(arc_state.ToValue()));
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // AutotestPrivateGetPlayStoreStateFunction
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -598,6 +645,12 @@ AutotestPrivateSetPlayStoreEnabledFunction::Run() {
       return RespondNow(
           Error("ARC enabled state cannot be changed for the current user"));
     }
+    // kArcLocationServiceEnabled and kArcBackupRestoreEnabled are prefs that
+    // set together with enabling ARC. That is why we set it here not using
+    // SetWhitelistedPref. At this moment, we don't distinguish the actual
+    // values and set kArcLocationServiceEnabled to true and leave
+    // kArcBackupRestoreEnabled unmodified, which is acceptable for autotests
+    // currently.
     profile->GetPrefs()->SetBoolean(arc::prefs::kArcLocationServiceEnabled,
                                     true);
     return RespondNow(NoArguments());
@@ -781,7 +834,7 @@ ExtensionFunction::ResponseAction AutotestPrivateGetArcPackageFunction::Run() {
                         base::Value(package_info->package_version));
   package_value->SetKey(
       "lastBackupAndroidId",
-      base::Value(base::Int64ToString(package_info->last_backup_android_id)));
+      base::Value(base::NumberToString(package_info->last_backup_android_id)));
   package_value->SetKey("lastBackupTime",
                         base::Value(base::Time::FromDeltaSinceWindowsEpoch(
                                         base::TimeDelta::FromMicroseconds(
@@ -1207,6 +1260,7 @@ void AutotestPrivateSetAssistantEnabledFunction::Timeout() {
 ///////////////////////////////////////////////////////////////////////////////
 // AutotestPrivateSendAssistantTextQueryFunction
 ///////////////////////////////////////////////////////////////////////////////
+
 AutotestPrivateSendAssistantTextQueryFunction::
     AutotestPrivateSendAssistantTextQueryFunction()
     : assistant_interaction_subscriber_binding_(this),
@@ -1268,6 +1322,13 @@ void AutotestPrivateSendAssistantTextQueryFunction::OnHtmlResponse(
 
 void AutotestPrivateSendAssistantTextQueryFunction::OnInteractionFinished(
     AssistantInteractionResolution resolution) {
+  // Only return a result to the caller and stop the timer when |result_|
+  // is not empty to avoid an early return before the entire interaction is
+  // completed. This happens when sending queries to modify device settings,
+  // e.g. "turn on bluetooth", which results in two rounds of interaction.
+  if (result_->empty())
+    return;
+
   if (resolution != AssistantInteractionResolution::kNormal) {
     Respond(Error("Interaction ends abnormally."));
     timeout_timer_.AbandonAndStop();
@@ -1280,6 +1341,33 @@ void AutotestPrivateSendAssistantTextQueryFunction::OnInteractionFinished(
 
 void AutotestPrivateSendAssistantTextQueryFunction::Timeout() {
   Respond(Error("Assistant response timeout."));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AutotestPrivateSetWhitelistedPrefFunction
+///////////////////////////////////////////////////////////////////////////////
+
+AutotestPrivateSetWhitelistedPrefFunction::
+    ~AutotestPrivateSetWhitelistedPrefFunction() = default;
+
+ExtensionFunction::ResponseAction
+AutotestPrivateSetWhitelistedPrefFunction::Run() {
+  DVLOG(1) << "AutotestPrivateSetWhitelistedPrefFunction";
+
+  std::unique_ptr<api::autotest_private::SetWhitelistedPref::Params> params(
+      api::autotest_private::SetWhitelistedPref::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  const std::string& pref_name = params->pref_name;
+  const base::Value& value = *(params->value);
+
+  Profile* profile = Profile::FromBrowserContext(browser_context());
+  const std::string& err_msg = SetWhitelistedPref(profile, pref_name, value);
+
+  if (!err_msg.empty())
+    return RespondNow(Error(err_msg));
+
+  return RespondNow(NoArguments());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1310,6 +1398,95 @@ AutotestPrivateSetCrostiniAppScaledFunction::Run() {
 
   registry_service->SetAppScaled(params->app_id, params->scaled);
   return RespondNow(NoArguments());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction
+///////////////////////////////////////////////////////////////////////////////
+
+AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::
+    AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction() = default;
+AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::
+    ~AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction() = default;
+
+ExtensionFunction::ResponseAction
+AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::Run() {
+  auto params = api::autotest_private::EnsureWindowServiceClientHasDrawnWindow::
+      Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  service_manager::Connector* connector =
+      content::ServiceManagerConnection::GetForProcess()->GetConnector();
+  connector->BindInterface(
+      service_manager::ServiceFilter::ByName(ws::mojom::kServiceName),
+      mojo::MakeRequest(&window_server_test_ptr_));
+  window_server_test_ptr_->EnsureClientHasDrawnWindow(
+      params->client_name,
+      base::BindOnce(
+          &AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::
+              OnEnsureClientHasDrawnWindowCallback,
+          this));
+
+  timeout_timer_.Start(
+      FROM_HERE, base::TimeDelta::FromMilliseconds(params->timeout_ms),
+      base::BindOnce(
+          &AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::
+              OnTimeout,
+          this));
+
+  return RespondLater();
+}
+
+void AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::
+    OnEnsureClientHasDrawnWindowCallback(bool success) {
+  if (did_respond()) {
+    LOG(ERROR) << "EnsureClientHasDrawnWindow returned after timeout: "
+               << success;
+    return;
+  }
+
+  Respond(OneArgument(std::make_unique<base::Value>(success)));
+  timeout_timer_.AbandonAndStop();
+}
+
+void AutotestPrivateEnsureWindowServiceClientHasDrawnWindowFunction::
+    OnTimeout() {
+  if (did_respond())
+    return;
+
+  Respond(Error("EnsureWindowServiceClientHasDrawnWindowFunction timeout."));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AutotestPrivateGetPrimaryDisplayScaleFactorFunction
+///////////////////////////////////////////////////////////////////////////////
+
+AutotestPrivateGetPrimaryDisplayScaleFactorFunction::
+    ~AutotestPrivateGetPrimaryDisplayScaleFactorFunction() = default;
+
+ExtensionFunction::ResponseAction
+AutotestPrivateGetPrimaryDisplayScaleFactorFunction::Run() {
+  DVLOG(1) << "AutotestPrivateGetPrimaryDisplayScaleFactorFunction";
+
+  display::Display primary_display =
+      display::Screen::GetScreen()->GetPrimaryDisplay();
+  float scale_factor = primary_display.device_scale_factor();
+  return RespondNow(OneArgument(std::make_unique<base::Value>(scale_factor)));
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// AutotestPrivateIsTabletModeEnabledFunction
+///////////////////////////////////////////////////////////////////////////////
+
+AutotestPrivateIsTabletModeEnabledFunction::
+    ~AutotestPrivateIsTabletModeEnabledFunction() = default;
+
+ExtensionFunction::ResponseAction
+AutotestPrivateIsTabletModeEnabledFunction::Run() {
+  DVLOG(1) << "AutotestPrivateIsTabletModeEnabledFunction";
+
+  return RespondNow(OneArgument(std::make_unique<base::Value>(
+      TabletModeClient::Get()->tablet_mode_enabled())));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

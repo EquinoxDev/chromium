@@ -44,6 +44,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
 #include "third_party/blink/public/common/manifest/web_display_mode.h"
+#include "third_party/blink/public/mojom/frame/document_interface_broker.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_coalesced_input_event.h"
 #include "third_party/blink/public/platform/web_cursor_info.h"
@@ -130,6 +131,7 @@
 #include "third_party/blink/renderer/platform/testing/wtf/scoped_mock_clock.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "ui/events/keycodes/dom/dom_key.h"
 #include "v8/include/v8.h"
 
 #if defined(OS_MACOSX)
@@ -488,8 +490,9 @@ TEST_F(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
   // Note: this test doesn't use WebViewHelper since it intentionally runs
   // initialization code between WebView and WebLocalFrame creation.
   frame_test_helpers::TestWebViewClient web_view_client;
+  frame_test_helpers::TestWebWidgetClient web_widget_client;
   WebViewImpl* web_view = static_cast<WebViewImpl*>(
-      WebView::Create(&web_view_client, web_view_client.WidgetClient(),
+      WebView::Create(&web_view_client,
                       /*is_hidden=*/false,
                       /*compositing_enabled=*/true, nullptr));
   EXPECT_NE(SK_ColorBLUE, web_view->BackgroundColor());
@@ -497,9 +500,15 @@ TEST_F(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
   // background color.
   web_view->SetBaseBackgroundColor(SK_ColorBLUE);
   EXPECT_EQ(SK_ColorBLUE, web_view->BackgroundColor());
+
+  // TODO(danakj): Make this part of attaching the main frame's WebFrameWidget.
+  web_view->SetWebWidgetClient(&web_widget_client);
+
   frame_test_helpers::TestWebFrameClient web_frame_client;
+  mojom::blink::DocumentInterfaceBrokerPtrInfo document_interface_broker;
   WebLocalFrame* frame = WebLocalFrame::CreateMainFrame(
-      web_view, &web_frame_client, nullptr, nullptr);
+      web_view, &web_frame_client, nullptr,
+      mojo::MakeRequest(&document_interface_broker).PassMessagePipe(), nullptr);
   web_frame_client.Bind(frame);
   // This closes the WebView also.
   web_view->MainFrameWidget()->Close();
@@ -2293,10 +2302,11 @@ TEST_F(WebViewTest, HistoryResetScrollAndScaleState) {
   EXPECT_EQ(1.0f, web_view_impl->PageScaleFactor());
   EXPECT_EQ(0, web_view_impl->MainFrameImpl()->GetScrollOffset().width);
   EXPECT_EQ(0, web_view_impl->MainFrameImpl()->GetScrollOffset().height);
-  EXPECT_EQ(nullptr, main_frame_local->Loader()
-                         .GetDocumentLoader()
-                         ->GetHistoryItem()
-                         ->GetViewState());
+  EXPECT_FALSE(main_frame_local->Loader()
+                   .GetDocumentLoader()
+                   ->GetHistoryItem()
+                   ->GetViewState()
+                   .has_value());
 }
 
 TEST_F(WebViewTest, BackForwardRestoreScroll) {
@@ -2531,9 +2541,8 @@ IntSize WebViewTest::PrintICBSizeFromPageSize(const FloatSize& page_size) {
 
 TEST_F(WebViewTest, ClientTapHandling) {
   TapHandlingWebWidgetClient client;
-  frame_test_helpers::TestWebViewClient view_client(&client);
-  WebView* web_view =
-      web_view_helper_.InitializeAndLoad("about:blank", nullptr, &view_client);
+  WebView* web_view = web_view_helper_.InitializeAndLoad("about:blank", nullptr,
+                                                         nullptr, &client);
   WebGestureEvent event(WebInputEvent::kGestureTap, WebInputEvent::kNoModifiers,
                         WebInputEvent::GetStaticTimeStampForTests(),
                         kWebGestureDeviceTouchscreen);
@@ -2558,12 +2567,14 @@ TEST_F(WebViewTest, ClientTapHandlingNullWebViewClient) {
   // Note: this test doesn't use WebViewHelper since WebViewHelper creates an
   // internal WebViewClient on demand if the supplied WebViewClient is null.
   WebViewImpl* web_view = static_cast<WebViewImpl*>(
-      WebView::Create(nullptr, nullptr, /*is_hidden=*/false,
+      WebView::Create(nullptr, /*is_hidden=*/false,
                       /*compositing_enabled=*/false, nullptr));
   frame_test_helpers::TestWebFrameClient web_frame_client;
   frame_test_helpers::TestWebWidgetClient web_widget_client;
+  mojom::blink::DocumentInterfaceBrokerPtrInfo document_interface_broker;
   WebLocalFrame* local_frame = WebLocalFrame::CreateMainFrame(
-      web_view, &web_frame_client, nullptr, nullptr);
+      web_view, &web_frame_client, nullptr,
+      mojo::MakeRequest(&document_interface_broker).PassMessagePipe(), nullptr);
   web_frame_client.Bind(local_frame);
   blink::WebFrameWidget::CreateForMainFrame(&web_widget_client, local_frame);
 
@@ -3164,12 +3175,11 @@ class MiddleClickAutoscrollWebWidgetClient
 
 TEST_F(WebViewTest, MiddleClickAutoscrollCursor) {
   MiddleClickAutoscrollWebWidgetClient client;
-  frame_test_helpers::TestWebViewClient view_client(&client);
   ScopedMiddleClickAutoscrollForTest middle_click_autoscroll(true);
   RegisterMockedHttpURLLoad("content-width-1000.html");
 
   WebViewImpl* web_view = web_view_helper_.InitializeAndLoad(
-      base_url_ + "content-width-1000.html", nullptr, &view_client);
+      base_url_ + "content-width-1000.html", nullptr, nullptr, &client);
   web_view->MainFrameWidget()->Resize(WebSize(100, 100));
   UpdateAllLifecyclePhases();
   RunPendingTasks();
@@ -3222,7 +3232,7 @@ static void ConfigueCompositingWebView(WebSettings* settings) {
 TEST_F(WebViewTest, ShowPressOnTransformedLink) {
   frame_test_helpers::WebViewHelper web_view_helper;
   WebViewImpl* web_view_impl =
-      web_view_helper.Initialize(nullptr, nullptr, &ConfigueCompositingWebView);
+      web_view_helper.InitializeWithSettings(&ConfigueCompositingWebView);
 
   int page_width = 640;
   int page_height = 480;
@@ -3346,7 +3356,7 @@ TEST_F(WebViewTest, CompositionNotCancelledByBackspace) {
     WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                                WebInputEvent::kNoModifiers,
                                WebInputEvent::GetStaticTimeStampForTests());
-    key_event.dom_key = Platform::Current()->DomKeyEnumFromString("\b");
+    key_event.dom_key = ui::DomKey::BACKSPACE;
     key_event.windows_key_code = VKEY_BACK;
     web_view->MainFrameWidget()->HandleInputEvent(
         WebCoalescedInputEvent(key_event));
@@ -3451,6 +3461,7 @@ class ViewCreatingWebViewClient : public frame_test_helpers::TestWebViewClient {
                       WebNavigationPolicy,
                       bool,
                       WebSandboxFlags,
+                      const FeaturePolicy::FeatureState&,
                       const SessionStorageNamespaceId&) override {
     return web_view_helper_.InitializeWithOpener(opener);
   }
@@ -3557,7 +3568,7 @@ static void OpenDateTimeChooser(WebView* web_view,
   WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                              WebInputEvent::kNoModifiers,
                              WebInputEvent::GetStaticTimeStampForTests());
-  key_event.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event.dom_key = ui::DomKey::FromCharacter(' ');
   key_event.windows_key_code = VKEY_SPACE;
   web_view->MainFrameWidget()->HandleInputEvent(
       WebCoalescedInputEvent(key_event));
@@ -3787,10 +3798,9 @@ class TouchEventHandlerWebWidgetClient
 // correctly is the job of web_tests/fast/events/event-handler-count.html.
 TEST_F(WebViewTest, HasTouchEventHandlers) {
   TouchEventHandlerWebWidgetClient client;
-  frame_test_helpers::TestWebViewClient view_client(&client);
   std::string url = RegisterMockedHttpURLLoad("has_touch_event_handlers.html");
   WebViewImpl* web_view_impl =
-      web_view_helper_.InitializeAndLoad(url, nullptr, &view_client);
+      web_view_helper_.InitializeAndLoad(url, nullptr, nullptr, &client);
   const EventHandlerRegistry::EventHandlerClass kTouchEvent =
       EventHandlerRegistry::kTouchStartOrMoveEventBlocking;
 
@@ -4013,7 +4023,7 @@ TEST_F(WebViewTest, FirstUserGestureObservedKeyEvent) {
   WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                              WebInputEvent::kNoModifiers,
                              WebInputEvent::GetStaticTimeStampForTests());
-  key_event.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event.dom_key = ui::DomKey::FromCharacter(' ');
   key_event.windows_key_code = VKEY_SPACE;
   web_view->MainFrameWidget()->HandleInputEvent(
       WebCoalescedInputEvent(key_event));
@@ -4107,7 +4117,7 @@ TEST_F(WebViewTest, AutoResizeSubtreeLayout) {
   // This EXPECT is merely a dummy. The real test is that we don't trigger
   // asserts in debug builds.
   EXPECT_FALSE(frame_view->NeedsLayout());
-};
+}
 
 TEST_F(WebViewTest, PreferredSize) {
   std::string url = base_url_ + "specify_size.html?100px:100px";
@@ -4436,23 +4446,6 @@ TEST_F(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithTextSizes) {
 
 #endif  // BUILDFLAG(ENABLE_UNHANDLED_TAP)
 
-TEST_F(WebViewTest, StopLoadingIfJavaScriptURLReturnsNoStringResult) {
-  ViewCreatingWebViewClient client;
-  frame_test_helpers::WebViewHelper main_web_view;
-  main_web_view.InitializeAndLoad("about:blank", nullptr, &client);
-
-  WebLocalFrame* frame = main_web_view.GetWebView()->MainFrameImpl();
-  v8::HandleScope scope(v8::Isolate::GetCurrent());
-  v8::Local<v8::Value> v8_value =
-      frame->ExecuteScriptAndReturnValue(WebScriptSource(
-          "var win = window.open('javascript:false'); win.document"));
-  ASSERT_TRUE(v8_value->IsObject());
-  Document* document =
-      V8Document::ToImplWithTypeCheck(v8::Isolate::GetCurrent(), v8_value);
-  ASSERT_TRUE(document);
-  EXPECT_FALSE(document->GetFrame()->IsLoading());
-}
-
 #if defined(OS_MACOSX)
 TEST_F(WebViewTest, WebSubstringUtil) {
   RegisterMockedHttpURLLoad("content_editable_populated.html");
@@ -4676,7 +4669,12 @@ TEST_F(WebViewTest, ClosingPageIsPaused) {
   LocalFrame* main_frame = ToLocalFrame(page->MainFrame());
   EXPECT_FALSE(main_frame->DomWindow()->closed());
 
-  main_frame->DomWindow()->close(nullptr);
+  ScriptState* script_state = ToScriptStateForMainWorld(main_frame);
+  ScriptState::Scope entered_context_scope(script_state);
+  v8::Context::BackupIncumbentScope incumbent_context_scope(
+      script_state->GetContext());
+
+  main_frame->DomWindow()->close(script_state->GetIsolate());
   // The window should be marked closed...
   EXPECT_TRUE(main_frame->DomWindow()->closed());
   // EXPECT_TRUE(page->isClosing());
@@ -4701,37 +4699,47 @@ TEST_F(WebViewTest, ForceAndResetViewport) {
 
   TransformationMatrix expected_matrix;
   expected_matrix.MakeIdentity();
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  EXPECT_FALSE(dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(), &visible_rect);
+    EXPECT_EQ(IntRect(1, 2, 3, 4), visible_rect);  // Was modified.
+  }
   EXPECT_TRUE(visual_viewport->ContainerLayer()->MasksToBounds());
 
-  // Override applies transform, sets visibleContentRect, and disables
+  // Override applies transform, sets visible rect, and disables
   // visual viewport clipping.
   dev_tools_emulator->ForceViewport(WebFloatPoint(50, 55), 2.f);
   expected_matrix.MakeIdentity().Scale(2.f).Translate(-50, -55);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  EXPECT_EQ(IntRect(50, 55, 50, 75),
-            *dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(100, 150), &visible_rect);
+    EXPECT_EQ(IntRect(50, 55, 50, 75), visible_rect);
+  }
   EXPECT_FALSE(visual_viewport->ContainerLayer()->MasksToBounds());
 
   // Setting new override discards previous one.
   dev_tools_emulator->ForceViewport(WebFloatPoint(5.4f, 10.5f), 1.5f);
   expected_matrix.MakeIdentity().Scale(1.5f).Translate(-5.4f, -10.5f);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  EXPECT_EQ(IntRect(5, 10, 68, 101),
-            *dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(100, 150), &visible_rect);
+    EXPECT_EQ(IntRect(5, 10, 68, 101), visible_rect);  // Was modified.
+  }
   EXPECT_FALSE(visual_viewport->ContainerLayer()->MasksToBounds());
 
-  // Clearing override restores original transform, visibleContentRect and
+  // Clearing override restores original transform, visible rect and
   // visual viewport clipping.
   dev_tools_emulator->ResetViewport();
   expected_matrix.MakeIdentity();
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  EXPECT_FALSE(dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(), &visible_rect);
+    EXPECT_EQ(IntRect(1, 2, 3, 4), visible_rect);  // Not modified.
+  }
   EXPECT_TRUE(visual_viewport->ContainerLayer()->MasksToBounds());
 }
 
@@ -4743,15 +4751,13 @@ TEST_F(WebViewTest, ViewportOverrideIntegratesDeviceMetricsOffsetAndScale) {
 
   TransformationMatrix expected_matrix;
   expected_matrix.MakeIdentity();
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   WebDeviceEmulationParams emulation_params;
   emulation_params.scale = 2.f;
   web_view_impl->EnableDeviceEmulation(emulation_params);
   expected_matrix.MakeIdentity().Scale(2.f);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   // Device metrics offset and scale are applied before viewport override.
   web_view_impl->GetDevToolsEmulator()->ForceViewport(WebFloatPoint(5, 10),
@@ -4760,8 +4766,7 @@ TEST_F(WebViewTest, ViewportOverrideIntegratesDeviceMetricsOffsetAndScale) {
       .Scale(1.5f)
       .Translate(-5, -10)
       .Scale(2.f);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 }
 
 TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
@@ -4776,8 +4781,7 @@ TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
 
   TransformationMatrix expected_matrix;
   expected_matrix.MakeIdentity();
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   // Initial transform takes current page scale and scroll position into
   // account.
@@ -4790,11 +4794,13 @@ TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
       .Translate(-50, -55)
       .Translate(100, 150)
       .Scale(1. / 1.5f);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  // Page scroll and scale are irrelevant for visibleContentRect.
-  EXPECT_EQ(IntRect(50, 55, 50, 75),
-            *dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  // Page scroll and scale are irrelevant for visible rect.
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(100, 150), &visible_rect);
+    EXPECT_EQ(IntRect(50, 55, 50, 75), visible_rect);  // Was modified.
+  }
 
   // Transform adapts to scroll changes.
   frame_view->LayoutViewport()->SetScrollOffset(
@@ -4804,11 +4810,13 @@ TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
       .Translate(-50, -55)
       .Translate(50, 55)
       .Scale(1. / 1.5f);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  // visibleContentRect doesn't change.
-  EXPECT_EQ(IntRect(50, 55, 50, 75),
-            *dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  // Visible rect doesn't change.
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(100, 150), &visible_rect);
+    EXPECT_EQ(IntRect(50, 55, 50, 75), visible_rect);  // Was modified.
+  }
 
   // Transform adapts to page scale changes.
   web_view_impl->SetPageScaleFactor(2.f);
@@ -4817,11 +4825,13 @@ TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
       .Translate(-50, -55)
       .Translate(50, 55)
       .Scale(1. / 2.f);
-  EXPECT_EQ(expected_matrix,
-            web_view_impl->GetDeviceEmulationTransformForTesting());
-  // visibleContentRect doesn't change.
-  EXPECT_EQ(IntRect(50, 55, 50, 75),
-            *dev_tools_emulator->VisibleContentRectForPainting());
+  EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
+  // Visible rect doesn't change.
+  {
+    IntRect visible_rect(1, 2, 3, 4);
+    dev_tools_emulator->OverrideVisibleRect(IntSize(100, 150), &visible_rect);
+    EXPECT_EQ(IntRect(50, 55, 50, 75), visible_rect);  // Was modified.
+  }
 }
 
 TEST_F(WebViewTest, ResizeForPrintingViewportUnits) {
@@ -5101,7 +5111,7 @@ TEST_F(WebViewTest, FirstInputDelayReported) {
   WebKeyboardEvent key_event1(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event1.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event1.dom_key = ui::DomKey::FromCharacter(' ');
   key_event1.windows_key_code = VKEY_SPACE;
   key_event1.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(50));
@@ -5118,7 +5128,7 @@ TEST_F(WebViewTest, FirstInputDelayReported) {
   WebKeyboardEvent key_event2(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event2.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event2.dom_key = ui::DomKey::FromCharacter(' ');
   key_event2.windows_key_code = VKEY_SPACE;
   clock.Advance(TimeDelta::FromMilliseconds(60));
   key_event2.SetTimeStamp(CurrentTimeTicks());
@@ -5157,7 +5167,7 @@ TEST_F(WebViewTest, LongestInputDelayReported) {
   WebKeyboardEvent key_event1(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event1.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event1.dom_key = ui::DomKey::FromCharacter(' ');
   key_event1.windows_key_code = VKEY_SPACE;
   key_event1.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(50));
@@ -5169,7 +5179,7 @@ TEST_F(WebViewTest, LongestInputDelayReported) {
   WebKeyboardEvent key_event2(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event2.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event2.dom_key = ui::DomKey::FromCharacter(' ');
   key_event2.windows_key_code = VKEY_SPACE;
   key_event2.SetTimeStamp(longest_input_timestamp);
   clock.Advance(TimeDelta::FromMilliseconds(100));
@@ -5179,7 +5189,7 @@ TEST_F(WebViewTest, LongestInputDelayReported) {
   WebKeyboardEvent key_event3(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event3.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event3.dom_key = ui::DomKey::FromCharacter(' ');
   key_event3.windows_key_code = VKEY_SPACE;
   key_event3.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(70));
@@ -5209,7 +5219,7 @@ TEST_F(WebViewTest, InputDelayReported) {
   WebKeyboardEvent key_event1(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event1.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event1.dom_key = ui::DomKey::FromCharacter(' ');
   key_event1.windows_key_code = VKEY_SPACE;
   key_event1.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(50));
@@ -5219,7 +5229,7 @@ TEST_F(WebViewTest, InputDelayReported) {
   WebKeyboardEvent key_event2(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event2.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event2.dom_key = ui::DomKey::FromCharacter(' ');
   key_event2.windows_key_code = VKEY_SPACE;
   key_event2.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(50));
@@ -5229,21 +5239,28 @@ TEST_F(WebViewTest, InputDelayReported) {
   WebKeyboardEvent key_event3(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event3.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event3.dom_key = ui::DomKey::FromCharacter(' ');
   key_event3.windows_key_code = VKEY_SPACE;
   key_event3.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(70));
   web_view->MainFrameWidget()->HandleInputEvent(
       WebCoalescedInputEvent(key_event3));
 
-  histogram_tester.ExpectTotalCount("PageLoad.InteractiveTiming.InputDelay", 3);
-  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputDelay", 50, 2);
-  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputDelay", 70, 1);
+  histogram_tester.ExpectTotalCount("PageLoad.InteractiveTiming.InputDelay2",
+                                    3);
+  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputDelay2",
+                                     50, 2);
+  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputDelay2",
+                                     70, 1);
 
-  histogram_tester.ExpectTotalCount("PageLoad.InteractiveTiming.InputTimestamp", 3);
-  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputTimestamp", 70, 1);
-  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputTimestamp", 120, 1);
-  histogram_tester.ExpectBucketCount("PageLoad.InteractiveTiming.InputTimestamp", 170, 1);
+  histogram_tester.ExpectTotalCount(
+      "PageLoad.InteractiveTiming.InputTimestamp2", 3);
+  histogram_tester.ExpectBucketCount(
+      "PageLoad.InteractiveTiming.InputTimestamp2", 70, 1);
+  histogram_tester.ExpectBucketCount(
+      "PageLoad.InteractiveTiming.InputTimestamp2", 120, 1);
+  histogram_tester.ExpectBucketCount(
+      "PageLoad.InteractiveTiming.InputTimestamp2", 170, 1);
 }
 
 // Tests that if the page was backgrounded while an input event was queued,
@@ -5272,7 +5289,7 @@ TEST_F(WebViewTest, LongestInputDelayPageBackgroundedDuringQueuing) {
   WebKeyboardEvent key_event1(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event1.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event1.dom_key = ui::DomKey::FromCharacter(' ');
   key_event1.windows_key_code = VKEY_SPACE;
   TimeTicks key_event1_time = CurrentTimeTicks();
   key_event1.SetTimeStamp(key_event1_time);
@@ -5283,7 +5300,7 @@ TEST_F(WebViewTest, LongestInputDelayPageBackgroundedDuringQueuing) {
   WebKeyboardEvent key_event2(WebInputEvent::kRawKeyDown,
                               WebInputEvent::kNoModifiers,
                               WebInputEvent::GetStaticTimeStampForTests());
-  key_event2.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event2.dom_key = ui::DomKey::FromCharacter(' ');
   key_event2.windows_key_code = VKEY_SPACE;
   key_event2.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(100));
@@ -5326,7 +5343,7 @@ TEST_F(WebViewTest, LongestInputDelayPageBackgroundedAtNavStart) {
   WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                              WebInputEvent::kNoModifiers,
                              WebInputEvent::GetStaticTimeStampForTests());
-  key_event.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event.dom_key = ui::DomKey::FromCharacter(' ');
   key_event.windows_key_code = VKEY_SPACE;
   key_event.SetTimeStamp(CurrentTimeTicks());
   clock.Advance(TimeDelta::FromMilliseconds(100));
@@ -5368,7 +5385,7 @@ TEST_F(WebViewTest, LongestInputDelayPageBackgroundedNotDuringQueuing) {
   WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                              WebInputEvent::kNoModifiers,
                              WebInputEvent::GetStaticTimeStampForTests());
-  key_event.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event.dom_key = ui::DomKey::FromCharacter(' ');
   key_event.windows_key_code = VKEY_SPACE;
   TimeTicks key_event_time = CurrentTimeTicks();
   key_event.SetTimeStamp(key_event_time);
@@ -5445,6 +5462,7 @@ TEST_F(WebViewTest, PointerDownCancelFirstInputDelay) {
   ASSERT_NE(nullptr, document);
 
   WTF::ScopedMockClock clock;
+  clock.Advance(TimeDelta::FromMilliseconds(70));
 
   InteractiveDetector* interactive_detector(
       InteractiveDetector::From(*document));
@@ -5462,7 +5480,7 @@ TEST_F(WebViewTest, PointerDownCancelFirstInputDelay) {
   // can't report its delay. We don't consider a scroll to be meaningful input.
   EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
 
-  // When we receive a pointer up, we report the delay of the pointer down.
+  // When we receive a pointer cancel, we should not report the pointer down.
   WebPointerEvent pointer_cancel(
       WebInputEvent::kPointerCancel,
       WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
@@ -5475,6 +5493,130 @@ TEST_F(WebViewTest, PointerDownCancelFirstInputDelay) {
   // input has occurred yet.
   EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
   EXPECT_TRUE(interactive_detector->GetFirstInputTimestamp().is_null());
+}
+
+// Check that input delay isn't reported when there is pointer down, pointer
+// cancel, and pointer up.
+TEST_F(WebViewTest, PointerDownCancelUpInputDelay) {
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  WebURL base_url = url_test_helpers::ToKURL("http://example.com/");
+  frame_test_helpers::LoadHTMLString(web_view->MainFrameImpl(),
+                                     "<html><body></body onpointerdown="
+                                     "></html>",
+                                     base_url);
+
+  LocalFrame* main_frame = web_view->MainFrameImpl()->GetFrame();
+  ASSERT_NE(nullptr, main_frame);
+  Document* document = main_frame->GetDocument();
+  ASSERT_NE(nullptr, document);
+
+  WTF::ScopedMockClock clock;
+  clock.Advance(TimeDelta::FromMilliseconds(70));
+
+  InteractiveDetector* interactive_detector(
+      InteractiveDetector::From(*document));
+  ASSERT_NE(nullptr, interactive_detector);
+
+  WebPointerEvent pointer_down(
+      WebInputEvent::kPointerDown,
+      WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
+  pointer_down.SetTimeStamp(CurrentTimeTicks());
+  clock.Advance(TimeDelta::FromMilliseconds(50));
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(pointer_down));
+
+  // We don't know if this pointer event will result in a scroll or not, so we
+  // can't report its delay. We don't consider a scroll to be meaningful input.
+  EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
+
+  // When we receive a pointer cancel, we should not report the pointer down.
+  WebPointerEvent pointer_cancel(
+      WebInputEvent::kPointerCancel,
+      WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
+  clock.Advance(TimeDelta::FromMilliseconds(60));
+  pointer_cancel.SetTimeStamp(CurrentTimeTicks());
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(pointer_cancel));
+
+  EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
+
+  // When we receive a pointer up, because we received a pointer cancel, no
+  // input delay should be recorded.
+  WebPointerEvent pointer_up(
+      WebInputEvent::kPointerUp,
+      WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
+  clock.Advance(TimeDelta::FromMilliseconds(60));
+  pointer_up.SetTimeStamp(CurrentTimeTicks());
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(pointer_up));
+
+  EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
+  EXPECT_TRUE(interactive_detector->GetFirstInputTimestamp().is_null());
+  EXPECT_TRUE(interactive_detector->GetLongestInputDelay().is_zero());
+  EXPECT_TRUE(interactive_detector->GetLongestInputTimestamp().is_null());
+}
+
+// Check that first input delay isn't reported when there is pointer down,
+// pointer caused UA action, and pointer up.
+TEST_F(WebViewTest, PointerDownCausedUaActionUpInputDelay) {
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  WebURL base_url = url_test_helpers::ToKURL("http://example.com/");
+  frame_test_helpers::LoadHTMLString(web_view->MainFrameImpl(),
+                                     "<html><body></body onpointerdown="
+                                     "></html>",
+                                     base_url);
+
+  LocalFrame* main_frame = web_view->MainFrameImpl()->GetFrame();
+  ASSERT_NE(nullptr, main_frame);
+  Document* document = main_frame->GetDocument();
+  ASSERT_NE(nullptr, document);
+
+  WTF::ScopedMockClock clock;
+  clock.Advance(TimeDelta::FromMilliseconds(70));
+
+  InteractiveDetector* interactive_detector(
+      InteractiveDetector::From(*document));
+  ASSERT_NE(nullptr, interactive_detector);
+
+  WebPointerEvent pointer_down(
+      WebInputEvent::kPointerDown,
+      WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
+  pointer_down.SetTimeStamp(CurrentTimeTicks());
+  clock.Advance(TimeDelta::FromMilliseconds(50));
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(pointer_down));
+
+  // We don't know if this pointer event will result in a scroll or not, so we
+  // can't report its delay. We don't consider a scroll to be meaningful input.
+  EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
+
+  // When we receive a pointer caused UA action, we should not report the
+  // pointer down.
+  WebPointerEvent pointer_cancel(
+      WebInputEvent::kPointerCausedUaAction,
+      WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
+  clock.Advance(TimeDelta::FromMilliseconds(60));
+  pointer_cancel.SetTimeStamp(CurrentTimeTicks());
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(pointer_cancel));
+
+  EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
+  EXPECT_TRUE(interactive_detector->GetFirstInputTimestamp().is_null());
+
+  // When we receive a pointer up, because we received a pointer caused UA
+  // action, no input delay should be recorded.
+  WebPointerEvent pointer_up(
+      WebInputEvent::kPointerUp,
+      WebPointerProperties(1, WebPointerProperties::PointerType::kTouch), 5, 5);
+  clock.Advance(TimeDelta::FromMilliseconds(60));
+  pointer_up.SetTimeStamp(CurrentTimeTicks());
+  web_view->MainFrameWidget()->HandleInputEvent(
+      WebCoalescedInputEvent(pointer_up));
+
+  EXPECT_TRUE(interactive_detector->GetFirstInputDelay().is_zero());
+  EXPECT_TRUE(interactive_detector->GetFirstInputTimestamp().is_null());
+  EXPECT_TRUE(interactive_detector->GetLongestInputDelay().is_zero());
+  EXPECT_TRUE(interactive_detector->GetLongestInputTimestamp().is_null());
 }
 
 // We need a way for JS to advance the mock clock. Hook into console.log, so
@@ -5529,7 +5671,7 @@ TEST_F(WebViewTest, FirstInputDelayExcludesProcessingTime) {
   WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                              WebInputEvent::kNoModifiers,
                              WebInputEvent::GetStaticTimeStampForTests());
-  key_event.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event.dom_key = ui::DomKey::FromCharacter(' ');
   key_event.windows_key_code = VKEY_SPACE;
   key_event.SetTimeStamp(CurrentTimeTicks());
 
@@ -5575,7 +5717,7 @@ TEST_F(WebViewTest, LongestInputDelayExcludesProcessingTime) {
   WebKeyboardEvent key_event(WebInputEvent::kRawKeyDown,
                              WebInputEvent::kNoModifiers,
                              WebInputEvent::GetStaticTimeStampForTests());
-  key_event.dom_key = Platform::Current()->DomKeyEnumFromString(" ");
+  key_event.dom_key = ui::DomKey::FromCharacter(' ');
   key_event.windows_key_code = VKEY_SPACE;
   key_event.SetTimeStamp(CurrentTimeTicks());
 
@@ -5610,6 +5752,55 @@ TEST_F(WebViewTest, RootLayerAttachment) {
       WebFrameWidget::LifecycleUpdate::kAll,
       WebWidget::LifecycleUpdateReason::kTest);
   EXPECT_TRUE(layer_tree_view->GetRootLayer());
+}
+
+// Verifies that we emit Blink.UseCounter.FeaturePolicy.PotentialAnimation for
+// CSS and JS animations in a document.
+TEST_F(WebViewTest, PotentialViolationReportsForLayoutAnimations) {
+  const char* kHistogramName =
+      "Blink.UseCounter.FeaturePolicy.PotentialViolation";
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  // A page with non-violating animation does not generate report.
+  WebURL base_url_no_violation =
+      url_test_helpers::ToKURL("http://good-css.example.com/");
+  frame_test_helpers::LoadHTMLString(
+      web_view->MainFrameImpl(),
+      "<html><head><style>@keyframes foo {from "
+      "{color: blue;} to {color: red}}</style></head></html>",
+      base_url_no_violation);
+  HistogramTester histogram_tester;
+  histogram_tester.ExpectTotalCount(kHistogramName, 0);
+  // Page with 2 potential (CSS) layout-animation violations.
+  WebURL base_url_css_violations =
+      url_test_helpers::ToKURL("http://bad-css.example.com/");
+  frame_test_helpers::LoadHTMLString(
+      web_view->MainFrameImpl(),
+      "<html><head><style>@keyframes bar {"
+      "from{height: 100px;} to {height: 200px;}}"
+      "@keyframes baz {from{top: 100px;} to {top: 200px;}}"
+      "</style></head></html>",
+      base_url_css_violations);
+  histogram_tester.ExpectTotalCount(kHistogramName, 1);
+  // Page with a JS layout-animations violation.
+  WebURL base_url_js_violations =
+      url_test_helpers::ToKURL("http://js.example.com/");
+  frame_test_helpers::LoadHTMLString(
+      web_view->MainFrameImpl(),
+      "<html><body><div></div><script>document.body.firstChild.animate("
+      "{top: '100px'});</script></body></html>",
+      base_url_js_violations);
+  histogram_tester.ExpectTotalCount(kHistogramName, 2);
+}
+
+TEST_F(WebViewTest, ForceDarkModeInvalidatesPaint) {
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  web_view->MainFrameWidget()->Resize(WebSize(500, 500));
+  UpdateAllLifecyclePhases();
+
+  Document* document = web_view->MainFrameImpl()->GetFrame()->GetDocument();
+  ASSERT_TRUE(document);
+  web_view->GetSettings()->SetForceDarkModeEnabled(true);
+  EXPECT_TRUE(document->GetLayoutView()->ShouldDoFullPaintInvalidation());
 }
 
 }  // namespace blink

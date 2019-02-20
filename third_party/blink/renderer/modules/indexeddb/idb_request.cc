@@ -137,7 +137,7 @@ IDBRequest::IDBRequest(ScriptState* script_state,
       metrics_(std::move(metrics)),
       source_(source),
       event_queue_(EventQueue::Create(ExecutionContext::From(script_state),
-                                      TaskType::kInternalIndexedDB)) {}
+                                      TaskType::kDatabaseAccess)) {}
 
 IDBRequest::~IDBRequest() {
   DCHECK((ready_state_ == DONE && metrics_.IsEmpty()) ||
@@ -616,7 +616,7 @@ void IDBRequest::ContextDestroyed(ExecutionContext*) {
   if (pending_cursor_)
     pending_cursor_->ContextWillBeDestroyed();
   if (web_callbacks_) {
-    web_callbacks_->Detach();
+    web_callbacks_->DetachRequestFromCallback();
     web_callbacks_ = nullptr;
   }
 }
@@ -690,6 +690,9 @@ DispatchEventResult IDBRequest::DispatchEventInternal(Event& event) {
   // describes the consequences of getting this wrong.
   if (transaction_ && ready_state_ == DONE)
     transaction_->UnregisterRequest(this);
+
+  if (event.type() == event_type_names::kError && transaction_)
+    transaction_->IncrementNumErrorsHandled();
 
   event.SetTarget(this);
   DispatchEventResult dispatch_result =

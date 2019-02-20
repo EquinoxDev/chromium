@@ -25,14 +25,12 @@ FakeDataMaker.passwordEntry = function(url, username, passwordLength, id) {
   id = id || 0;
 
   return {
-    loginPair: {
-      urls: {
-        origin: 'http://' + url + '/login',
-        shown: url,
-        link: 'http://' + url + '/login',
-      },
-      username: username,
+    urls: {
+      origin: 'http://' + url + '/login',
+      shown: url,
+      link: 'http://' + url + '/login',
     },
+    username: username,
     numCharactersInPassword: passwordLength,
     id: id,
   };
@@ -162,108 +160,6 @@ function PasswordManagerExpectations() {
   };
 }
 
-/**
- * Test implementation
- * @implements {PasswordManager}
- * @constructor
- */
-function TestPasswordManager() {
-  this.actual_ = new PasswordManagerExpectations();
-
-  // Set these to have non-empty data.
-  this.data = {
-    passwords: [],
-    exceptions: [],
-  };
-
-  // Holds the last callbacks so they can be called when needed/
-  this.lastCallback = {
-    addSavedPasswordListChangedListener: null,
-    addExceptionListChangedListener: null,
-    getPlaintextPassword: null,
-  };
-}
-
-TestPasswordManager.prototype = {
-  /** @override */
-  addSavedPasswordListChangedListener: function(listener) {
-    this.actual_.listening.passwords++;
-    this.lastCallback.addSavedPasswordListChangedListener = listener;
-  },
-
-  /** @override */
-  removeSavedPasswordListChangedListener: function(listener) {
-    this.actual_.listening.passwords--;
-  },
-
-  /** @override */
-  getSavedPasswordList: function(callback) {
-    this.actual_.requested.passwords++;
-    callback(this.data.passwords);
-  },
-
-  /** @override */
-  removeSavedPassword: function(id) {
-    this.actual_.removed.passwords++;
-
-    if (this.onRemoveSavedPassword) {
-      this.onRemoveSavedPassword(id);
-    }
-  },
-
-  /** @override */
-  addExceptionListChangedListener: function(listener) {
-    this.actual_.listening.exceptions++;
-    this.lastCallback.addExceptionListChangedListener = listener;
-  },
-
-  /** @override */
-  removeExceptionListChangedListener: function(listener) {
-    this.actual_.listening.exceptions--;
-  },
-
-  /** @override */
-  getExceptionList: function(callback) {
-    this.actual_.requested.exceptions++;
-    callback(this.data.exceptions);
-  },
-
-  /** @override */
-  removeException: function(id) {
-    this.actual_.removed.exceptions++;
-
-    if (this.onRemoveException) {
-      this.onRemoveException(id);
-    }
-  },
-
-  /** @override */
-  getPlaintextPassword: function(id, callback) {
-    this.actual_.requested.plaintextPassword++;
-    this.lastCallback.getPlaintextPassword = callback;
-  },
-
-  /**
-   * Verifies expectations.
-   * @param {!PasswordManagerExpectations} expected
-   */
-  assertExpectations: function(expected) {
-    const actual = this.actual_;
-
-    assertEquals(expected.requested.passwords, actual.requested.passwords);
-    assertEquals(expected.requested.exceptions, actual.requested.exceptions);
-    assertEquals(
-        expected.requested.plaintextPassword,
-        actual.requested.plaintextPassword);
-
-    assertEquals(expected.removed.passwords, actual.removed.passwords);
-    assertEquals(expected.removed.exceptions, actual.removed.exceptions);
-
-    assertEquals(expected.listening.passwords, actual.listening.passwords);
-    assertEquals(expected.listening.exceptions, actual.listening.exceptions);
-  },
-};
-
 /** Helper class to track AutofillManager expectations. */
 class AutofillManagerExpectations {
   constructor() {
@@ -324,7 +220,11 @@ TestAutofillManager.prototype = {
 class PaymentsManagerExpectations {
   constructor() {
     this.requestedCreditCards = 0;
+    this.requestedLocalCreditCards = 0;
+    this.requestedServerCreditCards = 0;
     this.listeningCreditCards = 0;
+    this.listeningLocalCreditCards = 0;
+    this.listeningServerCreditCards = 0;
   }
 }
 
@@ -339,11 +239,15 @@ function TestPaymentsManager() {
   // Set these to have non-empty data.
   this.data = {
     creditCards: [],
+    localCreditCards: [],
+    serverCreditCards: [],
   };
 
   // Holds the last callbacks so they can be called when needed.
   this.lastCallback = {
     addCreditCardListChangedListener: null,
+    addLocalCreditCardListChangedListener: null,
+    addServerCreditCardListChangedListener: null,
   };
 }
 
@@ -355,14 +259,48 @@ TestPaymentsManager.prototype = {
   },
 
   /** @override */
+  addLocalCreditCardListChangedListener: function(listener) {
+    this.actual_.listeningLocalCreditCards++;
+    this.lastCallback.addLocalCreditCardListChangedListener = listener;
+  },
+
+  /** @override */
+  addServerCreditCardListChangedListener: function(listener) {
+    this.actual_.listeningServerCreditCards++;
+    this.lastCallback.addServerCreditCardListChangedListener = listener;
+  },
+
+  /** @override */
   removeCreditCardListChangedListener: function(listener) {
     this.actual_.listeningCreditCards--;
+  },
+
+  /** @override */
+  removeLocalCreditCardListChangedListener: function(listener) {
+    this.actual_.listeningLocalCreditCards--;
+  },
+
+  /** @override */
+  removeServerCreditCardListChangedListener: function(listener) {
+    this.actual_.listeningServerCreditCards--;
   },
 
   /** @override */
   getCreditCardList: function(callback) {
     this.actual_.requestedCreditCards++;
     callback(this.data.creditCards);
+  },
+
+  /** @override */
+  getLocalCreditCardList: function(callback) {
+    this.actual_.requestedLocalCreditCards++;
+    callback(this.data.localCreditCards);
+  },
+
+  /** @override */
+  getServerCreditCardList: function(callback) {
+    this.actual_.requestedServerCreditCards++;
+    callback(this.data.serverCreditCards);
   },
 
   /**
@@ -372,6 +310,14 @@ TestPaymentsManager.prototype = {
   assertExpectations: function(expected) {
     const actual = this.actual_;
     assertEquals(expected.requestedCreditCards, actual.requestedCreditCards);
+    assertEquals(
+        expected.requestedLocalCreditCards, actual.requestedLocalCreditCards);
+    assertEquals(
+        expected.requestedServerCreditCards, actual.requestedServerCreditCards);
     assertEquals(expected.listeningCreditCards, actual.listeningCreditCards);
+    assertEquals(
+        expected.listeningLocalCreditCards, actual.listeningLocalCreditCards);
+    assertEquals(
+        expected.listeningServerCreditCards, actual.listeningServerCreditCards);
   },
 };

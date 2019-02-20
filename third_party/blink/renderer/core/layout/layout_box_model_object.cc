@@ -663,7 +663,7 @@ void LayoutBoxModelObject::UpdateFromStyle() {
 }
 
 LayoutBlock* LayoutBoxModelObject::ContainingBlockForAutoHeightDetection(
-    Length logical_height) const {
+    const Length& logical_height) const {
   // For percentage heights: The percentage is calculated with respect to the
   // height of the generated box's containing block. If the height of the
   // containing block is not specified explicitly (i.e., it depends on content
@@ -701,7 +701,7 @@ bool LayoutBoxModelObject::HasAutoHeightOrContainingBlockWithAutoHeight(
   // TODO(rego): Check if we can somehow reuse LayoutBlock::
   // availableLogicalHeightForPercentageComputation() (see crbug.com/635655).
   const LayoutBox* this_box = IsBox() ? ToLayoutBox(this) : nullptr;
-  Length logical_height_length = StyleRef().LogicalHeight();
+  const Length& logical_height_length = StyleRef().LogicalHeight();
   LayoutBlock* cb =
       ContainingBlockForAutoHeightDetection(logical_height_length);
   if (register_percentage_descendant == kRegisterPercentageDescendant &&
@@ -718,18 +718,21 @@ bool LayoutBoxModelObject::HasAutoHeightOrContainingBlockWithAutoHeight(
     return false;
   if (this_box && this_box->IsCustomItem() &&
       (this_box->HasOverrideContainingBlockContentLogicalHeight() ||
-       this_box->HasOverrideContainingBlockPercentageResolutionLogicalHeight()))
+       this_box->HasOverridePercentageResolutionBlockSize()))
     return false;
 
   if (logical_height_length.IsAuto() &&
       !IsOutOfFlowPositionedWithImplicitHeight(this))
     return true;
 
-  if (GetDocument().InQuirksMode())
-    return false;
-
-  if (cb)
-    return !cb->HasDefiniteLogicalHeight();
+  if (cb) {
+    // We need the containing block to have a definite block-size in order to
+    // resolve the block-size of the descendant, except when in quirks mode.
+    // Flexboxes follow strict behavior even in quirks mode, though.
+    if (!GetDocument().InQuirksMode() ||
+        cb->IsFlexibleBoxIncludingDeprecatedAndNG())
+      return !cb->HasDefiniteLogicalHeight();
+  }
 
   return false;
 }

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
@@ -28,6 +29,7 @@
 #include "content/common/service_worker/service_worker_types.h"
 #include "mojo/core/embedder/embedder.h"
 #include "mojo/public/cpp/bindings/message.h"
+#include "mojo/public/cpp/test_support/test_utils.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/common/manifest/manifest.h"
@@ -64,29 +66,16 @@ bool ContainsHeader(const base::flat_map<std::string, std::string>& headers,
                       });
 }
 
-class BadMessageObserver {
+class FakeMojoMessageDispatchContext {
  public:
-  BadMessageObserver()
-      : dummy_message_(0, 0, 0, 0, nullptr), context_(&dummy_message_) {
-    mojo::core::SetDefaultProcessErrorCallback(base::BindRepeating(
-        &BadMessageObserver::ReportBadMessage, base::Unretained(this)));
-  }
-
-  ~BadMessageObserver() {
-    mojo::core::SetDefaultProcessErrorCallback(
-        mojo::core::ProcessErrorCallback());
-  }
-
-  const std::string& last_error() const { return last_error_; }
+  FakeMojoMessageDispatchContext()
+      : dummy_message_(0, 0, 0, 0, nullptr), context_(&dummy_message_) {}
 
  private:
-  void ReportBadMessage(const std::string& error) { last_error_ = error; }
-
   mojo::Message dummy_message_;
   mojo::internal::MessageDispatchContext context_;
-  std::string last_error_;
 
-  DISALLOW_COPY_AND_ASSIGN(BadMessageObserver);
+  DISALLOW_COPY_AND_ASSIGN(FakeMojoMessageDispatchContext);
 };
 
 std::vector<blink::mojom::FetchAPIRequestPtr> CloneRequestVector(
@@ -212,8 +201,8 @@ class BackgroundFetchServiceTest : public BackgroundFetchTestBase,
     base::RunLoop run_loop;
     service_->MatchRequests(
         service_worker_registration_id, developer_id, unique_id,
-        blink::mojom::FetchAPIRequest::New() /* request_to_match*/,
-        nullptr /* cache_query_params*/, /* match_all= */ true,
+        /* request_to_match= */ nullptr,
+        /* cache_query_options= */ nullptr, /* match_all= */ true,
         base::BindOnce(&BackgroundFetchServiceTest::DidMatchAllRequests,
                        base::Unretained(this), run_loop.QuitClosure(),
                        out_fetches));
@@ -437,7 +426,8 @@ TEST_F(BackgroundFetchServiceTest, FetchInvalidArguments) {
 
   // The |developer_id| must be a non-empty string.
   {
-    BadMessageObserver bad_message_observer;
+    FakeMojoMessageDispatchContext fake_dispatch_context;
+    mojo::test::BadMessageObserver bad_message_observer;
     std::vector<blink::mojom::FetchAPIRequestPtr> requests;
     requests.push_back(CreateDefaultRequest());
 
@@ -448,12 +438,13 @@ TEST_F(BackgroundFetchServiceTest, FetchInvalidArguments) {
           std::move(requests), options.Clone(), SkBitmap(), &error,
           &registration);
     ASSERT_EQ(error, blink::mojom::BackgroundFetchError::INVALID_ARGUMENT);
-    EXPECT_EQ("Invalid developer_id", bad_message_observer.last_error());
+    EXPECT_EQ("Invalid developer_id", bad_message_observer.WaitForBadMessage());
   }
 
   // At least a single blink::mojom::FetchAPIRequestPtr must be given.
   {
-    BadMessageObserver bad_message_observer;
+    FakeMojoMessageDispatchContext fake_dispatch_context;
+    mojo::test::BadMessageObserver bad_message_observer;
     std::vector<blink::mojom::FetchAPIRequestPtr> requests;
     // |requests| has deliberately been left empty.
 
@@ -464,7 +455,7 @@ TEST_F(BackgroundFetchServiceTest, FetchInvalidArguments) {
           std::move(requests), std::move(options), SkBitmap(), &error,
           &registration);
     ASSERT_EQ(error, blink::mojom::BackgroundFetchError::INVALID_ARGUMENT);
-    EXPECT_EQ("Invalid requests", bad_message_observer.last_error());
+    EXPECT_EQ("Invalid requests", bad_message_observer.WaitForBadMessage());
   }
 }
 
@@ -857,12 +848,13 @@ TEST_F(BackgroundFetchServiceTest, AbortInvalidDeveloperIdArgument) {
   // return INVALID_ARGUMENT when an invalid |developer_id| is sent over the
   // Mojo channel.
 
-  BadMessageObserver bad_message_observer;
+  FakeMojoMessageDispatchContext fake_dispatch_context;
+  mojo::test::BadMessageObserver bad_message_observer;
   blink::mojom::BackgroundFetchError error;
   Abort(/* service_worker_registration_id= */ 42, /* developer_id= */ "",
         kExampleUniqueId, &error);
   ASSERT_EQ(error, blink::mojom::BackgroundFetchError::INVALID_ARGUMENT);
-  EXPECT_EQ("Invalid developer_id", bad_message_observer.last_error());
+  EXPECT_EQ("Invalid developer_id", bad_message_observer.WaitForBadMessage());
 }
 
 TEST_F(BackgroundFetchServiceTest, AbortInvalidUniqueIdArgument) {
@@ -870,12 +862,13 @@ TEST_F(BackgroundFetchServiceTest, AbortInvalidUniqueIdArgument) {
   // return INVALID_ARGUMENT when an invalid |unique_id| is sent over the Mojo
   // channel.
 
-  BadMessageObserver bad_message_observer;
+  FakeMojoMessageDispatchContext fake_dispatch_context;
+  mojo::test::BadMessageObserver bad_message_observer;
   blink::mojom::BackgroundFetchError error;
   Abort(/* service_worker_registration_id= */ 42, kExampleDeveloperId,
         /* unique_id= */ "not a GUID", &error);
   ASSERT_EQ(error, blink::mojom::BackgroundFetchError::INVALID_ARGUMENT);
-  EXPECT_EQ("Invalid unique_id", bad_message_observer.last_error());
+  EXPECT_EQ("Invalid unique_id", bad_message_observer.WaitForBadMessage());
 }
 
 TEST_F(BackgroundFetchServiceTest, AbortUnknownUniqueId) {

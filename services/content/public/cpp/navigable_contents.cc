@@ -4,6 +4,7 @@
 
 #include "services/content/public/cpp/navigable_contents.h"
 
+#include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "services/content/public/cpp/navigable_contents_view.h"
 
@@ -62,6 +63,11 @@ void NavigableContents::Focus() {
 
 void NavigableContents::FocusThroughTabTraversal(bool reverse) {
   contents_->FocusThroughTabTraversal(reverse);
+}
+
+void NavigableContents::ClearViewFocus() {
+  if (view_)
+    view_->ClearNativeFocus();
 }
 
 void NavigableContents::DidFinishNavigation(

@@ -12,10 +12,14 @@
 #import "content/browser/web_contents/web_drag_source_mac.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_view_delegate.h"
+#include "content/public/common/web_contents_ns_view_bridge.mojom.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#include "ui/base/clipboard/clipboard_constants.h"
 #include "ui/base/clipboard/custom_data_helper.h"
+#include "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/dragdrop/cocoa_dnd_util.h"
 
+using content::mojom::DraggingInfo;
 using content::DropData;
 using content::WebContentsImpl;
 using content::WebContentsViewMac;
@@ -25,12 +29,12 @@ using content::WebContentsViewMac;
 
 @implementation WebContentsViewCocoa
 
+@synthesize client = client_;
+
 - (id)initWithWebContentsViewMac:(WebContentsViewMac*)w {
   self = [super initWithFrame:NSZeroRect];
   if (self != nil) {
     webContentsView_ = w;
-    dragDest_.reset(
-        [[WebDragDest alloc] initWithWebContentsImpl:[self webContents]]);
     [self registerDragTypes];
 
     [[NSNotificationCenter defaultCenter]
@@ -38,11 +42,6 @@ using content::WebContentsViewMac;
            selector:@selector(viewDidBecomeFirstResponder:)
                name:kViewDidBecomeFirstResponder
              object:nil];
-
-    if (webContentsView_->delegate()) {
-      [dragDest_
-          setDragDelegate:webContentsView_->delegate()->GetDragDestDelegate()];
-    }
   }
   return self;
 }
@@ -57,6 +56,31 @@ using content::WebContentsViewMac;
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 
   [super dealloc];
+}
+
+- (void)populateDraggingInfo:(DraggingInfo*)info
+          fromNSDraggingInfo:(id<NSDraggingInfo>)nsInfo {
+  NSPoint windowPoint = [nsInfo draggingLocation];
+
+  NSPoint viewPoint = [self convertPoint:windowPoint fromView:nil];
+  NSRect viewFrame = [self frame];
+  info->location_in_view =
+      gfx::PointF(viewPoint.x, viewFrame.size.height - viewPoint.y);
+
+  NSPoint screenPoint =
+      ui::ConvertPointFromWindowToScreen([self window], windowPoint);
+  NSScreen* screen = [[self window] screen];
+  NSRect screenFrame = [screen frame];
+  info->location_in_screen =
+      gfx::PointF(screenPoint.x, screenFrame.size.height - screenPoint.y);
+
+  NSPasteboard* pboard = [nsInfo draggingPasteboard];
+  if ([pboard containsURLDataConvertingTextToURL:YES]) {
+    GURL url;
+    ui::PopulateURLAndTitleFromPasteboard(&url, NULL, pboard, YES);
+    info->url.emplace(url);
+  }
+  info->operation_mask = [nsInfo draggingSourceOperationMask];
 }
 
 - (BOOL)allowsVibrancy {
@@ -78,14 +102,6 @@ using content::WebContentsViewMac;
   [self registerForDraggedTypes:types];
 }
 
-- (void)setCurrentDragOperation:(NSDragOperation)operation {
-  [dragDest_ setCurrentOperation:operation];
-}
-
-- (DropData*)dropData {
-  return [dragDest_ currentDropData];
-}
-
 - (WebContentsImpl*)webContents {
   if (!webContentsView_)
     return nullptr;
@@ -93,12 +109,10 @@ using content::WebContentsViewMac;
 }
 
 - (void)mouseEvent:(NSEvent*)theEvent {
-  WebContentsImpl* webContents = [self webContents];
-  if (webContents && webContents->GetDelegate()) {
-    webContents->GetDelegate()->ContentsMouseEvent(
-        webContents, [theEvent type] == NSMouseMoved,
-        [theEvent type] == NSMouseExited);
-  }
+  if (!client_)
+    return;
+  client_->OnMouseEvent([theEvent type] == NSMouseMoved,
+                        [theEvent type] == NSMouseExited);
 }
 
 - (void)setMouseDownCanMoveWindow:(BOOL)canMove {
@@ -126,7 +140,6 @@ using content::WebContentsViewMac;
                        offset:(NSPoint)offset {
   if (![self webContents])
     return;
-  [dragDest_ setDragStartTrackersForProcess:sourceRWH->GetProcess()->GetID()];
   dragSource_.reset([[WebDragSource alloc]
        initWithContents:[self webContents]
                    view:self
@@ -180,24 +193,46 @@ using content::WebContentsViewMac;
 // NSDraggingDestination methods
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+  if (!client_)
+    return NSDragOperationNone;
+
   // Fill out a DropData from pasteboard.
   DropData dropData;
   content::PopulateDropDataFromPasteboard(&dropData,
                                           [sender draggingPasteboard]);
-  [dragDest_ setDropData:dropData];
-  return [dragDest_ draggingEntered:sender view:self];
+  client_->SetDropData(dropData);
+
+  auto draggingInfo = DraggingInfo::New();
+  [self populateDraggingInfo:draggingInfo.get() fromNSDraggingInfo:sender];
+  uint32_t result = 0;
+  client_->DraggingEntered(std::move(draggingInfo), &result);
+  return result;
 }
 
 - (void)draggingExited:(id<NSDraggingInfo>)sender {
-  [dragDest_ draggingExited];
+  if (!client_)
+    return;
+  client_->DraggingExited();
 }
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
-  return [dragDest_ draggingUpdated:sender view:self];
+  if (!client_)
+    return NSDragOperationNone;
+  auto draggingInfo = DraggingInfo::New();
+  [self populateDraggingInfo:draggingInfo.get() fromNSDraggingInfo:sender];
+  uint32_t result = 0;
+  client_->DraggingUpdated(std::move(draggingInfo), &result);
+  return result;
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
-  return [dragDest_ performDragOperation:sender view:self];
+  if (!client_)
+    return NO;
+  auto draggingInfo = DraggingInfo::New();
+  [self populateDraggingInfo:draggingInfo.get() fromNSDraggingInfo:sender];
+  bool result = false;
+  client_->PerformDragOperation(std::move(draggingInfo), &result);
+  return result;
 }
 
 - (void)cancelDeferredClose {
@@ -209,6 +244,7 @@ using content::WebContentsViewMac;
 
 - (void)clearWebContentsView {
   webContentsView_ = nullptr;
+  client_ = nullptr;
   [dragSource_ clearWebContentsView];
 }
 
@@ -218,35 +254,45 @@ using content::WebContentsViewMac;
 }
 
 - (void)viewDidBecomeFirstResponder:(NSNotification*)notification {
-  if (![self webContents])
+  if (!client_)
     return;
 
   NSView* view = [notification object];
   if (![[self subviews] containsObject:view])
     return;
 
-  NSSelectionDirection direction =
+  NSSelectionDirection ns_direction =
       static_cast<NSSelectionDirection>([[[notification userInfo]
           objectForKey:kSelectionDirection] unsignedIntegerValue]);
-  if (direction == NSDirectSelection)
-    return;
 
-  [self webContents] -> FocusThroughTabTraversal(direction ==
-                                                 NSSelectingPrevious);
+  content::mojom::SelectionDirection direction;
+  switch (ns_direction) {
+    case NSDirectSelection:
+      direction = content::mojom::SelectionDirection::kDirect;
+      break;
+    case NSSelectingNext:
+      direction = content::mojom::SelectionDirection::kForward;
+      break;
+    case NSSelectingPrevious:
+      direction = content::mojom::SelectionDirection::kReverse;
+      break;
+    default:
+      return;
+  }
+  client_->OnBecameFirstResponder(direction);
 }
 
 - (void)updateWebContentsVisibility {
-  if (!webContentsView_)
+  if (!client_)
     return;
-  content::Visibility visibility = content::Visibility::VISIBLE;
+  content::mojom::Visibility visibility = content::mojom::Visibility::kVisible;
   if ([self isHiddenOrHasHiddenAncestor] || ![self window])
-    visibility = content::Visibility::HIDDEN;
+    visibility = content::mojom::Visibility::kHidden;
   else if ([[self window] occlusionState] & NSWindowOcclusionStateVisible)
-    visibility = content::Visibility::VISIBLE;
+    visibility = content::mojom::Visibility::kVisible;
   else
-    visibility = content::Visibility::OCCLUDED;
-  if (webContentsView_)
-    webContentsView_->OnWindowVisibilityChanged(visibility);
+    visibility = content::mojom::Visibility::kOccluded;
+  client_->OnWindowVisibilityChanged(visibility);
 }
 
 - (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {

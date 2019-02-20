@@ -235,7 +235,7 @@ const CGFloat kButtonHorizontalPadding = 30.0;
   self.scrimView.accessibilityIdentifier = kHistorySearchScrimIdentifier;
   [self.scrimView addTarget:self
                      action:@selector(dismissSearchController:)
-           forControlEvents:UIControlEventAllTouchEvents];
+           forControlEvents:UIControlEventTouchUpInside];
 
   // Place the search bar in the navigation bar.
   self.navigationItem.searchController = self.searchController;
@@ -918,6 +918,10 @@ const CGFloat kButtonHorizontalPadding = 30.0;
   }
 }
 
+- (BOOL)scrimIsVisible {
+  return self.scrimView.superview ? YES : NO;
+}
+
 #pragma mark Navigation Toolbar Configuration
 
 // Animates the view configuration after flipping the current status of |[self
@@ -975,6 +979,10 @@ const CGFloat kButtonHorizontalPadding = 30.0;
     (UILongPressGestureRecognizer*)gestureRecognizer {
   if (gestureRecognizer.numberOfTouches != 1 || self.editing ||
       gestureRecognizer.state != UIGestureRecognizerStateBegan) {
+    return;
+  }
+  if ([self scrimIsVisible]) {
+    self.searchController.active = NO;
     return;
   }
 

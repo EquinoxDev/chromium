@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -192,8 +193,7 @@ class FileSystemApiTestForDrive : public PlatformAppBrowserTest {
 
     integration_service_ = new drive::DriveIntegrationService(
         profile, nullptr, fake_drive_service_, "", test_cache_root_.GetPath(),
-        nullptr,
-        fake_drivefs_helper_->CreateFakeDriveFsConnectionDelegateFactory());
+        nullptr, fake_drivefs_helper_->CreateFakeDriveFsListenerFactory());
     return integration_service_;
   }
 
@@ -357,7 +357,7 @@ class FileSystemApiTestForRequestFileSystem : public PlatformAppBrowserTest {
 
     return new drive::DriveIntegrationService(
         profile, nullptr, nullptr, "", {}, nullptr,
-        fake_drivefs_helper_->CreateFakeDriveFsConnectionDelegateFactory());
+        fake_drivefs_helper_->CreateFakeDriveFsListenerFactory());
   }
 
   base::ScopedTempDir drivefs_root_;

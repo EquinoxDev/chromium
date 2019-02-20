@@ -228,6 +228,13 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
                                               listener_position);
   }
 
+  // Update cached values in case automations end.
+  if (frames_to_process > 0) {
+    cached_azimuth_ = azimuth[frames_to_process - 1];
+    cached_elevation_ = elevation[frames_to_process - 1];
+    cached_distance_cone_gain_ = total_gain[frames_to_process - 1];
+  }
+
   panner_->PanWithSampleAccurateValues(azimuth, elevation, source, destination,
                                        frames_to_process,
                                        InternalChannelInterpretation());
@@ -495,8 +502,13 @@ void PannerHandler::CalculateAzimuthElevation(
   float up_projection = source_listener.Dot(up);
 
   FloatPoint3D projected_source = source_listener - up_projection * up;
+  projected_source.Normalize();
 
-  double azimuth = rad2deg(projected_source.AngleBetween(listener_right));
+  // Don't use AngleBetween here.  It produces the wrong value when one of the
+  // vectors has zero length.  We know here that |projected_source| and
+  // |listener_right| are "normalized", so the dot product is good enough.
+  double azimuth =
+      rad2deg(acos(clampTo(projected_source.Dot(listener_right), -1.0f, 1.0f)));
   FixNANs(azimuth);  // avoid illegal values
 
   // Source  in front or behind the listener
@@ -708,11 +720,6 @@ PannerNode::PannerNode(BaseAudioContext& context)
 PannerNode* PannerNode::Create(BaseAudioContext& context,
                                ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-
-  if (context.IsContextClosed()) {
-    context.ThrowExceptionForClosedState(exception_state);
-    return nullptr;
-  }
 
   return MakeGarbageCollected<PannerNode>(context);
 }

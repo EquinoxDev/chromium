@@ -186,18 +186,25 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_ACCOUNT_IDENTITY_CHOOSER_CHOOSE_ACCOUNT" desc="Label at the top an account list. The user has to select one of the accounts to sign-in. [Length: 20em] [iOS only]">
         Choose an Account
       </message>
+      <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_TITLE" desc="Title on the sync consent dialog to explain why sync can be useful for the user. [iOS only]">
+        Turn on sync?
+      </message>
+      <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_SYNC_TITLE" desc="Title of the sync description section on the sync consent dialog to explain why sync can be useful for the user. [iOS only]">
+        Sync your passwords, history &amp; more on all devices
+      </message>
+      <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_SYNC_SUBTITLE" desc="Subtitle of the sync description section on the sync consent dialog to explain why sync can be useful for the user. [iOS only]">
+        Google may use your history to personalize Search, ads, and other Google services.
+      </message>
+      <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_SETTINGS" desc="Explination text on the sync consent dialog to explain the user they can customize sync settings. [iOS only]">
+        You can <ph name="BEGIN_LINK">BEGIN_LINK</ph>customize these settings<ph name="END_LINK">END_LINK</ph> anytime
+      </message>
       <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_ADD_ACCOUNT" desc="Title of the button to add an account [Length: 15m] [iOS only]">
         ADD ACCOUNT
       </message>
       <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_OK_BUTTON" desc="Title of the button to validate the user consent [Length: 15m] [iOS only]">
         YES, I'M IN
       </message>
-      <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_PERSONALIZED" desc="Description on the sign-in consent dialog to explain the benefit to sign-in. [Length: unlimited] [iOS only]" translateable="false">
-      More personal Google services, like better page suggestions
-      </message>
-      <message name="IDS_IOS_ACCOUNT_UNIFIED_CONSENT_SYNC_DATA" desc="Description on the sign-in consent dialog to explain the benefit to sign-in. [Length: unlimited] [iOS only]" translateable="false">
-      Your passwords, history &amp; more on all devices
-      </message>
+
       <message name="IDS_IOS_APPEX_PASSWORD_FORM_FILLED_SUCCESS" desc="Message displayed when an App Extension has successfully filled a sign-in form with username and password. [Length: 30em] [iOS only]">
         Forms filled.
       </message>
@@ -206,6 +213,15 @@ locale.  The strings in this file are specific to iOS.
       </message>
       <message name="IDS_IOS_SUGGEST_PASSWORD" desc="Button title in the keyboard accessory bar to show a dialog with a generated password. [Length: 20em] [iOS only]">
         Suggest  Password...
+      </message>
+      <message name="IDS_IOS_SUGGESTED_PASSWORD" desc="Text that shows a suggested generated password at user's request [Length: unlimited] [iOS only]">
+        Chrome Suggested Password: <ph name="SUGGESTED_PASSWORD">$1<ex>Ax#f4gH*k7</ex></ph>
+      </message>
+      <message name="IDS_IOS_SUGGESTED_PASSWORD_HINT" desc="Text shown alongside a suggested password to tell user that generated passwords are recorded by chrome. [Length: unlimited] [iOS only]">
+        Chrome will remember this password for you. You don't have to remember it.
+      </message>
+      <message name="IDS_IOS_USE_SUGGESTED_PASSWORD" desc="Button title in a suggested password popup asking user if they want to use the suggested password. [Length: 20em] [iOS only]">
+        Use Suggested Password
       </message>
       <message name="IDS_IOS_APPLICATION_SHORTCUT_NEWINCOGNITOTAB_TITLE" desc="Message when opening a New Incognito Tab from springboard force touch static shortcuts. [Length: unlimited] [iOS only]." meaning="3D Touch entry to create a new Incognito tab.">
         New Incognito Tab
@@ -729,6 +745,9 @@ locale.  The strings in this file are specific to iOS.
       <message name="IDS_IOS_GOOGLE_SERVICES_SETTINGS_PRELOAD_PAGES_TEXT" desc="Title for a feature in the settings for the user to enable/disable, to preload pages. Related to 'Uses cookies to remember your preferences, even if you don't visit those pages'. [iOS only]">
         Preload pages for faster browsing and searching
       </message>
+      <message name="IDS_IOS_GOOGLE_SERVICES_SETTINGS_SIGN_IN_DETAIL_TEXT" desc="Invite the user to sign-in and explains the benefit. [iOS only]">
+        Sync and personalize across devices
+      </message>
       <message name="IDS_IOS_GOOGLE_SERVICES_SETTINGS_TITLE" desc="Title for the view in the Settings for enabling/disabling Sync and all the Google services. [Length: 26em] [iOS only]">
         Sync and Google Services
       </message>
@@ -755,6 +774,12 @@ locale.  The strings in this file are specific to iOS.
       </message>
       <message name="IDS_IOS_INSPECT_UI_CONSOLE_NOTICE" desc="The message at the top of the debugging page which displays JavaScript console logs [iOS only].">
         Tap the "Start Logging" button to collect future JavaScript console logs and errors from all tabs. Logs will be collected (and stored only in memory) until this page is closed or "Stop Logging" is tapped.
+      </message>
+      <message name="IDS_IOS_INSPECT_UI_CONSOLE_START_LOGGING" desc="The button on the top of the debugging page to start JavaScript console logging [iOS only].">
+        Start Logging
+      </message>
+      <message name="IDS_IOS_INSPECT_UI_CONSOLE_STOP_LOGGING" desc="The button on the top of the debugging page to stop JavaScript console logging [iOS only].">
+        Stop Logging
       </message>
       <message name="IDS_IOS_INTENTS_SEARCH_IN_CHROME_DESCRIPTION" desc="Siri Shortcut for search in chrome description [iOS only].">
         Start a search in a new Chrome tab.
@@ -791,6 +816,9 @@ locale.  The strings in this file are specific to iOS.
       </message>
       <message name="IDS_IOS_LONG_PRESS_TOOLBAR_IPH_PROMOTION_TEXT" desc="Text for the LongPress Toolbar Tip in-product help promotion, explaining that the user can long press on the toolbar's button to display more options. [iOS only]">
         Press and hold for more tab options
+      </message>
+      <message name="IDS_IOS_MANAGE_SYNC_SETTINGS_TITLE" desc="Title for the view in the Settings for enabling/disabling Sync. [iOS only]">
+        Manage Sync
       </message>
       <message name="IDS_IOS_MANAGED_DISCONNECT_DIALOG_ACCEPT" desc="Label on the button to proceed with signout and clear all Chrome data.[Length: 30em].">
         Accept and sign out
@@ -1289,8 +1317,11 @@ Handoff must also be enabled in the General section of Settings, and your device
       <message name="IDS_IOS_SEARCH_COPIED" desc="The message displayed when the search is copied via long press (contextual search) [Length: 10em] [iOS only]">
         Copied
       </message>
-      <message name="IDS_IOS_SEARCH_COPIED_TEXT" desc="Text in the search accelerator menu shown when long-pressing the omnibox with copied text. Enables pasting the current contents of the clipboard and searching the text. [iOS only]">
-          Search Copied Text
+      <message name="IDS_IOS_SEARCH_COPIED_IMAGE" desc="If a user has an image on their clipboard, this string will appear as an option when the user long-presses on Chrome's address bar. The user can select this option to search the default search engine for the image. This string is a complete sentence. If necessary for your language, you can translate as 'Search for Image That You Copied.' [iOS only]" meaning="Maximum characters: 32">
+          Search for Copied Image
+      </message>
+      <message name="IDS_IOS_SEARCH_COPIED_TEXT" desc="If a user has some text on their clipboard, this string will appear as an option when the user long-presses on Chrome's address bar. The user can select this option to search the default search engine for the text. This string is a complete sentence. If necessary for your language, you can translate as 'Search for Text That You Copied.' [iOS only]" meaning="Maximum characters: 32">
+          Search for Copied Text
       </message>
       <message name="IDS_IOS_SEARCH_ENGINE_SETTING_TITLE" desc="The title for Search Engine selection setting [iOS only]">
         Search Engine
@@ -1599,7 +1630,7 @@ Your data was encrypted with your sync passphrase on <ph name="TIME">$2<ex>Sept 
         Sync
       </message>
       <message name="IDS_IOS_SYNC_SETUP_IN_PROGRESS" desc="The message to display when the sync setup is in progress and sync isn't available yet. [Length: 60em] [iOS only]">
-        Setup in progress...
+        Setup in progress…
       </message>
       <message name="IDS_IOS_SYNC_SIGN_IN_AGAIN" desc="Title displayed when the signed in user needs sign in again. [Length: 20em] [iOS only]">
         Sign in again
@@ -1775,8 +1806,11 @@ Your data was encrypted with your sync passphrase on <ph name="TIME">$2<ex>Sept 
       <message name="IDS_IOS_TOOLS_MENU_REQUEST_MOBILE_SITE" desc="The iOS menu item for requesting the mobile site [iOS only]" meaning="Request the mobile version of the current web site. [Length: Unlimited]">
         Request Mobile Site
       </message>
-      <message name="IDS_IOS_TOOLS_MENU_SEARCH_COPIED_TEXT" desc="The iOS menu item for pasting text in the omnibox and searching for the text.">
-          Search Copied Text
+      <message name="IDS_IOS_TOOLS_MENU_SEARCH_COPIED_IMAGE" desc="If a user has an image on their clipboard, this string will appear as an option when the user long-presses on Chrome's search icon. The user can select this option to search the default search engine for the image. This string is a complete sentence. If necessary for your language, you can translate as 'Search for Image That You Copied.'" meaning="[Length:Unlimited]">
+        Search for Image You Copied
+      </message>
+      <message name="IDS_IOS_TOOLS_MENU_SEARCH_COPIED_TEXT" desc="If a user has some text on their clipboard, this string will appear as an option when the user long-presses on Chrome's search icon. The user can select this option to search the default search engine for the text. This string is a complete sentence. If necessary for your language, you can translate as 'Search for Text That You Copied.'" meaning="[Length:Unlimited]">
+          Search for Text You Copied
       </message>
       <message name="IDS_IOS_TOOLS_MENU_SETTINGS" desc="The iOS menu item for opening the settings [iOS only]" meaning="Open the settings menu. [Length:Unlimited]">
         Settings
@@ -1790,8 +1824,8 @@ Your data was encrypted with your sync passphrase on <ph name="TIME">$2<ex>Sept 
       <message name="IDS_IOS_TOOLS_MENU_STOP" desc="The iOS menu item for stoping the loading of the page.">
         Stop
       </message>
-      <message name="IDS_IOS_TOOLS_MENU_VISIT_COPIED_LINK" desc="The iOS menu item for pasting a URL in the omnibox and navigating to the page.">
-          Visit Copied Link
+      <message name="IDS_IOS_TOOLS_MENU_VISIT_COPIED_LINK" desc="If a user has a URL on their clipboard, this string will appear as an option when the user long-presses on Chrome's search icon. The user can select this option to visit the URL. This string is a complete sentence. If necessary for your language, you can translate as 'Visit Link That You Copied.'" meaning="[Lenth: unlimited]">
+          Visit Link You Copied
       </message>
       <message name="IDS_IOS_TOOLS_MENU_VOICE_SEARCH" desc="The iOS menu item for opening Voice Search.">
         Voice Search
@@ -1808,7 +1842,7 @@ Your data was encrypted with your sync passphrase on <ph name="TIME">$2<ex>Sept 
       <message name="IDS_IOS_UPGRADE_AVAILABLE_BUTTON" desc="Displayed on a button the user can use to upgrade the a more recent version of the application. [Length: 10em]">
         Update
       </message>
-      <message name="IDS_IOS_VISIT_COPIED_LINK" desc="Text in the search accelerator menu shown when long-pressing the omnibox with a copied url. Enables pasting the current contents of the clipboard and navigating to the url. [iOS only]">
+      <message name="IDS_IOS_VISIT_COPIED_LINK" desc="If a user has a URL on their clipboard, this string will appear as an option when the user long-presses on Chrome's address bar. The user can select this option to visit the URL. This string is a complete sentence. If necessary for your language, you can translate as 'Visit Link That You Copied.' [iOS only]" meaning="Maximum characters: 32">
           Visit Copied Link
       </message>
       <message name="IDS_IOS_VERSION" desc="The label for the Chrome version on which the application is based, displayed in the About Chrome settings page [Length: 30em] [iOS only]">

@@ -81,17 +81,26 @@ class AppShimHost : public chrome::mojom::AppShimHost {
   // AppShimHost is owned by itself. It will delete itself in Close (called on
   // channel error and OnAppClosed).
   ~AppShimHost() override;
+
+  // Return the AppShimHandler for this app (virtual for tests).
+  virtual apps::AppShimHandler* GetAppShimHandler() const;
+
+ private:
   void ChannelError(uint32_t custom_reason, const std::string& description);
 
   // Closes the channel and destroys the AppShimHost.
   void Close();
 
+  // Helper function to launch the app shim process.
+  void LaunchShimInternal(bool recreate_shims);
+
   // Called when LaunchShim has launched (or failed to launch) a process.
-  void OnShimLaunchCompleted(bool recreate_shims_requested,
+  void OnShimProcessLaunched(bool recreate_shims_requested,
                              base::Process shim_process);
 
-  // Return the AppShimHandler for this app (virtual for tests).
-  virtual apps::AppShimHandler* GetAppShimHandler() const;
+  // Called when a shim process returned via OnShimLaunchCompleted has
+  // terminated.
+  void OnShimProcessTerminated(bool recreate_shims_requested);
 
   // chrome::mojom::AppShimHost.
   void FocusApp(apps::AppShimFocusType focus_type,
@@ -102,6 +111,11 @@ class AppShimHost : public chrome::mojom::AppShimHost {
   mojo::Binding<chrome::mojom::AppShimHost> host_binding_;
   chrome::mojom::AppShimPtr app_shim_;
   chrome::mojom::AppShimRequest app_shim_request_;
+
+  // Only allow LaunchShim to have any effect on the first time it is called. If
+  // that launch fails, it will re-launch (requesting that the shim be
+  // re-created).
+  bool launch_shim_has_been_called_;
 
   std::unique_ptr<AppShimHostBootstrap> bootstrap_;
 
@@ -114,7 +128,9 @@ class AppShimHost : public chrome::mojom::AppShimHost {
 
   // This class is only ever to be used on the UI thread.
   THREAD_CHECKER(thread_checker_);
-  base::WeakPtrFactory<AppShimHost> weak_factory_;
+
+  // This weak factory is used for launch callbacks only.
+  base::WeakPtrFactory<AppShimHost> launch_weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(AppShimHost);
 };
 

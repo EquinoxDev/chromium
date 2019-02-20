@@ -1228,7 +1228,7 @@ bool AXObject::CanSetValueAttribute() const {
     case ax::mojom::Role::kTextFieldWithComboBox:
     case ax::mojom::Role::kTime:
     case ax::mojom::Role::kSearchBox:
-      return Restriction() == kNone;
+      return Restriction() == kRestrictionNone;
     default:
       break;
   }
@@ -1337,7 +1337,7 @@ bool AXObject::HasIndirectChildren() const {
 
 bool AXObject::CanSetSelectedAttribute() const {
   // Sub-widget elements can be selected if not disabled (native or ARIA)
-  return IsSubWidget() && Restriction() != kDisabled;
+  return IsSubWidget() && Restriction() != kRestrictionDisabled;
 }
 
 bool AXObject::IsSubWidget() const {
@@ -1727,7 +1727,8 @@ void AXObject::Markers(Vector<DocumentMarker::MarkerType>&,
 
 void AXObject::TextCharacterOffsets(Vector<int>&) const {}
 
-void AXObject::GetWordBoundaries(Vector<AXRange>&) const {}
+void AXObject::GetWordBoundaries(Vector<int>& word_starts,
+                                 Vector<int>& word_ends) const {}
 
 ax::mojom::DefaultActionVerb AXObject::Action() const {
   Element* action_element = ActionElement();
@@ -1934,10 +1935,10 @@ AXRestriction AXObject::Restriction() const {
                                     is_disabled)) {
     // Has aria-disabled, overrides native markup determining disabled.
     if (is_disabled)
-      return kDisabled;
+      return kRestrictionDisabled;
   } else if (CanSetFocusAttribute() && IsDescendantOfDisabledNode()) {
     // No aria-disabled, but other markup says it's disabled.
-    return kDisabled;
+    return kRestrictionDisabled;
   }
 
   // Check aria-readonly if supported by current role.
@@ -1946,11 +1947,11 @@ AXRestriction AXObject::Restriction() const {
       HasAOMPropertyOrARIAAttribute(AOMBooleanProperty::kReadOnly,
                                     is_read_only)) {
     // ARIA overrides other readonly state markup.
-    return is_read_only ? kReadOnly : kNone;
+    return is_read_only ? kRestrictionReadOnly : kRestrictionNone;
   }
 
   // This is a node that is not readonly and not disabled.
-  return kNone;
+  return kRestrictionNone;
 }
 
 ax::mojom::Role AXObject::DetermineAccessibilityRole() {
@@ -2594,45 +2595,11 @@ int AXObject::AriaRowCount() const {
 }
 
 unsigned AXObject::ColumnIndex() const {
-  if (!IsTableCellLikeRole())
-    return 0;
-
-  const AXObject* row = TableRowParent();
-  if (!row)
-    return 0;
-
-  unsigned column_index = 0;
-  for (const auto& child : row->TableCellChildren()) {
-    if (child == this)
-      break;
-    column_index++;
-  }
-  return column_index;
+  return 0;
 }
 
 unsigned AXObject::RowIndex() const {
-  const AXObject* row = nullptr;
-  if (IsTableRowLikeRole())
-    row = this;
-  else if (IsTableCellLikeRole())
-    row = TableRowParent();
-
-  if (!row)
-    return 0;
-
-  const AXObject* table = row->TableParent();
-  if (!table)
-    return 0;
-
-  unsigned row_index = 0;
-  for (const auto& child : table->TableRowChildren()) {
-    if (child == row)
-      break;
-    if (!child->IsTableRowLikeRole())
-      continue;
-    row_index++;
-  }
-  return row_index;
+  return 0;
 }
 
 unsigned AXObject::ColumnSpan() const {
@@ -2876,6 +2843,9 @@ bool AXObject::OnNativeClickAction() {
   Element* element = GetElement();
   if (!element && GetNode())
     element = GetNode()->parentElement();
+
+  if (IsTextControl())
+    return OnNativeFocusAction();
 
   if (element) {
     element->AccessKeyAction(true);

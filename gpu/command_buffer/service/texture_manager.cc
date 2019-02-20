@@ -32,6 +32,7 @@
 #include "gpu/command_buffer/service/service_discardable_manager.h"
 #include "gpu/command_buffer/service/shared_image_representation.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_enums.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_state_restorer.h"
 #include "ui/gl/gl_version_info.h"
@@ -795,8 +796,7 @@ void Texture::AddToSignature(
   DCHECK(signature);
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index),
-            face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
 
@@ -1018,8 +1018,7 @@ void Texture::SetLevelClearedRect(GLenum target,
                                   const gfx::Rect& cleared_rect) {
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index),
-            face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
   Texture::LevelInfo& info =
@@ -1031,7 +1030,7 @@ void Texture::SetLevelClearedRect(GLenum target,
 void Texture::SetLevelCleared(GLenum target, GLint level, bool cleared) {
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index), face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
   Texture::LevelInfo& info = face_infos_[face_index].level_infos[level];
@@ -1199,8 +1198,7 @@ void Texture::SetLevelInfo(GLenum target,
                            const gfx::Rect& cleared_rect) {
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index),
-            face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
   DCHECK_GE(width, 0);
@@ -1304,8 +1302,7 @@ void Texture::SetStreamTextureServiceId(GLuint service_id) {
 void Texture::MarkLevelAsInternalWorkaround(GLenum target, GLint level) {
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index),
-            face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
   Texture::LevelInfo& info =
@@ -1332,18 +1329,12 @@ bool Texture::ValidForTexture(
     int32_t max_x;
     int32_t max_y;
     int32_t max_z;
-    return xoffset >= 0 &&
-           yoffset >= 0 &&
-           zoffset >= 0 &&
-           width >= 0 &&
-           height >= 0 &&
-           depth >= 0 &&
-           SafeAddInt32(xoffset, width, &max_x) &&
-           SafeAddInt32(yoffset, height, &max_y) &&
-           SafeAddInt32(zoffset, depth, &max_z) &&
-           max_x <= info.width &&
-           max_y <= info.height &&
-           max_z <= info.depth;
+    return xoffset >= 0 && yoffset >= 0 && zoffset >= 0 && width >= 0 &&
+           height >= 0 && depth >= 0 &&
+           base::CheckAdd(xoffset, width).AssignIfValid(&max_x) &&
+           base::CheckAdd(yoffset, height).AssignIfValid(&max_y) &&
+           base::CheckAdd(zoffset, depth).AssignIfValid(&max_z) &&
+           max_x <= info.width && max_y <= info.height && max_z <= info.depth;
   }
   return false;
 }
@@ -1786,7 +1777,7 @@ void Texture::SetLevelImageInternal(GLenum target,
   DCHECK(!stream_texture_image || stream_texture_image == image);
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index), face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
   Texture::LevelInfo& info = face_infos_[face_index].level_infos[level];
@@ -1821,7 +1812,7 @@ void Texture::SetLevelStreamTextureImage(GLenum target,
 void Texture::SetLevelImageState(GLenum target, GLint level, ImageState state) {
   DCHECK_GE(level, 0);
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
-  DCHECK_LT(static_cast<size_t>(face_index), face_infos_.size());
+  DCHECK_LT(face_index, face_infos_.size());
   DCHECK_LT(static_cast<size_t>(level),
             face_infos_[face_index].level_infos.size());
   Texture::LevelInfo& info = face_infos_[face_index].level_infos[level];
@@ -2077,6 +2068,7 @@ void TextureManager::Initialize() {
       GL_TEXTURE_CUBE_MAP, &black_texture_ids_[kCubeMap]);
 
   if (feature_info_->IsWebGL2OrES3Context()) {
+    DCHECK(feature_info_->IsES3Capable());
     default_textures_[kTexture3D] = CreateDefaultAndBlackTextures(
         GL_TEXTURE_3D, &black_texture_ids_[kTexture3D]);
     default_textures_[kTexture2DArray] = CreateDefaultAndBlackTextures(
@@ -2208,12 +2200,21 @@ bool TextureManager::ClearRenderableLevels(DecoderContext* decoder,
   return ref->texture()->ClearRenderableLevels(decoder);
 }
 
+// static
 bool TextureManager::ClearTextureLevel(DecoderContext* decoder,
                                        TextureRef* ref,
                                        GLenum target,
                                        GLint level) {
   DCHECK(ref);
   Texture* texture = ref->texture();
+  return ClearTextureLevel(decoder, texture, target, level);
+}
+
+// static
+bool TextureManager::ClearTextureLevel(DecoderContext* decoder,
+                                       Texture* texture,
+                                       GLenum target,
+                                       GLint level) {
   if (texture->num_uncleared_mips() == 0) {
     return true;
   }
@@ -2718,7 +2719,7 @@ bool TextureManager::ValidateTexImage(ContextState* state,
           "pixel unpack buffer is not large enough");
       return false;
     }
-    size_t type_size = GLES2Util::GetGLTypeSizeForTextures(args.type);
+    uint32_t type_size = GLES2Util::GetGLTypeSizeForTextures(args.type);
     DCHECK_LT(0u, type_size);
     if (offset % type_size != 0) {
       ERRORSTATE_SET_GL_ERROR(
@@ -3015,7 +3016,7 @@ bool TextureManager::ValidateTexSubImage(ContextState* state,
           "pixel unpack buffer is not large enough");
       return false;
     }
-    size_t type_size = GLES2Util::GetGLTypeSizeForTextures(args.type);
+    uint32_t type_size = GLES2Util::GetGLTypeSizeForTextures(args.type);
     DCHECK_LT(0u, type_size);
     if (offset % type_size != 0) {
       ERRORSTATE_SET_GL_ERROR(
@@ -3674,6 +3675,9 @@ GLenum TextureManager::ExtractFormatFromStorageFormat(GLenum internalformat) {
     case GL_RGB9_E5:
     case GL_RGB16F:
     case GL_RGB32F:
+    case GL_RGB_YCBCR_420V_CHROMIUM:
+    case GL_RGB_YCBCR_422_CHROMIUM:
+    case GL_RGB_YCRCB_420_CHROMIUM:
       return GL_RGB;
     case GL_RGB8UI:
     case GL_RGB8I:
@@ -3913,6 +3917,122 @@ uint32_t TextureManager::GetServiceIdGeneration() const {
 
 void TextureManager::IncrementServiceIdGeneration() {
   current_service_id_generation_++;
+}
+
+const Texture::LevelInfo* Texture::GetBaseLevelInfo() const {
+  if (face_infos_.empty() ||
+      static_cast<size_t>(base_level_) >= face_infos_[0].level_infos.size()) {
+    return nullptr;
+  }
+  return &face_infos_[0].level_infos[base_level_];
+}
+
+GLenum Texture::GetInternalFormatOfBaseLevel() const {
+  const LevelInfo* level_info = GetBaseLevelInfo();
+  return level_info ? level_info->internal_format : GL_NONE;
+}
+
+bool Texture::CompatibleWithSamplerUniformType(GLenum type) const {
+  enum {
+    SAMPLER_INVALID,
+    SAMPLER_FLOAT,
+    SAMPLER_UNSIGNED,
+    SAMPLER_SIGNED,
+    SAMPLER_SHADOW,
+  } category = SAMPLER_INVALID;
+
+  switch (type) {
+    case GL_SAMPLER_2D:
+    case GL_SAMPLER_2D_RECT_ARB:
+    case GL_SAMPLER_CUBE:
+    case GL_SAMPLER_EXTERNAL_OES:
+    case GL_SAMPLER_3D:
+    case GL_SAMPLER_2D_ARRAY:
+      category = SAMPLER_FLOAT;
+      break;
+    case GL_INT_SAMPLER_2D:
+    case GL_INT_SAMPLER_3D:
+    case GL_INT_SAMPLER_CUBE:
+    case GL_INT_SAMPLER_2D_ARRAY:
+      category = SAMPLER_SIGNED;
+      break;
+    case GL_UNSIGNED_INT_SAMPLER_2D:
+    case GL_UNSIGNED_INT_SAMPLER_3D:
+    case GL_UNSIGNED_INT_SAMPLER_CUBE:
+    case GL_UNSIGNED_INT_SAMPLER_2D_ARRAY:
+      category = SAMPLER_UNSIGNED;
+      break;
+    case GL_SAMPLER_2D_SHADOW:
+    case GL_SAMPLER_2D_ARRAY_SHADOW:
+    case GL_SAMPLER_CUBE_SHADOW:
+    case GL_SAMPLER_2D_RECT_SHADOW_ARB:
+      category = SAMPLER_SHADOW;
+      break;
+    default:
+      NOTREACHED();
+  }
+
+  const LevelInfo* level_info = GetBaseLevelInfo();
+  if (!level_info) {
+    return false;
+  }
+  if ((level_info->format == GL_DEPTH_COMPONENT ||
+       level_info->format == GL_DEPTH_STENCIL) &&
+      sampler_state_.compare_mode != GL_NONE) {
+    // If TEXTURE_COMPARE_MODE is set, then depth textures can only be sampled
+    // by shadow samplers.
+    return category == SAMPLER_SHADOW;
+  }
+
+  if (level_info->type == GL_NONE && level_info->format == GL_NONE &&
+      level_info->internal_format != GL_NONE) {
+    // This is probably a compressed texture format. All compressed formats are
+    // sampled as float.
+    return category == SAMPLER_FLOAT;
+  }
+
+  bool normalized =
+      level_info->format == GL_RED || level_info->format == GL_RG ||
+      level_info->format == GL_RGB || level_info->format == GL_RGBA ||
+      level_info->format == GL_DEPTH_COMPONENT ||
+      level_info->format == GL_DEPTH_STENCIL ||
+      level_info->format == GL_LUMINANCE_ALPHA ||
+      level_info->format == GL_LUMINANCE || level_info->format == GL_ALPHA ||
+      level_info->format == GL_BGRA_EXT || level_info->format == GL_SRGB_EXT;
+  if (normalized) {
+    // All normalized texture formats are sampled as float.
+    return category == SAMPLER_FLOAT;
+  }
+
+  switch (level_info->type) {
+    case GL_HALF_FLOAT:
+    case GL_FLOAT:
+    case GL_FLOAT_32_UNSIGNED_INT_24_8_REV:
+      // Float formats.
+      return category == SAMPLER_FLOAT;
+    case GL_BYTE:
+    case GL_SHORT:
+    case GL_INT:
+      // Signed integer formats.
+      return category == SAMPLER_SIGNED;
+    case GL_UNSIGNED_BYTE:
+    case GL_UNSIGNED_SHORT:
+    case GL_UNSIGNED_INT:
+    case GL_UNSIGNED_SHORT_5_5_5_1:
+    case GL_UNSIGNED_INT_2_10_10_10_REV:
+    case GL_UNSIGNED_INT_10F_11F_11F_REV:
+    case GL_UNSIGNED_INT_5_9_9_9_REV:
+    case GL_UNSIGNED_INT_24_8:
+      // Unsigned integer formats.
+      return category == SAMPLER_UNSIGNED;
+    default:
+      NOTREACHED() << "Type: " << GLES2Util::GetStringEnum(level_info->type)
+                   << " Format: "
+                   << GLES2Util::GetStringEnum(level_info->format)
+                   << "  Internal format: "
+                   << GLES2Util::GetStringEnum(level_info->internal_format);
+  }
+  return false;
 }
 
 }  // namespace gles2

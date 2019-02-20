@@ -11,15 +11,17 @@
 #include "base/callback_forward.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
+#include "base/optional.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/page_visibility_state.h"
 #include "content/public/common/console_message_level.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
-#include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom.h"
+#include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom-forward.h"
 #include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
 #include "ui/accessibility/ax_tree_id.h"
 #include "ui/gfx/geometry/rect.h"
@@ -43,10 +45,6 @@ class Value;
 namespace features {
 CONTENT_EXPORT extern const base::Feature kCrashReporting;
 }  // namespace features
-
-namespace resource_coordinator {
-class FrameResourceCoordinator;
-}
 
 namespace service_manager {
 class InterfaceProvider;
@@ -110,11 +108,6 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // process.
   virtual SiteInstance* GetSiteInstance() = 0;
 
-  // Returns the interface for the Global Resource Coordinator
-  // for this frame.
-  virtual resource_coordinator::FrameResourceCoordinator*
-  GetFrameResourceCoordinator() = 0;
-
   // Returns the process for this frame.
   virtual RenderProcessHost* GetProcess() = 0;
 
@@ -158,6 +151,13 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // quite possible for a frame to have no name, in which case GetFrameName will
   // return an empty string.
   virtual const std::string& GetFrameName() = 0;
+
+  // Returns true if the frame is display: none.
+  virtual bool IsFrameDisplayNone() = 0;
+
+  // Returns the size of the frame in the viewport. The frame may not be aware
+  // of its size.
+  virtual const base::Optional<gfx::Size>& GetFrameSize() = 0;
 
   // Returns true if the frame is out of process.
   virtual bool IsCrossProcessSubframe() = 0;
@@ -260,7 +260,7 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 
   // Get the number of proxies to this frame, in all processes. Exposed for
   // use by resource metrics.
-  virtual int GetProxyCount() = 0;
+  virtual size_t GetProxyCount() = 0;
 
   // Returns true if the frame has a selection.
   virtual bool HasSelection() = 0;

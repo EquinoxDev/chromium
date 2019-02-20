@@ -25,7 +25,6 @@
 #include "chrome/browser/policy/cloud/user_policy_signin_service_factory.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_mobile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
@@ -37,11 +36,7 @@
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/account_consistency_method.h"
-#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/oauth2_token_service_delegate_android.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
-#include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/browser/signin_pref_names.h"
 #include "content/public/browser/browsing_data_filter_builder.h"
 #include "content/public/browser/browsing_data_remover.h"
@@ -163,8 +158,9 @@ void SigninManagerAndroid::CheckPolicyBeforeSignIn(
       policy::UserPolicySigninServiceFactory::GetForProfile(profile_);
   service->RegisterForPolicyWithAccountId(
       username_,
-      AccountTrackerServiceFactory::GetForProfile(profile_)
-          ->FindAccountInfoByEmail(username_)
+      IdentityManagerFactory::GetForProfile(profile_)
+          ->FindAccountInfoForAccountWithRefreshTokenByEmailAddress(username_)
+          .value()
           .account_id,
       base::Bind(&SigninManagerAndroid::OnPolicyRegisterDone,
                  weak_factory_.GetWeakPtr()));
@@ -181,8 +177,10 @@ void SigninManagerAndroid::FetchPolicyBeforeSignIn(
             ->GetURLLoaderFactoryForBrowserProcess();
     service->FetchPolicyForSignedInUser(
         AccountIdFromAccountInfo(
-            AccountTrackerServiceFactory::GetForProfile(profile_)
-                ->FindAccountInfoByEmail(username_)),
+            IdentityManagerFactory::GetForProfile(profile_)
+                ->FindAccountInfoForAccountWithRefreshTokenByEmailAddress(
+                    username_)
+                .value()),
         dm_token_, client_id_, url_loader_factory,
         base::Bind(&SigninManagerAndroid::OnPolicyFetchDone,
                    weak_factory_.GetWeakPtr()));
@@ -310,12 +308,8 @@ void SigninManagerAndroid::LogInSignedInUser(JNIEnv* env,
       IdentityManagerFactory::GetForProfile(profile_);
   // With the account consistency enabled let the account Reconcilor handles
   // everything.
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
-  const std::string& primary_acct = identity_manager->GetPrimaryAccountId();
-
-  static_cast<OAuth2TokenServiceDelegateAndroid*>(token_service->GetDelegate())
-      ->ValidateAccounts(primary_acct, true);
+  // TODO(https://crbug.com/930094): Determine the right long-term flow here.
+  identity_manager->LegacyReloadAccountsFromSystem();
 }
 
 jboolean SigninManagerAndroid::IsSigninAllowedByPolicy(
@@ -339,7 +333,7 @@ jboolean SigninManagerAndroid::IsSignedInOnNative(
 }
 
 void SigninManagerAndroid::OnPrimaryAccountCleared(
-    const AccountInfo& previous_primary_account_info) {
+    const CoreAccountInfo& previous_primary_account_info) {
   DCHECK(thread_checker_.CalledOnValidThread());
   Java_SigninManager_onNativeSignOut(base::android::AttachCurrentThread(),
                                      java_signin_manager_);
@@ -389,8 +383,9 @@ static void JNI_SigninManager_IsUserManaged(
       policy::UserPolicySigninServiceFactory::GetForProfile(profile);
   service->RegisterForPolicyWithAccountId(
       username,
-      AccountTrackerServiceFactory::GetForProfile(profile)
-          ->FindAccountInfoByEmail(username)
+      IdentityManagerFactory::GetForProfile(profile)
+          ->FindAccountInfoForAccountWithRefreshTokenByEmailAddress(username)
+          .value()
           .account_id,
       base::Bind(&UserManagementDomainFetched, callback));
 }

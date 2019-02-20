@@ -58,7 +58,6 @@ class NavigationContextImpl : public NavigationContext {
   void SetError(NSError* error);
   void SetResponseHeaders(
       const scoped_refptr<net::HttpResponseHeaders>& response_headers);
-  void SetIsRendererInitiated(bool is_renderer_initiated);
 
   // Optional unique id of the navigation item associated with this navigaiton.
   int GetNavigationItemUniqueID() const;
@@ -89,6 +88,10 @@ class NavigationContextImpl : public NavigationContext {
   bool IsPlaceholderNavigation() const;
   void SetPlaceholderNavigation(bool flag);
 
+  // MIMEType of the navigation.
+  void SetMimeType(NSString* mime_type);
+  NSString* GetMimeType() const;
+
  private:
   NavigationContextImpl(WebState* web_state,
                         const GURL& url,
@@ -105,7 +108,7 @@ class NavigationContextImpl : public NavigationContext {
   bool has_committed_ = false;
   bool is_download_ = false;
   bool is_post_ = false;
-  NSError* error_;
+  NSError* error_ = nil;
   scoped_refptr<net::HttpResponseHeaders> response_headers_;
   bool is_renderer_initiated_ = false;
   int navigation_item_unique_id_ = -1;
@@ -114,6 +117,7 @@ class NavigationContextImpl : public NavigationContext {
   bool is_loading_html_string_ = false;
   bool is_native_content_presented_ = false;
   bool is_placeholder_navigation_ = false;
+  NSString* mime_type_ = nil;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationContextImpl);
 };

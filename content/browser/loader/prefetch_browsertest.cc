@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -341,9 +342,9 @@ IN_PROC_BROWSER_TEST_P(PrefetchBrowserTest, WebPackageWithPreload) {
   RegisterResponse(
       target_sxg,
       // We mock the SignedExchangeHandler, so just return a HTML content
-      // as "application/signed-exchange;v=b2".
+      // as "application/signed-exchange;v=b3".
       ResponseEntry("<head><title>Prefetch Target (SXG)</title></head>",
-                    "application/signed-exchange;v=b2",
+                    "application/signed-exchange;v=b3",
                     {{"x-content-type-options", "nosniff"}}));
   RegisterResponse(preload_url_in_sxg,
                    ResponseEntry("function foo() {}", "text/javascript"));
@@ -386,9 +387,9 @@ IN_PROC_BROWSER_TEST_P(PrefetchBrowserTest, WebPackageWithPreload) {
   EXPECT_EQ(1, preload_fetch_count);
 }
 
-INSTANTIATE_TEST_CASE_P(PrefetchBrowserTest,
-                        PrefetchBrowserTest,
-                        testing::Values(PrefetchBrowserTestParam(true),
-                                        PrefetchBrowserTestParam(false)));
+INSTANTIATE_TEST_SUITE_P(PrefetchBrowserTest,
+                         PrefetchBrowserTest,
+                         testing::Values(PrefetchBrowserTestParam(true),
+                                         PrefetchBrowserTestParam(false)));
 
 }  // namespace content

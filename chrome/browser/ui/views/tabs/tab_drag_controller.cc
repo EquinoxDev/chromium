@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/i18n/rtl.h"
 #include "base/macros.h"
@@ -597,6 +598,11 @@ void TabDragController::OnWidgetBoundsChanged(views::Widget* widget,
                                               const gfx::Rect& new_bounds) {
   TRACE_EVENT1("views", "TabDragController::OnWidgetBoundsChanged",
                "new_bounds", new_bounds.ToString());
+  // Detaching and attaching can be suppresed temporarily to suppress attaching
+  // to incorrect window on changing bounds. We should prevent Drag() itself,
+  // otherwise it can clear deferred attaching tab.
+  if (!CanDetachFromTabStrip(GetTabStripForWindow(widget->GetNativeWindow())))
+    return;
 #if defined(USE_AURA)
   aura::Env* env = widget->GetNativeWindow()->env();
   // WidgetBoundsChanged happens as a step of ending a drag, but Drag() doesn't
@@ -809,7 +815,7 @@ TabDragController::DragBrowserToNewTabStrip(TabStrip* target_tabstrip,
     else
       target_tabstrip->GetWidget()->SetCapture(attached_tabstrip_);
 
-#if !defined(OS_LINUX)
+#if !defined(OS_LINUX) || defined(OS_CHROMEOS)
     // EndMoveLoop is going to snap the window back to its original location.
     // Hide it so users don't see this. Hiding a window in Linux aura causes
     // it to lose capture so skip it.
@@ -1014,13 +1020,6 @@ TabDragController::Liveness TabDragController::GetTargetTabStripForPoint(
   *tab_strip = nullptr;
   TRACE_EVENT1("views", "TabDragController::GetTargetTabStripForPoint",
                "point_in_screen", point_in_screen.ToString());
-
-  // Do not change the current attached tabstrip if it's not allowed to detach
-  // from the current tabstrip and attach into another window's tabstrip.
-  if (attached_tabstrip_ && !CanDetachFromTabStrip(attached_tabstrip_)) {
-    *tab_strip = attached_tabstrip_;
-    return Liveness::ALIVE;
-  }
 
   if (move_only() && attached_tabstrip_) {
     // move_only() is intended for touch, in which case we only want to detach
@@ -1483,7 +1482,12 @@ void TabDragController::PerformDeferredAttach() {
   // GetCursorScreenPoint() needs to be called before Detach() is called as
   // GetCursorScreenPoint() may use the current attached tabstrip to get the
   // touch event position but Detach() sets attached tabstrip to nullptr.
-  const gfx::Point current_screen_point = GetCursorScreenPoint();
+  // On ChromeOS, the gesture state is already cleared and so
+  // GetCursorScreenPoint() will fail to obtain the last touch location.
+  // Therefore it uses the last remembered location instead.
+  const gfx::Point current_screen_point = (event_source_ == EVENT_SOURCE_TOUCH)
+                                              ? last_point_in_screen_
+                                              : GetCursorScreenPoint();
   Detach(DONT_RELEASE_CAPTURE);
   // If we're attaching the dragged tabs to an overview window's tabstrip, the
   // tabstrip should not have focus.
@@ -1952,8 +1956,13 @@ TabDragController::Liveness TabDragController::GetLocalProcessWindow(
   if (exclude_dragged_view) {
     gfx::NativeWindow dragged_window =
         attached_tabstrip_->GetWidget()->GetNativeWindow();
-    if (dragged_window)
+    if (dragged_window) {
+#if defined(OS_CHROMEOS)
+      if (features::IsUsingWindowService())
+        dragged_window = dragged_window->GetRootWindow();
+#endif
       exclude.insert(dragged_window);
+    }
   }
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Exclude windows which are pending deletion via Browser::TabStripEmpty().

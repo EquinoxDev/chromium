@@ -88,7 +88,7 @@ class VisualViewportTest : public testing::Test,
       void (*override_settings_func)(WebSettings*) = nullptr) {
     if (!override_settings_func)
       override_settings_func = &ConfigureSettings;
-    helper_.Initialize(nullptr, &web_view_client_, override_settings_func);
+    helper_.Initialize(nullptr, nullptr, nullptr, override_settings_func);
     WebView()->SetDefaultPageScaleLimits(1, 4);
   }
 
@@ -96,7 +96,7 @@ class VisualViewportTest : public testing::Test,
       void (*override_settings_func)(WebSettings*) = nullptr) {
     if (!override_settings_func)
       override_settings_func = &ConfigureAndroidSettings;
-    helper_.Initialize(nullptr, &web_view_client_, override_settings_func);
+    helper_.Initialize(nullptr, nullptr, nullptr, override_settings_func);
     WebView()->SetDefaultPageScaleLimits(0.25f, 5);
   }
 
@@ -206,11 +206,10 @@ class VisualViewportTest : public testing::Test,
 
  protected:
   std::string base_url_;
-  frame_test_helpers::TestWebViewClient web_view_client_;
   frame_test_helpers::WebViewHelper helper_;
 };
 
-INSTANTIATE_PAINT_TEST_CASE_P(VisualViewportTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(VisualViewportTest);
 
 // Test that resizing the VisualViewport works as expected and that resizing the
 // WebView resizes the VisualViewport.
@@ -381,8 +380,9 @@ TEST_P(VisualViewportTest, TestResizeAfterVerticalScroll) {
               visual_viewport.GetScrollTranslationNode()->Matrix());
     EXPECT_EQ(TransformationMatrix().Scale(2).Translate(0, -300),
               GeometryMapper::SourceToDestinationProjection(
-                  visual_viewport.GetScrollTranslationNode(),
-                  &TransformPaintPropertyNode::Root()));
+                  *visual_viewport.GetScrollTranslationNode(),
+                  TransformPaintPropertyNode::Root())
+                  .Matrix());
   }
 
   // Perform the resizing
@@ -405,8 +405,9 @@ TEST_P(VisualViewportTest, TestResizeAfterVerticalScroll) {
               visual_viewport.GetScrollTranslationNode()->Matrix());
     EXPECT_EQ(TransformationMatrix().Scale(4).Translate(0, -75),
               GeometryMapper::SourceToDestinationProjection(
-                  visual_viewport.GetScrollTranslationNode(),
-                  &TransformPaintPropertyNode::Root()));
+                  *visual_viewport.GetScrollTranslationNode(),
+                  TransformPaintPropertyNode::Root())
+                  .Matrix());
   }
 }
 
@@ -469,8 +470,9 @@ TEST_P(VisualViewportTest, TestResizeAfterHorizontalScroll) {
               visual_viewport.GetScrollTranslationNode()->Matrix());
     EXPECT_EQ(TransformationMatrix().Scale(2).Translate(-150, 0),
               GeometryMapper::SourceToDestinationProjection(
-                  visual_viewport.GetScrollTranslationNode(),
-                  &TransformPaintPropertyNode::Root()));
+                  *visual_viewport.GetScrollTranslationNode(),
+                  TransformPaintPropertyNode::Root())
+                  .Matrix());
   }
 
   WebView()->MainFrameWidget()->Resize(IntSize(200, 100));
@@ -492,8 +494,9 @@ TEST_P(VisualViewportTest, TestResizeAfterHorizontalScroll) {
               visual_viewport.GetScrollTranslationNode()->Matrix());
     EXPECT_EQ(TransformationMatrix().Scale(4).Translate(-150, 0),
               GeometryMapper::SourceToDestinationProjection(
-                  visual_viewport.GetScrollTranslationNode(),
-                  &TransformPaintPropertyNode::Root()));
+                  *visual_viewport.GetScrollTranslationNode(),
+                  TransformPaintPropertyNode::Root())
+                  .Matrix());
   }
 }
 
@@ -960,11 +963,12 @@ TEST_P(VisualViewportTest, TestSavedToHistoryItem) {
   RegisterMockedHttpURLLoad("200-by-300.html");
   NavigateTo(base_url_ + "200-by-300.html");
 
-  EXPECT_EQ(nullptr, ToLocalFrame(WebView()->GetPage()->MainFrame())
-                         ->Loader()
-                         .GetDocumentLoader()
-                         ->GetHistoryItem()
-                         ->GetViewState());
+  EXPECT_FALSE(ToLocalFrame(WebView()->GetPage()->MainFrame())
+                   ->Loader()
+                   .GetDocumentLoader()
+                   ->GetHistoryItem()
+                   ->GetViewState()
+                   .has_value());
 
   VisualViewport& visual_viewport = GetFrame()->GetPage()->GetVisualViewport();
   visual_viewport.SetScale(2);
@@ -1774,7 +1778,7 @@ TEST_P(VisualViewportTest, ElementVisibleBoundsInVisualViewport) {
 // methods don't change with the visual viewport.
 TEST_P(VisualViewportTest, visualViewportIsInert) {
   WebViewImpl* web_view_impl =
-      helper_.Initialize(nullptr, nullptr, &ConfigureAndroidCompositing);
+      helper_.InitializeWithSettings(&ConfigureAndroidCompositing);
 
   web_view_impl->MainFrameWidget()->Resize(IntSize(200, 300));
 
@@ -2127,7 +2131,7 @@ TEST_P(VisualViewportTest, ResizeCompositedAndFixedBackground) {
     return;
 
   WebViewImpl* web_view_impl =
-      helper_.Initialize(nullptr, nullptr, &ConfigureAndroidCompositing);
+      helper_.InitializeWithSettings(&ConfigureAndroidCompositing);
 
   int page_width = 640;
   int page_height = 480;
@@ -2197,11 +2201,15 @@ static void ConfigureAndroidNonCompositing(WebSettings* settings) {
 // Make sure a non-composited background-attachment:fixed background gets
 // resized by browser controls.
 TEST_P(VisualViewportTest, ResizeNonCompositedAndFixedBackground) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled())
     return;
 
   WebViewImpl* web_view_impl =
-      helper_.Initialize(nullptr, nullptr, &ConfigureAndroidNonCompositing);
+      helper_.InitializeWithSettings(&ConfigureAndroidNonCompositing);
 
   int page_width = 640;
   int page_height = 480;
@@ -2271,7 +2279,7 @@ TEST_P(VisualViewportTest, ResizeNonCompositedAndFixedBackground) {
 // background doesn't cause invalidation or layout.
 TEST_P(VisualViewportTest, ResizeNonFixedBackgroundNoLayoutOrInvalidation) {
   WebViewImpl* web_view_impl =
-      helper_.Initialize(nullptr, nullptr, &ConfigureAndroidCompositing);
+      helper_.InitializeWithSettings(&ConfigureAndroidCompositing);
 
   int page_width = 640;
   int page_height = 480;
@@ -2334,7 +2342,7 @@ TEST_P(VisualViewportTest, ResizeNonFixedBackgroundNoLayoutOrInvalidation) {
 
 TEST_P(VisualViewportTest, InvalidateLayoutViewWhenDocumentSmallerThanView) {
   WebViewImpl* web_view_impl =
-      helper_.Initialize(nullptr, nullptr, &ConfigureAndroidCompositing);
+      helper_.InitializeWithSettings(&ConfigureAndroidCompositing);
 
   int page_width = 320;
   int page_height = 590;
@@ -2431,22 +2439,20 @@ TEST_P(VisualViewportTest, EnsureEffectNodeForScrollbars) {
       GetFrame()->GetPage()->GetChromeClient().WindowToViewportScalar(
           theme.ScrollbarThickness(kRegularScrollbar))));
 
-  EXPECT_TRUE(vertical_scrollbar_state.Effect());
-  EXPECT_EQ(vertical_scrollbar_state.Effect()->GetCompositorElementId(),
+  EXPECT_EQ(vertical_scrollbar_state.Effect().GetCompositorElementId(),
             visual_viewport.GetScrollbarElementId(
                 ScrollbarOrientation::kVerticalScrollbar));
   EXPECT_EQ(vertical_scrollbar->GetOffsetFromTransformNode(),
             IntPoint(400 - scrollbar_thickness, 0));
 
-  EXPECT_TRUE(horizontal_scrollbar_state.Effect());
-  EXPECT_EQ(horizontal_scrollbar_state.Effect()->GetCompositorElementId(),
+  EXPECT_EQ(horizontal_scrollbar_state.Effect().GetCompositorElementId(),
             visual_viewport.GetScrollbarElementId(
                 ScrollbarOrientation::kHorizontalScrollbar));
   EXPECT_EQ(horizontal_scrollbar->GetOffsetFromTransformNode(),
             IntPoint(0, 400 - scrollbar_thickness));
 
-  EXPECT_EQ(vertical_scrollbar_state.Effect()->Parent(),
-            horizontal_scrollbar_state.Effect()->Parent());
+  EXPECT_EQ(vertical_scrollbar_state.Effect().Parent(),
+            horizontal_scrollbar_state.Effect().Parent());
 }
 
 // Make sure we don't crash when the visual viewport's height is 0. This can
@@ -2537,6 +2543,28 @@ TEST_F(VisualViewportSimTest, ScrollingContentsSmallerThanContainer) {
     EXPECT_EQ(IntSize(320, 480),
               visual_viewport.GetScrollNode()->ContentsSize());
   }
+}
+
+TEST_P(VisualViewportTest, DeviceEmulationTransformNode) {
+  InitializeWithAndroidSettings();
+
+  TransformationMatrix emulation_transform = TransformationMatrix();
+  emulation_transform.Translate(314, 159);
+  WebView()->SetDeviceEmulationTransform(emulation_transform);
+
+  WebView()->MainFrameWidget()->Resize(IntSize(400, 400));
+  NavigateTo("about:blank");
+  UpdateAllLifecyclePhases();
+
+  VisualViewport& visual_viewport = GetFrame()->GetPage()->GetVisualViewport();
+  EXPECT_EQ(visual_viewport.GetDeviceEmulationTransformNode()->Matrix(),
+            emulation_transform);
+
+  // Set an identity device emulation transform and ensure the transform
+  // paint property node is cleared.
+  WebView()->SetDeviceEmulationTransform(TransformationMatrix());
+  UpdateAllLifecyclePhases();
+  EXPECT_EQ(visual_viewport.GetDeviceEmulationTransformNode(), nullptr);
 }
 
 }  // namespace

@@ -4,8 +4,11 @@
 
 #include "chrome/browser/browser_switcher/browser_switcher_service.h"
 
-#include "build/build_config.h"
-#include "chrome/browser/browser_switcher/alternative_browser_launcher.h"
+#include <string>
+#include <utility>
+
+#include "base/bind.h"
+#include "chrome/browser/browser_switcher/alternative_browser_driver.h"
 #include "chrome/browser/browser_switcher/browser_switcher_prefs.h"
 #include "chrome/browser/browser_switcher/browser_switcher_sitelist.h"
 #include "chrome/browser/browser_switcher/ieem_sitelist_parser.h"
@@ -15,22 +18,10 @@
 #include "content/public/browser/storage_partition.h"
 #include "net/base/load_flags.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "services/network/public/cpp/simple_url_loader.h"
-
-#if defined(OS_WIN)
-#include "base/strings/utf_string_conversions.h"
-#include "base/win/registry.h"
-#endif
 
 namespace browser_switcher {
 
 namespace {
-
-#if defined(OS_WIN)
-const wchar_t kIeSiteListKey[] =
-    L"SOFTWARE\\Policies\\Microsoft\\Internet Explorer\\Main\\EnterpriseMode";
-const wchar_t kIeSiteListValue[] = L"SiteList";
-#endif
 
 // How long to wait after |BrowserSwitcherService| is created before initiating
 // the sitelist fetch.
@@ -75,31 +66,6 @@ constexpr net::NetworkTrafficAnnotationTag traffic_annotation =
 
 }  // namespace
 
-class XmlDownloader {
- public:
-  // Posts a task to start downloading+parsing the rules after |delay|. Calls
-  // |done_callback| when done, so the caller can apply the parsed rules and
-  // clean up this object.
-  XmlDownloader(Profile* profile,
-                GURL url,
-                base::TimeDelta delay,
-                base::OnceCallback<void(ParsedXml)> done_callback);
-  virtual ~XmlDownloader() = default;
-
- private:
-  void FetchXml();
-  void ParseXml(std::unique_ptr<std::string> bytes);
-  void DoneParsing(ParsedXml xml);
-
-  GURL url_;
-  scoped_refptr<network::SharedURLLoaderFactory> factory_;
-
-  std::unique_ptr<network::SimpleURLLoader> url_loader_;
-  base::OnceCallback<void(ParsedXml)> done_callback_;
-
-  base::WeakPtrFactory<XmlDownloader> weak_ptr_factory_;
-};
-
 XmlDownloader::XmlDownloader(Profile* profile,
                              GURL url,
                              base::TimeDelta delay,
@@ -115,6 +81,8 @@ XmlDownloader::XmlDownloader(Profile* profile,
       base::BindOnce(&XmlDownloader::FetchXml, weak_ptr_factory_.GetWeakPtr()),
       delay);
 }
+
+XmlDownloader::~XmlDownloader() = default;
 
 void XmlDownloader::FetchXml() {
   auto request = std::make_unique<network::ResourceRequest>();
@@ -148,54 +116,40 @@ void XmlDownloader::DoneParsing(ParsedXml xml) {
 }
 
 BrowserSwitcherService::BrowserSwitcherService(Profile* profile)
-    : launcher_(nullptr),
-      sitelist_(nullptr),
-      prefs_(profile->GetPrefs()),
+    : prefs_(profile),
+      driver_(new AlternativeBrowserDriverImpl(&prefs_)),
+      sitelist_(new BrowserSwitcherSitelistImpl(&prefs_)),
       weak_ptr_factory_(this) {
-  DCHECK(profile);
-  DCHECK(prefs_);
-
-  GURL external_url;
-  if (prefs_->IsManagedPreference(prefs::kExternalSitelistUrl))
-    external_url = GURL(prefs_->GetString(prefs::kExternalSitelistUrl));
+  GURL external_url = prefs_.GetExternalSitelistUrl();
   if (external_url.is_valid()) {
     external_sitelist_downloader_ = std::make_unique<XmlDownloader>(
         profile, std::move(external_url), fetch_delay_,
         base::BindOnce(&BrowserSwitcherService::OnExternalSitelistParsed,
                        weak_ptr_factory_.GetWeakPtr()));
   }
-
-#if defined(OS_WIN)
-  if (prefs_->GetBoolean(prefs::kUseIeSitelist) &&
-      prefs_->IsManagedPreference(prefs::kUseIeSitelist)) {
-    GURL sitelist_url = GetIeemSitelistUrl();
-    if (sitelist_url.is_valid()) {
-      ieem_downloader_ = std::make_unique<XmlDownloader>(
-          profile, std::move(sitelist_url), fetch_delay_,
-          base::BindOnce(&BrowserSwitcherService::OnIeemSitelistParsed,
-                         weak_ptr_factory_.GetWeakPtr()));
-    }
-  }
-#endif
 }
 
-BrowserSwitcherService::~BrowserSwitcherService() {}
+BrowserSwitcherService::~BrowserSwitcherService() = default;
 
-AlternativeBrowserLauncher* BrowserSwitcherService::launcher() {
-  if (!launcher_)
-    launcher_ = std::make_unique<AlternativeBrowserLauncherImpl>(prefs_);
-  return launcher_.get();
+void BrowserSwitcherService::Shutdown() {
+  prefs_.Shutdown();
+}
+
+AlternativeBrowserDriver* BrowserSwitcherService::driver() {
+  return driver_.get();
 }
 
 BrowserSwitcherSitelist* BrowserSwitcherService::sitelist() {
-  if (!sitelist_)
-    sitelist_ = std::make_unique<BrowserSwitcherSitelistImpl>(prefs_);
   return sitelist_.get();
 }
 
-void BrowserSwitcherService::SetLauncherForTesting(
-    std::unique_ptr<AlternativeBrowserLauncher> launcher) {
-  launcher_ = std::move(launcher);
+const BrowserSwitcherPrefs& BrowserSwitcherService::prefs() const {
+  return prefs_;
+}
+
+void BrowserSwitcherService::SetDriverForTesting(
+    std::unique_ptr<AlternativeBrowserDriver> driver) {
+  driver_ = std::move(driver);
 }
 
 void BrowserSwitcherService::SetSitelistForTesting(
@@ -220,43 +174,5 @@ base::TimeDelta BrowserSwitcherService::fetch_delay_ = kFetchSitelistDelay;
 void BrowserSwitcherService::SetFetchDelayForTesting(base::TimeDelta delay) {
   fetch_delay_ = delay;
 }
-
-#if defined(OS_WIN)
-base::Optional<std::string>
-    BrowserSwitcherService::ieem_sitelist_url_for_testing_;
-
-// static
-void BrowserSwitcherService::SetIeemSitelistUrlForTesting(
-    const std::string& spec) {
-  ieem_sitelist_url_for_testing_ = spec;
-}
-
-// static
-GURL BrowserSwitcherService::GetIeemSitelistUrl() {
-  if (ieem_sitelist_url_for_testing_ != base::nullopt)
-    return GURL(*ieem_sitelist_url_for_testing_);
-
-  base::win::RegKey key;
-  if (ERROR_SUCCESS != key.Open(HKEY_LOCAL_MACHINE, kIeSiteListKey, KEY_READ) &&
-      ERROR_SUCCESS != key.Open(HKEY_CURRENT_USER, kIeSiteListKey, KEY_READ)) {
-    return GURL();
-  }
-  std::wstring url_string;
-  if (ERROR_SUCCESS != key.ReadValue(kIeSiteListValue, &url_string))
-    return GURL();
-  return GURL(base::UTF16ToUTF8(url_string));
-}
-
-void BrowserSwitcherService::OnIeemSitelistParsed(ParsedXml xml) {
-  if (xml.error) {
-    LOG(ERROR) << "Unable to parse IEEM SiteList: " << *xml.error;
-  } else {
-    VLOG(2) << "Done parsing IEEM SiteList. "
-            << "Applying rules to future navigations.";
-    sitelist()->SetIeemSitelist(std::move(xml));
-  }
-  ieem_downloader_.reset();
-}
-#endif
 
 }  // namespace browser_switcher

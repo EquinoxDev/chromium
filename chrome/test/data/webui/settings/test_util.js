@@ -127,6 +127,22 @@ cr.define('test_util', function() {
   }
 
   /**
+   * Helper to create a mock RawChooserException.
+   * @param {!settings.ChooserType} chooserType The chooser exception type.
+   * @param {Array<!SiteException>} sites A list of SiteExceptions corresponding
+   *     to the chooser exception.
+   * @param {!Object=} override An object with a subset of the properties of
+   *     RawChooserException. Properties defined in |override| will overwrite
+   *     the defaults in this function's return value.
+   * @return {RawChooserException}
+   */
+  function createRawChooserException(chooserType, sites, override) {
+    return Object.assign(
+        {chooserType: chooserType, displayName: '', object: {}, sites: sites},
+        override || {});
+  }
+
+  /**
    * Helper to create a mock SiteSettingsPref.
    * @param {!Array<{setting: settings.ContentSettingsTypes,
    *                 value: DefaultContentSetting}>} defaultsList A list of
@@ -138,9 +154,15 @@ cr.define('test_util', function() {
    *     RawSiteExceptions and the content settings they apply to, which will
    *     overwrite the exceptions in the SiteSettingsPref returned by this
    *     function.
+   * @param {!Array<{setting: settings.ContentSettingsTypes,
+   *                 value: !Array<RawChooserException>}>} chooserExceptionsList
+   *     A list of RawChooserExceptions and the chooser type that they apply to,
+   *     which will overwrite the exceptions in the SiteSettingsPref returned by
+   *     this function.
    * @return {SiteSettingsPref}
    */
-  function createSiteSettingsPrefs(defaultsList, exceptionsList) {
+  function createSiteSettingsPrefs(
+      defaultsList, exceptionsList, chooserExceptionsList = []) {
     // These test defaults reflect the actual defaults assigned to each
     // ContentSettingType, but keeping these in sync shouldn't matter for tests.
     const defaults = {};
@@ -172,15 +194,21 @@ cr.define('test_util', function() {
       defaults[override.setting] = override.value;
     });
 
+    const chooserExceptions = {};
     const exceptions = {};
     for (let type in settings.ContentSettingsTypes) {
+      chooserExceptions[settings.ContentSettingsTypes[type]] = [];
       exceptions[settings.ContentSettingsTypes[type]] = [];
     }
-    exceptionsList.forEach((override) => {
+    exceptionsList.forEach(override => {
       exceptions[override.setting] = override.value;
+    });
+    chooserExceptionsList.forEach(override => {
+      chooserExceptions[override.setting] = override.value;
     });
 
     return {
+      chooserExceptions: chooserExceptions,
       defaults: defaults,
       exceptions: exceptions,
     };
@@ -212,8 +240,26 @@ cr.define('test_util', function() {
           origin: origin,
           engagement: 0,
           usage: 0,
+          numCookies: 0,
+          hasPermissionSettings: false,
         },
         override);
+  }
+
+  /**
+   * Helper to retrieve the category of a permission from the given
+   * |chooserType|.
+   * @param {settings.ChooserType} chooserType The chooser type of the
+   *     permission.
+   * @return {?settings.ContentSettingsType}
+   */
+  function getContentSettingsTypeFromChooserType(chooserType) {
+    switch (chooserType) {
+      case settings.ChooserType.USB_DEVICES:
+        return settings.ContentSettingsTypes.USB_DEVICES;
+      default:
+        return null;
+    }
   }
 
   /**
@@ -233,16 +279,39 @@ cr.define('test_util', function() {
     });
   }
 
+  /**
+   * Similar to waitForRender(), but resolves after setTimeout() for Polymer 1.
+   * TODO (rbpotter): Delete this function when the Polymer 2 migration is
+   * complete, and update callers to use waitForRender().
+   * @param {!Element} element
+   * @return {!Promise}
+   */
+  function waitForRenderOrTimeout0(element) {
+    return new Promise(resolve => {
+      if (Polymer.DomIf) {
+        Polymer.RenderStatus.beforeNextRender(element, resolve);
+      } else {
+        setTimeout(() => {
+          resolve();
+        });
+      }
+    });
+  }
+
   return {
     createContentSettingTypeToValuePair: createContentSettingTypeToValuePair,
     createDefaultContentSetting: createDefaultContentSetting,
     createOriginInfo: createOriginInfo,
+    createRawChooserException: createRawChooserException,
     createRawSiteException: createRawSiteException,
     createSiteGroup: createSiteGroup,
     createSiteSettingsPrefs: createSiteSettingsPrefs,
     eventToPromise: eventToPromise,
     fakeDataBind: fakeDataBind,
+    getContentSettingsTypeFromChooserType:
+        getContentSettingsTypeFromChooserType,
     waitForRender: waitForRender,
+    waitForRenderOrTimeout0: waitForRenderOrTimeout0,
     whenAttributeIs: whenAttributeIs,
   };
 

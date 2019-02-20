@@ -29,7 +29,7 @@ class MainThreadScrollingReasonsTest
   MainThreadScrollingReasonsTest()
       : ScopedBlinkGenPropertyTreesForTest(GetParam()),
         base_url_("http://www.test.com/") {
-    helper_.Initialize(nullptr, nullptr, &ConfigureSettings);
+    helper_.InitializeWithSettings(&ConfigureSettings);
     GetWebView()->MainFrameWidget()->Resize(IntSize(320, 240));
 
     // macOS attaches main frame scrollbars to the VisualViewport so the
@@ -105,23 +105,7 @@ class MainThreadScrollingReasonsTest
   frame_test_helpers::WebViewHelper helper_;
 };
 
-INSTANTIATE_TEST_CASE_P(All, MainThreadScrollingReasonsTest, testing::Bool());
-
-TEST_P(MainThreadScrollingReasonsTest,
-       FixedPositionLosingBackingShouldTriggerMainThreadScroll) {
-  GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
-  RegisterMockedHttpURLLoad("fixed-position-losing-backing.html");
-  NavigateTo(base_url_ + "fixed-position-losing-backing.html");
-  ForceFullCompositingUpdate();
-
-  EXPECT_FALSE(GetViewMainThreadScrollingReasons());
-
-  Element* fixed_pos = GetFrame()->GetDocument()->getElementById("fixed");
-  fixed_pos->SetInlineStyleProperty(CSSPropertyTransform, CSSValueNone);
-  ForceFullCompositingUpdate();
-
-  EXPECT_TRUE(GetViewMainThreadScrollingReasons());
-}
+INSTANTIATE_TEST_SUITE_P(All, MainThreadScrollingReasonsTest, testing::Bool());
 
 TEST_P(MainThreadScrollingReasonsTest,
        CustomScrollbarShouldTriggerMainThreadScroll) {
@@ -171,6 +155,10 @@ TEST_P(MainThreadScrollingReasonsTest,
 
 TEST_P(MainThreadScrollingReasonsTest,
        BackgroundAttachmentFixedShouldTriggerMainThreadScroll) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   RegisterMockedHttpURLLoad("iframe-background-attachment-fixed.html");
   RegisterMockedHttpURLLoad("iframe-background-attachment-fixed-inner.html");
   RegisterMockedHttpURLLoad("white-1x1.png");
@@ -255,8 +243,13 @@ TEST_P(MainThreadScrollingReasonsTest,
 // kHasNonLayerViewportConstrainedObject should be updated on all frames
 TEST_P(MainThreadScrollingReasonsTest,
        RecalculateMainThreadScrollingReasonsUponResize) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
   RegisterMockedHttpURLLoad("has-non-layer-viewport-constrained-objects.html");
+  RegisterMockedHttpURLLoad("white-1x1.png");
   NavigateTo(base_url_ + "has-non-layer-viewport-constrained-objects.html");
   ForceFullCompositingUpdate();
 
@@ -266,32 +259,20 @@ TEST_P(MainThreadScrollingReasonsTest,
   // When the div forces the document to be scrollable, it should scroll on main
   // thread.
   Element* element = GetFrame()->GetDocument()->getElementById("scrollable");
-  element->setAttribute("style",
-                        "overflow:scroll;height:2000px;will-change:transform;",
-                        ASSERT_NO_EXCEPTION);
+  element->setAttribute(
+      "style",
+      "background-image: url('white-1x1.png'); background-attachment: fixed;",
+      ASSERT_NO_EXCEPTION);
   ForceFullCompositingUpdate();
 
-  EXPECT_TRUE(
-      GetViewMainThreadScrollingReasons() &
-      MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects);
+  EXPECT_TRUE(GetViewMainThreadScrollingReasons() &
+              MainThreadScrollingReason::kHasBackgroundAttachmentFixedObjects);
 
   // The main thread scrolling reason should be reset upon the following change.
-  element->setAttribute("style",
-                        "overflow:scroll;height:200px;will-change:transform;",
-                        ASSERT_NO_EXCEPTION);
+  element->setAttribute("style", "", ASSERT_NO_EXCEPTION);
   ForceFullCompositingUpdate();
 
   EXPECT_FALSE(GetViewMainThreadScrollingReasons());
-}
-
-TEST_P(MainThreadScrollingReasonsTest, StickyTriggersMainThreadScroll) {
-  GetWebView()->GetSettings()->SetPreferCompositingToLCDTextEnabled(false);
-  LoadHTML(
-      "<body style='height: 1200px'>"
-      "<div style='position: sticky; top: 0'>sticky</div>");
-  ForceFullCompositingUpdate();
-  EXPECT_EQ(MainThreadScrollingReason::kHasNonLayerViewportConstrainedObjects,
-            GetViewMainThreadScrollingReasons());
 }
 
 TEST_P(MainThreadScrollingReasonsTest, FastScrollingCanBeDisabledWithSetting) {
@@ -438,9 +419,9 @@ class NonCompositedMainThreadScrollingReasonsTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        NonCompositedMainThreadScrollingReasonsTest,
-                        testing::Bool());
+INSTANTIATE_TEST_SUITE_P(All,
+                         NonCompositedMainThreadScrollingReasonsTest,
+                         testing::Bool());
 
 TEST_P(NonCompositedMainThreadScrollingReasonsTest, TransparentTest) {
   TestNonCompositedReasons("transparent",

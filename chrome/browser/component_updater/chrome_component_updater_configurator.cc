@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/version.h"
@@ -27,14 +28,16 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/update_client/activity_data_service.h"
+#include "components/update_client/net/network_chromium.h"
 #include "components/update_client/protocol_handler.h"
 #include "components/update_client/update_query_params.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/service_manager_connection.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/connector.h"
 
 #if defined(OS_WIN)
-#include "base/win/win_util.h"
+#include "base/enterprise_util.h"
 #include "chrome/install_static/install_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #endif
@@ -63,8 +66,8 @@ class ChromeConfigurator : public update_client::Configurator {
   std::string GetOSLongName() const override;
   base::flat_map<std::string, std::string> ExtraRequestParams() const override;
   std::string GetDownloadPreference() const override;
-  scoped_refptr<network::SharedURLLoaderFactory> URLLoaderFactory()
-      const override;
+  scoped_refptr<update_client::NetworkFetcherFactory> GetNetworkFetcherFactory()
+      override;
   std::unique_ptr<service_manager::Connector> CreateServiceManagerConnector()
       const override;
   bool EnabledDeltas() const override;
@@ -85,6 +88,7 @@ class ChromeConfigurator : public update_client::Configurator {
 
   ConfiguratorImpl configurator_impl_;
   PrefService* pref_service_;  // This member is not owned by this class.
+  scoped_refptr<update_client::NetworkFetcherFactory> network_fetcher_factory_;
 
   ~ChromeConfigurator() override {}
 };
@@ -159,7 +163,7 @@ ChromeConfigurator::ExtraRequestParams() const {
 std::string ChromeConfigurator::GetDownloadPreference() const {
 #if defined(OS_WIN)
   // This group policy is supported only on Windows and only for enterprises.
-  return base::win::IsEnterpriseManaged()
+  return base::IsMachineExternallyManaged()
              ? base::SysWideToUTF8(
                    GoogleUpdateSettings::GetDownloadPreference())
              : std::string();
@@ -168,14 +172,15 @@ std::string ChromeConfigurator::GetDownloadPreference() const {
 #endif
 }
 
-scoped_refptr<network::SharedURLLoaderFactory>
-ChromeConfigurator::URLLoaderFactory() const {
-  SystemNetworkContextManager* system_network_context_manager =
-      g_browser_process->system_network_context_manager();
-  // Manager will be null if called from InitializeForTesting.
-  if (!system_network_context_manager)
-    return nullptr;
-  return system_network_context_manager->GetSharedURLLoaderFactory();
+scoped_refptr<update_client::NetworkFetcherFactory>
+ChromeConfigurator::GetNetworkFetcherFactory() {
+  if (!network_fetcher_factory_) {
+    network_fetcher_factory_ =
+        base::MakeRefCounted<update_client::NetworkFetcherChromiumFactory>(
+            g_browser_process->system_network_context_manager()
+                ->GetSharedURLLoaderFactory());
+  }
+  return network_fetcher_factory_;
 }
 
 std::unique_ptr<service_manager::Connector>

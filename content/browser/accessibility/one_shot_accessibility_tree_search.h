@@ -24,9 +24,9 @@ typedef bool (*AccessibilityMatchPredicate)(
     BrowserAccessibility* start_element,
     BrowserAccessibility* this_element);
 
-#define DECLARE_ACCESSIBILITY_PREDICATE(PredicateName) \
-    bool PredicateName(BrowserAccessibility* start_element, \
-                       BrowserAccessibility* this_element);
+#define DECLARE_ACCESSIBILITY_PREDICATE(PredicateName)    \
+  bool PredicateName(BrowserAccessibility* start_element, \
+                     BrowserAccessibility* this_element)
 
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityArticlePredicate);
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityBlockquotePredicate);
@@ -64,6 +64,7 @@ DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityUnvisitedLinkPredicate);
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityVisitedLinkPredicate);
 DECLARE_ACCESSIBILITY_PREDICATE(AccessibilityTextStyleBoldPredicate);
 
+#undef DECLARE_ACCESSIBILITY_PREDICATE
 
 // This class provides an interface for searching the accessibility tree from
 // a given starting node, with a few built-in options and allowing an arbitrary

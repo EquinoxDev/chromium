@@ -5,6 +5,7 @@
 #include "components/tracing/common/tracing_sampler_profiler.h"
 
 #include "base/at_exit.h"
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/profiler/stack_sampling_profiler.h"
@@ -92,7 +93,8 @@ class TracingSampleProfilerTest : public testing::Test {
 
     std::string error_msg;
     std::unique_ptr<base::Value> trace_data =
-        base::JSONReader::ReadAndReturnError(json_data, 0, nullptr, &error_msg);
+        base::JSONReader::ReadAndReturnErrorDeprecated(json_data, 0, nullptr,
+                                                       &error_msg);
     CHECK(trace_data) << "JSON parsing failed (" << error_msg << ")";
 
     base::ListValue* list;

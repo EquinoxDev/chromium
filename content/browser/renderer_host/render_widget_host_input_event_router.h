@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -100,9 +100,13 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
                        const ui::LatencyInfo& latency);
 
   // |event| is in root coordinates.
-  void BubbleScrollEvent(RenderWidgetHostViewBase* target_view,
+  // Returns false if the router is unable to bubble the scroll event. The
+  // caller must not attempt to bubble the rest of the scroll sequence in this
+  // case. Otherwise, returns true.
+  bool BubbleScrollEvent(RenderWidgetHostViewBase* target_view,
                          RenderWidgetHostViewChildFrame* resending_view,
-                         const blink::WebGestureEvent& event);
+                         const blink::WebGestureEvent& event)
+      WARN_UNUSED_RESULT;
   void WillDetachChildView(
       const RenderWidgetHostViewChildFrame* detaching_view);
 
@@ -188,14 +192,7 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
   using FrameSinkIdOwnerMap = std::unordered_map<viz::FrameSinkId,
                                                  RenderWidgetHostViewBase*,
                                                  viz::FrameSinkIdHash>;
-  struct TargetData {
-    RenderWidgetHostViewBase* target;
-    gfx::Vector2dF delta;
-    gfx::Transform transform;
-
-    TargetData() : target(nullptr) {}
-  };
-  using TargetMap = std::map<uint32_t, TargetData>;
+  using TargetMap = std::map<uint32_t, RenderWidgetHostViewBase*>;
 
   void ClearAllObserverRegistrations();
   RenderWidgetTargetResult FindViewAtLocation(
@@ -327,18 +324,18 @@ class CONTENT_EXPORT RenderWidgetHostInputEventRouter
 
   FrameSinkIdOwnerMap owner_map_;
   TargetMap touchscreen_gesture_target_map_;
-  TargetData touch_target_;
-  TargetData touchscreen_gesture_target_;
+  RenderWidgetHostViewBase* touch_target_ = nullptr;
+  RenderWidgetHostViewBase* touchscreen_gesture_target_ = nullptr;
   // The following variable is temporary, for diagnosis of
   // https://crbug.com/824774.
   bool touchscreen_gesture_target_in_map_;
-  TargetData touchpad_gesture_target_;
+  RenderWidgetHostViewBase* touchpad_gesture_target_ = nullptr;
   RenderWidgetHostViewBase* bubbling_gesture_scroll_target_ = nullptr;
   RenderWidgetHostViewChildFrame* bubbling_gesture_scroll_origin_ = nullptr;
   // Used to target wheel events for the duration of a scroll.
-  TargetData wheel_target_;
+  RenderWidgetHostViewBase* wheel_target_ = nullptr;
   // Maintains the same target between mouse down and mouse up.
-  TargetData mouse_capture_target_;
+  RenderWidgetHostViewBase* mouse_capture_target_ = nullptr;
 
   // Tracked for the purpose of generating MouseEnter and MouseLeave events.
   RenderWidgetHostViewBase* last_mouse_move_target_;

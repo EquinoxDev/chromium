@@ -30,6 +30,7 @@ bool IsSameScope(const GURL& app_url,
                  const GURL& page_url,
                  content::BrowserContext* profile);
 
+// TODO(loyso): Erase this histogram. crbug.com/918089.
 extern const char kPwaWindowEngagementTypeHistogram[];
 
 class Extension;
@@ -91,6 +92,9 @@ class HostedAppBrowserController : public SiteEngagementObserver,
   // Gets the short name of the app.
   std::string GetAppShortName() const;
 
+  // Returns the extension id for the app.
+  std::string GetExtensionId() const;
+
   // Gets the origin of the app start url suitable for display (e.g
   // example.com.au).
   base::string16 GetFormattedUrlOrigin() const;
@@ -104,6 +108,10 @@ class HostedAppBrowserController : public SiteEngagementObserver,
   bool CanUninstall() const;
 
   void Uninstall(UninstallReason reason, UninstallSource source);
+
+  // Returns whether the app is installed (uninstallation may complete within
+  // the lifetime of HostedAppBrowserController).
+  bool IsInstalled() const;
 
   // SiteEngagementObserver overrides.
   void OnEngagementEvent(content::WebContents* web_contents,
@@ -122,6 +130,7 @@ class HostedAppBrowserController : public SiteEngagementObserver,
   void OnTabInserted(content::WebContents* contents);
   void OnTabRemoved(content::WebContents* contents);
 
+  // Will return nullptr if the extension has been uninstalled.
   const Extension* GetExtension() const;
 
   Browser* const browser_;

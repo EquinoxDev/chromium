@@ -139,10 +139,6 @@ def method_context(interface, method, is_visible=True):
 
     this_cpp_value = cpp_value(interface, method, len(arguments))
 
-    is_call_with_script_arguments = has_extended_attribute_value(method, 'CallWith', 'ScriptArguments')
-    if is_call_with_script_arguments:
-        includes.update(['bindings/core/v8/script_call_stack.h',
-                         'core/inspector/script_arguments.h'])
     is_call_with_script_state = has_extended_attribute_value(method, 'CallWith', 'ScriptState')
     is_call_with_this_value = has_extended_attribute_value(method, 'CallWith', 'ThisValue')
     if is_call_with_script_state or is_call_with_this_value:
@@ -192,7 +188,8 @@ def method_context(interface, method, is_visible=True):
         'arguments': argument_contexts,
         'camel_case_name': NameStyleConverter(name).to_upper_camel_case(),
         'cpp_type': (v8_types.cpp_template_type('base::Optional', idl_type.cpp_type)
-                     if idl_type.is_explicit_nullable else idl_type.cpp_type),
+                     if idl_type.is_explicit_nullable
+                     else v8_types.cpp_type(idl_type, extended_attributes=extended_attributes)),
         'cpp_value': this_cpp_value,
         'cpp_type_initializer': idl_type.cpp_type_initializer,
         'high_entropy': v8_utilities.high_entropy(method),  # [HighEntropy]
@@ -210,7 +207,6 @@ def method_context(interface, method, is_visible=True):
                 if argument_context['is_optional_without_default_value']),
         'idl_type': idl_type.base_type,
         'is_call_with_execution_context': has_extended_attribute_value(method, 'CallWith', 'ExecutionContext'),
-        'is_call_with_script_arguments': is_call_with_script_arguments,
         'is_call_with_script_state': is_call_with_script_state,
         'is_call_with_this_value': is_call_with_this_value,
         'is_ce_reactions': is_ce_reactions,
@@ -288,8 +284,9 @@ def argument_context(interface, method, argument, index, is_visible=True):
         'enum_type': idl_type.enum_type,
         'enum_values': idl_type.enum_values,
         'handle': '%s_handle' % snake_case_name,
-        # FIXME: remove once [Default] removed and just use argument.default_value
-        'has_default': 'Default' in extended_attributes or set_default_value,
+        # TODO(peria): remove once [DefaultValue] removed and just use
+        # argument.default_value. https://crbug.com/924419
+        'has_default': 'DefaultValue' in extended_attributes or set_default_value,
         'has_type_checking_interface': has_type_checking_interface,
         # Dictionary is special-cased, but arrays and sequences shouldn't be
         'idl_type': idl_type.base_type,
@@ -438,7 +435,7 @@ def v8_value_to_local_cpp_value(interface_name, method, argument, index):
 
     # History.pushState and History.replaceState are explicitly specified as
     # serializing the value for storage. The default is to not serialize for
-    # storage. See https://html.spec.whatwg.org/multipage/browsers.html#dom-history-pushstate
+    # storage. See https://html.spec.whatwg.org/C/#dom-history-pushstate
     if idl_type.name == 'SerializedScriptValue':
         for_storage = (interface_name == 'History' and
                        method.name in ('pushState', 'replaceState'))

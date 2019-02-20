@@ -41,16 +41,6 @@ using base::Time;
 
 namespace {
 
-// Changes the recommended priority of |background_task_runner| to
-// USER_BLOCKING. ENABLED_BY_DEFAULT because we have verified that this is on
-// the critical path of page load. Still an experiment to allow assessing the
-// impact when the WindowsThreadModeBackground feature is enabled.
-//
-// TODO(fdoray): Remove this feature when experiment is complete.
-// https://crbug.com/872820
-const base::Feature kCookieStorePriorityBoost{"CookieStorePriorityBoost",
-                                              base::FEATURE_ENABLED_BY_DEFAULT};
-
 std::unique_ptr<base::Value> CookieKeyedLoadNetLogCallback(
     const std::string& key,
     net::NetLogCaptureMode capture_mode) {
@@ -157,9 +147,7 @@ class TimeoutTracker : public base::RefCountedThreadSafe<TimeoutTracker> {
 namespace net {
 
 base::TaskPriority GetCookieStoreBackgroundSequencePriority() {
-  return base::FeatureList::IsEnabled(kCookieStorePriorityBoost)
-             ? base::TaskPriority::USER_BLOCKING
-             : base::TaskPriority::BEST_EFFORT;
+  return base::TaskPriority::USER_BLOCKING;
 }
 
 // This class is designed to be shared between any client thread and the
@@ -878,7 +866,7 @@ void SQLitePersistentCookieStore::Backend::ChainLoadCookies(
   if (load_success && keys_to_load_.size() > 0) {
     bool success = background_task_runner_->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&Backend::ChainLoadCookies, this, loaded_callback),
+        base::BindOnce(&Backend::ChainLoadCookies, this, loaded_callback),
         base::TimeDelta::FromMilliseconds(kLoadDelayMilliseconds));
     if (!success) {
       LOG(WARNING) << "Failed to post task from " << FROM_HERE.ToString()
@@ -1322,7 +1310,7 @@ void SQLitePersistentCookieStore::Backend::BatchOperation(
   if (num_pending == 1) {
     // We've gotten our first entry for this batch, fire off the timer.
     if (!background_task_runner_->PostDelayedTask(
-            FROM_HERE, base::Bind(&Backend::Commit, this),
+            FROM_HERE, base::BindOnce(&Backend::Commit, this),
             base::TimeDelta::FromMilliseconds(kCommitIntervalMs))) {
       NOTREACHED() << "background_task_runner_ is not running.";
     }

@@ -31,13 +31,13 @@ class CertVerifier;
 class ChannelIDService;
 class ClientSocketFactory;
 class CTVerifier;
-class HttpProxyClientSocketPool;
 class HostResolver;
 class NetLog;
 class NetworkQualityEstimator;
+class ProxyDelegate;
+class ProxyServer;
 class SocketPerformanceWatcherFactory;
-class SOCKSClientSocketPool;
-class SSLClientSocketPool;
+class SSLClientSessionCache;
 class SSLConfigService;
 class TransportClientSocketPool;
 class TransportSecurityState;
@@ -58,9 +58,11 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
       TransportSecurityState* transport_security_state,
       CTVerifier* cert_transparency_verifier,
       CTPolicyEnforcer* ct_policy_enforcer,
-      const std::string& ssl_session_cache_shard,
+      SSLClientSessionCache* ssl_client_session_cache,
+      SSLClientSessionCache* ssl_client_session_cache_privacy_mode,
       SSLConfigService* ssl_config_service,
       WebSocketEndpointLockManager* websocket_endpoint_lock_manager,
+      ProxyDelegate* proxy_delegate,
       HttpNetworkSession::SocketPoolType pool_type);
   ~ClientSocketPoolManagerImpl() override;
 
@@ -69,16 +71,14 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
 
   TransportClientSocketPool* GetTransportSocketPool() override;
 
-  SSLClientSocketPool* GetSSLSocketPool() override;
+  TransportClientSocketPool* GetSocketPoolForSOCKSProxy(
+      const ProxyServer& proxy_server) override;
 
-  SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
-      const HostPortPair& socks_proxy) override;
+  TransportClientSocketPool* GetSocketPoolForHTTPLikeProxy(
+      const ProxyServer& http_proxy) override;
 
-  HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
-      const HostPortPair& http_proxy) override;
-
-  SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
-      const HostPortPair& proxy_server) override;
+  TransportClientSocketPool* GetSocketPoolForSSLWithProxy(
+      const ProxyServer& proxy_server) override;
 
   // Creates a Value summary of the state of the socket pools.
   std::unique_ptr<base::Value> SocketPoolInfoToValue() const override;
@@ -92,13 +92,14 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
 
  private:
   using TransportSocketPoolMap =
-      std::map<HostPortPair, std::unique_ptr<TransportClientSocketPool>>;
-  using SOCKSSocketPoolMap =
-      std::map<HostPortPair, std::unique_ptr<SOCKSClientSocketPool>>;
-  using HTTPProxySocketPoolMap =
-      std::map<HostPortPair, std::unique_ptr<HttpProxyClientSocketPool>>;
-  using SSLSocketPoolMap =
-      std::map<HostPortPair, std::unique_ptr<SSLClientSocketPool>>;
+      std::map<ProxyServer, std::unique_ptr<TransportClientSocketPool>>;
+
+  // Creates a TransportClientSocketPool appropriate for use with the passed in
+  // socket pool, passing in all needed parameters.
+  // TODO(mmenke): Can |use_socket_performance_watcher_factory| be removed?
+  std::unique_ptr<TransportClientSocketPool> CreateTransportSocketPool(
+      const ProxyServer& proxy_server,
+      bool use_socket_performance_watcher_factory);
 
   NetLog* const net_log_;
   ClientSocketFactory* const socket_factory_;
@@ -110,21 +111,25 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManagerImpl
   TransportSecurityState* const transport_security_state_;
   CTVerifier* const cert_transparency_verifier_;
   CTPolicyEnforcer* const ct_policy_enforcer_;
+  SSLClientSessionCache* const ssl_client_session_cache_;
+  SSLClientSessionCache* const ssl_client_session_cache_privacy_mode_;
   const std::string ssl_session_cache_shard_;
   SSLConfigService* const ssl_config_service_;
+  ProxyDelegate* const proxy_delegate_;
   const HttpNetworkSession::SocketPoolType pool_type_;
 
   // Note: this ordering is important.
 
   std::unique_ptr<TransportClientSocketPool> transport_socket_pool_;
-  std::unique_ptr<SSLClientSocketPool> ssl_socket_pool_;
-  TransportSocketPoolMap transport_socket_pools_for_socks_proxies_;
-  SOCKSSocketPoolMap socks_socket_pools_;
-  TransportSocketPoolMap transport_socket_pools_for_http_proxies_;
-  TransportSocketPoolMap transport_socket_pools_for_https_proxies_;
-  SSLSocketPoolMap ssl_socket_pools_for_https_proxies_;
-  HTTPProxySocketPoolMap http_proxy_socket_pools_;
-  SSLSocketPoolMap ssl_socket_pools_for_proxies_;
+
+  // Currently only contains socket pools for SOCKS proxies (With SSL over SOCKS
+  // connections layered on top of it, and appearing in
+  // |ssl_socket_pools_for_proxies_|), but will eventually contain all pools for
+  // proxies that use TCP connections.
+  TransportSocketPoolMap proxy_socket_pools_;
+
+  TransportSocketPoolMap http_proxy_socket_pools_;
+  TransportSocketPoolMap ssl_socket_pools_for_proxies_;
 
   THREAD_CHECKER(thread_checker_);
 

@@ -4,6 +4,7 @@
 
 #include "content/browser/indexed_db/database_impl.h"
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_math.h"
 #include "base/sequence_checker.h"
@@ -115,6 +116,10 @@ class DatabaseImpl::IDBSequenceHelper {
                    int64_t object_store_id,
                    const IndexedDBKeyRange& key_range,
                    scoped_refptr<IndexedDBCallbacks> callbacks);
+  void GetKeyGeneratorCurrentNumber(
+      int64_t transaction_id,
+      int64_t object_store_id,
+      scoped_refptr<IndexedDBCallbacks> callbacks);
   void Clear(int64_t transaction_id,
              int64_t object_store_id,
              scoped_refptr<IndexedDBCallbacks> callbacks);
@@ -136,7 +141,7 @@ class DatabaseImpl::IDBSequenceHelper {
   void AbortWithError(int64_t transaction_id,
                       scoped_refptr<IndexedDBCallbacks> callbacks,
                       const IndexedDBDatabaseError& error);
-  void Commit(int64_t transaction_id);
+  void Commit(int64_t transaction_id, int64_t num_errors_handled);
   void OnGotUsageAndQuotaForCommit(int64_t transaction_id,
                                    blink::mojom::QuotaStatusCode status,
                                    int64_t usage,
@@ -281,6 +286,12 @@ void DatabaseImpl::Put(
     blink::mojom::IDBPutMode mode,
     const std::vector<IndexedDBIndexKeys>& index_keys,
     blink::mojom::IDBCallbacksAssociatedPtrInfo callbacks_info) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  CHECK(dispatcher_host_);
+  if (!dispatcher_host_->blob_storage_context()) {
+    return;
+  }
+
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
@@ -419,6 +430,20 @@ void DatabaseImpl::DeleteRange(
                      std::move(callbacks)));
 }
 
+void DatabaseImpl::GetKeyGeneratorCurrentNumber(
+    int64_t transaction_id,
+    int64_t object_store_id,
+    blink::mojom::IDBCallbacksAssociatedPtrInfo callbacks_info) {
+  scoped_refptr<IndexedDBCallbacks> callbacks(
+      new IndexedDBCallbacks(dispatcher_host_->AsWeakPtr(), origin_,
+                             std::move(callbacks_info), idb_runner_));
+  idb_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&IDBSequenceHelper::GetKeyGeneratorCurrentNumber,
+                     base::Unretained(helper_), transaction_id, object_store_id,
+                     std::move(callbacks)));
+}
+
 void DatabaseImpl::Clear(
     int64_t transaction_id,
     int64_t object_store_id,
@@ -471,10 +496,11 @@ void DatabaseImpl::Abort(int64_t transaction_id) {
                                 base::Unretained(helper_), transaction_id));
 }
 
-void DatabaseImpl::Commit(int64_t transaction_id) {
+void DatabaseImpl::Commit(int64_t transaction_id, int64_t num_errors_handled) {
   idb_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&IDBSequenceHelper::Commit,
-                                base::Unretained(helper_), transaction_id));
+      FROM_HERE,
+      base::BindOnce(&IDBSequenceHelper::Commit, base::Unretained(helper_),
+                     transaction_id, num_errors_handled));
 }
 
 DatabaseImpl::IDBSequenceHelper::IDBSequenceHelper(
@@ -564,8 +590,12 @@ void DatabaseImpl::IDBSequenceHelper::CreateTransaction(
   if (connection_->GetTransaction(transaction_id))
     return;
 
-  connection_->database()->CreateTransaction(transaction_id, connection_.get(),
-                                             object_store_ids, mode);
+  IndexedDBTransaction* transaction = connection_->CreateTransaction(
+      transaction_id,
+      std::set<int64_t>(object_store_ids.begin(), object_store_ids.end()), mode,
+      new IndexedDBBackingStore::Transaction(
+          connection_->database()->backing_store()));
+  connection_->database()->RegisterAndScheduleTransaction(transaction);
 }
 
 void DatabaseImpl::IDBSequenceHelper::Close() {
@@ -795,6 +825,22 @@ void DatabaseImpl::IDBSequenceHelper::DeleteRange(
       std::make_unique<IndexedDBKeyRange>(key_range), std::move(callbacks));
 }
 
+void DatabaseImpl::IDBSequenceHelper::GetKeyGeneratorCurrentNumber(
+    int64_t transaction_id,
+    int64_t object_store_id,
+    scoped_refptr<IndexedDBCallbacks> callbacks) {
+  if (!connection_->IsConnected())
+    return;
+
+  IndexedDBTransaction* transaction =
+      connection_->GetTransaction(transaction_id);
+  if (!transaction)
+    return;
+
+  connection_->database()->GetKeyGeneratorCurrentNumber(
+      transaction, object_store_id, std::move(callbacks));
+}
+
 void DatabaseImpl::IDBSequenceHelper::Clear(
     int64_t transaction_id,
     int64_t object_store_id,
@@ -900,7 +946,8 @@ void DatabaseImpl::IDBSequenceHelper::AbortWithError(
   connection_->AbortTransaction(transaction, error);
 }
 
-void DatabaseImpl::IDBSequenceHelper::Commit(int64_t transaction_id) {
+void DatabaseImpl::IDBSequenceHelper::Commit(int64_t transaction_id,
+                                             int64_t num_errors_handled) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!connection_->IsConnected())
     return;
@@ -909,6 +956,8 @@ void DatabaseImpl::IDBSequenceHelper::Commit(int64_t transaction_id) {
       connection_->GetTransaction(transaction_id);
   if (!transaction)
     return;
+
+  transaction->SetNumErrorsHandled(num_errors_handled);
 
   // Always allow empty or delete-only transactions.
   if (transaction->size() == 0) {

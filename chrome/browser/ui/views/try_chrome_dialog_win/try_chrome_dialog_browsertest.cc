@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
@@ -134,8 +135,8 @@ class TryChromeDialogBrowserTestBase : public InProcessBrowserTest {
   // process.
   void PostRendezvousTask() {
     base::SequencedTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&TryChromeDialog::OnProcessNotification,
-                              base::Unretained(dialog_.get())));
+        FROM_HERE, base::BindOnce(&TryChromeDialog::OnProcessNotification,
+                                  base::Unretained(dialog_.get())));
   }
 
   // Runs a loop until it is quit via either the dialog being shown (by way of
@@ -299,7 +300,7 @@ IN_PROC_BROWSER_TEST_P(TryChromeDialogTest, InvokeUi_default) {
   ShowAndVerifyUi();
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     Variations,
     TryChromeDialogTest,
     ::testing::Range(

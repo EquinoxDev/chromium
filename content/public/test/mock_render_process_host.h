@@ -26,7 +26,6 @@
 #include "ipc/ipc_test_sink.h"
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/associated_interface_ptr.h"
-#include "services/resource_coordinator/public/cpp/process_resource_coordinator.h"
 #include "services/service_manager/public/cpp/identity.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 
@@ -87,6 +86,8 @@ class MockRenderProcessHost : public RenderProcessHost {
   GetRendererAudioOutputStreamFactoryContext() override;
   void OnMediaStreamAdded() override;
   void OnMediaStreamRemoved() override;
+  void OnForegroundServiceWorkerAdded() override;
+  void OnForegroundServiceWorkerRemoved() override;
   StoragePartition* GetStoragePartition() override;
   virtual void AddWord(const base::string16& word);
   bool Shutdown(int exit_code) override;
@@ -144,8 +145,6 @@ class MockRenderProcessHost : public RenderProcessHost {
   void PurgeAndSuspend() override;
   void Resume() override;
   mojom::Renderer* GetRendererInterface() override;
-  resource_coordinator::ProcessResourceCoordinator*
-  GetProcessResourceCoordinator() override;
   void CreateURLLoaderFactory(
       const base::Optional<url::Origin>& origin,
       network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
@@ -157,7 +156,8 @@ class MockRenderProcessHost : public RenderProcessHost {
   void SetIsUsed() override;
 
   bool HostHasNotBeenUsed() override;
-  void LockToOrigin(const GURL& lock_url) override;
+  void LockToOrigin(const IsolationContext& isolation_context,
+                    const GURL& lock_url) override;
   void BindCacheStorage(blink::mojom::CacheStorageRequest request,
                         const url::Origin& origin) override;
   void BindIndexedDB(blink::mojom::IDBFactoryRequest request,
@@ -202,6 +202,10 @@ class MockRenderProcessHost : public RenderProcessHost {
     return is_renderer_locked_to_site_;
   }
 
+  int foreground_service_worker_count() const {
+    return foreground_service_worker_count_;
+  }
+
  private:
   // Stores IPC messages that would have been sent to the renderer.
   IPC::TestSink sink_;
@@ -223,11 +227,10 @@ class MockRenderProcessHost : public RenderProcessHost {
   bool is_unused_;
   base::Process process;
   int keep_alive_ref_count_;
+  int foreground_service_worker_count_;
   std::unique_ptr<mojo::AssociatedInterfacePtr<mojom::Renderer>>
       renderer_interface_;
   std::map<std::string, InterfaceBinder> binder_overrides_;
-  std::unique_ptr<resource_coordinator::ProcessResourceCoordinator>
-      process_resource_coordinator_;
   service_manager::Identity child_identity_;
   bool is_renderer_locked_to_site_ = false;
   network::mojom::URLLoaderFactory* url_loader_factory_;

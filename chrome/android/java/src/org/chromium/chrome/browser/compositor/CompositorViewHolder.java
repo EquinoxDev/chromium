@@ -103,7 +103,7 @@ public class CompositorViewHolder extends FrameLayout
     private Runnable mPostHideKeyboardTask;
 
     private TabModelSelector mTabModelSelector;
-    private ChromeFullscreenManager mFullscreenManager;
+    private @Nullable ChromeFullscreenManager mFullscreenManager;
     private View mAccessibilityView;
     private CompositorAccessibilityProvider mNodeProvider;
 
@@ -675,12 +675,12 @@ public class CompositorViewHolder extends FrameLayout
     }
 
     @Override
-    public void onContentOffsetChanged(float offset) {
+    public void onContentOffsetChanged(int offset) {
         onViewportChanged();
     }
 
     @Override
-    public void onControlsOffsetChanged(float topOffset, float bottomOffset, boolean needsAnimate) {
+    public void onControlsOffsetChanged(int topOffset, int bottomOffset, boolean needsAnimate) {
         onViewportChanged();
         if (needsAnimate) requestRender();
     }
@@ -688,7 +688,6 @@ public class CompositorViewHolder extends FrameLayout
     @Override
     public void onBottomControlsHeightChanged(int bottomControlsHeight) {
         if (mTabVisible == null) return;
-        mTabVisible.setBottomControlsHeight(bottomControlsHeight);
         Point viewportSize = getViewportSize();
         setSize(mTabVisible.getWebContents(), mTabVisible.getContentView(), viewportSize.x,
                 viewportSize.y);
@@ -697,7 +696,6 @@ public class CompositorViewHolder extends FrameLayout
     @Override
     public void onTopControlsHeightChanged(int topControlsHeight, boolean controlsResizeView) {
         if (mTabVisible == null) return;
-        mTabVisible.setTopControlsHeight(topControlsHeight, controlsResizeView);
         Point viewportSize = getViewportSize();
         setSize(mTabVisible.getWebContents(), mTabVisible.getContentView(), viewportSize.x,
                 viewportSize.y);
@@ -876,9 +874,7 @@ public class CompositorViewHolder extends FrameLayout
      */
     public void setFullscreenHandler(ChromeFullscreenManager fullscreen) {
         mFullscreenManager = fullscreen;
-        if (mFullscreenManager != null) {
-            mFullscreenManager.addListener(this);
-        }
+        mFullscreenManager.addListener(this);
         onViewportChanged();
     }
 
@@ -1078,8 +1074,6 @@ public class CompositorViewHolder extends FrameLayout
                     webContents, mCompositorView.getWidth(), mCompositorView.getHeight());
         }
         if (tab.getView() == null) return;
-        tab.setTopControlsHeight(getTopControlsHeightPixels(), controlsResizeView());
-        tab.setBottomControlsHeight(getBottomControlsHeightPixels());
 
         // TextView with compound drawables in the NTP gets a wrong width when measure/layout is
         // performed in the unattached state. Delay the layout till #onLayoutChange().

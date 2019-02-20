@@ -241,13 +241,10 @@ void FakeChromeUserManager::SwitchActiveUser(const AccountId& account_id) {
       }
     }
   }
+  NotifyActiveUserChanged(active_user_);
 }
 
 void FakeChromeUserManager::OnSessionStarted() {}
-
-void FakeChromeUserManager::OnProfileInitialized(user_manager::User* user) {
-  user->set_profile_ever_initialized(true);
-}
 
 void FakeChromeUserManager::RemoveUser(
     const AccountId& account_id,

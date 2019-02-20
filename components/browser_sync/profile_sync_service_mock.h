@@ -10,8 +10,8 @@
 
 #include "base/memory/weak_ptr.h"
 #include "components/browser_sync/profile_sync_service.h"
-#include "components/browser_sync/sync_user_settings_mock.h"
 #include "components/sync/base/model_type.h"
+#include "components/sync/driver/sync_user_settings_mock.h"
 #include "components/sync/protocol/sync_protocol_error.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -23,7 +23,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   explicit ProfileSyncServiceMock(InitParams init_params);
   ~ProfileSyncServiceMock() override;
 
-  SyncUserSettingsMock* GetUserSettingsMock();
+  syncer::SyncUserSettingsMock* GetUserSettingsMock();
 
   // SyncService overrides.
   syncer::SyncUserSettings* GetUserSettings() override;
@@ -49,14 +49,6 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD1(AddObserver, void(syncer::SyncServiceObserver*));
   MOCK_METHOD1(RemoveObserver, void(syncer::SyncServiceObserver*));
 
-  bool IsPassphraseRequiredForDecryption() const override;
-  base::Time GetExplicitPassphraseTime() const override;
-  bool IsUsingSecondaryPassphrase() const override;
-  void EnableEncryptEverything() override;
-  bool IsEncryptEverythingEnabled() const override;
-  void SetEncryptionPassphrase(const std::string& passphrase) override;
-  bool SetDecryptionPassphrase(const std::string& passphrase) override;
-
   MOCK_CONST_METHOD0(GetUserShare, syncer::UserShare*());
 
   MOCK_CONST_METHOD1(QueryDetailedSyncStatus,
@@ -67,11 +59,13 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   MOCK_METHOD0(GetJsController, base::WeakPtr<syncer::JsController>());
 
   // SyncEngineHost overrides.
-  MOCK_METHOD6(
+  MOCK_METHOD8(
       OnEngineInitialized,
       void(syncer::ModelTypeSet initial_types,
            const syncer::WeakHandle<syncer::JsBackend>&,
            const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&,
+           const std::string&,
+           const std::string&,
            const std::string&,
            const std::string&,
            bool));
@@ -83,21 +77,13 @@ class ProfileSyncServiceMock : public ProfileSyncService {
                void(const syncer::DataTypeManager::ConfigureResult&));
   MOCK_METHOD0(OnConfigureStart, void());
 
-  // DataTypeEncryptionHandler overrides.
-  bool IsPassphraseRequired() const override;
-
   // syncer::UnrecoverableErrorHandler overrides.
   MOCK_METHOD2(OnUnrecoverableError,
                void(const base::Location& location,
                     const std::string& message));
 
   // ProfileSyncService overrides.
-  bool IsFirstSetupComplete() const override;
-
   MOCK_CONST_METHOD1(IsDataTypeControllerRunning, bool(syncer::ModelType));
-
-  syncer::PassphraseType GetPassphraseType() const override;
-  bool IsEncryptEverythingAllowed() const override;
 
   MOCK_METHOD0(StartUpSlowEngineComponents, void());
 
@@ -108,7 +94,7 @@ class ProfileSyncServiceMock : public ProfileSyncService {
   GetSetupInProgressHandleConcrete();
 
  private:
-  testing::NiceMock<SyncUserSettingsMock> user_settings_;
+  testing::NiceMock<syncer::SyncUserSettingsMock> user_settings_;
 };
 
 }  // namespace browser_sync

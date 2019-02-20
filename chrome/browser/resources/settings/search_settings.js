@@ -33,6 +33,7 @@ cr.define('settings', function() {
     'CONTENT',
     'CR-ACTION-MENU',
     'CR-DIALOG',
+    'CR-ICON-BUTTON',
     'CR-SLIDER',
     'DIALOG',
     'IMG',
@@ -434,8 +435,8 @@ cr.define('settings', function() {
      * @param {!Array<!Node>} bubbles The search bubbles to add.
      */
     addHighlightsAndBubbles(highlights, bubbles) {
-      this.highlights_.push.apply(this.highlights_, highlights);
-      this.bubbles_.push.apply(this.bubbles_, bubbles);
+      this.highlights_.push(...highlights);
+      this.bubbles_.push(...bubbles);
     }
 
     removeAllTextObservers() {

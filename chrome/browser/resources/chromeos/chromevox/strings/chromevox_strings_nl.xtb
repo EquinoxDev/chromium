@@ -54,6 +54,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="1346059596910821859">Fooi</translation>
 <translation id="1346748346194534595">Rechts</translation>
 <translation id="135978014023467274">Er is een update uitgevoerd naar ChromeVox 63.</translation>
+<translation id="1360699455582016846">Klik op het item onder de routeringstoets <ph name="ROUTING_KEY_NUMBER" /></translation>
 <translation id="136718599399906424">Volgende rij van tabel</translation>
 <translation id="1377925789329510816">Dit is de laatste kop. Druk op Zoeken + H om terug te keren naar de eerste kop of druk op Zoeken + Shift + H om naar de tweede kop op deze pagina te gaan.</translation>
 <translation id="1383876407941801731">Zoeken</translation>
@@ -112,6 +113,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="1905379170753160525">Lijst met koppen weergeven</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">genummerd</translation>
+<translation id="1914635379910604678">Combinatie <ph name="DOT" /></translation>
 <translation id="1954623340234317532">Bedieningselement voor week van het jaar</translation>
 <translation id="1964135212174907577">Volgend object</translation>
 <translation id="1969092762068865084">juli</translation>
@@ -266,6 +268,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="316542773973815724">Navigatie</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{spatie}other{# spaties}}</translation>
 <translation id="320961988183078793"><ph name="TYPE" /> geopend</translation>
+<translation id="3218691001991391708"><ph name="TEXT" /> plakken.</translation>
 <translation id="3223701887221307104"><ph name="NAME" />, tabblad</translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">Bezochte link</translation>
@@ -285,48 +288,6 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="3322936298410871309">Vorige kop voor niveau 1</translation>
 <translation id="3323447499041942178">Tekstvak</translation>
 <translation id="3338224621010291843">Schuifregelaar <ph name="VALUE" /> <ph name="NAME" /></translation>
-<translation id="3353420241558113817">{"ar": "Arabisch",
-        "bg": "Bulgaars",
-        "ca": "Catalaans",
-        "cs": "Tsjechisch",
-        "da": "Deens",
-        "de": "Duits",
-        "de_CH": "Duits (Zwitserland)",
-        "de_DE": "Duits (Duitsland)",
-        "el": "Grieks",
-        "en": "Engels",
-        "en_CA": "Engels (Canada)",
-        "en_GB": "Engels (Verenigd Koninkrijk)",
-        "en_US": "Engels (Verenigde Staten)",
-        "es": "Spaans",
-        "et": "Ests",
-        "fr": "Frans",
-        "fr_CA": "Frans (Canada)",
-        "fr_FR": "Frans (Frankrijk)",
-        "fi": "Fins",
-        "he": "Hebreeuws",
-        "hi": "Hindi",
-        "hr": "Kroatisch",
-        "hu": "Hongaars",
-        "is": "IJslands",
-        "it": "Italiaans",
-        "ko": "Koreaans",
-        "lt": "Litouws",
-        "lv": "Lets",
-        "nb": "Noors (Bokmål)",
-        "nl": "Nederlands",
-        "pl": "Pools",
-        "pt": "Portugees",
-        "ro": "Roemeens",
-        "ru": "Russisch",
-        "sk": "Slowaaks",
-        "sl": "Sloveens",
-        "sr": "Servisch",
-        "sv": "Zweeds",
-        "tr": "Turks",
-        "vi": "Vietnamees",
-        "zh": "Chinees",
-        "zh_TW": "Chinees (Traditioneel Han)"}</translation>
 <translation id="335581015389089642">Spraak</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{plusteken}other{# plustekens}}</translation>
@@ -343,12 +304,14 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="3468959318854349468">Geen titel</translation>
 <translation id="3473644018603298796"><ph name="COUNT" /> gesel.</translation>
 <translation id="3486232535569802404"><ph name="V1" /> tot en met <ph name="V2" /></translation>
+<translation id="3490765818161916458">Lijstraster</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{vierkante haak rechts}other{# vierkante haken rechts}}</translation>
 <translation id="3493915602752813531">Geen volgend anker.</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{vraagteken}other{# vraagtekens}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{caret-teken}other{# caret-tekens}}</translation>
 <translation id="352577523970648069">Een bewerkbaar tekstveld</translation>
+<translation id="3549141990712742152"><ph name="TEXT" /> knippen.</translation>
 <translation id="3549680091535286226">Tik met twee vingers om spraak tijdelijk te stoppen</translation>
 <translation id="3568702578574425662"><ph name="NAME" /> , selectievakje niet aangevinkt</translation>
 <translation id="3589661172894441357">Woordenlijst</translation>
@@ -380,6 +343,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="3856075812838139784">Alleen-lezen</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">Menu</translation>
+<translation id="3907138069015388678">lstgrd</translation>
 <translation id="3909320334364316587">Vorige kop voor niveau 6</translation>
 <translation id="3914173277599553213">Vereist</translation>
 <translation id="3914732343065571127">Opdrachtreferentie voor ChromeVox</translation>
@@ -514,7 +478,6 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="4973762002207131920">Overgeschakeld naar <ph name="KEY" />.</translation>
 <translation id="4975416682604111799">milliseconden</translation>
 <translation id="49787999531187221">ChromeVox is nu inactief.</translation>
-<translation id="4979263087381759787">Ontwikkelaarsopties</translation>
 <translation id="4979404613699303341">Knop 'Vorige'</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />, <ph name="NAME" />, keuzelijst</translation>
 <translation id="4983588134362688868">Naar de bovenkant van de pagina</translation>
@@ -529,6 +492,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="5020651427400641814">Spraakregistratie inschakelen</translation>
 <translation id="5041394372352067729">Brailleweergave naar bovenkant pagina verplaatsen</translation>
 <translation id="5042770794184672516">Spraakvolume verhogen</translation>
+<translation id="5042992464904238023">Webinhoud</translation>
 <translation id="5050015258024679800">Vorige kop voor niveau 4</translation>
 <translation id="5054047268577924192">Vorig item in de lijst</translation>
 <translation id="5075936896689244141">Next-toetsenbordindeling</translation>
@@ -673,6 +637,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="6129953537138746214">Spatie</translation>
 <translation id="6132506484792346370">Een keuzelijst of een keuzelijst met invoervak</translation>
 <translation id="6142308968191113180">Kop 4</translation>
+<translation id="6158882249329863701">rij <ph name="TABLECELLROWINDEX" /> kolom <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="6164829606128959761">meter</translation>
 <translation id="6169420925157477918">Afbeelding met lange beschrijving</translation>
 <translation id="6186305613600865047">Naar de onderkant van de pagina</translation>
@@ -688,6 +653,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="6307969636681130414">Ingedrukt.</translation>
 <translation id="6322856989298155004">Geluiden</translation>
 <translation id="6324551002951139333">Grammaticafout ontdekt</translation>
+<translation id="6325241889020214828"><ph name="TEXT" /> kopiëren.</translation>
 <translation id="6348657800373377022">Keuzelijst met invoervak</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{opsommingsteken}other{# opsommingstekens}}</translation>
 <translation id="6355910664415701303">Geen vorig lijstitem.</translation>
@@ -697,6 +663,7 @@ Als je klaar bent met de training, gebruik je ChromeVox om naar de knop Sluiten 
 <translation id="6387719785439924554">terzijde</translation>
 <translation id="6411426777058107714">Geen vorig keuzerondje.</translation>
 <translation id="6414968628640960377">Vorig ander element.</translation>
+<translation id="6417265370957905582">Google Assistent</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{dubbelepunt}other{# dubbelepunten}}</translation>
 <translation id="6438968337250688271"><ph name="NAME" />, menu</translation>
 <translation id="6444046323172968959">Dialoogvenster voor meldingen</translation>
@@ -875,6 +842,89 @@ Als je het menu van de Chrome-browser wilt openen, druk je op Alt + F.</translat
 <translation id="8037651341025652929">Conclusie</translation>
 <translation id="8042761080832772327">Tekst bewerken, zoekinvoer</translation>
 <translation id="8049189770492311300">Timer</translation>
+<translation id="8056782883599416672">{"ar": "Arabisch",
+"as": "Assamees",
+"aw": "Awadhi",
+        "be": "Bengaals",
+        "bg": "Bulgaars",
+        "bh": "Bihari",
+        "bo": "Tibetaans",
+        "br": "Braj",
+        "ca": "Catalaans",
+        "ckb": "Soranî",
+        "cs": "Tsjechisch",
+        "cy": "Welsh",
+        "da": "Deens",
+        "de": "Duits",
+        "de_CH": "Duits (Zwitserland)",
+        "de_DE": "Duits (Duitsland)",
+        "dra": "Dravidisch",
+        "el": "Grieks",
+        "en": "Engels",
+        "en_CA": "Engels (Canada)",
+        "en_GB": "Engels (Verenigd Koninkrijk)",
+        "en_US": "Engels (Verenigde Staten)",
+        "eo": "Esperanto",
+        "es": "Spaans",
+        "et": "Estlands",
+        "fa": "Perzisch",
+        "fr": "Frans",
+        "fr_CA": "Frans (Canada)",
+        "fr_FR": "Frans (Frankrijk)",
+        "fi": "Fins",
+        "ga": "Iers",
+        "gd": "Gaelic",
+        "gon": "Gondi",
+        "gu": "Gujarati",
+        "he": "Hebreeuws",
+        "hi": "Hindi",
+        "hr": "Kroatisch",
+        "hu": "Hongaars",
+        "hy": "Armeens",
+        "is": "IJslands",
+        "it": "Italiaans",
+        "iu": "Inuktitut",
+        "ka": "Kannada",
+        "kh": "Khasi",
+        "ko": "Koreaans",
+        "kok": "Konkani",
+        "kru": "Kurukh",
+        "ks": "Kasjmiri",
+        "lt": "Litouws",
+        "lv": "Lets",
+        "mao": "Maori",
+        "ml": "Malayalam",
+        "mt": "Maltees",
+        "mwr": "Marwari",
+        "mn": "Mongools",
+        "mun": "Munda",
+        "nb": "Noors Bokmål",
+        "ne": "Nepalees",
+        "nl": "Nederlands",
+        "no": "Noors",
+        "or": "Odia",
+        "pi": "Pali",
+        "pl": "Pools",
+        "pt": "Portugees",
+        "pu": "Punjabi",
+        "ro": "Roemeens",
+        "ru": "Russisch",
+        "sa": "Sanskriet",
+        "si": "Sindhi",
+        "sin": "Singalees",
+        "sk": "Slowaaks",
+        "sl": "Sloveens",
+        "sr": "Servisch",
+        "sv": "Zweeds",
+        "ta": "Tamil",
+        "te": "Telugu",
+        "tr": "Turks",
+        "tsn": "Afrikaans",
+        "uk": "Oekraïens",
+        "ur": "Urdu",
+        "vi": "Vietnamees",
+        "zh": "Chinees",
+        "zh_TW": "Chinees (Traditioneel Han)"}</translation>
 <translation id="8065607967589909823">Selectie is</translation>
 <translation id="8066678206530322333">Banner</translation>
 <translation id="8076492880354921740">Tabbladen</translation>
@@ -884,6 +934,7 @@ Als je het menu van de Chrome-browser wilt openen, druk je op Alt + F.</translat
 <translation id="8153880621934657047">Niet in tabel.</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{underscore}other{# underscores}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">De ChromeVox-taal automatisch detecteren en schakelen.</translation>
 <translation id="8184828902145951186">rij</translation>
 <translation id="8186185314313222077">volledig scherm in- of uitschakelen</translation>
 <translation id="8199231515320852133">De koppen van de huidige cel melden</translation>
@@ -958,6 +1009,7 @@ Als je het menu van de Chrome-browser wilt openen, druk je op Alt + F.</translat
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">Aanpassingstoetsen</translation>
 <translation id="8943175951035496220">Geen cel aan de rechterkant.</translation>
+<translation id="8946628535652548639">r<ph name="TABLECELLROWINDEX" />k<ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">Vergeten</translation>
 <translation id="900114243503212879">bestand</translation>

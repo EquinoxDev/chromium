@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted_memory.h"
@@ -438,7 +439,8 @@ IN_PROC_BROWSER_TEST_F(TracingControllerTest, NotWhitelistedMetadataStripped) {
   EXPECT_TRUE(not_whitelisted == "__stripped__");
 
   // Also check the trace content.
-  std::unique_ptr<base::Value> trace_json = base::JSONReader::Read(last_data());
+  std::unique_ptr<base::Value> trace_json =
+      base::JSONReader::ReadDeprecated(last_data());
   ASSERT_TRUE(trace_json);
   const base::Value* metadata_json =
       trace_json->FindKeyOfType("metadata", base::Value::Type::DICTIONARY);

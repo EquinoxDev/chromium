@@ -23,6 +23,7 @@
 #include "chrome/browser/search/suggestions/suggestions_ui.h"
 #include "chrome/browser/ui/webui/about_ui.h"
 #include "chrome/browser/ui/webui/bluetooth_internals/bluetooth_internals_ui.h"
+#include "chrome/browser/ui/webui/chromeos/account_manager_welcome_ui.h"
 #include "chrome/browser/ui/webui/components_ui.h"
 #include "chrome/browser/ui/webui/constrained_web_dialog_ui.h"
 #include "chrome/browser/ui/webui/crashes_ui.h"
@@ -47,7 +48,6 @@
 #include "chrome/browser/ui/webui/ntp_tiles_internals_ui.h"
 #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
 #include "chrome/browser/ui/webui/password_manager_internals/password_manager_internals_ui.h"
-#include "chrome/browser/ui/webui/policy_tool_ui.h"
 #include "chrome/browser/ui/webui/policy_ui.h"
 #include "chrome/browser/ui/webui/predictors/predictors_ui.h"
 #include "chrome/browser/ui/webui/quota_internals/quota_internals_ui.h"
@@ -127,9 +127,9 @@
 #else
 #include "chrome/browser/ui/webui/devtools_ui.h"
 #include "chrome/browser/ui/webui/inspect_ui.h"
-#include "chrome/browser/ui/webui/md_bookmarks/md_bookmarks_ui.h"
-#include "chrome/browser/ui/webui/md_downloads/md_downloads_ui.h"
-#include "chrome/browser/ui/webui/md_history_ui.h"
+#include "chrome/browser/ui/webui/bookmarks/bookmarks_ui.h"
+#include "chrome/browser/ui/webui/downloads/downloads_ui.h"
+#include "chrome/browser/ui/webui/history_ui.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/page_not_available_for_guest/page_not_available_for_guest_ui.h"
 #include "chrome/browser/ui/webui/sync_file_system_internals/sync_file_system_internals_ui.h"
@@ -142,6 +142,7 @@
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service_factory.h"
 #include "chrome/browser/chromeos/secure_channel/secure_channel_client_provider.h"
+#include "chrome/browser/ui/webui/chromeos/arc_graphics_tracing/arc_graphics_tracing_ui.h"
 #include "chrome/browser/ui/webui/chromeos/assistant_optin/assistant_optin_ui.h"
 #include "chrome/browser/ui/webui/chromeos/bluetooth_pairing_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/certificate_manager_dialog_ui.h"
@@ -158,12 +159,14 @@
 #include "chrome/browser/ui/webui/chromeos/set_time_ui.h"
 #include "chrome/browser/ui/webui/chromeos/slow_trace_ui.h"
 #include "chrome/browser/ui/webui/chromeos/slow_ui.h"
+#include "chrome/browser/ui/webui/chromeos/smb_shares/smb_credentials_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/smb_shares/smb_share_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/sys_internals/sys_internals_ui.h"
 #include "chrome/browser/ui/webui/signin/inline_login_ui.h"
 #include "chromeos/components/multidevice/debug_webui/proximity_auth_ui.h"
 #include "chromeos/components/multidevice/debug_webui/url_constants.h"
 #include "chromeos/constants/chromeos_features.h"
+#include "components/arc/arc_features.h"
 #endif
 
 #if defined(OS_CHROMEOS) && !defined(OFFICIAL_BUILD)
@@ -176,6 +179,7 @@
 
 #if !defined(OS_CHROMEOS) && !defined(OS_ANDROID)
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
+#include "chrome/browser/ui/webui/browser_switcher/browser_switch_ui.h"
 #include "chrome/browser/ui/webui/signin/inline_login_ui.h"
 #include "chrome/browser/ui/webui/signin/md_user_manager_ui.h"
 #include "chrome/browser/ui/webui/signin/signin_email_confirmation_ui.h"
@@ -448,10 +452,10 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   }
   // Bookmarks are part of NTP on Android.
   if (url.host_piece() == chrome::kChromeUIBookmarksHost)
-    return &NewWebUI<MdBookmarksUI>;
+    return &NewWebUI<BookmarksUI>;
   // Downloads list on Android uses the built-in download manager.
   if (url.host_piece() == chrome::kChromeUIDownloadsHost)
-    return &NewWebUI<MdDownloadsUI>;
+    return &NewWebUI<DownloadsUI>;
   // Identity API is not available on Android.
   if (url.host_piece() == chrome::kChromeUIIdentityInternalsHost)
     return &NewWebUI<IdentityInternalsUI>;
@@ -463,7 +467,7 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
   if (url.host_piece() == chrome::kChromeUIExtensionsHost)
     return &NewWebUI<extensions::ExtensionsUI>;
   if (url.host_piece() == chrome::kChromeUIHistoryHost)
-    return &NewWebUI<MdHistoryUI>;
+    return &NewWebUI<HistoryUI>;
   if (url.host_piece() == chrome::kChromeUISyncFileSystemInternalsHost)
     return &NewWebUI<SyncFileSystemInternalsUI>;
   if (url.host_piece() == chrome::kChromeUISystemInfoHost)
@@ -479,6 +483,8 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<SetAsDefaultBrowserUI>;
 #endif
 #if defined(OS_CHROMEOS)
+  if (url.host_piece() == chrome::kChromeUIAccountManagerWelcomeHost)
+    return &NewWebUI<chromeos::AccountManagerWelcomeUI>;
   if (url.host_piece() == chrome::kChromeUIBluetoothPairingHost)
     return &NewWebUI<chromeos::BluetoothPairingDialogUI>;
   if (url.host_piece() == chrome::kChromeUICertificateManagerHost)
@@ -511,13 +517,20 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
     return &NewWebUI<chromeos::SlowUI>;
   if (url.host_piece() == chrome::kChromeUISlowTraceHost)
     return &NewWebUI<chromeos::SlowTraceController>;
+  if (url.host_piece() == chrome::kChromeUISmbCredentialsHost)
+    return &NewWebUI<chromeos::smb_dialog::SmbCredentialsDialogUI>;
   if (url.host_piece() == chrome::kChromeUISmbShareHost)
     return &NewWebUI<chromeos::smb_dialog::SmbShareDialogUI>;
-  if (url.host_piece() == chrome::kChromeUISysInternalsHost &&
-      SysInternalsUI::IsEnabled())
+  if (url.host_piece() == chrome::kChromeUISysInternalsHost)
     return &NewWebUI<SysInternalsUI>;
   if (url.host_piece() == chrome::kChromeUIAssistantOptInHost)
     return &NewWebUI<chromeos::AssistantOptInUI>;
+
+  if (url.host_piece() == chrome::kChromeUIArcGraphicsTracingHost) {
+    if (!base::FeatureList::IsEnabled(arc::kGraphicBuffersVisualizationTool))
+      return nullptr;
+    return &NewWebUI<chromeos::ArcGraphicsTracingUI>;
+  }
 #if !defined(OFFICIAL_BUILD)
   if (!base::SysInfo::IsRunningOnChromeOS()) {
     if (url.host_piece() == chrome::kChromeUIDeviceEmulatorHost)
@@ -590,19 +603,11 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(USE_NSS_CERTS) && defined(USE_AURA)
   if (url.host_piece() == chrome::kChromeUICertificateViewerHost)
     return &NewWebUI<CertificateViewerUI>;
-#if defined(OS_CHROMEOS)
-  if (url.host_piece() == chrome::kChromeUICertificateViewerDialogHost)
-    return &NewWebUI<CertificateViewerModalDialogUI>;
-#endif
 #endif  // USE_NSS_CERTS && USE_AURA
 
   if (url.host_piece() == chrome::kChromeUIPolicyHost)
     return &NewWebUI<PolicyUI>;
 #if !defined(OS_ANDROID)
-  if (url.host_piece() == chrome::kChromeUIPolicyToolHost &&
-      PolicyToolUI::IsEnabled()) {
-    return &NewWebUI<PolicyToolUI>;
-  }
   if (url.host_piece() == chrome::kChromeUIManagementHost)
     return &NewWebUI<ManagementUI>;
 #endif
@@ -648,6 +653,11 @@ WebUIFactoryFunction GetWebUIFactoryFunction(WebUI* web_ui,
 #if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
   if (url.host_piece() == chrome::kChromeUIDiscardsHost)
     return &NewWebUI<DiscardsUI>;
+#endif
+#if defined(OS_WIN) || defined(OS_MACOSX) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  if (url.host_piece() == chrome::kChromeUIBrowserSwitchHost)
+    return &NewWebUI<BrowserSwitchUI>;
 #endif
   if (IsAboutUI(url))
     return &NewWebUI<AboutUI>;
@@ -863,11 +873,11 @@ base::RefCountedMemory* ChromeWebUIControllerFactory::GetFaviconResourceBytes(
 
   // Bookmarks are part of NTP on Android.
   if (page_url.host_piece() == chrome::kChromeUIBookmarksHost)
-    return MdBookmarksUI::GetFaviconResourceBytes(scale_factor);
+    return BookmarksUI::GetFaviconResourceBytes(scale_factor);
 
   // Android uses the native download manager.
   if (page_url.host_piece() == chrome::kChromeUIDownloadsHost)
-    return MdDownloadsUI::GetFaviconResourceBytes(scale_factor);
+    return DownloadsUI::GetFaviconResourceBytes(scale_factor);
 
   // Android doesn't use the Options/Settings pages.
   if (page_url.host_piece() == chrome::kChromeUISettingsHost)

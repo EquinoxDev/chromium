@@ -28,18 +28,18 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_FETCHER_H_
 
 #include <memory>
+#include <utility>
 
+#include "base/single_thread_task_runner.h"
 #include "services/network/public/cpp/cors/preflight_timing_info.h"
+#include "third_party/blink/public/mojom/blob/blob_registry.mojom-blink.h"
+#include "third_party/blink/public/mojom/loader/mhtml_load_result.mojom-shared.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom-blink.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
-#include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
-#include "third_party/blink/renderer/platform/loader/fetch/fetch_initiator_info.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_parameters.h"
 #include "third_party/blink/renderer/platform/loader/fetch/preload_key.h"
-#include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
-#include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
-#include "third_party/blink/renderer/platform/loader/fetch/substitute_data.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_load_scheduler.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
@@ -49,13 +49,22 @@
 
 namespace blink {
 
+enum class ResourceType : uint8_t;
 class ArchiveResource;
+class CodeCacheLoader;
 class ConsoleLogger;
+class FetchContext;
+class FrameScheduler;
 class MHTMLArchive;
 class KURL;
+class PreflightTimingInfo;
 class Resource;
+class ResourceError;
+class ResourceFetcherProperties;
 class ResourceTimingInfo;
-enum class ResourceType : uint8_t;
+class WebURLLoader;
+struct ResourceFetcherInit;
+struct ResourceLoaderOptions;
 
 // The ResourceFetcher provides a per-context interface to the MemoryCache and
 // enforces a bunch of security checks and rules for resource revalidation. Its
@@ -71,14 +80,40 @@ enum class ResourceType : uint8_t;
 // Document.
 class PLATFORM_EXPORT ResourceFetcher
     : public GarbageCollectedFinalized<ResourceFetcher> {
-  WTF_MAKE_NONCOPYABLE(ResourceFetcher);
   USING_PRE_FINALIZER(ResourceFetcher, ClearPreloads);
 
  public:
-  ResourceFetcher(FetchContext*);
-  ResourceFetcher(FetchContext*, ConsoleLogger*);
+  // An abstract interface for creating loaders.
+  class LoaderFactory : public GarbageCollectedFinalized<LoaderFactory> {
+   public:
+    virtual ~LoaderFactory() = default;
+
+    virtual void Trace(Visitor*) {}
+
+    // Create a WebURLLoader for given the request information and task runner.
+    virtual std::unique_ptr<WebURLLoader> CreateURLLoader(
+        const ResourceRequest&,
+        const ResourceLoaderOptions&,
+        scoped_refptr<base::SingleThreadTaskRunner>) = 0;
+
+    // Create a code cache loader to fetch data from code caches.
+    virtual std::unique_ptr<CodeCacheLoader> CreateCodeCacheLoader() = 0;
+  };
+
+  // ResourceFetcher creators are responsible for setting consistent objects
+  // in ResourceFetcherInit to ensure correctness of this ResourceFetcher.
+  explicit ResourceFetcher(const ResourceFetcherInit&);
   virtual ~ResourceFetcher();
   virtual void Trace(blink::Visitor*);
+
+  // - This function returns the same object throughout this fetcher's
+  //   entire life.
+  // - The returned object remains valid after ClearContext() is called.
+  // - This function returns a different object from the corresponding
+  //   argument in the constructor.
+  // - This function should be used rather than the properties given
+  //   to the ResourceFetcher constructor.
+  const ResourceFetcherProperties& GetProperties() const;
 
   // Triggers a fetch based on the given FetchParameters (if there isn't a
   // suitable Resource already cached) and registers the given ResourceClient
@@ -86,9 +121,21 @@ class PLATFORM_EXPORT ResourceFetcher
   // specified by ResourceFactory::GetType().
   Resource* RequestResource(FetchParameters&,
                             const ResourceFactory&,
-                            ResourceClient*,
-                            const SubstituteData& = SubstituteData(),
-                            unsigned long identifier = 0);
+                            ResourceClient*);
+
+  // Returns the task runner used by this fetcher, and loading operations
+  // this fetcher initiates. The returned task runner will keep working even
+  // after ClearContext is called.
+  const scoped_refptr<base::SingleThreadTaskRunner>& GetTaskRunner() const {
+    return task_runner_;
+  }
+
+  // Create a loader. This cannot be called after ClearContext is called.
+  std::unique_ptr<WebURLLoader> CreateURLLoader(const ResourceRequest&,
+                                                const ResourceLoaderOptions&);
+  // Create a code cache loader. This cannot be called after ClearContext is
+  // called.
+  std::unique_ptr<CodeCacheLoader> CreateCodeCacheLoader();
 
   Resource* CachedResource(const KURL&) const;
 
@@ -132,6 +179,9 @@ class PLATFORM_EXPORT ResourceFetcher
   Vector<KURL> GetUrlsOfUnusedPreloads();
 
   MHTMLArchive* Archive() const { return archive_.Get(); }
+  mojom::MHTMLLoadResult ArchiveLoadResult() const {
+    return archive_load_result_;
+  }
   ArchiveResource* CreateArchive(const KURL&,
                                  scoped_refptr<const SharedBuffer>);
 
@@ -140,7 +190,9 @@ class PLATFORM_EXPORT ResourceFetcher
 
   bool ShouldDeferImageLoad(const KURL&) const;
 
-  void RecordResourceTimingOnRedirect(Resource*, const ResourceResponse&, bool);
+  void RecordResourceTimingOnRedirect(Resource*,
+                                      const ResourceResponse&,
+                                      const KURL& new_url);
 
   enum LoaderFinishType { kDidFinishLoading, kDidFinishFirstPartInMultipart };
   void HandleLoaderFinish(Resource*,
@@ -159,8 +211,9 @@ class PLATFORM_EXPORT ResourceFetcher
 
   enum IsImageSet { kImageNotImageSet, kImageIsImageSet };
 
-  WARN_UNUSED_RESULT static mojom::RequestContextType
-  DetermineRequestContext(ResourceType, IsImageSet, bool is_main_frame);
+  WARN_UNUSED_RESULT static mojom::RequestContextType DetermineRequestContext(
+      ResourceType,
+      IsImageSet);
 
   void UpdateAllImageResourcePriorities();
 
@@ -191,8 +244,11 @@ class PLATFORM_EXPORT ResourceFetcher
   using ResourceFetcherSet = HeapHashSet<WeakMember<ResourceFetcher>>;
   static const ResourceFetcherSet& MainThreadFetchers();
 
+  mojom::blink::BlobRegistry* GetBlobRegistry();
+
  private:
   friend class ResourceCacheValidationSuppressor;
+  class DetachableProperties;
   enum class StopFetchingTarget {
     kExcludingKeepaliveLoaders,
     kIncludingKeepaliveLoaders,
@@ -216,15 +272,17 @@ class PLATFORM_EXPORT ResourceFetcher
           FetchParameters::SpeculativePreloadType::kNotSpeculative,
       bool is_link_preload = false);
 
+  // |virtual_time_pauser| is an output parameter. PrepareRequest may
+  // create a new WebScopedVirtualTimePauser and set it to
+  // |virtual_time_pauser|.
   base::Optional<ResourceRequestBlockedReason> PrepareRequest(
       FetchParameters&,
       const ResourceFactory&,
-      const SubstituteData&,
-      unsigned long identifier);
+      unsigned long identifier,
+      WebScopedVirtualTimePauser& virtual_time_pauser);
 
   Resource* ResourceForStaticData(const FetchParameters&,
-                                  const ResourceFactory&,
-                                  const SubstituteData&);
+                                  const ResourceFactory&);
   Resource* ResourceForBlockedRequest(const FetchParameters&,
                                       const ResourceFactory&,
                                       ResourceRequestBlockedReason,
@@ -290,9 +348,12 @@ class PLATFORM_EXPORT ResourceFetcher
   void ScheduleStaleRevalidate(Resource* stale_resource);
   void RevalidateStaleResource(Resource* stale_resource);
 
+  Member<DetachableProperties> properties_;
   Member<FetchContext> context_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   Member<ConsoleLogger> console_logger_;
-  Member<ResourceLoadScheduler> scheduler_;
+  Member<LoaderFactory> loader_factory_;
+  const Member<ResourceLoadScheduler> scheduler_;
 
   DocumentResourceMap cached_resources_map_;
   HeapHashSet<WeakMember<Resource>> document_resources_;
@@ -300,6 +361,7 @@ class PLATFORM_EXPORT ResourceFetcher
   HeapHashMap<PreloadKey, Member<Resource>> preloads_;
   HeapVector<Member<Resource>> matched_preloads_;
   Member<MHTMLArchive> archive_;
+  mojom::MHTMLLoadResult archive_load_result_;
 
   TaskRunnerTimer<ResourceFetcher> resource_timing_report_timer_;
 
@@ -319,6 +381,8 @@ class PLATFORM_EXPORT ResourceFetcher
 
   uint32_t inflight_keepalive_bytes_ = 0;
 
+  mojom::blink::BlobRegistryPtr blob_registry_ptr_;
+
   // 27 bits left
   bool auto_load_images_ : 1;
   bool images_enabled_ : 1;
@@ -327,10 +391,11 @@ class PLATFORM_EXPORT ResourceFetcher
   bool stale_while_revalidate_enabled_ : 1;
 
   static constexpr uint32_t kKeepaliveInflightBytesQuota = 64 * 1024;
+
+  DISALLOW_COPY_AND_ASSIGN(ResourceFetcher);
 };
 
 class ResourceCacheValidationSuppressor {
-  WTF_MAKE_NONCOPYABLE(ResourceCacheValidationSuppressor);
   STACK_ALLOCATED();
 
  public:
@@ -349,6 +414,55 @@ class ResourceCacheValidationSuppressor {
  private:
   Member<ResourceFetcher> loader_;
   bool previous_state_;
+
+  DISALLOW_COPY_AND_ASSIGN(ResourceCacheValidationSuppressor);
+};
+
+// Used for ResourceFetcher construction.
+// Creators of ResourceFetcherInit are responsible for setting consistent
+// members to ensure the correctness of ResourceFetcher.
+struct PLATFORM_EXPORT ResourceFetcherInit final {
+  STACK_ALLOCATED();
+
+ public:
+  // |context| and |task_runner| must not be null.
+  // |loader_factory| can be null if |properties.IsDetached()| is true.
+  // The given ResourceFetcherProperties is kept until ClearContext() is called.
+  ResourceFetcherInit(const ResourceFetcherProperties& properties,
+                      FetchContext* context,
+                      scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+      : ResourceFetcherInit(properties,
+                            context,
+                            std::move(task_runner),
+                            nullptr) {}
+  ResourceFetcherInit(const ResourceFetcherProperties& properties,
+                      FetchContext* context,
+                      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+                      ResourceFetcher::LoaderFactory* loader_factory);
+  ResourceFetcherInit(const ResourceFetcherProperties& properties,
+                      FetchContext* context,
+                      scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+                      ResourceFetcher::LoaderFactory* loader_factory,
+                      ConsoleLogger& console_logger)
+      : properties(properties),
+        context(context),
+        task_runner(std::move(task_runner)),
+        loader_factory(loader_factory),
+        console_logger(console_logger) {
+    DCHECK(context);
+    DCHECK(this->task_runner);
+  }
+  const Member<const ResourceFetcherProperties> properties;
+  const Member<FetchContext> context;
+  const scoped_refptr<base::SingleThreadTaskRunner> task_runner;
+  const Member<ResourceFetcher::LoaderFactory> loader_factory;
+  const Member<ConsoleLogger> console_logger;
+  ResourceLoadScheduler::ThrottlingPolicy initial_throttling_policy =
+      ResourceLoadScheduler::ThrottlingPolicy::kNormal;
+  Member<MHTMLArchive> archive;
+  FrameScheduler* frame_scheduler = nullptr;
+
+  DISALLOW_COPY_AND_ASSIGN(ResourceFetcherInit);
 };
 
 }  // namespace blink

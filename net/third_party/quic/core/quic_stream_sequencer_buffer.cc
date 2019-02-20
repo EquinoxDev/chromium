@@ -4,7 +4,6 @@
 
 #include "net/third_party/quic/core/quic_stream_sequencer_buffer.h"
 
-#include "base/format_macros.h"
 #include "net/third_party/quic/core/quic_constants.h"
 #include "net/third_party/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quic/platform/api/quic_flag_utils.h"
@@ -93,7 +92,7 @@ QuicErrorCode QuicStreamSequencerBuffer::OnStreamData(
       // Extend the right edge of last interval.
       // TODO(fayang): Encapsulate this into a future version of QuicIntervalSet
       // if this is more efficient than Add.
-      const_cast<QuicInterval<QuicPacketNumber>*>(&(*bytes_received_.rbegin()))
+      const_cast<QuicInterval<QuicStreamOffset>*>(&(*bytes_received_.rbegin()))
           ->SetMax(starting_offset + size);
     } else {
       bytes_received_.Add(starting_offset, starting_offset + size);

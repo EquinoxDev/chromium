@@ -11,6 +11,7 @@ import android.support.v4.util.ArrayMap;
 import android.text.TextUtils;
 import android.util.SparseArray;
 
+import com.google.android.gms.cast.ApplicationMetadata;
 import com.google.android.gms.common.api.PendingResult;
 import com.google.android.gms.common.api.Status;
 
@@ -24,7 +25,6 @@ import org.chromium.chrome.browser.media.router.CastRequestIdGenerator;
 import org.chromium.chrome.browser.media.router.CastSessionUtil;
 import org.chromium.chrome.browser.media.router.ClientRecord;
 import org.chromium.chrome.browser.media.router.MediaSink;
-import org.chromium.chrome.browser.media.router.cast.CastMediaSource;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -692,8 +692,15 @@ public class CafMessageHandler {
             jsonMessage.put("media", toJSONArray(new ArrayList<>()));
             jsonMessage.put("status", "connected");
             jsonMessage.put("transportId", "web-4");
-            jsonMessage.put("appId",
-                    mSessionController.getSession().getApplicationMetadata().getApplicationId());
+
+            ApplicationMetadata applicationMetadata =
+                    mSessionController.getSession().getApplicationMetadata();
+            if (applicationMetadata != null) {
+                jsonMessage.put("appId", applicationMetadata.getApplicationId());
+            } else {
+                jsonMessage.put("appId",
+                        mSessionController.getRouteCreationInfo().source.getApplicationId());
+            }
             jsonMessage.put("displayName",
                     mSessionController.getSession().getCastDevice().getFriendlyName());
 

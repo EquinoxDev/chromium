@@ -12,6 +12,7 @@ GEN_INCLUDE(
     [ROOT_PATH + 'chrome/test/data/webui/polymer_browser_test_base.js']);
 GEN('#include "chrome/common/chrome_features.h"');
 GEN('#include "components/autofill/core/common/autofill_features.h"');
+GEN('#include "components/omnibox/browser/omnibox_field_trial.h"');
 
 /**
  * Test fixture for Polymer Settings elements.
@@ -236,8 +237,13 @@ CrSettingsAutofillPageTest.prototype = {
 
   /** @override */
   extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
+    '../fake_chrome_event.js',
     '../test_browser_proxy.js',
     'autofill_page_test.js',
+    'ensure_lazy_loaded.js',
+    'fake_settings_private.js',
+    'passwords_and_autofill_fake_data.js',
+    'test_password_manager_proxy.js',
   ]),
 };
 
@@ -298,6 +304,35 @@ TEST_F('CrSettingsAutofillSectionCompanyDisabledTest', 'All', function() {
   const loadTimeDataOverride = {};
   loadTimeDataOverride['EnableCompanyName'] = false;
   loadTimeData.overrideValues(loadTimeDataOverride);
+  mocha.run();
+});
+
+/**
+ * Test fixture for
+ * chrome/browser/resources/settings/autofill_page/passwords_section.html.
+ * @constructor
+ * @extends {CrSettingsBrowserTest}
+ */
+function CrSettingsPasswordsSectionTest() {}
+
+CrSettingsPasswordsSectionTest.prototype = {
+  __proto__: CrSettingsBrowserTest.prototype,
+
+  /** @override */
+  browsePreload: 'chrome://settings/autofill_page/passwords_section.html',
+
+  /** @override */
+  extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
+    '../mock_timer.js',
+    '../test_browser_proxy.js',
+    'passwords_and_autofill_fake_data.js',
+    'passwords_section_test.js',
+    'test_password_manager_proxy.js',
+    'test_util.js',
+  ]),
+};
+
+TEST_F('CrSettingsPasswordsSectionTest', 'All', function() {
   mocha.run();
 });
 
@@ -542,6 +577,12 @@ CrSettingsPeoplePageTest.prototype = {
   /** @override */
   browsePreload: 'chrome://settings/people_page/people_page.html',
 
+  // Omnibox's Document Provider adds a dynamic setting to a list which is
+  // length-checked in this test. The feature is defaulted on here during
+  // rollout, reflecting its value in fieldtrial_testing_config.json.
+  // See crbug.com/908435.
+  featureList: ['omnibox::kDocumentProvider', ''],
+
   /** @override */
   extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
     '../test_browser_proxy.js',
@@ -627,9 +668,16 @@ CrSettingsPeoplePageSyncPageTest.prototype = {
   /** @override */
   browsePreload: 'chrome://settings/people_page/sync_page.html',
 
+  // Omnibox's Document Provider adds a dynamic setting to a list which is
+  // length-checked in this test. The feature is defaulted on here during
+  // rollout, reflecting its value in fieldtrial_testing_config.json.
+  // See crbug.com/908435.
+  featureList: ['omnibox::kDocumentProvider', ''],
+
   /** @override */
   extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
     '../test_browser_proxy.js',
+    'sync_test_util.js',
     'test_sync_browser_proxy.js',
     'test_util.js',
     'people_page_sync_page_test.js',
@@ -964,9 +1012,9 @@ TEST_F('CrSettingsCertificateManagerTest', 'All', function() {
 
 GEN('#endif  // defined(USE_NSS_CERTS)');
 
-GEN('#if defined(GOOGLE_CHROME_BUILD)');
 /**
- * Test fixture for chrome/browser/resources/settings/privacy_page/.
+ * Test fixture for
+ * chrome/browser/resources/settings/privacy_page/personalization_options.html.
  * @constructor
  * @extends {CrSettingsBrowserTest}
  */
@@ -988,14 +1036,19 @@ CrSettingsPersonalizationOptionsTest.prototype = {
   ]),
 };
 
+TEST_F('CrSettingsPersonalizationOptionsTest', 'AllBuilds', function() {
+  mocha.grep('PersonalizationOptionsTests_AllBuilds').run();
+});
 
+GEN('#if defined(GOOGLE_CHROME_BUILD)');
 TEST_F('CrSettingsPersonalizationOptionsTest', 'OfficialBuild', function() {
-  mocha.run();
+  mocha.grep('PersonalizationOptionsTests_OfficialBuild').run();
 });
 GEN('#endif');
 
 /**
- * Test fixture for chrome/browser/resources/settings/privacy_page/.
+ * Test fixture for
+ * chrome/browser/resources/settings/privacy_page/privacy_page.html.
  * @constructor
  * @extends {CrSettingsBrowserTest}
  */
@@ -1051,6 +1104,31 @@ CrSettingsSiteDataDetailsTest.prototype = {
 };
 
 TEST_F('CrSettingsSiteDataDetailsTest', 'All', function() {
+  mocha.run();
+});
+
+/**
+ * @constructor
+ * @extends {CrSettingsBrowserTest}
+ */
+function CrSettingsChooserExceptionListTest() {}
+
+CrSettingsChooserExceptionListTest.prototype = {
+  __proto__: CrSettingsBrowserTest.prototype,
+
+  /** @override */
+  browsePreload: 'chrome://settings/site_settings/chooser_exception_list.html',
+
+  /** @override */
+  extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
+    '../test_browser_proxy.js',
+    'test_util.js',
+    'test_site_settings_prefs_browser_proxy.js',
+    'chooser_exception_list_tests.js',
+  ]),
+};
+
+TEST_F('CrSettingsChooserExceptionListTest', 'All', function() {
   mocha.run();
 });
 
@@ -1267,7 +1345,8 @@ CrSettingsSiteListTest.prototype = {
   ]),
 };
 
-TEST_F('CrSettingsSiteListTest', 'SiteList', function() {
+// TODO(crbug.com/929455): flaky, fix.
+TEST_F('CrSettingsSiteListTest', 'DISABLED_SiteList', function() {
   mocha.grep('SiteList').run();
 });
 
@@ -1294,8 +1373,10 @@ CrSettingsSiteListEntryTest.prototype = {
   /** @override */
   extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
     '../cr_elements/cr_policy_strings.js',
+    '../test_browser_proxy.js',
     'site_list_entry_tests.js',
     'test_util.js',
+    'test_site_settings_prefs_browser_proxy.js',
   ]),
 };
 
@@ -1325,31 +1406,6 @@ CrSettingsZoomLevelsTest.prototype = {
 };
 
 TEST_F('CrSettingsZoomLevelsTest', 'All', function() {
-  mocha.run();
-});
-
-/**
- * @constructor
- * @extends {CrSettingsBrowserTest}
- */
-function CrSettingsUsbDevicesTest() {}
-
-CrSettingsUsbDevicesTest.prototype = {
-  __proto__: CrSettingsBrowserTest.prototype,
-
-  /** @override */
-  browsePreload: 'chrome://settings/privacy_page/privacy_page.html',
-
-  /** @override */
-  extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
-    '../test_browser_proxy.js',
-    'test_util.js',
-    'test_site_settings_prefs_browser_proxy.js',
-    'usb_devices_tests.js',
-  ]),
-};
-
-TEST_F('CrSettingsUsbDevicesTest', 'All', function() {
   mocha.run();
 });
 
@@ -1846,7 +1902,8 @@ CrSettingsMainPageTest.prototype = {
 
 // Times out on Windows Tests (dbg). See https://crbug.com/651296.
 // Times out / crashes on chromium.linux/Linux Tests (dbg) crbug.com/667882
-GEN('#if !defined(NDEBUG)');
+// Times out on Linux CFI. See http://crbug.com/929288.
+GEN('#if !defined(NDEBUG) || defined(OS_LINUX)');
 GEN('#define MAYBE_MainPage DISABLED_MainPage');
 GEN('#else');
 GEN('#define MAYBE_MainPage MainPage');
@@ -2135,7 +2192,7 @@ CrSettingsCrostiniPageTest.prototype = {
   browsePreload: 'chrome://settings/crostini_page/crostini_page.html',
 
   /** @override */
-  featureList: ['features::kExperimentalCrostiniUI', ''],
+  featureList: ['features::kCrostini', ''],
 
   extraLibraries: CrSettingsBrowserTest.prototype.extraLibraries.concat([
     ROOT_PATH + 'ui/webui/resources/js/promise_resolver.js',

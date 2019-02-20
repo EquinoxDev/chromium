@@ -16,16 +16,19 @@ let NuxOnboardingModules;
  * onboarding flow.
  * @const {!Set<string>}
  */
-const MODULES_WHITELIST = new Set(
-    ['nux-email', 'nux-google-apps', 'nux-set-as-default', 'signin-view']);
+const MODULES_WHITELIST = new Set([
+  'nux-email', 'nux-google-apps', 'nux-ntp-background', 'nux-set-as-default',
+  'signin-view'
+]);
 
 /**
  * This list needs to be updated if new modules that need step-indicators are
  * added.
  * @const {!Set<string>}
  */
-const MODULES_NEEDING_INDICATOR =
-    new Set(['nux-email', 'nux-google-apps', 'nux-set-as-default']);
+const MODULES_NEEDING_INDICATOR = new Set([
+  'nux-email', 'nux-google-apps', 'nux-ntp-background', 'nux-set-as-default'
+]);
 
 Polymer({
   is: 'welcome-app',
@@ -131,9 +134,20 @@ Polymer({
         ])
         .then(args => {
           const canSetDefault = args[0];
-          if (!canSetDefault) {
-            modules = modules.filter(module => module != 'nux-set-as-default');
-          }
+
+          modules = modules.filter(module => {
+            if (module == 'nux-set-as-default') {
+              return canSetDefault;
+            }
+
+            if (module == 'nux-email') {
+              // Show email module in en-US only until email recommendations
+              // for other locales is figured out.
+              return navigator.language == 'en-US';
+            }
+
+            return true;
+          });
 
           const indicatorElementCount = modules.reduce((count, module) => {
             return count += MODULES_NEEDING_INDICATOR.has(module) ? 1 : 0;

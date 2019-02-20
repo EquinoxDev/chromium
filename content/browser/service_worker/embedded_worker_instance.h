@@ -24,13 +24,14 @@
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/common/content_export.h"
-#include "content/common/service_worker/embedded_worker.mojom.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/controller_service_worker.mojom.h"
+#include "third_party/blink/public/mojom/service_worker/embedded_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_installed_scripts_manager.mojom.h"
+#include "third_party/blink/public/web/web_console_message.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -51,7 +52,7 @@ FORWARD_DECLARE_TEST(ServiceWorkerNewScriptLoaderTest, AccessedNetwork);
 //
 // Owned by ServiceWorkerVersion. Lives on the IO thread.
 class CONTENT_EXPORT EmbeddedWorkerInstance
-    : public mojom::EmbeddedWorkerInstanceHost {
+    : public blink::mojom::EmbeddedWorkerInstanceHost {
  public:
   class DevToolsProxy;
   using StatusCallback =
@@ -128,7 +129,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // the callback is invoked with kOk status, the service worker has not yet
   // finished starting. Observe OnStarted()/OnStopped() for when start completed
   // or failed.
-  void Start(mojom::EmbeddedWorkerStartParamsPtr params,
+  void Start(blink::mojom::EmbeddedWorkerStartParamsPtr params,
              StatusCallback sent_start_callback);
 
   // Stops the worker. It is invalid to call this when the worker is not in
@@ -193,7 +194,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   void OnWorkerVersionDoomed();
 
   // Add message to the devtools console.
-  void AddMessageToConsole(blink::WebConsoleMessage::Level level,
+  void AddMessageToConsole(blink::mojom::ConsoleMessageLevel level,
                            const std::string& message);
 
   static std::string StatusToString(EmbeddedWorkerStatus status);
@@ -215,6 +216,11 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // about the renderer-side worker, and frees this instance up to start a new
   // worker.
   void Detach();
+
+  // Examine the current state of the worker in order to determine if it should
+  // require foreground priority or not.  This should be called whenever state
+  // changes such that the decision might change.
+  void UpdateForegroundPriority();
 
   base::WeakPtr<EmbeddedWorkerInstance> AsWeakPtr();
 
@@ -256,11 +262,11 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // |factory| is used for loading non-installed scripts. It can internally be a
   // bundle of factories instead of just the direct network factory to support
   // non-NetworkService schemes like chrome-extension:// URLs.
-  void SendStartWorker(mojom::EmbeddedWorkerStartParamsPtr params,
+  void SendStartWorker(blink::mojom::EmbeddedWorkerStartParamsPtr params,
                        scoped_refptr<network::SharedURLLoaderFactory> factory,
                        blink::mojom::CacheStoragePtrInfo cache_storage);
 
-  // Implements mojom::EmbeddedWorkerInstanceHost.
+  // Implements blink::mojom::EmbeddedWorkerInstanceHost.
   // These functions all run on the IO thread.
   void RequestTermination(RequestTerminationCallback callback) override;
   void CountFeature(blink::mojom::WebFeature feature) override;
@@ -268,9 +274,10 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   void OnScriptLoaded() override;
   void OnScriptEvaluationStart() override;
   // Changes the internal worker status from STARTING to RUNNING.
-  void OnStarted(blink::mojom::ServiceWorkerStartStatus status,
-                 int thread_id,
-                 mojom::EmbeddedWorkerStartTimingPtr start_timing) override;
+  void OnStarted(
+      blink::mojom::ServiceWorkerStartStatus status,
+      int thread_id,
+      blink::mojom::EmbeddedWorkerStartTimingPtr start_timing) override;
   // Resets the embedded worker instance to the initial state. Changes
   // the internal status from STARTING or RUNNING to STOPPED.
   void OnStopped() override;
@@ -293,6 +300,11 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   void OnSetupFailed(StatusCallback callback,
                      blink::ServiceWorkerStatusCode status);
 
+  // Called when a foreground service worker is added/removed in a process.
+  // Called on the IO thread and dispatches task to the UI thread.
+  void NotifyForegroundServiceWorkerAdded();
+  void NotifyForegroundServiceWorkerRemoved();
+
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
   ServiceWorkerVersion* owner_version_;
@@ -311,7 +323,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // |client_| is used to send messages to the renderer process. The browser
   // process should not disconnect the pipe because associated interfaces may be
   // using it. The renderer process will disconnect the pipe when appropriate.
-  mojom::EmbeddedWorkerInstanceClientPtr client_;
+  blink::mojom::EmbeddedWorkerInstanceClientPtr client_;
 
   // Binding for EmbeddedWorkerInstanceHost, runs on IO thread.
   mojo::AssociatedBinding<EmbeddedWorkerInstanceHost> instance_host_binding_;
@@ -322,6 +334,10 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // True if the script load request accessed the network. If the script was
   // served from HTTPCache or ServiceWorkerDatabase this value is false.
   bool network_accessed_for_script_;
+
+  // True if the RenderProcessHost has been notified that this is a service
+  // worker requiring foreground priority.
+  bool foreground_notified_;
 
   ListenerList listener_list_;
   std::unique_ptr<DevToolsProxy> devtools_proxy_;

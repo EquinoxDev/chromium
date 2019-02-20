@@ -19,6 +19,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/scoped_task_environment.h"
+#include "base/test/test_timeouts.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
@@ -131,6 +132,11 @@ class JpegEncodeAcceleratorTestEnvironment : public ::testing::Environment {
 };
 
 void JpegEncodeAcceleratorTestEnvironment::SetUp() {
+  // Since base::test::ScopedTaskEnvironment will call
+  // TestTimeouts::action_max_timeout(), TestTimeouts::Initialize() needs to be
+  // called in advance.
+  TestTimeouts::Initialize();
+
   if (!log_path_.empty()) {
     log_file_.reset(new base::File(
         log_path_, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE));
@@ -365,9 +371,9 @@ void JpegClient::VideoFrameReady(int32_t buffer_id, size_t hw_encoded_size) {
                                      &sw_encoded_size, &elapsed_sw));
 
   g_env->LogToFile("hw_encode_time",
-                   base::Int64ToString(elapsed_hw.InMicroseconds()));
+                   base::NumberToString(elapsed_hw.InMicroseconds()));
   g_env->LogToFile("sw_encode_time",
-                   base::Int64ToString(elapsed_sw.InMicroseconds()));
+                   base::NumberToString(elapsed_sw.InMicroseconds()));
 
   if (g_save_to_file) {
     SaveToFile(test_image, hw_encoded_size, sw_encoded_size);

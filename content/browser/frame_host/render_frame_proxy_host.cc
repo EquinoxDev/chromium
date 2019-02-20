@@ -17,6 +17,7 @@
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/ipc_utils.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
@@ -214,6 +215,12 @@ bool RenderFrameProxyHost::InitRenderFrameProxy() {
 
   set_render_frame_proxy_created(true);
 
+  // If this proxy was created for a frame that hasn't yet finished loading,
+  // let the renderer know so it can also mark the proxy as loading. See
+  // https://crbug.com/916137.
+  if (frame_tree_node_->IsLoading())
+    Send(new FrameMsg_DidStartLoading(routing_id_));
+
   // For subframes, initialize the proxy's FrameOwnerProperties only if they
   // differ from default values.
   bool should_send_properties =
@@ -269,54 +276,44 @@ void RenderFrameProxyHost::OnDetach() {
     return;
   }
 
-  // This message should only be received for subframes.  Note that we can't
-  // restrict it to just the current SiteInstances of the ancestors of this
-  // frame, because another frame in the tree may be able to detach this frame
-  // by navigating its parent.
-  if (frame_tree_node_->IsMainFrame()) {
-    bad_message::ReceivedBadMessage(GetProcess(), bad_message::RFPH_DETACH);
+  // For a main frame with no outer delegate, no further work is needed. In this
+  // case, detach can only be triggered by closing the entire RenderViewHost.
+  // Instead, this cleanup relies on the destructors of RenderFrameHost and
+  // RenderFrameProxyHost decrementing the refcounts of their associated
+  // RenderViewHost. When the refcount hits 0, the corresponding renderer object
+  // is cleaned up. Since WebContents destruction will also destroy
+  // RenderFrameHost/RenderFrameProxyHost objects in FrameTree, this eventually
+  // results in all the associated RenderViewHosts being closed.
+  if (frame_tree_node_->IsMainFrame())
     return;
-  }
 
-  if (frame_tree_node_->current_frame_host()->is_active())
-    frame_tree_node_->frame_tree()->RemoveFrame(frame_tree_node_);
+  // Otherwise, a remote child frame has been removed from the frame tree.
+  // Make sure that this action is mirrored to all the other renderers, so
+  // the frame tree remains consistent.
+  frame_tree_node_->current_frame_host()->DetachFromProxy();
 }
 
 void RenderFrameProxyHost::OnOpenURL(
     const FrameHostMsg_OpenURL_Params& params) {
-  GURL validated_url(params.url);
-  GetProcess()->FilterURL(false, &validated_url);
-
-  mojo::ScopedMessagePipeHandle blob_url_token_handle(params.blob_url_token);
-  blink::mojom::BlobURLTokenPtr blob_url_token(
-      blink::mojom::BlobURLTokenPtrInfo(std::move(blob_url_token_handle),
-                                        blink::mojom::BlobURLToken::Version_));
+  // Verify and unpack IPC payload.
+  GURL validated_url;
   scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory;
-  if (blob_url_token) {
-    if (!params.url.SchemeIsBlob()) {
-      bad_message::ReceivedBadMessage(
-          GetProcess(), bad_message::RFPH_BLOB_URL_TOKEN_FOR_NON_BLOB_URL);
-      return;
-    }
-    blob_url_loader_factory =
-        ChromeBlobStorageContext::URLLoaderFactoryForToken(
-            GetSiteInstance()->GetBrowserContext(), std::move(blob_url_token));
+  if (!VerifyOpenURLParams(GetSiteInstance(), params, &validated_url,
+                           &blob_url_loader_factory)) {
+    return;
   }
+
+  RenderFrameHostImpl* current_rfh = frame_tree_node_->current_frame_host();
+
+  // The current_rfh may be pending deletion. In this case, ignore the
+  // navigation, because the frame is going to disappear soon anyway.
+  if (!current_rfh->is_active())
+    return;
 
   // Verify that we are in the same BrowsingInstance as the current
   // RenderFrameHost.
-  RenderFrameHostImpl* current_rfh = frame_tree_node_->current_frame_host();
   if (!site_instance_->IsRelatedSiteInstance(current_rfh->GetSiteInstance()))
     return;
-
-  // Verify if the request originator (*not* |current_rfh|) has access to the
-  // contents of the POST body.
-  if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanReadRequestBody(
-          GetSiteInstance(), params.resource_request_body)) {
-    bad_message::ReceivedBadMessage(GetProcess(),
-                                    bad_message::RFPH_ILLEGAL_UPLOAD_PARAMS);
-    return;
-  }
 
   // Since this navigation targeted a specific RenderFrameProxy, it should stay
   // in the current tab.
@@ -333,9 +330,9 @@ void RenderFrameProxyHost::OnOpenURL(
   frame_tree_node_->navigator()->NavigateFromFrameProxy(
       current_rfh, validated_url, params.initiator_origin, site_instance_.get(),
       params.referrer, ui::PAGE_TRANSITION_LINK,
-      params.should_replace_current_entry, params.uses_post ? "POST" : "GET",
-      params.resource_request_body, params.extra_headers,
-      std::move(blob_url_loader_factory));
+      params.should_replace_current_entry, params.download_policy,
+      params.uses_post ? "POST" : "GET", params.resource_request_body,
+      params.extra_headers, std::move(blob_url_loader_factory));
 }
 
 void RenderFrameProxyHost::OnCheckCompleted() {
@@ -346,6 +343,39 @@ void RenderFrameProxyHost::OnCheckCompleted() {
 void RenderFrameProxyHost::OnRouteMessageEvent(
     const FrameMsg_PostMessage_Params& params) {
   RenderFrameHostImpl* target_rfh = frame_tree_node()->current_frame_host();
+
+  // |targetOrigin| argument of postMessage is already checked by
+  // blink::LocalDOMWindow::DispatchMessageEventWithOriginCheck (needed for
+  // messages sent within the same process - e.g. same-site, cross-origin),
+  // but this check needs to be duplicated below in case the recipient renderer
+  // process got compromised (i.e. in case the renderer-side check may be
+  // bypassed).
+  if (!params.target_origin.empty()) {
+    url::Origin target_origin =
+        url::Origin::Create(GURL(base::UTF16ToUTF8(params.target_origin)));
+
+    // Renderer should send either an empty string (this is how "*" is expressed
+    // in the IPC) or a valid, non-opaque origin.  OTOH, there are no security
+    // implications here - the message payload needs to be protected from an
+    // unintended recipient, not from the sender.
+    DCHECK(!target_origin.opaque());
+
+    // While the postMessage was in flight, the target might have navigated away
+    // to another origin.  In this case, the postMessage should be silently
+    // dropped.
+    if (target_origin != target_rfh->GetLastCommittedOrigin())
+      return;
+  }
+
+  // TODO(lukasza): Move opaque-ness check into ChildProcessSecurityPolicyImpl.
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  if (params.source_origin != base::UTF8ToUTF16("null") &&
+      !policy->CanAccessDataForOrigin(GetProcess()->GetID(),
+                                      GURL(params.source_origin))) {
+    bad_message::ReceivedBadMessage(
+        GetProcess(), bad_message::RFPH_POST_MESSAGE_INVALID_SOURCE_ORIGIN);
+    return;
+  }
 
   // Only deliver the message if the request came from a RenderFrameHost in the
   // same BrowsingInstance or if this WebContents is dedicated to a browser

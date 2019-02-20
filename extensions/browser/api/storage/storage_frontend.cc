@@ -63,7 +63,8 @@ class DefaultObserver : public SettingsObserver {
   void OnSettingsChanged(const std::string& extension_id,
                          settings_namespace::Namespace settings_namespace,
                          const std::string& change_json) override {
-    std::unique_ptr<base::Value> changes = base::JSONReader::Read(change_json);
+    std::unique_ptr<base::Value> changes =
+        base::JSONReader::ReadDeprecated(change_json);
     DCHECK(changes);
     // TODO(devlin): crbug.com/645500 implies this can sometimes fail. If this
     // safeguard fixes it, that means there's an underlying problem (why are we
@@ -182,8 +183,8 @@ void StorageFrontend::RunWithStorage(
   CHECK(cache);
 
   GetBackendTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&ValueStoreCache::RunWithValueStoreForExtension,
-                            base::Unretained(cache), callback, extension));
+      FROM_HERE, base::BindOnce(&ValueStoreCache::RunWithValueStoreForExtension,
+                                base::Unretained(cache), callback, extension));
 }
 
 void StorageFrontend::DeleteStorageSoon(const std::string& extension_id) {
@@ -191,8 +192,8 @@ void StorageFrontend::DeleteStorageSoon(const std::string& extension_id) {
   for (auto it = caches_.begin(); it != caches_.end(); ++it) {
     ValueStoreCache* cache = it->second;
     GetBackendTaskRunner()->PostTask(
-        FROM_HERE, base::Bind(&ValueStoreCache::DeleteStorageSoon,
-                              base::Unretained(cache), extension_id));
+        FROM_HERE, base::BindOnce(&ValueStoreCache::DeleteStorageSoon,
+                                  base::Unretained(cache), extension_id));
   }
 }
 

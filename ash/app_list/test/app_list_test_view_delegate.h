@@ -59,6 +59,8 @@ class AppListTestViewDelegate : public AppListViewDelegate,
   void StartAssistant() override {}
   void StartSearch(const base::string16& raw_query) override {}
   void OpenSearchResult(const std::string& result_id, int event_flags) override;
+  void LogSearchClick(const std::string& result_id,
+                      int suggestion_index) override {}
   void InvokeSearchResultAction(const std::string& result_id,
                                 int action_index,
                                 int event_flags) override {}
@@ -87,6 +89,7 @@ class AppListTestViewDelegate : public AppListViewDelegate,
   bool CanProcessEventsOnApplistViews() override;
   void GetNavigableContentsFactory(
       content::mojom::NavigableContentsFactoryRequest request) override;
+  ash::AssistantViewDelegate* GetAssistantViewDelegate() override;
 
   // Do a bulk replacement of the items in the model.
   void ReplaceTestModel(int item_count);

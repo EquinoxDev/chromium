@@ -33,7 +33,6 @@
 #include "base/trace_event/event_name_filter.h"
 #include "base/trace_event/heap_profiler_event_filter.h"
 #include "base/trace_event/trace_buffer.h"
-#include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_filter.h"
 #include "base/trace_event/trace_event_filter_test_utils.h"
 #include "base/values.h"
@@ -193,8 +192,8 @@ void TraceEventTestFixture::OnTraceDataCollected(
   trace_buffer_.AddFragment(events_str->data());
   trace_buffer_.Finish();
 
-  std::unique_ptr<Value> root =
-      base::JSONReader::Read(json_output_.json_output, JSON_PARSE_RFC);
+  std::unique_ptr<Value> root = base::JSONReader::ReadDeprecated(
+      json_output_.json_output, JSON_PARSE_RFC);
 
   if (!root.get()) {
     LOG(ERROR) << json_output_.json_output;
@@ -1463,32 +1462,6 @@ TEST_F(TraceEventTestFixture, AddMetadataEvent) {
 
 // Test that categories work.
 TEST_F(TraceEventTestFixture, Categories) {
-  // Test that categories that are used can be retrieved whether trace was
-  // enabled or disabled when the trace event was encountered.
-  TRACE_EVENT_INSTANT0("c1", "name", TRACE_EVENT_SCOPE_THREAD);
-  TRACE_EVENT_INSTANT0("c2", "name", TRACE_EVENT_SCOPE_THREAD);
-  BeginTrace();
-  TRACE_EVENT_INSTANT0("c3", "name", TRACE_EVENT_SCOPE_THREAD);
-  TRACE_EVENT_INSTANT0("c4", "name", TRACE_EVENT_SCOPE_THREAD);
-  // Category groups containing more than one category.
-  TRACE_EVENT_INSTANT0("c5,c6", "name", TRACE_EVENT_SCOPE_THREAD);
-  TRACE_EVENT_INSTANT0("c7,c8", "name", TRACE_EVENT_SCOPE_THREAD);
-  TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("c9"), "name",
-                       TRACE_EVENT_SCOPE_THREAD);
-
-  EndTraceAndFlush();
-  std::vector<std::string> cat_groups;
-  TraceLog::GetInstance()->GetKnownCategoryGroups(&cat_groups);
-  EXPECT_TRUE(ContainsValue(cat_groups, "c1"));
-  EXPECT_TRUE(ContainsValue(cat_groups, "c2"));
-  EXPECT_TRUE(ContainsValue(cat_groups, "c3"));
-  EXPECT_TRUE(ContainsValue(cat_groups, "c4"));
-  EXPECT_TRUE(ContainsValue(cat_groups, "c5,c6"));
-  EXPECT_TRUE(ContainsValue(cat_groups, "c7,c8"));
-  EXPECT_TRUE(ContainsValue(cat_groups, "disabled-by-default-c9"));
-  // Make sure metadata isn't returned.
-  EXPECT_FALSE(ContainsValue(cat_groups, "__metadata"));
-
   const std::vector<std::string> empty_categories;
   std::vector<std::string> included_categories;
   std::vector<std::string> excluded_categories;

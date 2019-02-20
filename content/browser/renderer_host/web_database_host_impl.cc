@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
@@ -46,8 +47,12 @@ void ValidateOriginOnUIThread(
     mojo::ReportBadMessageCallback error_callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+  // Return early if the process was shutdown before this task was able to run.
+  if (!RenderProcessHost::FromID(process_id))
+    return;
+
   if (!ChildProcessSecurityPolicyImpl::GetInstance()->CanAccessDataForOrigin(
-          process_id, origin.GetURL())) {
+          process_id, origin)) {
     callback_task_runner->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(error_callback), "Unauthorized origin."));

@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/task/post_task.h"
 #include "components/drive/chromeos/about_resource_loader.h"
 #include "components/drive/chromeos/about_resource_root_folder_id_loader.h"
@@ -55,12 +56,6 @@ bool OperationTestBase::LoggingDelegate::WaitForSyncComplete(
     const FileOperationCallback& callback) {
   return wait_for_sync_complete_handler_.is_null() ?
       false : wait_for_sync_complete_handler_.Run(local_id, callback);
-}
-
-OperationTestBase::OperationTestBase() = default;
-
-OperationTestBase::OperationTestBase(int test_thread_bundle_options)
-    : thread_bundle_(test_thread_bundle_options) {
 }
 
 OperationTestBase::~OperationTestBase() = default;
@@ -191,6 +186,10 @@ FileError OperationTestBase::CheckForUpdates() {
   content::RunAllTasksUntilIdle();
   return error;
 }
+
+OperationTestBase::OperationTestBase(
+    std::unique_ptr<content::TestBrowserThreadBundle> thread_bundle)
+    : thread_bundle_(std::move(thread_bundle)) {}
 
 }  // namespace file_system
 }  // namespace drive

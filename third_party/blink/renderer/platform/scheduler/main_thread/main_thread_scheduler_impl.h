@@ -37,11 +37,12 @@
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_metrics_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_task_queue.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/memory_purge_manager.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/page_scheduler_impl.h"
+#include "third_party/blink/renderer/platform/scheduler/main_thread/pending_user_input.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/prioritize_compositing_after_input_experiment.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/queueing_time_estimator.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/render_widget_signals.h"
-#include "third_party/blink/renderer/platform/scheduler/main_thread/task_cost_estimator.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/use_case.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/user_model.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
@@ -70,8 +71,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
       public MainThreadSchedulerHelper::Observer,
       public RenderWidgetSignals::Observer,
       public QueueingTimeEstimator::Client,
-      public base::trace_event::TraceLog::AsyncEnabledStateObserver,
-      public AutoAdvancingVirtualTimeDomain::Observer {
+      public base::trace_event::TraceLog::AsyncEnabledStateObserver {
  public:
   // Don't use except for tracing.
   struct TaskDescriptionForTracing {
@@ -132,10 +132,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     // entries. This is initialized early with all valid entries. Entries that
     // aren't valid task types, i.e. non-frame level, are base::nullopt.
     FrameTaskTypeToQueueTraitsArray frame_task_types_to_queue_traits;
-
-    bool disable_expensive_task_blocking;
-    bool disable_non_touchstart_input_heuristics;
-    bool disable_touchstart_input_heuristics;
   };
 
   static const char* UseCaseToString(UseCase use_case);
@@ -173,6 +169,10 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void DidHandleInputEventOnCompositorThread(
       const WebInputEvent& web_input_event,
       InputEventState event_state) override;
+  void WillPostInputEventToMainThread(
+      WebInputEvent::Type web_input_event_type) override;
+  void WillHandleInputEventOnMainThread(
+      WebInputEvent::Type web_input_event_type) override;
   void DidHandleInputEventOnMainThread(const WebInputEvent& web_input_event,
                                        WebInputEventResult result) override;
   void DidAnimateForInputOnCompositorThread() override;
@@ -201,6 +201,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   WebScopedVirtualTimePauser CreateWebScopedVirtualTimePauser(
       const char* name,
       WebScopedVirtualTimePauser::VirtualTaskDuration duration) override;
+  PendingUserInputInfo GetPendingUserInputInfo() const override;
 
   // ThreadScheduler implementation:
   void PostIdleTask(const base::Location&, Thread::IdleTask) override;
@@ -230,9 +231,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // void Shutdown() override;
   //
   // TODO(yutak): Reduce the overlaps and simplify.
-
-  // AutoAdvancingVirtualTimeDomain::Observer implementation:
-  void OnVirtualTimeAdvanced() override;
 
   // RenderWidgetSignals::Observer implementation:
   void SetAllRenderWidgetsHidden(bool hidden) override;
@@ -279,7 +277,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
       FrameSchedulerImpl* frame_scheduler);
 
   using VirtualTimePolicy = PageScheduler::VirtualTimePolicy;
-  using VirtualTimeObserver = PageScheduler::VirtualTimeObserver;
 
   using BaseTimeOverridePolicy =
       AutoAdvancingVirtualTimeDomain::BaseTimeOverridePolicy;
@@ -302,14 +299,16 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void SetInitialVirtualTime(base::Time time);
   void SetInitialVirtualTimeOffset(base::TimeDelta offset);
   void SetMaxVirtualTimeTaskStarvationCount(int max_task_starvation_count);
-  void AddVirtualTimeObserver(VirtualTimeObserver*);
-  void RemoveVirtualTimeObserver(VirtualTimeObserver*);
   base::TimeTicks IncrementVirtualTimePauseCount();
   void DecrementVirtualTimePauseCount();
   void MaybeAdvanceVirtualTime(base::TimeTicks new_virtual_time);
 
   void AddPageScheduler(PageSchedulerImpl*);
   void RemovePageScheduler(PageSchedulerImpl*);
+
+  // Called by an associated PageScheduler when frozen or unfrozen.
+  void OnPageFrozen();
+  void OnPageUnfrozen();
 
   void AddTaskTimeObserver(base::sequence_manager::TaskTimeObserver*);
   void RemoveTaskTimeObserver(base::sequence_manager::TaskTimeObserver*);
@@ -338,8 +337,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   // Test helpers.
   MainThreadSchedulerHelper* GetSchedulerHelperForTesting();
-  TaskCostEstimator* GetLoadingTaskCostEstimatorForTesting();
-  TaskCostEstimator* GetTimerTaskCostEstimatorForTesting();
   IdleTimeEstimator* GetIdleTimeEstimatorForTesting();
   base::TimeTicks CurrentIdleTaskDeadlineForTesting() const;
   void RunIdleTasksForTesting(base::OnceClosure callback);
@@ -422,11 +419,8 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
       main_thread_scheduler_impl_unittest::MainThreadSchedulerImplTest,
       Tracing);
 
-  enum class ExpensiveTaskPolicy { kRun, kBlock, kThrottle };
-
   enum class TimeDomainType {
     kReal,
-    kThrottled,
     kVirtual,
   };
 
@@ -440,13 +434,11 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     TaskQueuePolicy()
         : is_enabled(true),
           is_paused(false),
-          is_throttled(false),
           is_deferred(false),
           use_virtual_time(false) {}
 
     bool is_enabled;
     bool is_paused;
-    bool is_throttled;
     bool is_deferred;
     bool use_virtual_time;
 
@@ -456,7 +448,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
     bool operator==(const TaskQueuePolicy& other) const {
       return is_enabled == other.is_enabled && is_paused == other.is_paused &&
-             is_throttled == other.is_throttled &&
              is_deferred == other.is_deferred &&
              use_virtual_time == other.use_virtual_time;
     }
@@ -466,14 +457,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   class Policy {
    public:
-    Policy()
-        : rail_mode_(v8::PERFORMANCE_ANIMATION),
-          should_disable_throttling_(false),
-          frozen_when_backgrounded_(false),
-          compositor_priority_(base::sequence_manager::TaskQueue::
-                                   QueuePriority::kNormalPriority),
-          use_case_(UseCase::kNone) {}
-
+    Policy();
     ~Policy() = default;
 
     TaskQueuePolicy& compositor_queue_policy() {
@@ -695,9 +679,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
       const TaskQueuePolicy& old_task_queue_policy,
       const TaskQueuePolicy& new_task_queue_policy) const;
 
-  static const char* ExpensiveTaskPolicyToString(
-      ExpensiveTaskPolicy expensive_task_policy);
-
   void AddQueueToWakeUpBudgetPool(MainThreadTaskQueue* queue);
 
   void PauseRendererImpl();
@@ -765,6 +746,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   IdleMemoryReclaimer idle_memory_reclaimer_;
   std::unique_ptr<TaskQueueThrottler> task_queue_throttler_;
   RenderWidgetSignals render_widget_scheduler_signals_;
+  MemoryPurgeManager memory_purge_manager_;
 
   const scoped_refptr<MainThreadTaskQueue> control_task_queue_;
   const scoped_refptr<MainThreadTaskQueue> compositor_task_queue_;
@@ -812,8 +794,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
         base::TimeTicks now);
     ~MainThreadOnly();
 
-    TaskCostEstimator loading_task_cost_estimator;
-    TaskCostEstimator timer_task_cost_estimator;
     IdleTimeEstimator idle_time_estimator;
     TraceableState<UseCase, TracingCategoryName::kDefault> current_use_case;
     Policy current_policy;
@@ -825,21 +805,12 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
         longest_jank_free_task_duration;
     TraceableCounter<int, TracingCategoryName::kInfo>
         renderer_pause_count;  // Renderer is paused if non-zero.
-    TraceableState<ExpensiveTaskPolicy, TracingCategoryName::kInfo>
-        expensive_task_policy;
     TraceableState<v8::RAILMode, TracingCategoryName::kInfo>
         rail_mode_for_tracing;  // Don't use except for tracing.
     TraceableState<bool, TracingCategoryName::kDebug> renderer_hidden;
     TraceableState<bool, TracingCategoryName::kTopLevel> renderer_backgrounded;
     TraceableState<bool, TracingCategoryName::kDefault>
         keep_active_fetch_or_worker;
-    TraceableCounter<base::TimeDelta, TracingCategoryName::kInfo>
-        loading_task_estimated_cost;
-    TraceableCounter<base::TimeDelta, TracingCategoryName::kInfo>
-        timer_task_estimated_cost;
-    TraceableState<bool, TracingCategoryName::kInfo>
-        loading_tasks_seem_expensive;
-    TraceableState<bool, TracingCategoryName::kInfo> timer_tasks_seem_expensive;
     TraceableState<bool, TracingCategoryName::kDefault>
         blocking_input_expected_soon;
     TraceableState<bool, TracingCategoryName::kDebug>
@@ -877,7 +848,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
         base::Optional<base::sequence_manager::TaskQueue::QueuePriority>,
         TracingCategoryName::kInfo>
         task_priority_for_tracing;  // Only used for tracing.
-    base::ObserverList<VirtualTimeObserver>::Unchecked virtual_time_observers;
     base::Time initial_virtual_time;
     base::TimeTicks initial_virtual_time_ticks;
 
@@ -916,6 +886,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     explicit AnyThread(MainThreadSchedulerImpl* main_thread_scheduler_impl);
     ~AnyThread();
 
+    PendingUserInput::Monitor pending_input_monitor;
     base::TimeTicks last_idle_period_end_time;
     base::TimeTicks fling_compositor_escalation_deadline;
     UserModel user_model;

@@ -43,6 +43,7 @@ class ContainerNode;
 class Document;
 class DocumentLoader;
 class Element;
+class EncodedFormData;
 class Event;
 class ExecutionContext;
 struct FetchInitiatorInfo;
@@ -85,10 +86,16 @@ class CORE_EXPORT InspectorTraceEvents
   void WillSendRequest(ExecutionContext*,
                        unsigned long identifier,
                        DocumentLoader*,
-                       ResourceRequest&,
+                       const ResourceRequest&,
                        const ResourceResponse& redirect_response,
                        const FetchInitiatorInfo&,
                        ResourceType);
+  void WillSendNavigationRequest(ExecutionContext*,
+                                 unsigned long identifier,
+                                 DocumentLoader*,
+                                 const KURL&,
+                                 const AtomicString& http_method,
+                                 EncodedFormData*);
   void DidReceiveResourceResponse(unsigned long identifier,
                                   DocumentLoader*,
                                   const ResourceResponse&,
@@ -96,7 +103,7 @@ class CORE_EXPORT InspectorTraceEvents
   void DidReceiveData(unsigned long identifier,
                       DocumentLoader*,
                       const char* data,
-                      int data_length);
+                      uint64_t data_length);
   void DidFinishLoading(unsigned long identifier,
                         DocumentLoader*,
                         TimeTicks monotonic_finish_time,
@@ -258,10 +265,6 @@ namespace inspector_paint_invalidation_tracking_event {
 std::unique_ptr<TracedValue> Data(const LayoutObject&);
 }
 
-namespace inspector_scroll_invalidation_tracking_event {
-std::unique_ptr<TracedValue> Data(const LayoutObject&);
-}
-
 namespace inspector_change_resource_priority_event {
 std::unique_ptr<TracedValue> Data(DocumentLoader*,
                                   unsigned long identifier,
@@ -275,6 +278,14 @@ std::unique_ptr<TracedValue> Data(DocumentLoader*,
                                   const ResourceRequest&);
 }
 
+namespace inspector_send_navigation_request_event {
+std::unique_ptr<TracedValue> Data(DocumentLoader*,
+                                  unsigned long identifier,
+                                  LocalFrame*,
+                                  const KURL&,
+                                  const AtomicString& http_method);
+}
+
 namespace inspector_receive_response_event {
 std::unique_ptr<TracedValue> Data(DocumentLoader*,
                                   unsigned long identifier,
@@ -286,7 +297,7 @@ namespace inspector_receive_data_event {
 std::unique_ptr<TracedValue> Data(DocumentLoader*,
                                   unsigned long identifier,
                                   LocalFrame*,
-                                  int encoded_data_length);
+                                  uint64_t encoded_data_length);
 }
 
 namespace inspector_resource_finish_event {

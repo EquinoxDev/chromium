@@ -17,7 +17,7 @@
 #include "ash/app_list/views/search_result_base_view.h"
 #include "ash/app_list/views/search_result_list_view.h"
 #include "ash/app_list/views/search_result_tile_item_list_view.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
+#include "ash/public/cpp/app_list/app_list_config.h"
 #include "ui/chromeos/search_box/search_box_constants.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_palette.h"
@@ -168,8 +168,8 @@ SearchResultPageView::SearchResultPageView() : contents_view_(new views::View) {
   // background border corner radius. All child views' background should be
   // set transparent so that the rounded corner is not overwritten.
   SetBackground(std::make_unique<SearchResultPageBackground>(
-      kCardBackgroundColor, search_box::kSearchBoxBorderCornerRadius,
-      border()->GetInsets().top()));
+      AppListConfig::instance().card_background_color(),
+      search_box::kSearchBoxBorderCornerRadius, border()->GetInsets().top()));
   views::ScrollView* const scroller = new views::ScrollView;
   // Leaves a placeholder area for the search box and the separator below it.
   scroller->SetBorder(views::CreateEmptyBorder(
@@ -203,9 +203,22 @@ void SearchResultPageView::AddSearchResultContainerView(
   result_container->set_delegate(this);
 }
 
+bool SearchResultPageView::IsFirstResultTile() const {
+  // |kRecommendation| result type refers to tiles in Zero State.
+  return first_result_view_->result()->display_type() ==
+             ash::SearchResultDisplayType::kTile ||
+         first_result_view_->result()->display_type() ==
+             ash::SearchResultDisplayType::kRecommendation;
+}
+
+bool SearchResultPageView::IsFirstResultHighlighted() const {
+  DCHECK(first_result_view_);
+  return first_result_view_->background_highlighted();
+}
+
 bool SearchResultPageView::OnKeyPressed(const ui::KeyEvent& event) {
   // Let the FocusManager handle Left/Right keys.
-  if (!CanProcessUpDownKeyTraversal(event))
+  if (!IsUnhandledUpDownKeyEvent(event))
     return false;
 
   views::View* next_focusable_view = nullptr;
@@ -317,6 +330,19 @@ void SearchResultPageView::OnSearchResultContainerResultsChanged() {
   first_result_view_->SetBackgroundHighlighted(true);
 }
 
+void SearchResultPageView::OnSearchResultContainerResultFocused(
+    SearchResultBaseView* focused_result_view) {
+  views::Textfield* search_box =
+      AppListPage::contents_view()->GetSearchBoxView()->search_box();
+  if (focused_result_view->result()->result_type() ==
+          ash::SearchResultType::kOmnibox &&
+      !focused_result_view->result()->is_omnibox_search()) {
+    search_box->SetText(focused_result_view->result()->details());
+  } else {
+    search_box->SetText(focused_result_view->result()->title());
+  }
+}
+
 void SearchResultPageView::OnHidden() {
   // Hide the search results page when it is behind search box to avoid focus
   // being moved onto suggested apps when zero state is enabled.
@@ -368,7 +394,7 @@ void SearchResultPageView::OnAnimationUpdated(double progress,
   gfx::Rect onscreen_bounds(
       GetPageBoundsForState(ash::AppListState::kStateSearchResults));
   onscreen_bounds -= bounds().OffsetFromOrigin();
-  gfx::Path path;
+  SkPath path;
   path.addRect(gfx::RectToSkRect(onscreen_bounds));
   set_clip_path(path);
 }

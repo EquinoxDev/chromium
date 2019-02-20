@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/stl_util.h"
@@ -31,8 +32,8 @@
 #include "gpu/command_buffer/service/mailbox_manager_impl.h"
 #include "gpu/command_buffer/service/passthrough_discardable_manager.h"
 #include "gpu/command_buffer/service/raster_decoder.h"
-#include "gpu/command_buffer/service/raster_decoder_context_state.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
+#include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/command_buffer/service/shared_image_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "ui/gfx/geometry/size.h"
@@ -297,11 +298,12 @@ GpuPreferences GetGpuPreferences() {
 class CommandBufferSetup {
  public:
   CommandBufferSetup()
-      : atexit_manager_(),
+      : at_exit_manager_(),
         gpu_preferences_(GetGpuPreferences()),
         share_group_(new gl::GLShareGroup),
         translator_cache_(gpu_preferences_) {
     logging::SetMinLogLevel(logging::LOG_FATAL);
+    CHECK(base::i18n::InitializeICU());
     base::CommandLine::Init(0, nullptr);
 
     auto* command_line = base::CommandLine::ForCurrentProcess();
@@ -354,6 +356,22 @@ class CommandBufferSetup {
 #endif
     scoped_refptr<gles2::FeatureInfo> feature_info =
         new gles2::FeatureInfo(config_.workarounds, gpu_feature_info);
+    command_buffer_.reset(new CommandBufferDirect());
+
+#if defined(GPU_FUZZER_USE_RASTER_DECODER)
+    CHECK(feature_info->feature_flags().chromium_raster_transport);
+    scoped_refptr<SharedContextState> context_state =
+        base::MakeRefCounted<SharedContextState>(
+            share_group_, surface_, context_,
+            config_.workarounds.use_virtualized_gl_contexts, base::DoNothing());
+    context_state->InitializeGrContext(config_.workarounds, nullptr);
+    context_state->InitializeGL(gpu_preferences_, feature_info);
+    auto* context = context_state->context();
+    decoder_.reset(raster::RasterDecoder::Create(
+        command_buffer_.get(), command_buffer_->service(), &outputter_,
+        gpu_feature_info, gpu_preferences_, nullptr /* memory_tracker */,
+        &shared_image_manager_, std::move(context_state)));
+#else
     scoped_refptr<gles2::ContextGroup> context_group = new gles2::ContextGroup(
         gpu_preferences_, true, &mailbox_manager_, nullptr /* memory_tracker */,
         &translator_cache_, &completeness_cache_, feature_info,
@@ -361,22 +379,6 @@ class CommandBufferSetup {
         nullptr /* image_factory */, nullptr /* progress_reporter */,
         gpu_feature_info, discardable_manager_.get(),
         passthrough_discardable_manager_.get(), &shared_image_manager_);
-    command_buffer_.reset(
-        new CommandBufferDirect(context_group->transfer_buffer_manager()));
-
-#if defined(GPU_FUZZER_USE_RASTER_DECODER)
-    CHECK(feature_info->feature_flags().chromium_raster_transport);
-    scoped_refptr<raster::RasterDecoderContextState> context_state =
-        new raster::RasterDecoderContextState(
-            share_group_, surface_, context_,
-            config_.workarounds.use_virtualized_gl_contexts, base::DoNothing());
-    context_state->InitializeGrContext(config_.workarounds, nullptr);
-    context_state->InitializeGL(feature_info);
-    auto* context = context_state->context();
-    decoder_.reset(raster::RasterDecoder::Create(
-        command_buffer_.get(), command_buffer_->service(), &outputter_,
-        context_group.get(), std::move(context_state)));
-#else
     auto* context = context_.get();
     decoder_.reset(gles2::GLES2Decoder::Create(
         command_buffer_.get(), command_buffer_->service(), &outputter_,
@@ -395,31 +397,40 @@ class CommandBufferSetup {
     InitializeInitialCommandBuffer();
 
     decoder_->set_max_bucket_size(8 << 20);
+#if !defined(GPU_FUZZER_USE_RASTER_DECODER)
     context_group->buffer_manager()->set_max_buffer_size(8 << 20);
+#endif
     return decoder_->MakeCurrent();
   }
 
   void ResetDecoder() {
+    bool context_lost = false;
+    if (decoder_) {
 #if !defined(GPU_FUZZER_USE_RASTER_DECODER)
-    // Keep a reference to the translators, which keeps them in the cache even
-    // after the decoder is reset. They are expensive to initialize, but they
-    // don't keep state.
-    scoped_refptr<gles2::ShaderTranslatorInterface> translator =
-        decoder_->GetTranslator(GL_VERTEX_SHADER);
-    if (translator)
-      translator->AddRef();
-    translator = decoder_->GetTranslator(GL_FRAGMENT_SHADER);
-    if (translator)
-      translator->AddRef();
+      // Keep a reference to the translators, which keeps them in the cache even
+      // after the decoder is reset. They are expensive to initialize, but they
+      // don't keep state.
+      scoped_refptr<gles2::ShaderTranslatorInterface> translator =
+          decoder_->GetTranslator(GL_VERTEX_SHADER);
+      if (translator)
+        translator->AddRef();
+      translator = decoder_->GetTranslator(GL_FRAGMENT_SHADER);
+      if (translator)
+        translator->AddRef();
 #endif
-    bool context_lost =
-        decoder_->WasContextLost() || !decoder_->CheckResetStatus();
-    decoder_->Destroy(!context_lost);
-    decoder_.reset();
-    if (recreate_context_ || context_lost) {
-      context_->ReleaseCurrent(nullptr);
-      context_ = nullptr;
+      context_lost =
+          decoder_->WasContextLost() || !decoder_->CheckResetStatus();
+      decoder_->Destroy(!context_lost);
+      decoder_.reset();
     }
+
+    if (context_) {
+      if (recreate_context_ || context_lost) {
+        context_->ReleaseCurrent(nullptr);
+        context_ = nullptr;
+      }
+    }
+
     command_buffer_.reset();
   }
 
@@ -438,10 +449,12 @@ class CommandBufferSetup {
     if (padded_size > kCommandBufferSize)
       return;
 
-    if (!InitDecoder())
+    if (!InitDecoder()) {
+      ResetDecoder();
       return;
+    }
 
-    size_t buffer_size = buffer_->size();
+    uint32_t buffer_size = buffer_->size();
     CHECK_LE(padded_size, buffer_size);
     command_buffer_->SetGetBuffer(buffer_id_);
     auto* memory = static_cast<char*>(buffer_->memory());
@@ -514,7 +527,7 @@ class CommandBufferSetup {
     LOG_IF(FATAL, (id != GL_OUT_OF_MEMORY)) << "GL Driver Message: " << message;
   }
 
-  base::AtExitManager atexit_manager_;
+  base::AtExitManager at_exit_manager_;
 
   GpuPreferences gpu_preferences_;
 

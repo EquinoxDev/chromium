@@ -30,12 +30,13 @@ class CONTENT_EXPORT SignedExchangeEnvelope {
  public:
   using HeaderMap = std::map<std::string, std::string>;
 
-  // Parse headers from the application/signed-exchange;v=b2 format.
+  // Parse headers from the application/signed-exchange;v=b3 format.
   // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#application-signed-exchange
   //
   // This also performs the steps 1, 3 and 4 of "Cross-origin trust" validation.
   // https://wicg.github.io/webpackage/draft-yasskin-httpbis-origin-signed-exchanges-impl.html#cross-origin-trust
   static base::Optional<SignedExchangeEnvelope> Parse(
+      SignedExchangeVersion version,
       const signed_exchange_utils::URLWithRawString& fallback_url,
       base::StringPiece signature_header_field,
       base::span<const uint8_t> cbor_header,
@@ -58,14 +59,9 @@ class CONTENT_EXPORT SignedExchangeEnvelope {
 
   const signed_exchange_utils::URLWithRawString& request_url() const {
     return request_url_;
-  };
+  }
   void set_request_url(const signed_exchange_utils::URLWithRawString& url) {
     request_url_ = url;
-  }
-
-  const std::string& request_method() const { return request_method_; }
-  void set_request_method(base::StringPiece s) {
-    s.CopyToString(&request_method_);
   }
 
   net::HttpStatusCode response_code() const { return response_code_; }
@@ -85,8 +81,6 @@ class CONTENT_EXPORT SignedExchangeEnvelope {
   std::vector<uint8_t> cbor_header_;
 
   signed_exchange_utils::URLWithRawString request_url_;
-  std::string request_method_;
-
   net::HttpStatusCode response_code_;
   HeaderMap response_headers_;
   SignedExchangeSignatureHeaderField::Signature signature_;

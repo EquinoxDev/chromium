@@ -4,12 +4,14 @@
 
 #include "services/video_capture/texture_virtual_device_mojo_adapter.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "media/base/bind_to_current_loop.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/video_capture/public/mojom/constants.mojom.h"
+#include "services/video_capture/public/mojom/scoped_access_permission.mojom.h"
 
 namespace video_capture {
 
@@ -83,16 +85,6 @@ void TextureVirtualDeviceMojoAdapter::Start(
   }
 }
 
-void TextureVirtualDeviceMojoAdapter::OnReceiverReportingUtilization(
-    int32_t frame_feedback_id,
-    double utilization) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-}
-
-void TextureVirtualDeviceMojoAdapter::RequestRefreshFrame() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-}
-
 void TextureVirtualDeviceMojoAdapter::MaybeSuspend() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
@@ -117,18 +109,21 @@ void TextureVirtualDeviceMojoAdapter::TakePhoto(TakePhotoCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
 
-void TextureVirtualDeviceMojoAdapter::Stop() {
+void TextureVirtualDeviceMojoAdapter::Stop(StopCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!receiver_.is_bound())
+  if (!receiver_.is_bound()) {
+    std::move(callback).Run();
     return;
+  }
   // Unsubscribe from connection error callbacks.
   receiver_.set_connection_error_handler(base::OnceClosure());
   receiver_.reset();
+  std::move(callback).Run();
 }
 
 void TextureVirtualDeviceMojoAdapter::OnReceiverConnectionErrorOrClose() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  Stop();
+  Stop(base::DoNothing());
   if (optional_receiver_disconnected_callback_)
     std::move(optional_receiver_disconnected_callback_).Run();
 }

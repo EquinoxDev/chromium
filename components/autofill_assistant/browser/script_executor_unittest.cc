@@ -11,6 +11,7 @@
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_task_environment.h"
 #include "components/autofill_assistant/browser/client_memory.h"
+#include "components/autofill_assistant/browser/fake_script_executor_delegate.h"
 #include "components/autofill_assistant/browser/mock_run_once_callback.h"
 #include "components/autofill_assistant/browser/mock_service.h"
 #include "components/autofill_assistant/browser/mock_ui_controller.h"
@@ -44,16 +45,19 @@ using ::testing::StrictMock;
 const char* kScriptPath = "script_path";
 
 class ScriptExecutorTest : public testing::Test,
-                           public ScriptExecutorDelegate,
                            public ScriptExecutor::Listener {
  public:
   void SetUp() override {
+    delegate_.SetService(&mock_service_);
+    delegate_.SetUiController(&mock_ui_controller_);
+    delegate_.SetWebController(&mock_web_controller_);
+
     executor_ = std::make_unique<ScriptExecutor>(
         kScriptPath,
         /* global_payload= */ "initial global payload",
         /* script_payload= */ "initial payload",
         /* listener= */ this, &scripts_state_, &ordered_interrupts_,
-        /* delegate= */ this);
+        /* delegate= */ &delegate_);
     url_ = GURL("http://example.com/");
 
     // In this test, "tell" actions always succeed and "click" actions always
@@ -66,40 +70,12 @@ class ScriptExecutorTest : public testing::Test,
     ON_CALL(mock_web_controller_, OnFocusElement(_, _))
         .WillByDefault(RunOnceCallback<1>(true));
     ON_CALL(mock_web_controller_, GetUrl()).WillByDefault(ReturnRef(url_));
-    ON_CALL(mock_ui_controller_, ShowOverlay()).WillByDefault(Invoke([this]() {
-      overlay_ = true;
-    }));
-    ON_CALL(mock_ui_controller_, HideOverlay()).WillByDefault(Invoke([this]() {
-      overlay_ = false;
-    }));
   }
 
  protected:
   ScriptExecutorTest()
       : scoped_task_environment_(
-            base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME),
-        overlay_(false) {}
-
-  // Implements ScriptExecutorDelegate
-  Service* GetService() override { return &mock_service_; }
-
-  UiController* GetUiController() override { return &mock_ui_controller_; }
-
-  WebController* GetWebController() override { return &mock_web_controller_; }
-
-  ClientMemory* GetClientMemory() override { return &memory_; }
-
-  void SetTouchableElementArea(const std::vector<Selector>& elements) {}
-
-  const std::map<std::string, std::string>& GetParameters() override {
-    return parameters_;
-  }
-
-  autofill::PersonalDataManager* GetPersonalDataManager() override {
-    return nullptr;
-  }
-
-  content::WebContents* GetWebContents() override { return nullptr; }
+            base::test::ScopedTaskEnvironment::MainThreadType::MOCK_TIME) {}
 
   // Implements ScriptExecutor::Listener
   void OnServerPayloadChanged(const std::string& global_payload,
@@ -141,12 +117,17 @@ class ScriptExecutorTest : public testing::Test,
     RegisterInterrupt(path, trigger);
 
     ActionsResponseProto interrupt_actions;
-    interrupt_actions.set_global_payload(
-        base::StrCat({"global payload for ", path}));
-    interrupt_actions.set_script_payload(base::StrCat({"payload for ", path}));
-    interrupt_actions.add_actions()->mutable_tell()->set_message(path);
+    InitInterruptActions(&interrupt_actions, path);
     EXPECT_CALL(mock_service_, OnGetActions(StrEq(path), _, _, _, _, _))
         .WillRepeatedly(RunOnceCallback<5>(true, Serialize(interrupt_actions)));
+  }
+
+  void InitInterruptActions(ActionsResponseProto* interrupt_actions,
+                            const std::string& path) {
+    interrupt_actions->set_global_payload(
+        base::StrCat({"global payload for ", path}));
+    interrupt_actions->set_script_payload(base::StrCat({"payload for ", path}));
+    interrupt_actions->add_actions()->mutable_tell()->set_message(path);
   }
 
   // Registers an interrupt, but do not define actions for it.
@@ -155,9 +136,6 @@ class ScriptExecutorTest : public testing::Test,
     interrupt->handle.path = path;
     ScriptPreconditionProto interrupt_preconditions;
     interrupt_preconditions.add_elements_exist()->add_selectors(trigger);
-    auto* run_once = interrupt_preconditions.add_script_status_match();
-    run_once->set_script(path);
-    run_once->set_status(SCRIPT_STATUS_NOT_RUN);
     interrupt->precondition =
         ScriptPrecondition::FromProto(path, interrupt_preconditions);
 
@@ -168,8 +146,8 @@ class ScriptExecutorTest : public testing::Test,
   // scoped_task_environment_ must be first to guarantee other field
   // creation run in that environment.
   base::test::ScopedTaskEnvironment scoped_task_environment_;
+  FakeScriptExecutorDelegate delegate_;
   Script script_;
-  ClientMemory memory_;
   StrictMock<MockService> mock_service_;
   NiceMock<MockWebController> mock_web_controller_;
   NiceMock<MockUiController> mock_ui_controller_;
@@ -184,11 +162,9 @@ class ScriptExecutorTest : public testing::Test,
   std::vector<std::unique_ptr<Script>> scripts_update_;
   int scripts_update_count_ = 0;
   std::unique_ptr<ScriptExecutor> executor_;
-  std::map<std::string, std::string> parameters_;
   StrictMock<base::MockCallback<ScriptExecutor::RunScriptCallback>>
       executor_callback_;
   GURL url_;
-  bool overlay_;
 };
 
 TEST_F(ScriptExecutorTest, GetActionsFails) {
@@ -202,8 +178,9 @@ TEST_F(ScriptExecutorTest, GetActionsFails) {
 }
 
 TEST_F(ScriptExecutorTest, ForwardParameters) {
-  parameters_["param1"] = "value1";
-  parameters_["param2"] = "value2";
+  auto* parameters = delegate_.GetMutableParameters();
+  (*parameters)["param1"] = "value1";
+  (*parameters)["param2"] = "value2";
   EXPECT_CALL(mock_service_,
               OnGetActions(StrEq(kScriptPath), _,
                            AllOf(Contains(Pair("param1", "value1")),
@@ -383,7 +360,7 @@ TEST_F(ScriptExecutorTest, RunDelayedAction) {
   EXPECT_FALSE(scoped_task_environment_.MainThreadHasPendingTask());
 }
 
-TEST_F(ScriptExecutorTest, HideDetailsWhenFinished) {
+TEST_F(ScriptExecutorTest, ClearDetailsWhenFinished) {
   ActionsResponseProto actions_response;
   ActionProto click_with_clean_contextual_ui;
   click_with_clean_contextual_ui.set_clean_contextual_ui(true);
@@ -397,11 +374,13 @@ TEST_F(ScriptExecutorTest, HideDetailsWhenFinished) {
       .WillOnce(RunOnceCallback<3>(true, ""));
   EXPECT_CALL(executor_callback_,
               Run(Field(&ScriptExecutor::Result::success, true)));
-  EXPECT_CALL(mock_ui_controller_, HideDetails());
+
+  delegate_.SetDetails(Details());  // empty, but not null
   executor_->Run(executor_callback_.Get());
+  EXPECT_EQ(nullptr, delegate_.GetDetails());
 }
 
-TEST_F(ScriptExecutorTest, DontHideDetailsIfOtherActionsAreLeft) {
+TEST_F(ScriptExecutorTest, DontClearDetailsIfOtherActionsAreLeft) {
   ActionsResponseProto actions_response;
   ActionProto click_with_clean_contextual_ui;
   click_with_clean_contextual_ui.set_clean_contextual_ui(true);
@@ -416,12 +395,12 @@ TEST_F(ScriptExecutorTest, DontHideDetailsIfOtherActionsAreLeft) {
   EXPECT_CALL(executor_callback_,
               Run(Field(&ScriptExecutor::Result::success, true)));
 
-  EXPECT_CALL(mock_ui_controller_, HideDetails()).Times(0);
-
+  delegate_.SetDetails(Details());  // empty, but not null
   executor_->Run(executor_callback_.Get());
+  EXPECT_NE(nullptr, delegate_.GetDetails());
 }
 
-TEST_F(ScriptExecutorTest, HideDetailsOnError) {
+TEST_F(ScriptExecutorTest, ClearDetailsOnError) {
   ActionsResponseProto actions_response;
   actions_response.add_actions()->mutable_tell()->set_message("Hello");
   EXPECT_CALL(mock_service_, OnGetActions(_, _, _, _, _, _))
@@ -430,10 +409,9 @@ TEST_F(ScriptExecutorTest, HideDetailsOnError) {
       .WillOnce(RunOnceCallback<3>(false, ""));
   EXPECT_CALL(executor_callback_,
               Run(Field(&ScriptExecutor::Result::success, false)));
-
-  EXPECT_CALL(mock_ui_controller_, HideDetails());
-
+  delegate_.SetDetails(Details());  // empty, but not null
   executor_->Run(executor_callback_.Get());
+  EXPECT_EQ(nullptr, delegate_.GetDetails());
 }
 
 TEST_F(ScriptExecutorTest, UpdateScriptStateWhileRunning) {
@@ -586,6 +564,34 @@ TEST_F(ScriptExecutorTest, RunMultipleInterruptInOrder) {
               Contains(Pair("interrupt1", SCRIPT_STATUS_SUCCESS)));
   EXPECT_THAT(scripts_state_,
               Contains(Pair("interrupt2", SCRIPT_STATUS_SUCCESS)));
+}
+
+TEST_F(ScriptExecutorTest, RunSameInterruptMultipleTimes) {
+  // In a main script with three wait_for_dom with allow_interrupt=true...
+  ActionsResponseProto interruptible;
+  for (int i = 0; i < 3; i++) {
+    auto* wait_action = interruptible.add_actions()->mutable_wait_for_dom();
+    wait_action->add_selectors("element");
+    wait_action->set_allow_interrupt(true);
+  }
+  EXPECT_CALL(mock_service_, OnGetActions(StrEq("script_path"), _, _, _, _, _))
+      .WillRepeatedly(RunOnceCallback<5>(true, Serialize(interruptible)));
+
+  // 'interrupt' with matching preconditions runs exactly three times.
+  RegisterInterrupt("interrupt", "interrupt_trigger");
+  ActionsResponseProto interrupt_actions;
+  InitInterruptActions(&interrupt_actions, "interrupt");
+  EXPECT_CALL(mock_service_, OnGetActions(StrEq("interrupt"), _, _, _, _, _))
+      .Times(3)
+      .WillRepeatedly(RunOnceCallback<5>(true, Serialize(interrupt_actions)));
+
+  // All scripts succeed with no more actions.
+  EXPECT_CALL(mock_service_, OnGetNextActions(_, _, _, _))
+      .WillRepeatedly(RunOnceCallback<3>(true, ""));
+
+  EXPECT_CALL(executor_callback_,
+              Run(Field(&ScriptExecutor::Result::success, true)));
+  executor_->Run(executor_callback_.Get());
 }
 
 TEST_F(ScriptExecutorTest, ForwardMainScriptPayloadWhenInterruptRuns) {
@@ -857,6 +863,55 @@ TEST_F(ScriptExecutorTest, UpdateScriptListFromInterrupt) {
   EXPECT_THAT(scripts_update_count_, Eq(1));
   EXPECT_THAT("path", scripts_update_[0]->handle.path);
   EXPECT_THAT("update_from_interrupt", scripts_update_[0]->handle.name);
+}
+
+TEST_F(ScriptExecutorTest, RestorePreInterruptStatusMessage) {
+  ActionsResponseProto interruptible;
+  interruptible.add_actions()->mutable_tell()->set_message(
+      "pre-interrupt status");
+  auto* wait_action = interruptible.add_actions()->mutable_wait_for_dom();
+  wait_action->add_selectors("element");
+  wait_action->set_allow_interrupt(true);
+  EXPECT_CALL(mock_service_, OnGetActions(kScriptPath, _, _, _, _, _))
+      .WillRepeatedly(RunOnceCallback<5>(true, Serialize(interruptible)));
+
+  RegisterInterrupt("interrupt", "interrupt_trigger");
+  ActionsResponseProto interrupt_actions;
+  interrupt_actions.add_actions()->mutable_tell()->set_message(
+      "interrupt status");
+  EXPECT_CALL(mock_service_, OnGetActions(StrEq("interrupt"), _, _, _, _, _))
+      .WillRepeatedly(RunOnceCallback<5>(true, Serialize(interrupt_actions)));
+
+  EXPECT_CALL(mock_service_, OnGetNextActions(_, _, _, _))
+      .WillRepeatedly(RunOnceCallback<3>(true, ""));
+
+  EXPECT_CALL(executor_callback_,
+              Run(Field(&ScriptExecutor::Result::success, true)));
+
+  delegate_.SetStatusMessage("pre-run status");
+  executor_->Run(executor_callback_.Get());
+  EXPECT_EQ("pre-interrupt status", delegate_.GetStatusMessage());
+}
+
+TEST_F(ScriptExecutorTest, KeepStatusMessageWhenNotInterrupted) {
+  ActionsResponseProto interruptible;
+  interruptible.add_actions()->mutable_tell()->set_message(
+      "pre-interrupt status");
+  auto* wait_action = interruptible.add_actions()->mutable_wait_for_dom();
+  wait_action->add_selectors("element");
+  wait_action->set_allow_interrupt(true);
+  EXPECT_CALL(mock_service_, OnGetActions(kScriptPath, _, _, _, _, _))
+      .WillRepeatedly(RunOnceCallback<5>(true, Serialize(interruptible)));
+
+  EXPECT_CALL(mock_service_, OnGetNextActions(_, _, _, _))
+      .WillRepeatedly(RunOnceCallback<3>(true, ""));
+
+  EXPECT_CALL(executor_callback_,
+              Run(Field(&ScriptExecutor::Result::success, true)));
+
+  delegate_.SetStatusMessage("pre-run status");
+  executor_->Run(executor_callback_.Get());
+  EXPECT_EQ("pre-interrupt status", delegate_.GetStatusMessage());
 }
 
 }  // namespace

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/macros.h"
+#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/login/screens/supervision_transition_screen_view.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,7 +22,8 @@ class SupervisionTransitionScreenHandler
     : public BaseScreenHandler,
       public SupervisionTransitionScreenView {
  public:
-  SupervisionTransitionScreenHandler();
+  explicit SupervisionTransitionScreenHandler(
+      JSCallsContainer* js_calls_container);
   ~SupervisionTransitionScreenHandler() override;
 
   // BaseScreenHandler:
@@ -48,6 +50,12 @@ class SupervisionTransitionScreenHandler
 
   // Whether the screen should be shown right after initialization.
   bool show_on_init_ = false;
+
+  // Whether screen timed out waiting for transition to occur and displayed the
+  // error screen.
+  bool timed_out_ = false;
+
+  base::TimeTicks screen_shown_time_;
 
   // The primary user profile.
   Profile* profile_ = nullptr;

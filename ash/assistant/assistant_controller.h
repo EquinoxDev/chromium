@@ -20,6 +20,8 @@
 #include "ash/assistant/assistant_screen_context_controller.h"
 #include "ash/assistant/assistant_setup_controller.h"
 #include "ash/assistant/assistant_ui_controller.h"
+#include "ash/assistant/assistant_view_delegate_impl.h"
+#include "ash/assistant/ui/assistant_view_delegate.h"
 #include "ash/public/cpp/assistant/default_voice_interaction_observer.h"
 #include "ash/public/interfaces/assistant_controller.mojom.h"
 #include "ash/public/interfaces/assistant_image_downloader.mojom.h"
@@ -82,6 +84,9 @@ class ASH_EXPORT AssistantController
       mojom::AssistantImageDownloaderPtr assistant_image_downloader) override;
   void OpenAssistantSettings() override;
   void StartSpeakerIdEnrollmentFlow() override;
+  void SendAssistantFeedback(bool assistant_debug_info_allowed,
+                             const std::string& feedback_description,
+                             const std::string& screenshot_png) override;
 
   // AssistantControllerObserver:
   void OnDeepLinkReceived(
@@ -135,6 +140,8 @@ class ASH_EXPORT AssistantController
 
   AssistantUiController* ui_controller() { return &assistant_ui_controller_; }
 
+  AssistantViewDelegate* view_delegate() { return &view_delegate_; }
+
   base::WeakPtr<AssistantController> GetWeakPtr();
 
  private:
@@ -169,6 +176,8 @@ class ASH_EXPORT AssistantController
   AssistantScreenContextController assistant_screen_context_controller_;
   AssistantSetupController assistant_setup_controller_;
   AssistantUiController assistant_ui_controller_;
+
+  AssistantViewDelegateImpl view_delegate_;
 
   base::WeakPtrFactory<AssistantController> weak_factory_;
 

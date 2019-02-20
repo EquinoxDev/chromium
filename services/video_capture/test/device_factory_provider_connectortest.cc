@@ -2,14 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_task_environment.h"
+#include "base/timer/timer.h"
 #include "media/base/media_switches.h"
 #include "services/service_manager/public/cpp/test/test_connector_factory.h"
 #include "services/video_capture/public/cpp/mock_receiver.h"
 #include "services/video_capture/public/mojom/constants.mojom.h"
+#include "services/video_capture/public/mojom/device.mojom.h"
 #include "services/video_capture/public/mojom/device_factory_provider.mojom.h"
 #include "services/video_capture/service_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -216,6 +219,38 @@ TEST_F(ShortShutdownDelayDeviceFactoryProviderConnectorTest,
   factory_provider_.reset();
 
   service_destroyed_wait_loop_.Run();
+}
+
+// Tests that the service does not quit when the only client discards the
+// DeviceFactoryProvider but holds on to a DeviceFactory.
+TEST_F(ShortShutdownDelayDeviceFactoryProviderConnectorTest,
+       DeviceFactoryCanStillBeUsedAfterReleaseingDeviceFactoryProvider) {
+  mojom::DeviceFactoryPtr factory;
+  factory_provider_->ConnectToDeviceFactory(mojo::MakeRequest(&factory));
+
+  // Exercise: Disconnect DeviceFactoryProvider
+  {
+    base::RunLoop wait_loop;
+    service_impl_->SetFactoryProviderClientDisconnectedObserver(
+        wait_loop.QuitClosure());
+    factory_provider_.reset();
+    wait_loop.Run();
+  }
+
+  EXPECT_FALSE(service_impl_->HasNoContextRefs());
+
+  // Verify that |factory| is still functional by calling GetDeviceInfos().
+  {
+    base::RunLoop wait_loop;
+    EXPECT_CALL(device_info_receiver_, Run(_))
+        .WillOnce(Invoke(
+            [&wait_loop](
+                const std::vector<media::VideoCaptureDeviceInfo>& infos) {
+              wait_loop.Quit();
+            }));
+    factory->GetDeviceInfos(device_info_receiver_.Get());
+    wait_loop.Run();
+  }
 }
 
 struct NoAutomaticShutdownDeviceFactoryProviderConnectorTestTraits {

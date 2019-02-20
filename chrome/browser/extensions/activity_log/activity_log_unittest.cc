@@ -8,6 +8,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -433,8 +434,11 @@ TEST_F(ActivityLogTestWithoutSwitch, TestShouldLog) {
   // Loading a watchdog app means the activity log should log other extension
   // activities...
   EXPECT_TRUE(activity_log->ShouldLog(empty_extension->id()));
-  // ... but not those of the watchdog app.
+  // ... but not those of the watchdog app...
   EXPECT_FALSE(activity_log->ShouldLog(activity_log_extension->id()));
+  // ... or activities from the browser/extensions page, represented by an empty
+  // extension ID.
+  EXPECT_FALSE(activity_log->ShouldLog(std::string()));
   extension_service_->DisableExtension(activity_log_extension->id(),
                                        disable_reason::DISABLE_USER_ACTION);
   // Disabling the watchdog app means that we're back to never logging anything.

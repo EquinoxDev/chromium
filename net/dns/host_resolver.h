@@ -51,7 +51,7 @@ class NET_EXPORT HostResolver {
   // HostResolver::Request class is used to cancel the request and change it's
   // priority. It must be owned by consumer. Deletion cancels the request.
   //
-  // TODO(crbug.com/821021): Delete this class once all usage has been
+  // TODO(crbug.com/922699): Delete this class once all usage has been
   // converted to the new CreateRequest() API.
   class Request {
    public:
@@ -109,6 +109,20 @@ class NET_EXPORT HostResolver {
     // |ERR_IO_PENDING|.
     virtual const base::Optional<std::vector<HostPortPair>>&
     GetHostnameResults() const = 0;
+
+    // Information about the result's staleness in the host cache. Only
+    // available if results were received from the host cache.
+    //
+    // Should only be called after Start() signals completion, either by
+    // invoking the callback or by returning a result other than
+    // |ERR_IO_PENDING|.
+    virtual const base::Optional<HostCache::EntryStaleness>& GetStaleInfo()
+        const = 0;
+
+    // Changes the priority of the specified request. Can only be called while
+    // the request is running (after Start() returns |ERR_IO_PENDING| and before
+    // the callback is invoked).
+    virtual void ChangeRequestPriority(RequestPriority priority) {}
   };
 
   // |max_concurrent_resolves| is how many resolve requests will be allowed to
@@ -142,7 +156,7 @@ class NET_EXPORT HostResolver {
   // The parameters for doing a Resolve(). A hostname and port are
   // required; the rest are optional (and have reasonable defaults).
   //
-  // TODO(crbug.com/821021): Delete this class once all usage has been
+  // TODO(crbug.com/922699): Delete this class once all usage has been
   // converted to the new CreateRequest() API.
   class NET_EXPORT RequestInfo {
    public:
@@ -222,8 +236,18 @@ class NET_EXPORT HostResolver {
     // IP literals, etc.
     HostResolverSource source = HostResolverSource::ANY;
 
-    // If |false|, results will not come from the host cache.
-    bool allow_cached_response = true;
+    enum class CacheUsage {
+      // Results may come from the host cache if non-stale.
+      ALLOWED,
+
+      // Results may come from the host cache even if stale (by expiration or
+      // network changes).
+      STALE_ALLOWED,
+
+      // Results will not come from the host cache.
+      DISALLOWED,
+    };
+    CacheUsage cache_usage = CacheUsage::ALLOWED;
 
     // If |true|, requests that the resolver include AddressList::canonical_name
     // in the results. If the resolver can do so without significant
@@ -240,6 +264,45 @@ class NET_EXPORT HostResolver {
     // will receive special logging/observer treatment, and the result addresses
     // will always be |base::nullopt|.
     bool is_speculative = false;
+  };
+
+  // Handler for an ongoing MDNS listening operation. Created by
+  // HostResolver::CreateMdnsListener().
+  class MdnsListener {
+   public:
+    // Delegate type for result update notifications from MdnsListener. All
+    // methods have a |result_type| field to allow a single delegate to be
+    // passed to multiple MdnsListeners and be used to listen for updates for
+    // multiple types for the same host.
+    class Delegate {
+     public:
+      enum class UpdateType { ADDED, CHANGED, REMOVED };
+
+      virtual ~Delegate() {}
+
+      virtual void OnAddressResult(UpdateType update_type,
+                                   DnsQueryType result_type,
+                                   IPEndPoint address) = 0;
+      virtual void OnTextResult(UpdateType update_type,
+                                DnsQueryType result_type,
+                                std::vector<std::string> text_records) = 0;
+      virtual void OnHostnameResult(UpdateType update_type,
+                                    DnsQueryType result_type,
+                                    HostPortPair host) = 0;
+
+      // For results which may be valid MDNS but are not handled/parsed by
+      // HostResolver, e.g. pointers to the root domain.
+      virtual void OnUnhandledResult(UpdateType update_type,
+                                     DnsQueryType result_type) = 0;
+    };
+
+    // Destruction cancels the listening operation.
+    virtual ~MdnsListener() {}
+
+    // Begins the listening operation, invoking |delegate| whenever results are
+    // updated. |delegate| will no longer be called once the listening operation
+    // is cancelled (via destruction of |this|).
+    virtual int Start(Delegate* delegate) = 0;
   };
 
   // Set Options.max_concurrent_resolves to this to select a default level
@@ -262,9 +325,6 @@ class NET_EXPORT HostResolver {
   //
   // This method is intended as a direct replacement for the old Resolve()
   // method, but it may not yet cover all the capabilities of the old method.
-  //
-  // TODO(crbug.com/821021): Implement more complex functionality to meet
-  // capabilities of Resolve() and M/DnsClient functionality.
   virtual std::unique_ptr<ResolveHostRequest> CreateRequest(
       const HostPortPair& host,
       const NetLogWithSource& net_log,
@@ -295,8 +355,8 @@ class NET_EXPORT HostResolver {
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
   //
-  // TODO(crbug.com/821021): Delete this method once all usage has been
-  // converted to ResolveHost().
+  // TODO(crbug.com/922699): Delete this method once all usage has been
+  // converted to CreateRequest().
   virtual int Resolve(const RequestInfo& info,
                       RequestPriority priority,
                       AddressList* addresses,
@@ -304,21 +364,45 @@ class NET_EXPORT HostResolver {
                       std::unique_ptr<Request>* out_req,
                       const NetLogWithSource& net_log) = 0;
 
+  // DEPRECATION NOTE: This method is being replaced by CreateRequest(). New
+  // callers should prefer CreateRequest() if it works for their needs. Calling
+  // CreateRequest() with
+  // |parameters.source = HostResolverSource::LOCAL_ONLY| should provide
+  // capabilities equivalent to ResolveFromCache().
+  //
   // Resolves the given hostname (or IP address literal) out of cache or HOSTS
   // file (if enabled) only. This is guaranteed to complete synchronously.
   // This acts like |Resolve()| if the hostname is IP literal, or cached value
   // or HOSTS entry exists. Otherwise, ERR_DNS_CACHE_MISS is returned.
+  //
+  // TODO(crbug.com/922699): Delete this method once all usage has been
+  // converted to CreateRequest().
   virtual int ResolveFromCache(const RequestInfo& info,
                                AddressList* addresses,
                                const NetLogWithSource& net_log) = 0;
 
+  // DEPRECATION NOTE: This method is being replaced by CreateRequest(). New
+  // callers should prefer CreateRequest() if it works for their needs. Calling
+  // CreateRequest() with
+  // |parameters.source = HostResolverSource::LOCAL_ONLY| and
+  // |parameters.cache_usage = ResolveHostParameters::CacheUsage::STALE_ALLOWED|
+  // should provide capabilities equivalent to ResolveStaleFromCache()
+  //
   // Like |ResolveFromCache()|, but can return a stale result if the
   // implementation supports it. Fills in |*stale_info| if a response is
   // returned to indicate how stale (or not) it is.
+  //
+  // TODO(crbug.com/922699): Delete this method once all usage has been
+  // converted to CreateRequest().
   virtual int ResolveStaleFromCache(const RequestInfo& info,
                                     AddressList* addresses,
                                     HostCache::EntryStaleness* stale_info,
                                     const NetLogWithSource& source_net_log) = 0;
+
+  // Create a listener to watch for updates to an MDNS result.
+  virtual std::unique_ptr<MdnsListener> CreateMdnsListener(
+      const HostPortPair& host,
+      DnsQueryType query_type);
 
   // Enable or disable the built-in asynchronous DnsClient.
   virtual void SetDnsClientEnabled(bool enabled);
@@ -382,7 +466,7 @@ class NET_EXPORT HostResolver {
   // Helpers for converting old Resolve() API parameters to new CreateRequest()
   // parameters.
   //
-  // TODO(crbug.com/821021): Delete these methods once all usage has been
+  // TODO(crbug.com/922699): Delete these methods once all usage has been
   // converted to the new CreateRequest() API.
   static ResolveHostParameters RequestInfoToResolveHostParameters(
       const RequestInfo& request_info,
@@ -390,6 +474,19 @@ class NET_EXPORT HostResolver {
   static HostResolverSource FlagsToSource(HostResolverFlags flags);
   static HostResolverFlags ParametersToHostResolverFlags(
       const ResolveHostParameters& parameters);
+
+  // Use legacy Resolve()-style semantics to run the new-style |inner_request|.
+  // Useful to implement legacy Resolve() in HostResolver implementations.
+  //
+  // |inner_request| must be newly-created and not yet started.
+  //
+  // TODO(crbug.com/922699): Delete this once all usage has been converted to
+  // the new CreateRequest() API and HostResolver::Resolve() is removed.
+  static int LegacyResolve(std::unique_ptr<ResolveHostRequest> inner_request,
+                           bool is_speculative,
+                           AddressList* addresses,
+                           CompletionOnceCallback callback,
+                           std::unique_ptr<Request>* out_req);
 
  protected:
   HostResolver();

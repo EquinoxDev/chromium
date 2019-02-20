@@ -44,6 +44,7 @@ class SignedExchangeCertFetcher;
 class SignedExchangeCertFetcherFactory;
 class SignedExchangeCertificateChain;
 class SignedExchangeDevToolsProxy;
+class SignedExchangeReporter;
 
 // SignedExchangeHandler reads "application/signed-exchange" format from a
 // net::SourceStream, parses and verifies the signed exchange, and reports
@@ -59,8 +60,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
   // validated against a verified certificate, or on failure.
   // On success:
   // - |result| is kSuccess.
-  // - |request_url| and |request_method| are the exchange's request's URL and
-  //   method.
+  // - |request_url| is the exchange's request's URL.
   // - |resource_response| contains inner response's headers.
   // - The payload stream can be read from |payload_stream|.
   // On failure:
@@ -71,7 +71,6 @@ class CONTENT_EXPORT SignedExchangeHandler {
       SignedExchangeLoadResult result,
       net::Error error,
       const GURL& request_url,
-      const std::string& request_method,
       const network::ResourceResponseHead& resource_response,
       std::unique_ptr<net::SourceStream> payload_stream)>;
 
@@ -94,6 +93,7 @@ class CONTENT_EXPORT SignedExchangeHandler {
       std::unique_ptr<SignedExchangeCertFetcherFactory> cert_fetcher_factory,
       int load_flags,
       std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy,
+      SignedExchangeReporter* reporter,
       base::RepeatingCallback<int(void)> frame_tree_node_id_getter);
   ~SignedExchangeHandler();
 
@@ -153,6 +153,9 @@ class CONTENT_EXPORT SignedExchangeHandler {
   std::unique_ptr<SignedExchangeCertificateChain> unverified_cert_chain_;
 
   std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy_;
+
+  // This is owned by SignedExchangeLoader which is the owner of |this|.
+  SignedExchangeReporter* reporter_;
 
   base::RepeatingCallback<int(void)> frame_tree_node_id_getter_;
 

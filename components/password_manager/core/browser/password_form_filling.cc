@@ -143,8 +143,14 @@ LikelyFormFilling SendFillInformationToRenderer(
   const bool form_good_for_filling =
       new_parsing_enabled || !observed_form.IsPossibleChangePasswordForm();
 
+  // If the parser of the NewPasswordFormManager decides that there is no
+  // current password field, no filling attempt will be made. In this case the
+  // renderer won't treat this as the "first filling" and won't record metrics
+  // accordingly. The browser should not do that either.
+  const bool no_sign_in_form = !observed_form.HasPasswordElement();
+
   // Wait for the username before filling passwords in case the
-  // fill-on-account-select-http feature is active and the main frame is
+  // FillOnAccountSelectHttp feature is active and the main frame is
   // insecure.
   const bool enable_foas_on_http =
       base::FeatureList::IsEnabled(features::kFillOnAccountSelectHttp) &&
@@ -158,9 +164,32 @@ LikelyFormFilling SendFillInformationToRenderer(
   //     fields.
   // (4) the current main frame origin is insecure and the FOAS on HTTP feature
   //     is active.
-  bool wait_for_username = client.IsIncognito() ||
-                           preferred_match->is_public_suffix_match ||
-                           !form_good_for_filling || enable_foas_on_http;
+  using WaitForUsernameReason =
+      PasswordFormMetricsRecorder::WaitForUsernameReason;
+  WaitForUsernameReason wait_for_username_reason =
+      WaitForUsernameReason::kDontWait;
+  if (client.IsIncognito()) {
+    wait_for_username_reason = WaitForUsernameReason::kIncognitoMode;
+  } else if (preferred_match->is_public_suffix_match) {
+    wait_for_username_reason = WaitForUsernameReason::kPublicSuffixMatch;
+  } else if (!form_good_for_filling) {
+    wait_for_username_reason = WaitForUsernameReason::kFormNotGoodForFilling;
+  } else if (no_sign_in_form) {
+    // If the parser did not find a current password element, don't fill.
+    wait_for_username_reason = WaitForUsernameReason::kFormNotGoodForFilling;
+  } else if (enable_foas_on_http) {
+    wait_for_username_reason = WaitForUsernameReason::kFoasOnHTTP;
+  }
+
+  // Record no "FirstWaitForUsernameReason" metrics for a form that is not meant
+  // for filling. The renderer won't record a "FirstFillingResult" either.
+  if (!no_sign_in_form) {
+    metrics_recorder->RecordFirstWaitForUsernameReason(
+        wait_for_username_reason);
+  }
+
+  bool wait_for_username =
+      wait_for_username_reason != WaitForUsernameReason::kDontWait;
 
   if (wait_for_username) {
     metrics_recorder->SetManagerAction(

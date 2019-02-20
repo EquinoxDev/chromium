@@ -104,10 +104,10 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   gfx::Size GetTileGridSizeWithoutPadding() const;
 
   // Returns the minimum size of the entire tile grid.
-  gfx::Size GetMinimumTileGridSize() const;
+  gfx::Size GetMinimumTileGridSize(int cols, int rows_per_page) const;
 
   // Returns the maximum size of the entire tile grid.
-  gfx::Size GetMaximumTileGridSize() const;
+  gfx::Size GetMaximumTileGridSize(int cols, int rows_per_page) const;
 
   // This resets the grid view to a fresh state for showing the app list.
   void ResetForShowApps();
@@ -178,9 +178,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   bool OnKeyPressed(const ui::KeyEvent& event) override;
   void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) override;
-  bool GetDropFormats(
-      int* formats,
-      std::set<ui::Clipboard::FormatType>* format_types) override;
+  bool GetDropFormats(int* formats,
+                      std::set<ui::ClipboardFormatType>* format_types) override;
   bool CanDrop(const OSExchangeData& data) override;
   int OnDragUpdated(const ui::DropTargetEvent& event) override;
   const char* GetClassName() const override;
@@ -334,7 +333,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // transition target page.
   const gfx::Vector2d CalculateTransitionOffset(int page_of_view) const;
 
-  void CalculateIdealBounds();
+  // Calculates the item views' bounds for folder.
+  void CalculateIdealBoundsForFolder();
   void AnimateToIdealBounds();
 
   // Invoked when the given |view|'s current bounds and target bounds are on
@@ -524,11 +524,6 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Update number of columns and rows for apps within a folder.
   void UpdateColsAndRowsForFolder();
 
-  // Returns true if apps grid gap is enabled. If it is enabled, the user can
-  // drag an app to the next page without having to fill up the current
-  // page.
-  bool IsAppsGridGapEnabled() const;
-
   // Convert between the model index and the visual index. The model index
   // is the index of the item in AppListModel. The visual index is the Index
   // struct above with page/slot info of where to display the item.
@@ -562,8 +557,8 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // Returns true if the page is the right target to flip to.
   bool IsValidPageFlipTarget(int page) const;
 
-  // Calculates the item views' bounds when apps grid gap is enabled.
-  void CalculateIdealBoundsWithGridGap();
+  // Calculates the item views' bounds for non-folder.
+  void CalculateIdealBounds();
 
   // Returns model index of the item view of the specified item.
   int GetModelIndexOfItem(const AppListItem* item);
@@ -594,6 +589,14 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   void StartFolderDroppingAnimation(AppListItemView* folder_item_view,
                                     AppListItem* drag_item,
                                     const gfx::Rect& source_bounds);
+
+  // During an app drag, creates an a11y event to verbalize dropping onto a
+  // folder or creating a folder with two apps.
+  void MaybeCreateFolderDroppingAccessibilityEvent();
+
+  // During an app drag, creates an a11y event to verbalize drop target
+  // location.
+  void MaybeCreateReorderAccessibilityEvent();
 
   AppListModel* model_ = nullptr;         // Owned by AppListView.
   AppListItemList* item_list_ = nullptr;  // Not owned.
@@ -701,20 +704,23 @@ class APP_LIST_EXPORT AppsGridView : public views::View,
   // The compositor frame number when animation starts.
   int pagination_animation_start_frame_number_;
 
-  // view structure used when apps grid gap is enabled.
+  // view structure used only for non-folder.
   PagedViewStructure view_structure_;
 
   // True if an extra page is opened after the user drags an app to the bottom
-  // of last page with intention to put it in a new page. This is only used when
-  // apps grid gap is enabled.
+  // of last page with intention to put it in a new page. This is only used for
+  // non-folder.
   bool extra_page_opened_ = false;
-
-  // True if the apps grid gap feature is enabled.
-  const bool is_apps_grid_gap_feature_enabled_;
 
   // Tile spacing between the tile views.
   int horizontal_tile_padding_ = 0;
   int vertical_tile_padding_ = 0;
+
+  // The drop location of the most recent reorder related accessibility event.
+  GridIndex last_reorder_a11y_event_location_;
+
+  // The location of the most recent foldering drag related accessibility event.
+  GridIndex last_folder_dropping_a11y_event_location_;
 
   DISALLOW_COPY_AND_ASSIGN(AppsGridView);
 };

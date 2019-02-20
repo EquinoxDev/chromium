@@ -204,6 +204,9 @@
       <message desc="The description of the showOptionsPage key. Displayed in the Options page." name="IDS_CHROMEVOX_SHOW_OPTIONS_PAGE">
         Open options page
       </message>
+      <message desc="The description of the showLogPage key. Displayed in the ChromeVox panel." name="IDS_CHROMEVOX_SHOW_LOG_PAGE">
+        Open developer log page
+      </message>
       <message desc="The description of the showKbExplorerPage key; this allows users to learn about their keyboard. Displayed in the Options page." name="IDS_CHROMEVOX_SHOW_KB_EXPLORER_PAGE">
         Open learn mode
       </message>
@@ -568,8 +571,8 @@
       <message desc="An option for setting the key combination that will be used as the ChromeVox modifier key (aka, the 'Cvox' key)." name="IDS_CHROMEVOX_OPTIONS_CVOX_MODIFIER_KEY">
         ChromeVox modifier key
       </message>
-      <message desc="List of chromevox developer options." name="IDS_CHROMEVOX_OPTIONS_DEVELOPER_OPTIONS">
-        Developer Options
+      <message desc="Labels the checkbox that enables developer options for ChromeVox." name="IDS_CHROMEVOX_OPTIONS_DEVELOPER_OPTIONS">
+        Enable Developer Options
       </message>
       <message desc="Enable chromevox earcon logging." name="IDS_CHROMEVOX_OPTIONS_DEVELOPER_EARCON_LOGGING">
         Enable earcon logging
@@ -579,6 +582,12 @@
       </message>
       <message desc="Enable event stream logging in chromevox for developer options." name="IDS_CHROMEVOX_OPTIONS_EVENT_STREAM_LOGGING">
         Enable event stream logging
+      </message>
+      <message desc="Show ChromeVox Event Log." name="IDS_CHROMEVOX_OPTIONS_SHOW_LOG">
+        Show Log
+      </message>
+      <message desc="Keyboard shortcut to show the ChromeVox log." name="IDS_CHROMEVOX_OPTIONS_SHOW_LOG_KEY">
+        Search + O + W
       </message>
       <message desc="Show event stream filters options for event stream logging." name="IDS_CHROMEVOX_OPTIONS_SHOW_EVENT_STREAM_FILTERS">
         Show event stream filters
@@ -2565,44 +2574,85 @@
       </message>
       <message desc="A dictionary mapping locale identifiers to their corresponding language names. The format is the following: { ..., 'en_US': 'English (United States)', ...}. Translation only needed for the language and country names (e.g. English (United States)). All other strings must be kept as is." name="IDS_CHROMEVOX_LOCALE_DICT">
         {"ar": "Arabic",
+        "as": "Assamese",
+        "aw": "Awadhi",
+        "be": "Bengali",
         "bg": "Bulgarian",
+        "bh": "Bihari",
+        "bo": "Tibetan",
+        "br": "Braj",
         "ca": "Catalan",
+        "ckb": "Sorani",
         "cs": "Czech",
+        "cy": "Welsh",
         "da": "Danish",
         "de": "German",
         "de_CH": "German (Switzerland)",
         "de_DE": "German (Germany)",
+        "dra": "Dravidian",
         "el": "Greek",
         "en": "English",
         "en_CA": "English (Canada)",
         "en_GB": "English (United Kingdom)",
         "en_US": "English (United States)",
+        "eo": "Esperanto",
         "es": "Spanish",
         "et": "Estonian",
+        "fa": "Persian",
         "fr": "French",
         "fr_CA": "French (Canada)",
         "fr_FR": "French (France)",
         "fi": "Finnish",
+        "ga": "Irish",
+        "gd": "Gaelic",
+        "gon": "Gondi",
+        "gu": "Gujarati",
         "he": "Hebrew",
         "hi": "Hindi",
         "hr": "Croatian",
         "hu": "Hungarian",
+        "hy": "Armenian",
         "is": "Icelandic",
         "it": "Italian",
+        "iu": "Inuktitut",
+        "ka": "Kannada",
+        "kh": "Khasi",
         "ko": "Korean",
+        "kok": "Konkani",
+        "kru": "Kurukh",
+        "ks": "Kashmiri",
         "lt": "Lithuanian",
         "lv": "Latvian",
+        "mao": "Maori",
+        "ml": "Malayalam",
+        "mt": "Maltese",
+        "mwr": "Marwari",
+        "mn": "Mongolian",
+        "mun": "Munda",
         "nb": "Norwegian Bokmål",
+        "ne": "Nepali",
         "nl": "Dutch",
+        "no": "Norwegian",
+        "or": "Oriya",
+        "pi": "Pali",
         "pl": "Polish",
         "pt": "Portuguese",
+        "pu": "Punjabi",
         "ro": "Romanian",
         "ru": "Russian",
+        "sa": "Sanskrit",
+        "si": "Sindhi",
+        "sin": "Sinhala",
         "sk": "Slovak",
         "sl": "Slovenian",
         "sr": "Serbian",
         "sv": "Swedish",
+        "ta": "Tamil",
+        "te": "Telugu",
         "tr": "Turkish",
+        "tsn": "Afrikaans",
+        "uk": "Ukrainian",
+        "ur": "Urdu",
         "vi": "Vietnamese",
         "zh": "Chinese",
         "zh_TW": "Chinese (Traditional Han)"}
@@ -2674,6 +2724,9 @@
       </message>
       <message desc="Describes the volume up key in the ChromeVox keyboard explorer." name="IDS_CHROMEVOX_VOLUME_UP_KEY">
         volume up
+      </message>
+      <message desc="Describes the Assistant key in the ChromeVox keyboard explorer." name="IDS_CHROMEVOX_ASSISTANT_KEY">
+        Google Assistant
       </message>
 
       <!-- Panel -->
@@ -3152,6 +3205,13 @@ If you're done with the tutorial, use ChromeVox to navigate to the Close button 
       </message>
       <message desc="Labels a select control which lists all bluetooth braille displays." name="IDS_CHROMEVOX_OPTIONS_BLUETOOTH_BRAILLE_DISPLAY_SELECT_LABEL">
         Select a bluetooth braille display
+      </message>
+      <message desc="Describes web content that has no title." name="IDS_CHROMEVOX_WEB_CONTENT">
+        Web Content
+      </message>
+      <message desc="The text label for ChromeVox language switching checkbox."
+        name="IDS_CHROMEVOX_OPTIONS_LANG_SWITCHING_CHECKBOX_LABEL">
+        Automatically detect and switch ChromeVox language.
       </message>
     </messages>
   </release>

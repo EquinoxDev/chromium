@@ -14,7 +14,9 @@
 #include "base/stl_util.h"
 #include "chrome/common/chrome_features.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill_assistant/browser/features.h"
 #include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
+#include "components/download/public/common/download_features.h"
 #include "components/feed/feed_feature_list.h"
 #include "components/invalidation/impl/invalidation_switches.h"
 #include "components/language/core/common/language_experiments.h"
@@ -25,6 +27,7 @@
 #include "components/omnibox/browser/omnibox_field_trial.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/payments/core/features.h"
+#include "components/previews/core/previews_features.h"
 #include "components/safe_browsing/features.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features.h"
 #include "components/sync/driver/sync_driver_switches.h"
@@ -55,9 +58,11 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &autofill::features::kAutofillManualFallbackAndroid,
     &autofill::features::kAutofillRefreshStyleAndroid,
     &autofill::features::kAutofillEnableCompanyName,
+    &autofill_assistant::features::kAutofillAssistant,
     &contextual_suggestions::kContextualSuggestionsButton,
     &contextual_suggestions::kContextualSuggestionsIPHReverseScroll,
     &contextual_suggestions::kContextualSuggestionsOptOut,
+    &download::features::kDownloadAutoResumptionNative,
     &features::kAllowStartingServiceManagerOnly,
     &features::kAppNotificationStatusMessaging,
     &features::kClearOldBrowsingData,
@@ -67,8 +72,9 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &features::kExperimentalUi,
     &features::kGenericSensorExtraClasses,
     &features::kIncognitoStrings,
-    &features::kMaterialDesignIncognitoNTP,
+    &features::kOverscrollHistoryNavigation,
     &features::kPermissionDelegation,
+    &features::kPredictivePrefetchingAllowedOnAllConnectionTypes,
     &features::kServiceWorkerPaymentApps,
     &features::kShowTrustedPublisherURL,
     &features::kSoundContentSetting,
@@ -79,19 +85,24 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &feed::kInterestFeedContentSuggestions,
     &invalidation::switches::kFCMInvalidations,
     &kAdjustWebApkInstallationSpace,
+    &kAllowNewIncognitoTabIntents,
     &kAllowRemoteContextForNotifications,
+    &kAndroidNightMode,
     &kAndroidPayIntegrationV1,
     &kAndroidPayIntegrationV2,
     &kAndroidPaymentApps,
     &kAndroidSiteSettingsUIRefresh,
-    &kAutofillAssistant,
+    &kBackgroundTaskSchedulerForBackgroundSync,
     &kCastDeviceFilter,
     &kCCTBackgroundTab,
     &kCCTExternalLinkHandling,
     &kCCTModule,
     &kCCTModuleCache,
     &kCCTModuleCustomHeader,
+    &kCCTModuleCustomRequestHeader,
+    &kCCTModuleDexLoading,
     &kCCTModulePostMessage,
+    &kCCTModuleUseIntentExtras,
     &kCCTPostMessageAPI,
     &kCCTRedirectPreconnect,
     &kCCTReportParallelRequestStatus,
@@ -112,7 +123,6 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kDownloadHomeShowStorageInfo,
     &kEphemeralTab,
     &kExploreSites,
-    &kGestureNavigation,
     &kHandleMediaIntents,
     &kHideUserDataFromIncognitoNotifications,
     &kHomePageButtonForceEnabled,
@@ -120,6 +130,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kHorizontalTabSwitcherAndroid,
     &kImprovedA2HS,
     &kInflateToolbarOnBackgroundThread,
+    &kInlineUpdateFlow,
     &kIntentBlockExternalFormRedirectsNoGesture,
     &kJellyBeanSupported,
     &kLanguagesPreference,
@@ -135,6 +146,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kProgressBarThrottleFeature,
     &kPwaImprovedSplashScreen,
     &kPwaPersistentNotification,
+    &kReachedCodeProfiler,
     &kReaderModeInCCT,
     &kSearchReadyOmniboxFeature,
     &kSearchEnginePromoExistingDevice,
@@ -143,6 +155,7 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &kSoleIntegration,
     &kSpannableInlineAutocomplete,
     &kSpecialLocaleWrapper,
+    &kTabGridLayoutAndroid,
     &kTabReparenting,
     &kTabSwitcherOnReturn,
     &kTrustedWebActivity,
@@ -155,7 +168,6 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &payments::features::kWebPaymentsModifiers,
     &payments::features::kWebPaymentsSingleAppUiSkip,
     &language::kExplicitLanguageAsk,
-    &media::kCafMediaRouterImpl,
     &ntp_snippets::kArticleSuggestionsFeature,
     &ntp_snippets::kIncreasedVisibility,
     &ntp_snippets::kNotificationsFeature,
@@ -168,14 +180,16 @@ const base::Feature* kFeaturesExposedToJava[] = {
     &offline_pages::kOfflinePagesCTV2Feature,  // See crbug.com/734753.
     &offline_pages::kOfflinePagesDescriptiveFailStatusFeature,
     &offline_pages::kOfflinePagesDescriptivePendingStatusFeature,
-    &offline_pages::kOfflinePagesSharingFeature,
     &offline_pages::kOfflinePagesLivePageSharingFeature,
     &offline_pages::kPrefetchingOfflinePagesFeature,
     &omnibox::kHideSteadyStateUrlScheme,
     &omnibox::kHideSteadyStateUrlTrivialSubdomains,
+    &omnibox::kOmniboxNewAnswerLayout,
+    &omnibox::kOmniboxRichEntitySuggestions,
     &omnibox::kQueryInOmnibox,
     &password_manager::features::kGooglePasswordManager,
     &password_manager::features::kPasswordsKeyboardAccessory,
+    &previews::features::kDataSaverLiteModeRebranding,
     &switches::kSyncSendTabToSelf,
     &translate::kTranslateAndroidManualTrigger,
     &unified_consent::kUnifiedConsent,
@@ -198,25 +212,38 @@ const base::Feature* FindFeatureExposedToJava(const std::string& feature_name) {
 const base::Feature kAdjustWebApkInstallationSpace = {
     "AdjustWebApkInstallationSpace", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kAndroidNightMode{"AndroidNightMode",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
+
+// TODO(rouslan): Remove this.
 const base::Feature kAndroidPayIntegrationV1{"AndroidPayIntegrationV1",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kAllowNewIncognitoTabIntents{
+    "AllowNewIncognitoTabIntents", base::FEATURE_ENABLED_BY_DEFAULT};
 
 const base::Feature kAllowRemoteContextForNotifications{
     "AllowRemoteContextForNotifications", base::FEATURE_ENABLED_BY_DEFAULT};
 
+// TODO(rouslan): Remove this.
 const base::Feature kAndroidPayIntegrationV2{"AndroidPayIntegrationV2",
                                              base::FEATURE_ENABLED_BY_DEFAULT};
 
+// TODO(rouslan): Remove this.
 const base::Feature kAndroidPaymentApps{"AndroidPaymentApps",
                                         base::FEATURE_ENABLED_BY_DEFAULT};
 const base::Feature kAndroidSiteSettingsUIRefresh{
     "AndroidSiteSettingsUIRefresh", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kAutofillAssistant{"AutofillAssistant",
-                                       base::FEATURE_ENABLED_BY_DEFAULT};
+const base::Feature kAndroidWebContentsDarkMode{
+    "AndroidWebContentsDarkMode", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kBackgroundTaskComponentUpdate{
     "BackgroundTaskComponentUpdate", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kBackgroundTaskSchedulerForBackgroundSync{
+    "BackgroundTaskSchedulerForBackgroundSync",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Used in downstream code.
 const base::Feature kCastDeviceFilter{"CastDeviceFilter",
@@ -236,7 +263,16 @@ const base::Feature kCCTModuleCache{"CCTModuleCache",
 const base::Feature kCCTModuleCustomHeader{"CCTModuleCustomHeader",
                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kCCTModuleCustomRequestHeader{
+    "CCTModuleCustomRequestHeader", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kCCTModuleDexLoading{"CCTModuleDexLoading",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kCCTModulePostMessage{"CCTModulePostMessage",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kCCTModuleUseIntentExtras{"CCTModuleUseIntentExtras",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kCCTPostMessageAPI{"CCTPostMessageAPI",
@@ -303,8 +339,8 @@ const base::Feature kEphemeralTab{"EphemeralTab",
 const base::Feature kExploreSites{"ExploreSites",
                                   base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kGestureNavigation{"GestureNavigation",
-                                       base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kForegroundNotificationManager{
+    "ForegroundNotificationManager", base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kHandleMediaIntents{"HandleMediaIntents",
                                         base::FEATURE_ENABLED_BY_DEFAULT};
@@ -330,6 +366,9 @@ const base::Feature kImprovedA2HS{"ImprovedA2HS",
 
 const base::Feature kInflateToolbarOnBackgroundThread{
     "BackgroundToolbarInflation", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kInlineUpdateFlow{"InlineUpdateFlow",
+                                      base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kIntentBlockExternalFormRedirectsNoGesture{
     "IntentBlockExternalFormRedirectsNoGesture",
@@ -370,6 +409,7 @@ const base::Feature kOmniboxSpareRenderer{"OmniboxSpareRenderer",
 const base::Feature kOmniboxVoiceSearchAlwaysVisible{
     "OmniboxVoiceSearchAlwaysVisible", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// TODO(rouslan): Remove this.
 const base::Feature kPayWithGoogleV1{"PayWithGoogleV1",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -381,6 +421,9 @@ const base::Feature kPwaImprovedSplashScreen{"PwaImprovedSplashScreen",
 
 const base::Feature kPwaPersistentNotification{
     "PwaPersistentNotification", base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kReachedCodeProfiler{"ReachedCodeProfiler",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kReaderModeInCCT{"ReaderModeInCCT",
                                      base::FEATURE_ENABLED_BY_DEFAULT};
@@ -399,6 +442,9 @@ const base::Feature kSpannableInlineAutocomplete{
 
 const base::Feature kSpecialLocaleWrapper{"SpecialLocaleWrapper",
                                           base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kTabGridLayoutAndroid{"TabGridLayoutAndroid",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kTabReparenting{"TabReparenting",
                                     base::FEATURE_ENABLED_BY_DEFAULT};

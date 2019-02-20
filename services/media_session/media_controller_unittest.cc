@@ -16,6 +16,7 @@
 #include "services/media_session/media_session_service.h"
 #include "services/media_session/public/cpp/media_metadata.h"
 #include "services/media_session/public/cpp/test/mock_media_session.h"
+#include "services/media_session/public/cpp/test/test_media_controller.h"
 #include "services/media_session/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/test/test_connector_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -38,6 +39,10 @@ class MediaControllerTest : public testing::Test {
     controller_manager_ptr_->CreateActiveMediaController(
         mojo::MakeRequest(&media_controller_ptr_));
     controller_manager_ptr_.FlushForTesting();
+
+    audio_focus_ptr_->SetEnforcementMode(
+        mojom::EnforcementMode::kSingleSession);
+    audio_focus_ptr_.FlushForTesting();
   }
 
   void TearDown() override {
@@ -412,18 +417,18 @@ TEST_F(MediaControllerTest, ActiveController_Observer_StateTransition) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
+    test::TestMediaControllerObserver observer(controller());
     observer.WaitForState(mojom::MediaSessionInfo::SessionState::kActive);
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
+    test::TestMediaControllerObserver observer(controller());
     controller()->Suspend();
     observer.WaitForState(mojom::MediaSessionInfo::SessionState::kSuspended);
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
+    test::TestMediaControllerObserver observer(controller());
     RequestAudioFocus(media_session_2, mojom::AudioFocusType::kGain);
     observer.WaitForState(mojom::MediaSessionInfo::SessionState::kActive);
   }
@@ -435,7 +440,7 @@ TEST_F(MediaControllerTest, ActiveController_Observer_StateTransition) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
+    test::TestMediaControllerObserver observer(controller());
     observer.WaitForState(mojom::MediaSessionInfo::SessionState::kActive);
   }
 }
@@ -519,8 +524,8 @@ TEST_F(MediaControllerTest, ActiveController_Metadata_Observer_Abandoned) {
   media_session.AbandonAudioFocusFromClient();
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    EXPECT_FALSE(observer.WaitForMetadata());
+    test::TestMediaControllerObserver observer(controller());
+    observer.WaitForEmptyMetadata();
   }
 }
 
@@ -537,9 +542,9 @@ TEST_F(MediaControllerTest, ActiveController_Metadata_Observer_Empty) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
+    test::TestMediaControllerObserver observer(controller());
     media_session.SimulateMetadataChanged(test_metadata);
-    EXPECT_EQ(test_metadata, observer.WaitForMetadata());
+    observer.WaitForEmptyMetadata();
   }
 }
 
@@ -561,9 +566,9 @@ TEST_F(MediaControllerTest, ActiveController_Metadata_Observer_WithInfo) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
+    test::TestMediaControllerObserver observer(controller());
     media_session.SimulateMetadataChanged(test_metadata);
-    EXPECT_EQ(metadata, observer.WaitForNonEmptyMetadata());
+    observer.WaitForExpectedMetadata(metadata);
   }
 }
 
@@ -582,8 +587,8 @@ TEST_F(MediaControllerTest, ActiveController_Metadata_AddObserver_Empty) {
   media_session.SimulateMetadataChanged(test_metadata);
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    EXPECT_EQ(test_metadata, observer.WaitForMetadata());
+    test::TestMediaControllerObserver observer(controller());
+    observer.WaitForEmptyMetadata();
   }
 }
 
@@ -607,8 +612,8 @@ TEST_F(MediaControllerTest, ActiveController_Metadata_AddObserver_WithInfo) {
   media_session.SimulateMetadataChanged(test_metadata);
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    EXPECT_EQ(metadata, *observer.WaitForMetadata());
+    test::TestMediaControllerObserver observer(controller());
+    observer.WaitForExpectedMetadata(metadata);
   }
 }
 
@@ -736,9 +741,8 @@ TEST_F(MediaControllerTest, ActiveController_Actions_AddObserver_Empty) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    observer.WaitForActions();
-    EXPECT_TRUE(observer.actions().empty());
+    test::TestMediaControllerObserver observer(controller());
+    observer.WaitForEmptyActions();
   }
 }
 
@@ -755,11 +759,11 @@ TEST_F(MediaControllerTest, ActiveController_Actions_AddObserver_WithInfo) {
   media_session.EnableAction(mojom::MediaSessionAction::kPlay);
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    observer.WaitForActions();
+    test::TestMediaControllerObserver observer(controller());
 
-    EXPECT_EQ(1u, observer.actions().size());
-    EXPECT_EQ(mojom::MediaSessionAction::kPlay, observer.actions()[0]);
+    std::set<mojom::MediaSessionAction> expected_actions;
+    expected_actions.insert(mojom::MediaSessionAction::kPlay);
+    observer.WaitForExpectedActions(expected_actions);
   }
 }
 
@@ -775,13 +779,9 @@ TEST_F(MediaControllerTest, ActiveController_Actions_Observer_Empty) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    observer.WaitForActions();
-
+    test::TestMediaControllerObserver observer(controller());
     media_session.DisableAction(mojom::MediaSessionAction::kPlay);
-    observer.WaitForActions();
-
-    EXPECT_TRUE(observer.actions().empty());
+    observer.WaitForEmptyActions();
   }
 }
 
@@ -796,14 +796,12 @@ TEST_F(MediaControllerTest, ActiveController_Actions_Observer_WithInfo) {
   }
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    observer.WaitForActions();
-
+    test::TestMediaControllerObserver observer(controller());
     media_session.EnableAction(mojom::MediaSessionAction::kPlay);
-    observer.WaitForActions();
 
-    EXPECT_EQ(1u, observer.actions().size());
-    EXPECT_EQ(mojom::MediaSessionAction::kPlay, observer.actions()[0]);
+    std::set<mojom::MediaSessionAction> expected_actions;
+    expected_actions.insert(mojom::MediaSessionAction::kPlay);
+    observer.WaitForExpectedActions(expected_actions);
   }
 }
 
@@ -821,9 +819,53 @@ TEST_F(MediaControllerTest, ActiveController_Actions_Observer_Abandoned) {
   media_session.AbandonAudioFocusFromClient();
 
   {
-    test::MockMediaSessionMojoObserver observer(controller());
-    observer.WaitForActions();
-    EXPECT_TRUE(observer.actions().empty());
+    test::TestMediaControllerObserver observer(controller());
+    observer.WaitForEmptyActions();
+  }
+}
+
+TEST_F(MediaControllerTest, ActiveController_Observer_Abandoned) {
+  test::MockMediaSession media_session;
+  media_session.SetIsControllable(true);
+
+  {
+    test::MockMediaSessionMojoObserver observer(media_session);
+    RequestAudioFocus(media_session, mojom::AudioFocusType::kGain);
+    observer.WaitForState(mojom::MediaSessionInfo::SessionState::kActive);
+  }
+
+  {
+    test::TestMediaControllerObserver observer(controller());
+    media_session.AbandonAudioFocusFromClient();
+
+    // We should see empty info, metadata and actions flushed since the active
+    // controller is no longer bound to a media session.
+    observer.WaitForEmptyInfo();
+    observer.WaitForEmptyMetadata();
+    observer.WaitForEmptyActions();
+  }
+}
+
+TEST_F(MediaControllerTest, ActiveController_AddObserver_Abandoned) {
+  test::MockMediaSession media_session;
+  media_session.SetIsControllable(true);
+
+  {
+    test::MockMediaSessionMojoObserver observer(media_session);
+    RequestAudioFocus(media_session, mojom::AudioFocusType::kGain);
+    observer.WaitForState(mojom::MediaSessionInfo::SessionState::kActive);
+  }
+
+  media_session.AbandonAudioFocusFromClient();
+
+  {
+    test::TestMediaControllerObserver observer(controller());
+
+    // We should see empty info, metadata and actions since the active
+    // controller is no longer bound to a media session.
+    observer.WaitForEmptyInfo();
+    observer.WaitForEmptyMetadata();
+    observer.WaitForEmptyActions();
   }
 }
 

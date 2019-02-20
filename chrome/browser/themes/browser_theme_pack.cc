@@ -58,7 +58,7 @@ constexpr int kTallestFrameHeight = kTallestTabHeight + 19;
 // theme packs that aren't int-equal to this. Increment this number if you
 // change default theme assets or if you need themes to recreate their generated
 // images (which are cached).
-const int kThemePackVersion = 62;
+const int kThemePackVersion = 63;
 
 // IDs that are in the DataPack won't clash with the positive integer
 // uint16_t. kHeaderID should always have the maximum value because we want the
@@ -633,6 +633,10 @@ void BrowserThemePack::BuildFromExtension(
     return;
 
   pack->CropImages(&pack->images_);
+
+  // Set toolbar related elements' colors (e.g. status bubble, info bar,
+  // download shelf, detached bookmark bar) to toolbar color.
+  pack->SetToolbarRelatedColors();
 
   // Create toolbar image, and generate toolbar color from image where relevant.
   // This must be done after reading colors from JSON (so they can be used for
@@ -1272,6 +1276,19 @@ void BrowserThemePack::CropImages(ImageCache* images) const {
   }
 }
 
+void BrowserThemePack::SetToolbarRelatedColors() {
+  // Propagate the user-specified Toolbar Color to similar elements (for
+  // backwards-compatibility with themes written before this toolbar processing
+  // was introduced).
+  SkColor toolbar_color;
+  if (GetColor(TP::COLOR_TOOLBAR, &toolbar_color)) {
+    SetColor(TP::COLOR_DETACHED_BOOKMARK_BAR_BACKGROUND, toolbar_color);
+    SetColor(TP::COLOR_INFOBAR, toolbar_color);
+    SetColor(TP::COLOR_DOWNLOAD_SHELF, toolbar_color);
+    SetColor(TP::COLOR_STATUS_BUBBLE, toolbar_color);
+  }
+}
+
 void BrowserThemePack::CreateToolbarImageAndColors(ImageCache* images) {
   ImageCache temp_output;
 
@@ -1285,15 +1302,7 @@ void BrowserThemePack::CreateToolbarImageAndColors(ImageCache* images) {
 
   constexpr int kToolbarColorId = TP::COLOR_TOOLBAR;
   SkColor toolbar_color;
-  // Propagate the user-specified Toolbar Color to similar elements (for
-  // backwards-compatibility with themes written before this toolbar processing
-  // was introduced).
-  if (GetColor(kToolbarColorId, &toolbar_color)) {
-    SetColor(TP::COLOR_DETACHED_BOOKMARK_BAR_BACKGROUND, toolbar_color);
-    SetColor(TP::COLOR_INFOBAR, toolbar_color);
-    SetColor(TP::COLOR_DOWNLOAD_SHELF, toolbar_color);
-    SetColor(TP::COLOR_STATUS_BUBBLE, toolbar_color);
-  } else {
+  if (!GetColor(kToolbarColorId, &toolbar_color)) {
     toolbar_color = TP::GetDefaultColor(kToolbarColorId, false);
   }
 

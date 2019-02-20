@@ -217,22 +217,6 @@
       ]
     },
     {
-      "id": 36,
-      "cr_bugs": [163464, 233612],
-      "description": "Share-group related crashes on Qualcomm drivers",
-      "os": {
-        "type": "android",
-        "version": {
-          "op": "<",
-          "value": "4.3"
-        }
-      },
-      "gl_vendor": "Qualcomm.*",
-      "features": [
-        "use_virtualized_gl_contexts"
-      ]
-    },
-    {
       "id": 37,
       "cr_bugs": [286468],
       "description": "Program link fails in NVIDIA Linux if gl_Position is not set",
@@ -247,7 +231,7 @@
     },
     {
       "id": 38,
-      "cr_bugs": [289461],
+      "cr_bugs": [163464, 233612, 289461],
       "description": "Non-virtual contexts on Qualcomm sometimes cause out-of-order frames",
       "os": {
         "type": "android"
@@ -1969,7 +1953,7 @@
     },
     {
       "id": 197,
-      "description": "adjust src/dst region if blitting pixels outside read framebuffer on Mac",
+      "description": "adjust src/dst region if blitting pixels outside framebuffer on Mac",
       "cr_bugs": [644740],
       "os": {
         "type": "macosx"
@@ -1980,7 +1964,7 @@
     },
     {
       "id": 198,
-      "description": "adjust src/dst region if blitting pixels outside read framebuffer on Linux Intel",
+      "description": "adjust src/dst region if blitting pixels outside framebuffer on Linux Intel",
       "cr_bugs": [664740],
       "os": {
         "type": "linux"
@@ -1992,7 +1976,7 @@
     },
     {
       "id": 199,
-      "description": "adjust src/dst region if blitting pixels outside read framebuffer on Linux AMD",
+      "description": "adjust src/dst region if blitting pixels outside framebuffer on Linux AMD",
       "cr_bugs": [664740],
       "os": {
         "type": "linux"
@@ -3082,6 +3066,105 @@
       "hardware_overlay": "unsupported",
       "features": [
         "disable_direct_composition"
+      ]
+    },
+    {
+      "id": 287,
+      "description": "glCopyTexImage2D on Adreno fails if source is GL_RGB10_A2 and destination is not.",
+      "cr_bugs": [925986],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": ">=",
+          "value": "5.0.0"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*4\\d\\d",
+      "gl_renderer": "Adreno \\(TM\\) [345].*",
+      "features": [
+        "disable_copy_tex_image_2d_rgb10_a2_adreno"
+      ]
+    },
+    {
+      "id": 288,
+      "description": "glCopyTexImage2D on NVIDIA Tegra fails in certain cases if source is GL_RGB10_A2.",
+      "cr_bugs": [925986],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "NVIDIA.*",
+      "gl_type": "gles",
+      "gl_version": {
+        "op": ">=",
+        "value": "3.0"
+      },
+      "features": [
+        "disable_copy_tex_image_2d_rgb10_a2_tegra"
+      ]
+    },
+    {
+      "id": 289,
+      "description": "Fake entry for testing command buffer init failures on ES 2.0",
+      "cr_bugs": [923134],
+      "test_group": 3,
+      "features": [
+        "disable_es3_gl_context_for_testing"
+      ]
+    },
+    {
+      "id": 290,
+      "description": "Round down glBindBufferRange size to a multiple of 4 on Qualcomm Adreno GPUs for uniform buffers",
+      "cr_bugs": [906743],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno \\(TM\\) .*",
+      "features": [
+        "round_down_uniform_bind_buffer_range_size"
+      ]
+    },
+    {
+      "id": 291,
+      "description": "adjust src/dst region if blitting pixels outside framebuffer on Linux NVIDIA",
+      "cr_bugs": [830046],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x10de",
+      "features": [
+        "adjust_src_dst_region_for_blitframebuffer"
+      ]
+    },
+    {
+      "id": 292,
+      "description": "adjust src/dst region if blitting pixels outside framebuffer on Android NVIDIA",
+      "cr_bugs": [830046],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "NVIDIA.*",
+      "features": [
+        "adjust_src_dst_region_for_blitframebuffer"
+      ]
+    },
+    {
+      "id": 293,
+      "cr_bugs": [931527],
+      "description": "Frequent crashes in glClear on Android N with driver 12.0.04rel0",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "8.0"
+        }
+      },
+      "driver_version": {
+        "op": "=",
+        "value": "12.0.04rel0"
+      },
+      "features": [
+        "gl_clear_broken"
       ]
     }
   ]

@@ -110,6 +110,7 @@ bool OmniboxView::IsEditingOrEmpty() const {
 // want to consider reusing the same code for both the popup and omnibox icons.
 gfx::ImageSkia OmniboxView::GetIcon(int dip_size,
                                     SkColor color,
+                                    SkColor search_alternate_color,
                                     IconFetchedCallback on_icon_fetched) const {
 #if defined(OS_ANDROID) || defined(OS_IOS)
   // This is used on desktop only.
@@ -146,7 +147,8 @@ gfx::ImageSkia OmniboxView::GetIcon(int dip_size,
     favicon = model_->client()->GetFaviconForDefaultSearchProvider(
         std::move(on_icon_fetched));
 
-  } else {
+  } else if (base::FeatureList::IsEnabled(
+                 omnibox::kUIExperimentShowSuggestionFavicons)) {
     // For site suggestions, display site's favicon.
     favicon = model_->client()->GetFaviconForPageUrl(
         match.destination_url, std::move(on_icon_fetched));
@@ -165,6 +167,16 @@ gfx::ImageSkia OmniboxView::GetIcon(int dip_size,
       bookmark_model && bookmark_model->IsBookmarked(match.destination_url);
 
   const gfx::VectorIcon& vector_icon = match.GetVectorIcon(is_bookmarked);
+
+  // When the blue search loop experiment is enabled, the in-omnibox vector
+  // icon for search type matches should be blue as well. This icon is used if
+  // the default search engine favicon has not yet been fetched, or is disabled.
+  if (base::FeatureList::IsEnabled(
+          omnibox::kUIExperimentBlueSearchLoopAndSearchQuery) &&
+      AutocompleteMatch::IsSearchType(match.type)) {
+    return gfx::CreateVectorIcon(vector_icon, dip_size, search_alternate_color);
+  }
+
   return gfx::CreateVectorIcon(vector_icon, dip_size, color);
 #endif  // defined(OS_ANDROID) || defined(OS_IOS)
 }
@@ -265,7 +277,7 @@ void OmniboxView::TextChanged() {
     model_->OnChanged();
 }
 
-void OmniboxView::UpdateTextStyle(
+bool OmniboxView::UpdateTextStyle(
     const base::string16& display_text,
     const bool text_is_url,
     const AutocompleteSchemeClassifier& classifier) {
@@ -320,4 +332,7 @@ void OmniboxView::UpdateTextStyle(
   // Emphasize the scheme for security UI display purposes (if necessary).
   if (!model()->user_input_in_progress() && scheme_range.IsValid())
     UpdateSchemeStyle(scheme_range);
+
+  // Path is eligible for fading only when the host is the only emphasized part.
+  return deemphasize == ALL_BUT_HOST;
 }

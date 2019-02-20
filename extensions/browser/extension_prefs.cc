@@ -863,6 +863,10 @@ bool ExtensionPrefs::IsExtensionBlacklisted(const std::string& id) const {
   return ext_prefs && IsBlacklistBitSet(ext_prefs);
 }
 
+bool ExtensionPrefs::InsecureExtensionUpdatesEnabled() const {
+  return prefs_->GetBoolean(pref_names::kInsecureExtensionUpdatesEnabled);
+}
+
 namespace {
 
 // Serializes a 64bit integer as a string value.
@@ -872,7 +876,7 @@ void SaveInt64(prefs::DictionaryValueUpdate* dictionary,
   if (!dictionary)
     return;
 
-  std::string string_value = base::Int64ToString(value);
+  std::string string_value = base::NumberToString(value);
   dictionary->SetString(key, string_value);
 }
 
@@ -1385,7 +1389,7 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(
 
   const base::Time install_time = clock_->Now();
   pending_install_dict->SetString(
-      kPrefInstallTime, base::Int64ToString(install_time.ToInternalValue()));
+      kPrefInstallTime, base::NumberToString(install_time.ToInternalValue()));
 
   // Commit the delayed install data.
   for (base::DictionaryValue::Iterator it(
@@ -1823,8 +1827,6 @@ void ExtensionPrefs::RegisterProfilePrefs(
   registry->RegisterDictionaryPref(pref_names::kInstallLoginScreenAppList);
   registry->RegisterListPref(pref_names::kAllowedTypes);
   registry->RegisterBooleanPref(pref_names::kStorageGarbageCollect, false);
-  registry->RegisterInt64Pref(pref_names::kLastUpdateCheck, 0);
-  registry->RegisterInt64Pref(pref_names::kNextUpdateCheck, 0);
   registry->RegisterListPref(pref_names::kAllowedInstallSites);
   registry->RegisterStringPref(pref_names::kLastChromeVersion, std::string());
   registry->RegisterDictionaryPref(kInstallSignature);
@@ -1834,6 +1836,8 @@ void ExtensionPrefs::RegisterProfilePrefs(
   registry->RegisterBooleanPref(pref_names::kNativeMessagingUserLevelHosts,
                                 true);
   registry->RegisterIntegerPref(kCorruptedDisableCount, 0);
+  registry->RegisterBooleanPref(pref_names::kInsecureExtensionUpdatesEnabled,
+                                true);
 
 #if !defined(OS_MACOSX)
   registry->RegisterBooleanPref(pref_names::kAppFullscreenAllowed, true);
@@ -1895,7 +1899,7 @@ void ExtensionPrefs::PopulateExtensionInfoPrefs(
   extension_dict->SetBoolean(kPrefWasInstalledByOem,
                              extension->was_installed_by_oem());
   extension_dict->SetString(
-      kPrefInstallTime, base::Int64ToString(install_time.ToInternalValue()));
+      kPrefInstallTime, base::NumberToString(install_time.ToInternalValue()));
   if (install_flags & kInstallFlagIsBlacklistedForMalware)
     extension_dict->SetBoolean(kPrefBlacklist, true);
   if (dnr_ruleset_checksum)
@@ -1966,10 +1970,9 @@ void ExtensionPrefs::LoadExtensionControlledPrefs(
   if (!source_dict->GetDictionary(key, &preferences))
     return;
 
-  for (base::DictionaryValue::Iterator iter(*preferences); !iter.IsAtEnd();
-       iter.Advance()) {
-    extension_pref_value_map_->SetExtensionPref(extension_id, iter.key(), scope,
-                                                iter.value().DeepCopy());
+  for (const auto& pair : preferences->DictItems()) {
+    extension_pref_value_map_->SetExtensionPref(extension_id, pair.first, scope,
+                                                pair.second.Clone());
   }
 }
 

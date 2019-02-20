@@ -305,6 +305,32 @@ error::Error DoGetProgramiv(GLuint program,
                             GLsizei* length,
                             GLint* params);
 error::Error DoGetProgramInfoLog(GLuint program, std::string* infolog);
+error::Error DoGetProgramInterfaceiv(GLuint program,
+                                     GLenum program_interface,
+                                     GLenum pname,
+                                     GLsizei bufsize,
+                                     GLsizei* length,
+                                     GLint* params);
+error::Error DoGetProgramResourceiv(GLuint program,
+                                    GLenum program_interface,
+                                    GLuint index,
+                                    GLsizei prop_count,
+                                    const GLenum* props,
+                                    GLsizei bufsize,
+                                    GLsizei* length,
+                                    GLint* params);
+error::Error DoGetProgramResourceIndex(GLuint program,
+                                       GLenum program_interface,
+                                       const char* name,
+                                       GLuint* index);
+error::Error DoGetProgramResourceLocation(GLuint program,
+                                          GLenum program_interface,
+                                          const char* name,
+                                          GLint* location);
+error::Error DoGetProgramResourceName(GLuint program,
+                                      GLenum program_interface,
+                                      GLuint index,
+                                      std::string* name);
 error::Error DoGetRenderbufferParameteriv(GLenum target,
                                           GLenum pname,
                                           GLsizei bufsize,
@@ -710,6 +736,12 @@ error::Error DoRenderbufferStorageMultisampleCHROMIUM(GLenum target,
                                                       GLenum internalformat,
                                                       GLsizei width,
                                                       GLsizei height);
+error::Error DoRenderbufferStorageMultisampleAdvancedAMD(GLenum target,
+                                                         GLsizei samples,
+                                                         GLsizei storageSamples,
+                                                         GLenum internalformat,
+                                                         GLsizei width,
+                                                         GLsizei height);
 error::Error DoRenderbufferStorageMultisampleEXT(GLenum target,
                                                  GLsizei samples,
                                                  GLenum internalformat,
@@ -1084,7 +1116,8 @@ error::Error DoUnlockDiscardableTextureCHROMIUM(GLuint texture_id);
 error::Error DoLockDiscardableTextureCHROMIUM(GLuint texture_id);
 error::Error DoCreateAndTexStorage2DSharedImageINTERNAL(
     GLuint client_id,
-    const volatile GLbyte* mailbox);
+    const volatile GLbyte* mailbox,
+    GLenum internalformat);
 error::Error DoBeginSharedImageAccessDirectCHROMIUM(GLuint client_id,
                                                     GLenum mode);
 error::Error DoEndSharedImageAccessDirectCHROMIUM(GLuint client_id);

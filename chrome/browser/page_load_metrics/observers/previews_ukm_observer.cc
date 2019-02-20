@@ -7,17 +7,18 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
+#include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/data_reduction_proxy/data_reduction_proxy_chrome_settings.h"
 #include "chrome/browser/data_reduction_proxy/data_reduction_proxy_chrome_settings_factory.h"
 #include "chrome/browser/page_load_metrics/page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/page_load_metrics_util.h"
+#include "chrome/browser/previews/previews_content_util.h"
 #include "chrome/browser/previews/previews_ui_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/page_load_metrics/page_load_timing.h"
 #include "components/data_reduction_proxy/core/browser/data_reduction_proxy_settings.h"
-#include "components/previews/content/previews_content_util.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/previews_state.h"
@@ -119,9 +120,11 @@ void PreviewsUKMObserver::OnComplete(
 void PreviewsUKMObserver::RecordPreviewsTypes(
     const page_load_metrics::PageLoadExtraInfo& info) {
   // Record the page end reason in UMA.
-  UMA_HISTOGRAM_ENUMERATION(
-      "Previews.PageEndReason", info.page_end_reason,
-      page_load_metrics::PageEndReason::PAGE_END_REASON_COUNT);
+  if (committed_preview_ != PreviewsType::NONE) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Previews.PageEndReason", info.page_end_reason,
+        page_load_metrics::PageEndReason::PAGE_END_REASON_COUNT);
+  }
   base::UmaHistogramExactLinear(
       base::StringPrintf(
           "Previews.PageEndReason.%s",

@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 
 #include "base/barrier_closure.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
@@ -198,11 +199,6 @@ std::string ProfileHelper::GetLockScreenAppProfileName() {
 
 // static
 bool ProfileHelper::IsOwnerProfile(const Profile* profile) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::switches::kStubCrosSettings)) {
-    return true;
-  }
-
   if (!profile)
     return false;
   const user_manager::User* user =
@@ -503,8 +499,8 @@ void ProfileHelper::SetProfileToUserForTestingEnabled(bool enabled) {
 
 // static
 void ProfileHelper::SetAlwaysReturnPrimaryUserForTesting(bool value) {
-  always_return_primary_user_for_testing = true;
-  ProfileHelper::SetProfileToUserForTestingEnabled(true);
+  always_return_primary_user_for_testing = value;
+  ProfileHelper::SetProfileToUserForTestingEnabled(value);
 }
 
 void ProfileHelper::SetUserToProfileMappingForTesting(

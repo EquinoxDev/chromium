@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser;
 
 import android.app.Notification;
+import android.app.Service;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -41,7 +42,7 @@ import org.chromium.chrome.browser.omaha.RequestGenerator;
 import org.chromium.chrome.browser.partnerbookmarks.PartnerBookmark;
 import org.chromium.chrome.browser.partnerbookmarks.PartnerBookmarksProviderIterator;
 import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
-import org.chromium.chrome.browser.password_manager.ManagePasswordsUIProvider;
+import org.chromium.chrome.browser.password_manager.GooglePasswordManagerUIProvider;
 import org.chromium.chrome.browser.policy.PolicyAuditor;
 import org.chromium.chrome.browser.preferences.LocationSettings;
 import org.chromium.chrome.browser.rlz.RevenueStats;
@@ -53,6 +54,7 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.webapps.GooglePlayWebApkInstallDelegate;
 import org.chromium.chrome.browser.webauth.Fido2ApiHandler;
 import org.chromium.chrome.browser.widget.FeatureHighlightProvider;
+import org.chromium.components.download.DownloadCollectionBridge;
 import org.chromium.components.signin.AccountManagerDelegate;
 import org.chromium.components.signin.SystemAccountManagerDelegate;
 import org.chromium.policy.AppRestrictionsProvider;
@@ -187,11 +189,11 @@ public abstract class AppHooks {
     }
 
     /**
-     * @return An instance of {@link ManagePasswordsUIProvider} that can be used to show one of
-     *         the two possible UI surfaces for managing passwords.
+     * @return An instance of {@link GooglePasswordManagerUIProvider}. Will be null if one is not
+     *         available.
      */
-    public ManagePasswordsUIProvider createManagePasswordsUIProvider() {
-        return new ManagePasswordsUIProvider();
+    public GooglePasswordManagerUIProvider createGooglePasswordManagerUIProvider() {
+        return null;
     }
 
     /**
@@ -270,6 +272,22 @@ public abstract class AppHooks {
     }
 
     /**
+     * Upgrades a service from background to foreground after calling
+     * {@link #startForegroundService(Intent)}.
+     * @param service The service to be foreground.
+     * @param id The notification id.
+     * @param notification The notification attached to the foreground service.
+     * @param foregroundServiceType The type of foreground service. Must be a subset of the
+     *                              foreground service types defined in AndroidManifest.xml.
+     *                              Use 0 if no foregroundServiceType attribute is defined.
+     */
+    public void startForeground(
+            Service service, int id, Notification notification, int foregroundServiceType) {
+        // TODO(xingliu): Add appropriate foregroundServiceType to manifest when we have new sdk.
+        service.startForeground(id, notification);
+    }
+
+    /**
      * @return A callback that will be run each time an offline page is saved in the custom tabs
      * namespace.
      */
@@ -331,6 +349,13 @@ public abstract class AppHooks {
      */
     public FeatureHighlightProvider createFeatureHighlightProvider() {
         return new FeatureHighlightProvider();
+    }
+
+    /**
+     * @return A new {@link DownloadCollectionBridge} instance.
+     */
+    public DownloadCollectionBridge createDownloadCollectionBridge() {
+        return new DownloadCollectionBridge();
     }
 
     /**

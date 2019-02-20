@@ -24,6 +24,7 @@
 #include "ash/wm/window_state.h"
 #include "ash/wm/wm_event.h"
 #include "ash/ws/window_lookup.h"
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -100,7 +101,7 @@ class TestShellDelegateChromeOS : public ash::TestShellDelegate {
  public:
   TestShellDelegateChromeOS() {}
 
-  bool CanShowWindowForUser(aura::Window* window) const override {
+  bool CanShowWindowForUser(const aura::Window* window) const override {
     return ::CanShowWindowForUser(window,
                                   base::BindRepeating(&GetActiveContext));
   }

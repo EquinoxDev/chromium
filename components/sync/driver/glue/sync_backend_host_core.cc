@@ -18,6 +18,7 @@
 #include "components/invalidation/public/object_id_invalidation_map.h"
 #include "components/sync/base/get_session_name.h"
 #include "components/sync/base/invalidation_adapter.h"
+#include "components/sync/base/sync_base_switches.h"
 #include "components/sync/device_info/local_device_info_provider_impl.h"
 #include "components/sync/engine/cycle/commit_counters.h"
 #include "components/sync/engine/cycle/status_counters.h"
@@ -30,6 +31,7 @@
 #include "components/sync/engine/sync_manager.h"
 #include "components/sync/engine/sync_manager_factory.h"
 #include "components/sync/syncable/directory.h"
+#include "components/sync/syncable/user_share.h"
 
 // Helper macros to log with the syncer thread name; useful when there
 // are multiple syncers involved.
@@ -44,6 +46,10 @@ namespace net {
 class URLFetcher;
 }
 
+namespace syncer {
+
+class EngineComponentsFactory;
+
 namespace {
 
 void BindFetcherToDataTracker(net::URLFetcher* fetcher) {
@@ -51,13 +57,13 @@ void BindFetcherToDataTracker(net::URLFetcher* fetcher) {
       fetcher, data_use_measurement::DataUseUserData::SYNC);
 }
 
-void RecordPerModelTypeInvalidation(int model_type, int number_of_ids) {
+void RecordPerModelTypeInvalidation(int model_type, bool is_grouped) {
   UMA_HISTOGRAM_ENUMERATION("Sync.InvalidationPerModelType", model_type,
                             static_cast<int>(syncer::MODEL_TYPE_COUNT));
-  if (number_of_ids == 1) {
+  if (!is_grouped) {
     // When recording metrics it's important to distinguish between
-    // many/one case, since "many" case is only common in the deprecated
-    // implementation.
+    // many/one case, since "many" aka grouped case is only common in
+    // the deprecated implementation.
     UMA_HISTOGRAM_ENUMERATION("Sync.NonGroupedInvalidation", model_type,
                               static_cast<int>(syncer::MODEL_TYPE_COUNT));
   }
@@ -65,19 +71,15 @@ void RecordPerModelTypeInvalidation(int model_type, int number_of_ids) {
 
 }  // namespace
 
-namespace syncer {
-
-class EngineComponentsFactory;
-
 SyncBackendHostCore::SyncBackendHostCore(
     const std::string& name,
     const base::FilePath& sync_data_folder,
-    const base::WeakPtr<SyncBackendHostImpl>& backend)
+    const base::WeakPtr<SyncEngineImpl>& host)
     : name_(name),
       sync_data_folder_(sync_data_folder),
-      host_(backend),
+      host_(host),
       weak_ptr_factory_(this) {
-  DCHECK(backend);
+  DCHECK(host);
   // This is constructed on the UI thread but used from the sync thread.
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
@@ -99,8 +101,7 @@ bool SyncBackendHostCore::OnMemoryDump(
 void SyncBackendHostCore::OnSyncCycleCompleted(
     const SyncCycleSnapshot& snapshot) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::HandleSyncCycleCompletedOnFrontendLoop,
+  host_.Call(FROM_HERE, &SyncEngineImpl::HandleSyncCycleCompletedOnFrontendLoop,
              snapshot);
 }
 
@@ -119,7 +120,7 @@ void SyncBackendHostCore::OnInitializationComplete(
   if (!success) {
     DoDestroySyncManager();
     host_.Call(FROM_HERE,
-               &SyncBackendHostImpl::HandleInitializationFailureOnFrontendLoop);
+               &SyncEngineImpl::HandleInitializationFailureOnFrontendLoop);
     return;
   }
 
@@ -127,11 +128,9 @@ void SyncBackendHostCore::OnInitializationComplete(
   // the initializing downloading control types or initializing the encryption
   // handler in order to receive notifications triggered during encryption
   // startup.
-  DCHECK(!encryption_observer_proxies_.empty());
-  for (const std::unique_ptr<SyncEncryptionHandler::Observer>& proxy_observer :
-       encryption_observer_proxies_) {
-    sync_manager_->GetEncryptionHandler()->AddObserver(proxy_observer.get());
-  }
+  DCHECK(encryption_observer_proxy_);
+  sync_manager_->GetEncryptionHandler()->AddObserver(
+      encryption_observer_proxy_.get());
 
   // Sync manager initialization is complete, so we can schedule recurring
   // SaveChanges.
@@ -187,7 +186,7 @@ void SyncBackendHostCore::OnInitializationComplete(
 void SyncBackendHostCore::OnConnectionStatusChange(ConnectionStatus status) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::HandleConnectionStatusChangeOnFrontendLoop,
+             &SyncEngineImpl::HandleConnectionStatusChangeOnFrontendLoop,
              status);
 }
 
@@ -197,8 +196,8 @@ void SyncBackendHostCore::OnCommitCountersUpdated(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   host_.Call(
       FROM_HERE,
-      &SyncBackendHostImpl::HandleDirectoryCommitCountersUpdatedOnFrontendLoop,
-      type, counters);
+      &SyncEngineImpl::HandleDirectoryCommitCountersUpdatedOnFrontendLoop, type,
+      counters);
 }
 
 void SyncBackendHostCore::OnUpdateCountersUpdated(
@@ -207,8 +206,8 @@ void SyncBackendHostCore::OnUpdateCountersUpdated(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   host_.Call(
       FROM_HERE,
-      &SyncBackendHostImpl::HandleDirectoryUpdateCountersUpdatedOnFrontendLoop,
-      type, counters);
+      &SyncEngineImpl::HandleDirectoryUpdateCountersUpdatedOnFrontendLoop, type,
+      counters);
 }
 
 void SyncBackendHostCore::OnStatusCountersUpdated(
@@ -217,22 +216,21 @@ void SyncBackendHostCore::OnStatusCountersUpdated(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   host_.Call(
       FROM_HERE,
-      &SyncBackendHostImpl::HandleDirectoryStatusCountersUpdatedOnFrontendLoop,
-      type, counters);
+      &SyncEngineImpl::HandleDirectoryStatusCountersUpdatedOnFrontendLoop, type,
+      counters);
 }
 
 void SyncBackendHostCore::OnActionableError(
     const SyncProtocolError& sync_error) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::HandleActionableErrorEventOnFrontendLoop,
+             &SyncEngineImpl::HandleActionableErrorEventOnFrontendLoop,
              sync_error);
 }
 
 void SyncBackendHostCore::OnMigrationRequested(ModelTypeSet types) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::HandleMigrationRequestedOnFrontendLoop,
+  host_.Call(FROM_HERE, &SyncEngineImpl::HandleMigrationRequestedOnFrontendLoop,
              types);
 }
 
@@ -240,8 +238,7 @@ void SyncBackendHostCore::OnProtocolEvent(const ProtocolEvent& event) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (forward_protocol_events_) {
     std::unique_ptr<ProtocolEvent> event_clone(event.Clone());
-    host_.Call(FROM_HERE,
-               &SyncBackendHostImpl::HandleProtocolEventOnFrontendLoop,
+    host_.Call(FROM_HERE, &SyncEngineImpl::HandleProtocolEventOnFrontendLoop,
                base::Passed(std::move(event_clone)));
   }
 }
@@ -262,11 +259,8 @@ void SyncBackendHostCore::DoOnIncomingInvalidation(
       DLOG(WARNING) << "Notification has invalid id: "
                     << ObjectIdToString(object_id);
     } else {
-      UMA_HISTOGRAM_ENUMERATION("Sync.InvalidationPerModelType",
-                                ModelTypeToHistogramInt(type),
-                                static_cast<int>(MODEL_TYPE_COUNT));
-
-      RecordPerModelTypeInvalidation(ModelTypeToHistogramInt(type), ids.size());
+      bool is_grouped = (ids.size() != 1);
+      RecordPerModelTypeInvalidation(ModelTypeToHistogramInt(type), is_grouped);
       SingleObjectInvalidationSet invalidation_set =
           invalidation_map.ForObject(object_id);
       for (Invalidation invalidation : invalidation_set) {
@@ -280,6 +274,11 @@ void SyncBackendHostCore::DoOnIncomingInvalidation(
                    << last_invalidation->second;
           continue;
         }
+        if (!is_grouped && !invalidation.is_unknown_version()) {
+          UMA_HISTOGRAM_ENUMERATION("Sync.NonGroupedInvalidationKnownVersion",
+                                    ModelTypeToHistogramInt(type),
+                                    static_cast<int>(MODEL_TYPE_COUNT));
+        }
         std::unique_ptr<InvalidationInterface> inv_adapter(
             new InvalidationAdapter(invalidation));
         sync_manager_->OnIncomingInvalidation(type, std::move(inv_adapter));
@@ -289,7 +288,7 @@ void SyncBackendHostCore::DoOnIncomingInvalidation(
     }
   }
 
-  host_.Call(FROM_HERE, &SyncBackendHostImpl::UpdateInvalidationVersions,
+  host_.Call(FROM_HERE, &SyncEngineImpl::UpdateInvalidationVersions,
              last_invalidation_versions_);
 }
 
@@ -315,9 +314,9 @@ void SyncBackendHostCore::DoInitialize(SyncEngine::InitParams params) {
   DCHECK(params.registrar);
   registrar_ = std::move(params.registrar);
 
-  DCHECK(encryption_observer_proxies_.empty());
-  DCHECK(!params.encryption_observer_proxies.empty());
-  encryption_observer_proxies_ = std::move(params.encryption_observer_proxies);
+  DCHECK(!encryption_observer_proxy_);
+  DCHECK(params.encryption_observer_proxy);
+  encryption_observer_proxy_ = std::move(params.encryption_observer_proxy);
 
   sync_manager_ = params.sync_manager_factory->CreateSyncManager(name_);
   sync_manager_->AddObserver(this);
@@ -351,6 +350,9 @@ void SyncBackendHostCore::DoInitialize(SyncEngine::InitParams params) {
   args.saved_nigori_state = std::move(params.saved_nigori_state);
   args.short_poll_interval = params.short_poll_interval;
   args.long_poll_interval = params.long_poll_interval;
+  args.cache_guid = params.cache_guid;
+  args.birthday = params.birthday;
+  args.bag_of_chips = params.bag_of_chips;
   sync_manager_->Init(&args);
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       this, "SyncDirectory", base::ThreadTaskRunnerHandle::Get());
@@ -402,26 +404,29 @@ void SyncBackendHostCore::DoInitialProcessControlTypes() {
   // which is called at the end of every sync cycle.
   // TODO(zea): eventually add an experiment handler and initialize it here.
 
-  if (!sync_manager_->GetUserShare()) {  // Null in some tests.
+  const UserShare* user_share = sync_manager_->GetUserShare();
+  if (!user_share) {  // Null in some tests.
     DVLOG(1) << "Skipping initialization of DeviceInfo";
     host_.Call(FROM_HERE,
-               &SyncBackendHostImpl::HandleInitializationFailureOnFrontendLoop);
+               &SyncEngineImpl::HandleInitializationFailureOnFrontendLoop);
     return;
   }
 
   if (!sync_manager_->InitialSyncEndedTypes().HasAll(ControlTypes())) {
     LOG(ERROR) << "Failed to download control types";
     host_.Call(FROM_HERE,
-               &SyncBackendHostImpl::HandleInitializationFailureOnFrontendLoop);
+               &SyncEngineImpl::HandleInitializationFailureOnFrontendLoop);
     return;
   }
 
-  host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
-             registrar_->GetLastConfiguredTypes(), js_backend_,
-             debug_info_listener_,
-             base::Passed(sync_manager_->GetModelTypeConnectorProxy()),
-             sync_manager_->cache_guid(), GetSessionNameBlocking());
+  DCHECK_EQ(user_share->directory->cache_guid(), sync_manager_->cache_guid());
+  host_.Call(
+      FROM_HERE, &SyncEngineImpl::HandleInitializationSuccessOnFrontendLoop,
+      registrar_->GetLastConfiguredTypes(), js_backend_, debug_info_listener_,
+      base::Passed(sync_manager_->GetModelTypeConnectorProxy()),
+      sync_manager_->cache_guid(), GetSessionNameBlocking(),
+      user_share->directory->store_birthday(),
+      user_share->directory->bag_of_chips());
 
   js_backend_.Reset();
   debug_info_listener_.Reset();
@@ -526,8 +531,7 @@ void SyncBackendHostCore::DoFinishConfigureDataTypes(
       Difference(types_to_config, sync_manager_->InitialSyncEndedTypes());
   const ModelTypeSet succeeded_configuration_types =
       Difference(types_to_config, failed_configuration_types);
-  host_.Call(FROM_HERE,
-             &SyncBackendHostImpl::FinishConfigureDataTypesOnFrontendLoop,
+  host_.Call(FROM_HERE, &SyncEngineImpl::FinishConfigureDataTypesOnFrontendLoop,
              enabled_types, succeeded_configuration_types,
              failed_configuration_types, ready_task);
 }
@@ -544,8 +548,7 @@ void SyncBackendHostCore::SendBufferedProtocolEventsAndEnableForwarding() {
 
     // Send them all over the fence to the host.
     for (auto& event : buffered_events) {
-      host_.Call(FROM_HERE,
-                 &SyncBackendHostImpl::HandleProtocolEventOnFrontendLoop,
+      host_.Call(FROM_HERE, &SyncEngineImpl::HandleProtocolEventOnFrontendLoop,
                  base::Passed(std::move(event)));
     }
   }
@@ -594,29 +597,24 @@ void SyncBackendHostCore::SaveChanges() {
   sync_manager_->SaveChanges();
 }
 
-void SyncBackendHostCore::DoClearServerData(
-    const base::Closure& frontend_callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  const base::Closure callback =
-      base::Bind(&SyncBackendHostCore::ClearServerDataDone,
-                 weak_ptr_factory_.GetWeakPtr(), frontend_callback);
-  sync_manager_->ClearServerData(callback);
-}
-
 void SyncBackendHostCore::DoOnCookieJarChanged(bool account_mismatch,
                                                bool empty_jar,
                                                const base::Closure& callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   sync_manager_->OnCookieJarChanged(account_mismatch, empty_jar);
   if (!callback.is_null()) {
-    host_.Call(FROM_HERE,
-               &SyncBackendHostImpl::OnCookieJarChangedDoneOnFrontendLoop,
+    host_.Call(FROM_HERE, &SyncEngineImpl::OnCookieJarChangedDoneOnFrontendLoop,
                callback);
   }
 }
 
 void SyncBackendHostCore::DoOnInvalidatorClientIdChange(
     const std::string& client_id) {
+  if (base::FeatureList::IsEnabled(switches::kSyncE2ELatencyMeasurement)) {
+    // Don't populate the ID, if client participates in latency measurement
+    // experiment.
+    return;
+  }
   sync_manager_->UpdateInvalidationClientId(client_id);
 }
 
@@ -624,13 +622,6 @@ bool SyncBackendHostCore::HasUnsyncedItemsForTest() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(sync_manager_);
   return sync_manager_->HasUnsyncedItemsForTest();
-}
-
-void SyncBackendHostCore::ClearServerDataDone(
-    const base::Closure& frontend_callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  host_.Call(FROM_HERE, &SyncBackendHostImpl::ClearServerDataDoneOnFrontendLoop,
-             frontend_callback);
 }
 
 }  // namespace syncer

@@ -32,6 +32,9 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 
+#include <memory>
+#include <utility>
+
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/renderer/bindings/core/v8/referrer_script_info.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
@@ -181,13 +184,14 @@ Vector<const char*>& RegisteredExtensionNames() {
 
 }  // namespace
 
-void ScriptController::RegisterExtensionIfNeeded(v8::Extension* extension) {
+void ScriptController::RegisterExtensionIfNeeded(
+    std::unique_ptr<v8::Extension> extension) {
   for (const auto* extension_name : RegisteredExtensionNames()) {
     if (!strcmp(extension_name, extension->name()))
       return;
   }
   RegisteredExtensionNames().push_back(extension->name());
-  v8::RegisterExtension(extension);
+  v8::RegisterExtension(std::move(extension));
 }
 
 v8::ExtensionConfiguration ScriptController::ExtensionsFor(
@@ -238,12 +242,6 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(
 
   script_source = script_source.Substring(kJavascriptSchemeLength);
 
-  bool progress_notifications_needed =
-      GetFrame()->Loader().StateMachine()->IsDisplayingInitialEmptyDocument() &&
-      !GetFrame()->IsLoading();
-  if (progress_notifications_needed)
-    GetFrame()->Loader().Progress().ProgressStarted();
-
   Document* owner_document = GetFrame()->GetDocument();
 
   bool location_change_before =
@@ -251,7 +249,7 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(
 
   v8::HandleScope handle_scope(GetIsolate());
 
-  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigate
+  // https://html.spec.whatwg.org/C/#navigate
   // Step 12.8 "Let base URL be settings object's API base URL." [spec text]
   KURL base_url = owner_document->BaseURL();
 
@@ -270,11 +268,8 @@ bool ScriptController::ExecuteScriptIfJavaScriptURL(
   if (!GetFrame()->GetPage())
     return true;
 
-  if (result.IsEmpty() || !result->IsString()) {
-    if (progress_notifications_needed)
-      GetFrame()->Loader().Progress().ProgressCompleted();
+  if (result.IsEmpty() || !result->IsString())
     return true;
-  }
   String script_result = ToCoreString(v8::Local<v8::String>::Cast(result));
 
   // We're still in a frame, so there should be a DocumentLoader.

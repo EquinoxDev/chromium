@@ -13,7 +13,6 @@
 
 namespace content {
 
-class MediaSessionObserver;
 class WebContents;
 
 // MediaSession manages the media session and audio focus for a given
@@ -78,6 +77,9 @@ class MediaSession : public media_session::mojom::MediaSession {
   // no-op.
   void NextTrack() override = 0;
 
+  // Skip ad.
+  void SkipAd() override = 0;
+
   // Seek the media session. If the media cannot seek then this will be a no-op.
   // The |seek_time| is the time delta that the media will seek by and supports
   // both positive and negative values.
@@ -89,12 +91,6 @@ class MediaSession : public media_session::mojom::MediaSession {
 
  protected:
   MediaSession() = default;
-
- private:
-  friend class MediaSessionObserver;
-
-  virtual void AddObserver(MediaSessionObserver* observer) = 0;
-  virtual void RemoveObserver(MediaSessionObserver* observer) = 0;
 };
 
 }  // namespace content

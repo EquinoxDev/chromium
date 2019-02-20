@@ -67,6 +67,12 @@ CSSPrimitiveValue* ConsumeAngle(
     CSSParserTokenRange&,
     const CSSParserContext*,
     base::Optional<WebFeature> unitless_zero_feature);
+CSSPrimitiveValue* ConsumeAngle(
+    CSSParserTokenRange&,
+    const CSSParserContext*,
+    base::Optional<WebFeature> unitless_zero_feature,
+    double minimum_value,
+    double maximum_value);
 CSSPrimitiveValue* ConsumeTime(CSSParserTokenRange&, ValueRange);
 CSSPrimitiveValue* ConsumeResolution(CSSParserTokenRange&);
 
@@ -119,6 +125,8 @@ CSSValue* ConsumeImage(
     const CSSParserContext*,
     ConsumeGeneratedImagePolicy = ConsumeGeneratedImagePolicy::kAllow);
 CSSValue* ConsumeImageOrNone(CSSParserTokenRange&, const CSSParserContext*);
+
+CSSValue* ConsumeAxis(CSSParserTokenRange&);
 
 bool IsCSSWideKeyword(StringView);
 

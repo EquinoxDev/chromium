@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "base/barrier_closure.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/background_fetch/background_fetch_data_manager.h"
@@ -296,7 +298,8 @@ void CreateMetadataTask::StoreMetadata() {
   // - DeveloperId -> UniqueID
   // - BackgroundFetchMetadata
   // - BackgroundFetchUIOptions
-  entries.reserve(requests_.size() + 3);
+  // - BackgroundFetchStorageVersion
+  entries.reserve(requests_.size() + 4u);
 
   std::string serialized_metadata_proto;
 
@@ -325,6 +328,9 @@ void CreateMetadataTask::StoreMetadata() {
                        std::move(serialized_metadata_proto));
   entries.emplace_back(UIOptionsKey(registration_id_.unique_id()),
                        serialized_ui_options_proto);
+  entries.emplace_back(
+      StorageVersionKey(registration_id_.unique_id()),
+      base::NumberToString(proto::BackgroundFetchStorageVersion::SV_CURRENT));
 
   // Signed integers are used for request indexes to avoid unsigned gotchas.
   for (int i = 0; i < base::checked_cast<int>(requests_.size()); i++) {
@@ -378,10 +384,12 @@ void CreateMetadataTask::DidOpenCache(CacheStorageCacheHandle handle,
   // Create batch PUT operations instead of putting them one-by-one.
   std::vector<blink::mojom::BatchOperationPtr> operations;
   operations.reserve(requests_.size());
-  for (auto& request : requests_) {
+  for (size_t i = 0; i < requests_.size(); i++) {
     auto operation = blink::mojom::BatchOperation::New();
     operation->operation_type = blink::mojom::OperationType::kPut;
-    operation->request = std::move(request);
+    requests_[i]->url =
+        MakeCacheUrlUnique(requests_[i]->url, registration_id_.unique_id(), i);
+    operation->request = std::move(requests_[i]);
     // Empty response.
     operation->response = blink::mojom::FetchAPIResponse::New();
     operations.push_back(std::move(operation));

@@ -50,7 +50,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * This fragment implements sign-in screen with account picker and descriptions of signin-related
@@ -321,32 +320,26 @@ public abstract class SigninFragmentBase
     }
 
     private void updateSigninDetailsDescription(boolean addSettingsLink) {
-        final @StringRes int description = mChildAccountStatus == ChildAccountStatus.REGULAR_CHILD
-                ? R.string.signin_details_description_child_account
-                : R.string.signin_details_description;
         final @Nullable Object settingsLinkSpan =
                 addSettingsLink ? new NoUnderlineClickableSpan(this::onSettingsLinkClicked) : null;
         final SpanApplier.SpanInfo spanInfo =
                 new SpanApplier.SpanInfo(SETTINGS_LINK_OPEN, SETTINGS_LINK_CLOSE, settingsLinkSpan);
-        mConsentTextTracker.setText(mView.getDetailsDescriptionView(), description,
+        mConsentTextTracker.setText(mView.getDetailsDescriptionView(),
+                R.string.signin_details_description,
                 input -> SpanApplier.applySpans(input.toString(), spanInfo));
     }
 
     /** Sets texts for immutable elements. Accept button text is set by {@link #setHasAccounts}. */
     private void updateConsentText() {
         mConsentTextTracker.setText(mView.getTitleView(), R.string.signin_title);
-        mConsentTextTracker.setText(
-                mView.getSyncDescriptionView(), R.string.signin_sync_description);
 
-        final @StringRes int personalizationDescription =
+        mConsentTextTracker.setText(mView.getSyncTitleView(), R.string.signin_sync_title);
+        final @StringRes int syncDescription =
                 mChildAccountStatus == ChildAccountStatus.REGULAR_CHILD
-                ? R.string.signin_personalization_description_child_account
-                : R.string.signin_personalization_description;
-        mConsentTextTracker.setText(
-                mView.getPersonalizationDescriptionView(), personalizationDescription);
+                ? R.string.signin_sync_description_child_account
+                : R.string.signin_sync_description;
+        mConsentTextTracker.setText(mView.getSyncDescriptionView(), syncDescription);
 
-        mConsentTextTracker.setText(mView.getGoogleServicesDescriptionView(),
-                R.string.signin_google_services_description);
         mConsentTextTracker.setText(mView.getRefuseButton(), getNegativeButtonTextId());
         mConsentTextTracker.setText(mView.getMoreButton(), R.string.more);
     }
@@ -477,7 +470,7 @@ public abstract class SigninFragmentBase
 
     private static void recordAccountTrackerServiceSeedingTime(long seedingStartTime) {
         RecordHistogram.recordTimesHistogram("Signin.AndroidAccountSigninViewSeedingTime",
-                SystemClock.elapsedRealtime() - seedingStartTime, TimeUnit.MILLISECONDS);
+                SystemClock.elapsedRealtime() - seedingStartTime);
     }
 
     /**
@@ -707,7 +700,6 @@ public abstract class SigninFragmentBase
         mGmsIsUpdatingDialog.dismiss();
         mGmsIsUpdatingDialog = null;
         RecordHistogram.recordTimesHistogram("Signin.AndroidGmsUpdatingDialogShownTime",
-                SystemClock.elapsedRealtime() - mGmsIsUpdatingDialogShowTime,
-                TimeUnit.MILLISECONDS);
+                SystemClock.elapsedRealtime() - mGmsIsUpdatingDialogShowTime);
     }
 }

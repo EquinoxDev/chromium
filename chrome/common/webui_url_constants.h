@@ -29,13 +29,10 @@ extern const char kChromeUIAccessibilityHost[];
 extern const char kChromeUIAppIconHost[];
 extern const char kChromeUIAppIconURL[];
 extern const char kChromeUIAppLauncherPageHost[];
-extern const char kChromeUIAppListStartPageURL[];
 extern const char kChromeUIAppsURL[];
 extern const char kChromeUIBluetoothInternalsHost[];
 extern const char kChromeUIBookmarksHost[];
 extern const char kChromeUIBookmarksURL[];
-extern const char kChromeUICertificateViewerDialogHost[];
-extern const char kChromeUICertificateViewerDialogURL[];
 extern const char kChromeUICertificateViewerHost[];
 extern const char kChromeUICertificateViewerURL[];
 extern const char kChromeUIChromeSigninHost[];
@@ -117,7 +114,6 @@ extern const char kChromeUIOmniboxURL[];
 extern const char kChromeUIPasswordManagerInternalsHost[];
 extern const char kChromeUIPhysicalWebHost[];
 extern const char kChromeUIPolicyHost[];
-extern const char kChromeUIPolicyToolHost[];
 extern const char kChromeUIPolicyURL[];
 extern const char kChromeUIPredictorsHost[];
 extern const char kChromeUIPrefsInternalsHost[];
@@ -189,6 +185,8 @@ extern const char kChromeUIWebApksHost[];
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_CHROMEOS)
+extern const char kChromeUIAccountManagerWelcomeHost[];
+extern const char kChromeUIAccountManagerWelcomeURL[];
 extern const char kChromeUIActivationMessageHost[];
 extern const char kChromeUIBluetoothPairingHost[];
 extern const char kChromeUIBluetoothPairingURL[];
@@ -222,6 +220,8 @@ extern const char kChromeUISetTimeURL[];
 extern const char kChromeUISlowHost[];
 extern const char kChromeUISlowTraceHost[];
 extern const char kChromeUISlowURL[];
+extern const char kChromeUISmbCredentialsHost[];
+extern const char kChromeUISmbCredentialsURL[];
 extern const char kChromeUISmbShareHost[];
 extern const char kChromeUISmbShareURL[];
 extern const char kChromeUISysInternalsHost[];
@@ -229,6 +229,8 @@ extern const char kChromeUIUserImageHost[];
 extern const char kChromeUIUserImageURL[];
 extern const char kChromeUIAssistantOptInHost[];
 extern const char kChromeUIAssistantOptInURL[];
+extern const char kChromeUIArcGraphicsTracingHost[];
+extern const char kChromeUIArcGraphicsTracingURL[];
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_WIN)
@@ -254,6 +256,12 @@ extern const char kChromeUILinuxProxyConfigHost[];
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 extern const char kChromeUISandboxHost[];
+#endif
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || \
+    (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+extern const char kChromeUIBrowserSwitchHost[];
+extern const char kChromeUIBrowserSwitchURL[];
 #endif
 
 #if (defined(OS_LINUX) && defined(TOOLKIT_VIEWS)) || defined(USE_AURA)

@@ -51,7 +51,6 @@
   X("cma")                                                               \
   X("compositor")                                                        \
   X("content")                                                           \
-  X("cpu_profiler")                                                      \
   X("devtools")                                                          \
   X("devtools.timeline")                                                 \
   X("devtools.timeline.async")                                           \
@@ -177,9 +176,7 @@
   X(TRACE_DISABLED_BY_DEFAULT("gpu.service"))                            \
   X(TRACE_DISABLED_BY_DEFAULT("ipc.flow"))                               \
   X(TRACE_DISABLED_BY_DEFAULT("layer-element"))                          \
-  X(TRACE_DISABLED_BY_DEFAULT("lighthouse"))                             \
   X(TRACE_DISABLED_BY_DEFAULT("loading"))                                \
-  X(TRACE_DISABLED_BY_DEFAULT("memory_coordinator"))                     \
   X(TRACE_DISABLED_BY_DEFAULT("memory-infra"))                           \
   X(TRACE_DISABLED_BY_DEFAULT("memory-infra.v8.code_stats"))             \
   X(TRACE_DISABLED_BY_DEFAULT("net"))                                    \
@@ -197,7 +194,6 @@
   X(TRACE_DISABLED_BY_DEFAULT("SyncFileSystem"))                         \
   X(TRACE_DISABLED_BY_DEFAULT("system_stats"))                           \
   X(TRACE_DISABLED_BY_DEFAULT("task_scheduler_diagnostics"))             \
-  X(TRACE_DISABLED_BY_DEFAULT("task_scheduler.flow"))                    \
   X(TRACE_DISABLED_BY_DEFAULT("toplevel.flow"))                          \
   X(TRACE_DISABLED_BY_DEFAULT("v8.compile"))                             \
   X(TRACE_DISABLED_BY_DEFAULT("v8.cpu_profiler"))                        \
@@ -208,6 +204,7 @@
   X(TRACE_DISABLED_BY_DEFAULT("v8.runtime"))                             \
   X(TRACE_DISABLED_BY_DEFAULT("v8.runtime_stats"))                       \
   X(TRACE_DISABLED_BY_DEFAULT("v8.runtime_stats_sampling"))              \
+  X(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"))                \
   X(TRACE_DISABLED_BY_DEFAULT("viz.debug.overlay_planes"))               \
   X(TRACE_DISABLED_BY_DEFAULT("viz.hit_testing_flow"))                   \
   X(TRACE_DISABLED_BY_DEFAULT("viz.overdraw"))                           \
@@ -256,6 +253,10 @@ class BASE_EXPORT BuiltinCategories {
 
   // Returns the amount of built-in categories in the registry.
   static constexpr size_t Size() { return base::size(kBuiltinCategories); }
+
+  // Where in the builtin category list to start when populating the
+  // about://tracing UI.
+  static constexpr size_t kVisibleCategoryStart = 3;
 
   // Returns whether the category is either:
   // - Properly registered in the builtin list.

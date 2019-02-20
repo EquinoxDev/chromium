@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "chromeos/components/multidevice/remote_device_test_util.h"
@@ -165,7 +166,8 @@ class FakeHostVerifierFactory : public HostVerifierImpl::Factory {
       device_sync::DeviceSyncClient* device_sync_client,
       PrefService* pref_service,
       base::Clock* clock,
-      std::unique_ptr<base::OneShotTimer> timer) override {
+      std::unique_ptr<base::OneShotTimer> retry_timer,
+      std::unique_ptr<base::OneShotTimer> sync_timer) override {
     EXPECT_FALSE(instance_);
     EXPECT_EQ(fake_host_backend_delegate_factory_->instance(),
               host_backend_delegate);
@@ -297,15 +299,15 @@ class FakeFeatureStateManagerFactory : public FeatureStateManagerImpl::Factory {
       PrefService* pref_service,
       HostStatusProvider* host_status_provider,
       device_sync::DeviceSyncClient* device_sync_client,
-      std::unique_ptr<AndroidSmsPairingStateTracker>
-          android_sms_pairing_state_tracker) override {
+      AndroidSmsPairingStateTracker* android_sms_pairing_state_tracker)
+      override {
     EXPECT_FALSE(instance_);
     EXPECT_EQ(expected_testing_pref_service_, pref_service);
     EXPECT_EQ(fake_host_status_provider_factory_->instance(),
               host_status_provider);
     EXPECT_EQ(expected_device_sync_client_, device_sync_client);
     EXPECT_EQ(expected_android_sms_pairing_state_tracker_,
-              android_sms_pairing_state_tracker.get());
+              android_sms_pairing_state_tracker);
 
     auto instance = std::make_unique<FakeFeatureStateManager>();
     instance_ = instance.get();
@@ -462,14 +464,13 @@ class FakeAndroidSmsAppInstallingStatusObserverFactory
   std::unique_ptr<AndroidSmsAppInstallingStatusObserver> BuildInstance(
       HostStatusProvider* host_status_provider,
       FeatureStateManager* feature_state_manager,
-      std::unique_ptr<AndroidSmsAppHelperDelegate>
-          android_sms_app_helper_delegate) override {
+      AndroidSmsAppHelperDelegate* android_sms_app_helper_delegate) override {
     EXPECT_EQ(fake_host_status_provider_factory_->instance(),
               host_status_provider);
     EXPECT_EQ(fake_feature_state_manager_factory_->instance(),
               feature_state_manager);
     EXPECT_EQ(expected_android_sms_app_helper_delegate_,
-              android_sms_app_helper_delegate.get());
+              android_sms_app_helper_delegate);
     // Only check inputs and return nullptr. We do not want to trigger the
     // AndroidSmsAppInstallingStatusObserver logic in these unit tests.
     return nullptr;
@@ -502,13 +503,11 @@ class MultiDeviceSetupImplTest : public testing::Test {
 
     fake_oobe_completion_tracker_ = std::make_unique<OobeCompletionTracker>();
 
-    auto fake_android_sms_app_helper_delegate =
+    fake_android_sms_app_helper_delegate_ =
         std::make_unique<FakeAndroidSmsAppHelperDelegate>();
 
-    auto fake_android_sms_pairing_state_tracker =
-        std::make_unique<FakeAndroidSmsPairingStateTracker>();
     fake_android_sms_pairing_state_tracker_ =
-        fake_android_sms_pairing_state_tracker.get();
+        std::make_unique<FakeAndroidSmsPairingStateTracker>();
 
     fake_gcm_device_info_provider_ =
         std::make_unique<device_sync::FakeGcmDeviceInfoProvider>(
@@ -552,7 +551,7 @@ class MultiDeviceSetupImplTest : public testing::Test {
         std::make_unique<FakeFeatureStateManagerFactory>(
             test_pref_service_.get(), fake_host_status_provider_factory_.get(),
             fake_device_sync_client_.get(),
-            fake_android_sms_pairing_state_tracker_);
+            fake_android_sms_pairing_state_tracker_.get());
     FeatureStateManagerImpl::Factory::SetFactoryForTesting(
         fake_feature_state_manager_factory_.get());
 
@@ -581,15 +580,15 @@ class MultiDeviceSetupImplTest : public testing::Test {
         std::make_unique<FakeAndroidSmsAppInstallingStatusObserverFactory>(
             fake_host_status_provider_factory_.get(),
             fake_feature_state_manager_factory_.get(),
-            fake_android_sms_app_helper_delegate.get());
+            fake_android_sms_app_helper_delegate_.get());
     AndroidSmsAppInstallingStatusObserver::Factory::SetFactoryForTesting(
         fake_android_sms_app_installing_status_observer_factory_.get());
 
     multidevice_setup_ = MultiDeviceSetupImpl::Factory::Get()->BuildInstance(
         test_pref_service_.get(), fake_device_sync_client_.get(),
         fake_auth_token_validator_.get(), fake_oobe_completion_tracker_.get(),
-        std::move(fake_android_sms_app_helper_delegate),
-        std::move(fake_android_sms_pairing_state_tracker),
+        fake_android_sms_app_helper_delegate_.get(),
+        fake_android_sms_pairing_state_tracker_.get(),
         fake_gcm_device_info_provider_.get());
   }
 
@@ -890,7 +889,10 @@ class MultiDeviceSetupImplTest : public testing::Test {
   std::unique_ptr<FakeDeviceReenrollerFactory> fake_device_reenroller_factory_;
   std::unique_ptr<FakeAndroidSmsAppInstallingStatusObserverFactory>
       fake_android_sms_app_installing_status_observer_factory_;
-  FakeAndroidSmsPairingStateTracker* fake_android_sms_pairing_state_tracker_;
+  std::unique_ptr<FakeAndroidSmsAppHelperDelegate>
+      fake_android_sms_app_helper_delegate_;
+  std::unique_ptr<FakeAndroidSmsPairingStateTracker>
+      fake_android_sms_pairing_state_tracker_;
 
   std::unique_ptr<FakeAccountStatusChangeDelegate>
       fake_account_status_change_delegate_;

@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/post_task.h"
 #include "build/build_config.h"
@@ -17,6 +18,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/user_agent.h"
 #include "extensions/browser/api/extensions_api_client.h"
+#include "extensions/browser/component_extension_resource_manager.h"
 #include "extensions/browser/core_extensions_browser_api_provider.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/mojo/interface_registration.h"
@@ -32,6 +34,7 @@
 #include "extensions/shell/browser/shell_extensions_api_client.h"
 #include "extensions/shell/browser/shell_extensions_browser_api_provider.h"
 #include "extensions/shell/browser/shell_navigation_ui_data.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/login/login_state/login_state.h"
@@ -131,8 +134,8 @@ ShellExtensionsBrowserClient::MaybeCreateResourceBundleRequestJob(
 base::FilePath ShellExtensionsBrowserClient::GetBundleResourcePath(
     const network::ResourceRequest& request,
     const base::FilePath& extension_resources_path,
-    int* resource_id) const {
-  *resource_id = 0;
+    ComponentExtensionResourceInfo* resource_info) const {
+  *resource_info = {};
   return base::FilePath();
 }
 
@@ -140,7 +143,7 @@ void ShellExtensionsBrowserClient::LoadResourceFromResourceBundle(
     const network::ResourceRequest& request,
     network::mojom::URLLoaderRequest loader,
     const base::FilePath& resource_relative_path,
-    int resource_id,
+    const ComponentExtensionResourceInfo& resource_info,
     const std::string& content_security_policy,
     network::mojom::URLLoaderClientPtr client,
     bool send_cors_header) {

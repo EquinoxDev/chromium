@@ -33,7 +33,6 @@
 #include "services/service_manager/public/mojom/interface_provider.mojom-blink.h"
 #include "third_party/blink/public/mojom/script/script_type.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/frame_request_callback_collection.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -103,10 +102,10 @@ class CORE_EXPORT WorkerGlobalScope
 
   String origin() const;
 
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(languagechange, kLanguagechange);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(rejectionhandled, kRejectionhandled);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(unhandledrejection, kUnhandledrejection);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(languagechange, kLanguagechange)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(rejectionhandled, kRejectionhandled)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(unhandledrejection, kUnhandledrejection)
 
   // WorkerUtils
   virtual void importScripts(const HeapVector<StringOrTrustedScriptURL>& urls,
@@ -150,12 +149,12 @@ class CORE_EXPORT WorkerGlobalScope
                              const v8_inspector::V8StackTraceId& stack_id);
   void ImportClassicScript(
       const KURL& script_url,
-      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object,
       const v8_inspector::V8StackTraceId& stack_id);
   // Imports the top-level module script for |module_url_record|.
   virtual void ImportModuleScript(
       const KURL& module_url_record,
-      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object,
       network::mojom::FetchCredentialsMode) = 0;
 
   void ReceiveMessage(BlinkTransferableMessage);
@@ -168,7 +167,7 @@ class CORE_EXPORT WorkerGlobalScope
   // FontFaceSource on the IDL.
   FontFaceSet* fonts();
 
-  // https://html.spec.whatwg.org/#windoworworkerglobalscope-mixin
+  // https://html.spec.whatwg.org/C/#windoworworkerglobalscope-mixin
   void queueMicrotask(V8VoidFunction*);
 
   int requestAnimationFrame(V8FrameRequestCallback* callback, ExceptionState&);
@@ -204,10 +203,6 @@ class CORE_EXPORT WorkerGlobalScope
                                         ExceptionState&);
 
   void SetWorkerSettings(std::unique_ptr<WorkerSettings>);
-
-  // Returns true if this worker script is supposed to be fetched on the main
-  // thread and passed to the worker thread.
-  bool IsScriptFetchedOnMainThread();
 
   void DidReceiveResponseForClassicScript(
       WorkerClassicScriptLoader* classic_script_loader);
@@ -248,7 +243,6 @@ class CORE_EXPORT WorkerGlobalScope
   const mojom::ScriptType script_type_;
   const String user_agent_;
   const base::UnguessableToken parent_devtools_token_;
-  const V8CacheOptions v8_cache_options_;
   std::unique_ptr<WorkerSettings> worker_settings_;
 
   mutable Member<WorkerLocation> location_;

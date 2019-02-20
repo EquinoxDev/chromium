@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -150,6 +151,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   ResourceScheduler* resource_scheduler() { return resource_scheduler_.get(); }
 
   CookieManager* cookie_manager() { return cookie_manager_.get(); }
+
+  const std::unordered_set<std::string>& cors_exempt_header_list() const {
+    return cors_exempt_header_list_;
+  }
 
 #if defined(OS_ANDROID)
   base::android::ApplicationStatusListener* app_status_listener() const {
@@ -349,6 +354,16 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   // no open pipes.
   void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* url_loader_factory);
 
+  // The following methods are used to track the number of requests per process
+  // and ensure it doesn't go over a reasonable limit.
+  void LoaderCreated(uint32_t process_id);
+  void LoaderDestroyed(uint32_t process_id);
+  bool CanCreateLoader(uint32_t process_id);
+
+  void set_max_loaders_per_process_for_testing(uint32_t count) {
+    max_loaders_per_process_ = count;
+  }
+
   size_t GetNumOutstandingResolveHostRequestsForTesting() const;
 
   size_t pending_proxy_lookup_requests_for_testing() const {
@@ -426,7 +441,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   void OnSetExpectCTTestReportFailure();
 #endif  // BUILDFLAG(IS_CT_SUPPORTED)
 
-  void InitializeCorsOriginAccessList();
+  void InitializeCorsParams();
 
   NetworkService* const network_service_;
 
@@ -479,6 +494,12 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
   std::set<std::unique_ptr<cors::CorsURLLoaderFactory>,
            base::UniquePtrComparator>
       url_loader_factories_;
+
+  // A count of outstanding requests per initiating process.
+  std::map<uint32_t, uint32_t> loader_count_per_process_;
+
+  static constexpr uint32_t kMaxOutstandingRequestsPerProcess = 2700;
+  uint32_t max_loaders_per_process_ = kMaxOutstandingRequestsPerProcess;
 
   base::flat_map<P2PSocketManager*, std::unique_ptr<P2PSocketManager>>
       socket_managers_;
@@ -554,6 +575,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
 
   // Manages allowed origin access lists.
   cors::OriginAccessList cors_origin_access_list_;
+
+  // Manages header keys that are allowed to be used in
+  // ResourceRequest::cors_exempt_headers.
+  std::unordered_set<std::string> cors_exempt_header_list_;
 
   // Manages CORS preflight requests and its cache.
   cors::PreflightController cors_preflight_controller_;

@@ -360,6 +360,13 @@ void PageLoadTracker::DidInternalNavigationAbort(
   }
 }
 
+void PageLoadTracker::ReadyToCommitNavigation(
+    content::NavigationHandle* navigation_handle) {
+  for (const auto& observer : observers_) {
+    observer->ReadyToCommitNextNavigation(navigation_handle);
+  }
+}
+
 void PageLoadTracker::DidFinishSubFrameNavigation(
     content::NavigationHandle* navigation_handle) {
   for (const auto& observer : observers_) {
@@ -382,7 +389,6 @@ void PageLoadTracker::Redirect(content::NavigationHandle* navigation_handle) {
 }
 
 void PageLoadTracker::OnInputEvent(const blink::WebInputEvent& event) {
-  input_tracker_.OnInputEvent(event);
   const PageLoadExtraInfo info = ComputePageLoadExtraInfo();
   for (const auto& observer : observers_) {
     observer->OnUserInput(event, metrics_update_dispatcher_.timing(), info);
@@ -421,6 +427,29 @@ void PageLoadTracker::OnLoadedResource(
     const ExtraRequestCompleteInfo& extra_request_complete_info) {
   for (const auto& observer : observers_) {
     observer->OnLoadedResource(extra_request_complete_info);
+  }
+}
+
+void PageLoadTracker::FrameReceivedFirstUserActivation(
+    content::RenderFrameHost* rfh) {
+  for (const auto& observer : observers_) {
+    observer->FrameReceivedFirstUserActivation(rfh);
+  }
+}
+
+void PageLoadTracker::FrameDisplayStateChanged(
+    content::RenderFrameHost* render_frame_host,
+    bool is_display_none) {
+  for (const auto& observer : observers_) {
+    observer->FrameDisplayStateChanged(render_frame_host, is_display_none);
+  }
+}
+
+void PageLoadTracker::FrameSizeChanged(
+    content::RenderFrameHost* render_frame_host,
+    const gfx::Size& frame_size) {
+  for (const auto& observer : observers_) {
+    observer->FrameSizeChanged(render_frame_host, frame_size);
   }
 }
 
@@ -487,8 +516,7 @@ PageLoadExtraInfo PageLoadTracker::ComputePageLoadExtraInfo() const {
   // user initiated.
   DCHECK(page_end_reason_ != END_NONE ||
          (!page_end_user_initiated_info_.browser_initiated &&
-          !page_end_user_initiated_info_.user_gesture &&
-          !page_end_user_initiated_info_.user_input_event));
+          !page_end_user_initiated_info_.user_gesture));
   return PageLoadExtraInfo(
       navigation_start_, first_background_time, first_foreground_time,
       started_in_foreground_, user_initiated_info_, url(), start_url_,

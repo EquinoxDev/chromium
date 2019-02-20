@@ -17,6 +17,7 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observer.h"
+#include "chrome/browser/ui/app_list/app_launch_event_logger.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/search_engines/template_url_service_observer.h"
@@ -48,6 +49,8 @@ class AppListClientImpl
   // ash::mojom::AppListClient:
   void StartSearch(const base::string16& trimmed_query) override;
   void OpenSearchResult(const std::string& result_id, int event_flags) override;
+  void LogSearchClick(const std::string& result_id,
+                      int suggestion_index) override;
   void InvokeSearchResultAction(const std::string& result_id,
                                 int action_index,
                                 int event_flags) override;
@@ -73,8 +76,6 @@ class AppListClientImpl
   void OnPageBreakItemAdded(const std::string& id,
                             const syncer::StringOrdinal& position) override;
   void OnPageBreakItemDeleted(const std::string& id) override;
-  void StartVoiceInteractionSession() override;
-  void ToggleVoiceInteractionSession() override;
   void GetNavigableContentsFactory(
       content::mojom::NavigableContentsFactoryRequest request) override;
 
@@ -128,6 +129,8 @@ class AppListClientImpl
 
   app_list::SearchController* GetSearchControllerForTest();
 
+  AppListModelUpdater* GetModelUpdaterForTest();
+
   // Flushes all pending mojo call to Ash for testing.
   void FlushMojoForTesting();
 
@@ -166,6 +169,8 @@ class AppListClientImpl
 
   bool app_list_target_visibility_ = false;
   bool app_list_visible_ = false;
+
+  app_list::AppLaunchEventLogger app_launch_event_logger_;
 
   base::WeakPtrFactory<AppListClientImpl> weak_ptr_factory_;
 

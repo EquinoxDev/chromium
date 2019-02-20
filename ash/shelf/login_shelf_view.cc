@@ -79,6 +79,8 @@ LoginMetricsRecorder::ShelfButtonClickTarget GetUserClickTarget(int button_id) {
       return LoginMetricsRecorder::ShelfButtonClickTarget::kAddUserButton;
     case LoginShelfView::kCancel:
       return LoginMetricsRecorder::ShelfButtonClickTarget::kCancelButton;
+    case LoginShelfView::kParentAccess:
+      return LoginMetricsRecorder::ShelfButtonClickTarget::kParentAccessButton;
   }
   return LoginMetricsRecorder::ShelfButtonClickTarget::kTargetCount;
 }
@@ -387,7 +389,7 @@ LoginShelfView::LoginShelfView(
              kShelfBrowseAsGuestButtonIcon);
   add_button(kAddUser, IDS_ASH_ADD_USER_BUTTON, kShelfAddPersonButtonIcon);
   add_button(kParentAccess, IDS_ASH_PARENT_ACCESS_BUTTON,
-             kShelfParentAccessButtonIcon);
+             kParentAccessLockIcon);
 
   // Adds observers for states that affect the visiblity of different buttons.
   tray_action_observer_.Add(Shell::Get()->tray_action());
@@ -487,6 +489,9 @@ void LoginShelfView::ButtonPressed(views::Button* sender,
       Shell::Get()->login_screen_controller()->ShowGaiaSignin(
           true /*can_close*/, base::nullopt /*prefilled_account*/);
       break;
+    case kParentAccess:
+      Shell::Get()->login_screen_controller()->SetShowParentAccessDialog(true);
+      break;
     default:
       NOTREACHED();
   }
@@ -508,7 +513,7 @@ void LoginShelfView::SetAllowLoginAsGuest(bool allow_guest) {
   UpdateUi();
 }
 
-void LoginShelfView::SetShowParentAccess(bool show) {
+void LoginShelfView::SetShowParentAccessButton(bool show) {
   show_parent_access_ = show;
   UpdateUi();
 }
@@ -567,6 +572,7 @@ void LoginShelfView::UpdateUi() {
       child_at(i)->SetVisible(false);
     return;
   }
+  ++ui_update_count_;
   bool show_reboot = Shell::Get()->shutdown_controller()->reboot_on_shutdown();
   mojom::TrayActionState tray_action_state =
       Shell::Get()->tray_action()->GetLockScreenNoteState();
@@ -626,6 +632,16 @@ void LoginShelfView::UpdateUi() {
        dialog_state_ == mojom::OobeDialogState::GAIA_SIGNIN) &&
       kiosk_apps_button_->HasApps() && is_login_primary);
   Layout();
+  UpdateButtonUnionBounds();
+}
+
+void LoginShelfView::UpdateButtonUnionBounds() {
+  button_union_bounds_ = gfx::Rect();
+  View::Views children = GetChildrenInZOrder();
+  for (auto* child : children) {
+    if (child->visible())
+      button_union_bounds_.Union(child->bounds());
+  }
 }
 
 }  // namespace ash

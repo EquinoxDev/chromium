@@ -527,7 +527,7 @@ void GridTrackSizingAlgorithmStrategy::DistributeSpaceToTracks(
 
 LayoutUnit GridTrackSizingAlgorithmStrategy::MinLogicalWidthForChild(
     LayoutBox& child,
-    Length child_min_size,
+    const Length& child_min_size,
     LayoutUnit available_size) const {
   return child.ComputeLogicalWidthUsing(kMinSize, child_min_size,
                                         available_size, GetLayoutGrid()) +
@@ -850,12 +850,16 @@ GridTrackSize GridTrackSizingAlgorithm::GetGridTrackSize(
   // Collapse empty auto repeat tracks if auto-fit.
   if (grid_.HasAutoRepeatEmptyTracks(direction) &&
       grid_.IsEmptyAutoRepeatTrack(direction, translated_index))
-    return {Length(kFixed), kLengthTrackSizing};
+    return {Length::Fixed(), kLengthTrackSizing};
 
   const GridTrackSize& track_size =
       RawGridTrackSize(direction, translated_index);
-  if (track_size.IsFitContent())
-    return track_size;
+  if (track_size.IsFitContent()) {
+    return IsRelativeGridLengthAsAuto(track_size.FitContentTrackBreadth(),
+                                      direction)
+               ? GridTrackSize(Length::Auto(), Length::MaxContent())
+               : track_size;
+  }
 
   GridLength min_track_breadth = track_size.MinTrackBreadth();
   GridLength max_track_breadth = track_size.MaxTrackBreadth();
@@ -868,9 +872,9 @@ GridTrackSize GridTrackSizingAlgorithm::GetGridTrackSize(
           WebFeature::kGridRowTrackPercentIndefiniteHeight);
     }
     if (min_track_breadth.HasPercentage())
-      min_track_breadth = Length(kAuto);
+      min_track_breadth = Length::Auto();
     if (max_track_breadth.HasPercentage())
-      max_track_breadth = Length(kAuto);
+      max_track_breadth = Length::Auto();
   }
 
   // Flex sizes are invalid as a min sizing function. However we still can have
@@ -879,7 +883,7 @@ GridTrackSize GridTrackSizingAlgorithm::GetGridTrackSize(
   // TODO(jfernandez): https://github.com/w3c/csswg-drafts/issues/2611
   // TODO(jfernandez): We may have to change IsIntrinsicSizedGridArea too.
   if (min_track_breadth.IsFlex())
-    min_track_breadth = Length(kAuto);
+    min_track_breadth = Length::Auto();
 
   return GridTrackSize(min_track_breadth, max_track_breadth);
 }
@@ -925,7 +929,6 @@ void GridTrackSizingAlgorithm::InitializeTrackSizes() {
   DCHECK(auto_sized_tracks_for_stretch_index_.IsEmpty());
   DCHECK(!has_percent_sized_rows_indefinite_height_);
   Vector<GridTrack>& track_list = Tracks(direction_);
-  bool has_definite_free_space = !!AvailableSpace();
   bool indefinite_height =
       direction_ == kForRows && !layout_grid_->CachedHasDefiniteLogicalHeight();
   size_t num_tracks = track_list.size();
@@ -937,11 +940,9 @@ void GridTrackSizingAlgorithm::InitializeTrackSizes() {
     track.SetInfinitelyGrowable(false);
 
     if (track_size.IsFitContent()) {
-      GridLength grid_length = track_size.FitContentTrackBreadth();
-      if (!grid_length.HasPercentage() || has_definite_free_space) {
-        track.SetGrowthLimitCap(ValueForLength(
-            grid_length.length(), AvailableSpace().value_or(LayoutUnit())));
-      }
+      track.SetGrowthLimitCap(
+          ValueForLength(track_size.FitContentTrackBreadth().length(),
+                         AvailableSpace().value_or(LayoutUnit())));
     }
 
     if (track_size.IsContentSized())

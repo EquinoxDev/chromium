@@ -90,10 +90,16 @@ class WebView {
   // TODO(danakj): This field should go away as WebWidgets always composite
   // their output.
   BLINK_EXPORT static WebView* Create(WebViewClient*,
-                                      WebWidgetClient*,
                                       bool is_hidden,
                                       bool compositing_enabled,
                                       WebView* opener);
+
+  // Called on WebView when a WebFrameWidget is created for a local main frame,
+  // and can be set back to null when the WebWidgetClient is removed due to the
+  // main frame being detached.
+  // TODO(danakj): Move this to WebWidget and merge with SetLayerTreeView, have
+  // it be null/not set when the main frame is remote.
+  virtual void SetWebWidgetClient(WebWidgetClient*) = 0;
 
   // Initializes the various client interfaces.
   virtual void SetPrerendererClient(WebPrerendererClient*) = 0;
@@ -385,10 +391,6 @@ class WebView {
   BLINK_EXPORT static void WillEnterModalLoop();
   BLINK_EXPORT static void DidExitModalLoop();
 
-  virtual void SetShowPaintRects(bool) = 0;
-  virtual void SetShowFPSCounter(bool) = 0;
-  virtual void SetShowScrollBottleneckRects(bool) = 0;
-
   // Scheduling -----------------------------------------------------------
 
   virtual PageScheduler* Scheduler() const = 0;
@@ -441,12 +443,14 @@ class WebView {
 
   // Suspend and resume ---------------------------------------------------
 
-  // Pausing and unpausing current scheduled tasks.
-  virtual void PausePageScheduledTasks(bool paused) = 0;
-
   // TODO(lfg): Remove this once the refactor of WebView/WebWidget is
   // completed.
   virtual WebWidget* MainFrameWidget() = 0;
+
+  // Portals --------------------------------------------------------------
+
+  // Informs the page that it is inside a portal.
+  virtual void SetInsidePortal(bool inside_portal) = 0;
 
  protected:
   ~WebView() = default;

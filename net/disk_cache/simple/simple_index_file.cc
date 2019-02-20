@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
@@ -18,7 +19,6 @@
 #include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_restrictions.h"
-#include "net/disk_cache/simple/simple_backend_version.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_histogram_macros.h"
 #include "net/disk_cache/simple/simple_index.h"
@@ -134,7 +134,8 @@ bool WritePickleFile(base::Pickle* pickle, const base::FilePath& file_name) {
 }
 
 // Called for each cache directory traversal iteration.
-void ProcessEntryFile(SimpleIndex::EntrySet* entries,
+void ProcessEntryFile(net::CacheType cache_type,
+                      SimpleIndex::EntrySet* entries,
                       const base::FilePath& file_path,
                       base::Time last_accessed,
                       base::Time last_modified,
@@ -209,11 +210,16 @@ void ProcessEntryFile(SimpleIndex::EntrySet* entries,
   }
 
   if (it == entries->end()) {
-    SimpleIndex::InsertInEntrySet(
-        hash_key,
-        EntryMetadata(last_used_time, total_entry_size.ValueOrDefault(
-                                          kPlaceHolderSizeWhenInvalid)),
-        entries);
+    uint32_t size_to_use =
+        total_entry_size.ValueOrDefault(kPlaceHolderSizeWhenInvalid);
+    if (cache_type == net::APP_CACHE) {
+      SimpleIndex::InsertInEntrySet(
+          hash_key, EntryMetadata(0 /* trailer_prefetch_size */, size_to_use),
+          entries);
+    } else {
+      SimpleIndex::InsertInEntrySet(
+          hash_key, EntryMetadata(last_used_time, size_to_use), entries);
+    }
   } else {
     // Summing up the total size of the entry through all the *_[0-1] files
     total_entry_size += it->second.GetEntrySize();
@@ -246,9 +252,7 @@ const char SimpleIndexFile::kIndexDirectory[] = "index-dir";
 const char SimpleIndexFile::kTempIndexFileName[] = "temp-index";
 
 SimpleIndexFile::IndexMetadata::IndexMetadata()
-    : magic_number_(kSimpleIndexMagicNumber),
-      version_(kSimpleVersion),
-      reason_(SimpleIndex::INDEX_WRITE_REASON_MAX),
+    : reason_(SimpleIndex::INDEX_WRITE_REASON_MAX),
       entry_count_(0),
       cache_size_(0) {}
 
@@ -256,11 +260,7 @@ SimpleIndexFile::IndexMetadata::IndexMetadata(
     SimpleIndex::IndexWriteToDiskReason reason,
     uint64_t entry_count,
     uint64_t cache_size)
-    : magic_number_(kSimpleIndexMagicNumber),
-      version_(kSimpleVersion),
-      reason_(reason),
-      entry_count_(entry_count),
-      cache_size_(cache_size) {}
+    : reason_(reason), entry_count_(entry_count), cache_size_(cache_size) {}
 
 void SimpleIndexFile::IndexMetadata::Serialize(base::Pickle* pickle) const {
   DCHECK(pickle);
@@ -447,7 +447,7 @@ void SimpleIndexFile::SyncLoadIndexEntries(
   SimpleIndex::EntrySet entries_from_stale_index;
   entries_from_stale_index.swap(out_result->entries);
   const base::TimeTicks start = base::TimeTicks::Now();
-  SyncRestoreFromDisk(cache_directory, index_file_path, out_result);
+  SyncRestoreFromDisk(cache_type, cache_directory, index_file_path, out_result);
   SIMPLE_CACHE_UMA(MEDIUM_TIMES, "IndexRestoreTime", cache_type,
                    base::TimeTicks::Now() - start);
   SIMPLE_CACHE_UMA(COUNTS_1M, "IndexEntriesRestored", cache_type,
@@ -596,17 +596,18 @@ void SimpleIndexFile::Deserialize(net::CacheType cache_type,
 }
 
 // static
-void SimpleIndexFile::SyncRestoreFromDisk(
-    const base::FilePath& cache_directory,
-    const base::FilePath& index_file_path,
-    SimpleIndexLoadResult* out_result) {
+void SimpleIndexFile::SyncRestoreFromDisk(net::CacheType cache_type,
+                                          const base::FilePath& cache_directory,
+                                          const base::FilePath& index_file_path,
+                                          SimpleIndexLoadResult* out_result) {
   VLOG(1) << "Simple Cache Index is being restored from disk.";
   simple_util::SimpleCacheDeleteFile(index_file_path);
   out_result->Reset();
   SimpleIndex::EntrySet* entries = &out_result->entries;
 
   const bool did_succeed = TraverseCacheDirectory(
-      cache_directory, base::Bind(&ProcessEntryFile, entries));
+      cache_directory,
+      base::BindRepeating(&ProcessEntryFile, cache_type, entries));
   if (!did_succeed) {
     LOG(ERROR) << "Could not reconstruct index from disk";
     return;

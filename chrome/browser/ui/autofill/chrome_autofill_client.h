@@ -34,6 +34,7 @@ class WebContents;
 namespace autofill {
 
 class AutofillPopupControllerImpl;
+class CardExpirationDateFixFlowViewAndroid;
 class CardNameFixFlowViewAndroid;
 
 // Chrome implementation of AutofillClient.
@@ -75,6 +76,7 @@ class ChromeAutofillClient
       base::OnceClosure show_migration_dialog_closure) override;
   void ConfirmMigrateLocalCardToCloud(
       std::unique_ptr<base::DictionaryValue> legal_message,
+      const std::string& user_email,
       const std::vector<MigratableCreditCard>& migratable_credit_cards,
       LocalCardMigrationCallback start_migrating_cards_callback) override;
   void ShowLocalCardMigrationResults(
@@ -91,6 +93,9 @@ class ChromeAutofillClient
 #if defined(OS_ANDROID)
   void ConfirmAccountNameFixFlow(
       base::OnceCallback<void(const base::string16&)> callback) override;
+  void ConfirmExpirationDateFixFlow(
+      base::OnceCallback<void(const base::string16&, const base::string16&)>
+          callback) override;
 #endif  // defined(OS_ANDROID)
   void ConfirmSaveCreditCardToCloud(
       const CreditCard& card,
@@ -159,6 +164,8 @@ class ChromeAutofillClient
 
 #if defined(OS_ANDROID)
   std::unique_ptr<CardNameFixFlowViewAndroid> card_name_fix_flow_view_android_;
+  std::unique_ptr<CardExpirationDateFixFlowViewAndroid>
+      card_expiration_date_fix_flow_view_android_;
 #endif  // defined(OS_ANDROID)
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();

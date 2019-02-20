@@ -6,6 +6,8 @@
 
 #include <memory>
 
+#include "build/build_config.h"
+#include "services/viz/public/interfaces/hit_test/hit_test_region_list.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/modules/frame_sinks/embedded_frame_sink.mojom-blink.h"
@@ -74,6 +76,11 @@ TEST_F(HTMLCanvasElementModuleTest, TransferControlToOffscreen) {
 // Verifies that a lowLatency canvas has the appropriate opacity/blending
 // information sent to the CompositorFrameSink.
 TEST_P(HTMLCanvasElementModuleTest, LowLatencyCanvasCompositorFrameOpacity) {
+#if defined(OS_MACOSX)
+  // TODO(crbug.com/922218): enable lowLatency on Mac.
+  return;
+#endif
+
   ScopedTestingPlatformSupport<TestingPlatformSupportWithGenerateFrameSinkId>
       platform;
 
@@ -130,5 +137,5 @@ TEST_P(HTMLCanvasElementModuleTest, LowLatencyCanvasCompositorFrameOpacity) {
   platform->RunUntilIdle();
 }
 
-INSTANTIATE_TEST_CASE_P(, HTMLCanvasElementModuleTest, Values(true, false));
+INSTANTIATE_TEST_SUITE_P(, HTMLCanvasElementModuleTest, Values(true, false));
 }  // namespace blink

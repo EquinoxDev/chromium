@@ -58,11 +58,17 @@ ArCoreJavaUtils::~ArCoreJavaUtils() {
   Java_ArCoreJavaUtils_onNativeDestroy(env, j_arcore_java_utils_);
 }
 
-void ArCoreJavaUtils::OnRequestInstallSupportedArCoreCanceled(
+void ArCoreJavaUtils::OnRequestInstallSupportedArCoreResult(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj) {
+    const base::android::JavaParamRef<jobject>& obj,
+    bool success) {
   // TODO(crbug.com/893348): don't reach back into arcore device like this.
-  arcore_device_->OnRequestInstallSupportedArCoreCanceled();
+  arcore_device_->OnRequestInstallSupportedArCoreResult(success);
+}
+
+bool ArCoreJavaUtils::CanRequestInstallArModule() {
+  return Java_ArCoreJavaUtils_canRequestInstallArModule(AttachCurrentThread(),
+                                                        j_arcore_java_utils_);
 }
 
 bool ArCoreJavaUtils::ShouldRequestInstallArModule() {
@@ -70,9 +76,11 @@ bool ArCoreJavaUtils::ShouldRequestInstallArModule() {
       AttachCurrentThread(), j_arcore_java_utils_);
 }
 
-void ArCoreJavaUtils::RequestInstallArModule() {
-  Java_ArCoreJavaUtils_requestInstallArModule(AttachCurrentThread(),
-                                              j_arcore_java_utils_);
+void ArCoreJavaUtils::RequestInstallArModule(int render_process_id,
+                                             int render_frame_id) {
+  Java_ArCoreJavaUtils_requestInstallArModule(
+      AttachCurrentThread(), j_arcore_java_utils_,
+      getTabFromRenderer(render_process_id, render_frame_id));
 }
 
 bool ArCoreJavaUtils::ShouldRequestInstallSupportedArCore() {
@@ -85,6 +93,40 @@ void ArCoreJavaUtils::RequestInstallSupportedArCore(int render_process_id,
                                                     int render_frame_id) {
   DCHECK(ShouldRequestInstallSupportedArCore());
 
+  JNIEnv* env = AttachCurrentThread();
+  Java_ArCoreJavaUtils_requestInstallSupportedArCore(
+      env, j_arcore_java_utils_,
+      getTabFromRenderer(render_process_id, render_frame_id));
+}
+
+void ArCoreJavaUtils::OnRequestInstallArModuleResult(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj,
+    bool success) {
+  // TODO(crbug.com/893348): don't reach back into arcore device like this.
+  arcore_device_->OnRequestInstallArModuleResult(success);
+}
+
+bool ArCoreJavaUtils::EnsureLoaded() {
+  DCHECK(vr::IsArCoreSupported());
+
+  JNIEnv* env = AttachCurrentThread();
+
+  // TODO(crbug.com/884780): Allow loading the ARCore shim by name instead of by
+  // absolute path.
+  ScopedJavaLocalRef<jstring> java_path =
+      Java_ArCoreJavaUtils_getArCoreShimLibraryPath(env);
+  return LoadArCoreSdk(base::android::ConvertJavaStringToUTF8(env, java_path));
+}
+
+ScopedJavaLocalRef<jobject> ArCoreJavaUtils::GetApplicationContext() {
+  JNIEnv* env = AttachCurrentThread();
+  return Java_ArCoreJavaUtils_getApplicationContext(env);
+}
+
+base::android::ScopedJavaLocalRef<jobject> ArCoreJavaUtils::getTabFromRenderer(
+    int render_process_id,
+    int render_frame_id) {
   content::RenderFrameHost* render_frame_host =
       content::RenderFrameHost::FromID(render_process_id, render_frame_id);
   DCHECK(render_frame_host);
@@ -100,35 +142,7 @@ void ArCoreJavaUtils::RequestInstallSupportedArCore(int render_process_id,
       tab_android->GetJavaObject();
   DCHECK(!j_tab_android.is_null());
 
-  JNIEnv* env = AttachCurrentThread();
-  Java_ArCoreJavaUtils_requestInstallSupportedArCore(env, j_arcore_java_utils_,
-                                                     j_tab_android);
-}
-
-void ArCoreJavaUtils::OnRequestInstallArModuleResult(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& obj,
-    bool success) {
-  // TODO(crbug.com/893348): don't reach back into arcore device like this.
-  arcore_device_->OnRequestInstallArModuleResult(success);
-}
-
-bool ArCoreJavaUtils::EnsureLoaded() {
-  if (!vr::SupportsArCore())
-    return false;
-
-  JNIEnv* env = AttachCurrentThread();
-
-  // TODO(crbug.com/884780): Allow loading the ARCore shim by name instead of by
-  // absolute path.
-  ScopedJavaLocalRef<jstring> java_path =
-      Java_ArCoreJavaUtils_getArCoreShimLibraryPath(env);
-  return LoadArCoreSdk(base::android::ConvertJavaStringToUTF8(env, java_path));
-}
-
-ScopedJavaLocalRef<jobject> ArCoreJavaUtils::GetApplicationContext() {
-  JNIEnv* env = AttachCurrentThread();
-  return Java_ArCoreJavaUtils_getApplicationContext(env);
+  return j_tab_android;
 }
 
 static void JNI_ArCoreJavaUtils_InstallArCoreDeviceProviderFactory(

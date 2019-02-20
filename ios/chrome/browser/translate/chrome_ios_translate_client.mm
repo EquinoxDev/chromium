@@ -33,15 +33,17 @@
 #import "ios/chrome/browser/translate/language_selection_handler.h"
 #import "ios/chrome/browser/translate/never_translate_infobar_controller.h"
 #include "ios/chrome/browser/translate/translate_accept_languages_factory.h"
+#import "ios/chrome/browser/translate/translate_infobar_controller.h"
 #import "ios/chrome/browser/translate/translate_message_infobar_controller.h"
 #import "ios/chrome/browser/translate/translate_option_selection_handler.h"
 #include "ios/chrome/browser/translate/translate_ranker_factory.h"
 #include "ios/chrome/browser/translate/translate_service_ios.h"
+#import "ios/chrome/browser/ui/translate/translate_notification_handler.h"
 #include "ios/chrome/grit/ios_theme_resources.h"
 #include "ios/web/public/browser_state.h"
 #include "ios/web/public/navigation_item.h"
 #include "ios/web/public/navigation_manager.h"
-#include "ios/web/public/web_state/web_state.h"
+#import "ios/web/public/web_state/web_state.h"
 #include "third_party/metrics_proto/translate_event.pb.h"
 #include "url/gurl.h"
 
@@ -95,6 +97,16 @@ translate::TranslateManager* ChromeIOSTranslateClient::GetTranslateManager() {
 
 std::unique_ptr<infobars::InfoBar> ChromeIOSTranslateClient::CreateInfoBar(
     std::unique_ptr<translate::TranslateInfoBarDelegate> delegate) const {
+  if (base::FeatureList::IsEnabled(translate::kCompactTranslateInfobarIOS)) {
+    TranslateInfoBarController* controller = [[TranslateInfoBarController alloc]
+        initWithInfoBarDelegate:delegate.get()];
+    controller.languageSelectionHandler = language_selection_handler_;
+    controller.translateOptionSelectionHandler =
+        translate_option_selection_handler_;
+    controller.translateNotificationHandler = translate_notification_handler_;
+    return std::make_unique<InfoBarIOS>(controller, std::move(delegate));
+  }
+
   translate::TranslateStep step = delegate->translate_step();
 
   InfoBarController* controller;
@@ -195,6 +207,7 @@ void ChromeIOSTranslateClient::ShowReportLanguageDetectionErrorUI(
 void ChromeIOSTranslateClient::DidStartLoading(web::WebState* web_state) {
   [language_selection_handler_ dismissLanguageSelector];
   [translate_option_selection_handler_ dismissTranslateOptionSelector];
+  [translate_notification_handler_ dismissNotification];
 }
 
 void ChromeIOSTranslateClient::WebStateDestroyed(web::WebState* web_state) {
@@ -204,9 +217,12 @@ void ChromeIOSTranslateClient::WebStateDestroyed(web::WebState* web_state) {
 
   [language_selection_handler_ dismissLanguageSelector];
   [translate_option_selection_handler_ dismissTranslateOptionSelector];
+  [translate_notification_handler_ dismissNotification];
 
   // Translation process can be interrupted.
   // Destroying the TranslateManager now guarantees that it never has to deal
   // with nullptr WebState.
   translate_manager_.reset();
 }
+
+WEB_STATE_USER_DATA_KEY_IMPL(ChromeIOSTranslateClient)

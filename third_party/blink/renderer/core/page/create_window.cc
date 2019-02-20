@@ -71,7 +71,7 @@ WebWindowFeatures GetWindowFeaturesFromString(const String& feature_string) {
   WebWindowFeatures window_features;
 
   // This code follows the HTML spec, specifically
-  // https://html.spec.whatwg.org/#concept-window-open-features-tokenize
+  // https://html.spec.whatwg.org/C/#concept-window-open-features-tokenize
   if (feature_string.IsEmpty())
     return window_features;
 
@@ -243,18 +243,24 @@ static Frame* CreateNewWindow(LocalFrame& opener_frame,
                                 ? kNavigationPolicyNewForegroundTab
                                 : NavigationPolicyForCreateWindow(features);
 
+  bool propagate_sandbox = opener_frame.GetDocument()->IsSandboxed(
+      kSandboxPropagatesToAuxiliaryBrowsingContexts);
   const SandboxFlags sandbox_flags =
-      opener_frame.GetDocument()->IsSandboxed(
-          kSandboxPropagatesToAuxiliaryBrowsingContexts)
-          ? opener_frame.GetSecurityContext()->GetSandboxFlags()
-          : kSandboxNone;
+      propagate_sandbox ? opener_frame.GetDocument()->GetSandboxFlags()
+                        : kSandboxNone;
+  bool not_sandboxed =
+      opener_frame.GetDocument()->GetSandboxFlags() != kSandboxNone;
+  FeaturePolicy::FeatureState opener_feature_state =
+      (not_sandboxed || propagate_sandbox)
+          ? opener_frame.GetDocument()->GetFeaturePolicy()->inherited_policies()
+          : FeaturePolicy::FeatureState();
 
   SessionStorageNamespaceId new_namespace_id =
       AllocateSessionStorageNamespaceId();
 
   if (base::FeatureList::IsEnabled(features::kOnionSoupDOMStorage)) {
     // TODO(dmurph): Don't copy session storage when features.noopener is true:
-    // https://html.spec.whatwg.org/multipage/browsers.html#copy-session-storage
+    // https://html.spec.whatwg.org/C/#copy-session-storage
     // https://crbug.com/771959
     CoreInitializer::GetInstance().CloneSessionStorage(old_page,
                                                        new_namespace_id);
@@ -262,7 +268,7 @@ static Frame* CreateNewWindow(LocalFrame& opener_frame,
 
   Page* page = old_page->GetChromeClient().CreateWindow(
       &opener_frame, request, features, policy, sandbox_flags,
-      new_namespace_id);
+      opener_feature_state, new_namespace_id);
   if (!page)
     return nullptr;
 
@@ -282,23 +288,15 @@ static Frame* CreateNewWindow(LocalFrame& opener_frame,
 
   frame.View()->SetCanHaveScrollbars(features.scrollbars_visible);
 
-  // 'x' and 'y' specify the location of the window, while 'width' and 'height'
-  // specify the size of the viewport. We can only resize the window, so adjust
-  // for the difference between the window size and the viewport size.
-
-  IntRect window_rect = page->GetChromeClient().RootWindowRect();
-  IntSize viewport_size = page->GetChromeClient().PageRect().Size();
-
+  IntRect window_rect = page->GetChromeClient().RootWindowRect(frame);
   if (features.x_set)
     window_rect.SetX(features.x);
   if (features.y_set)
     window_rect.SetY(features.y);
   if (features.width_set)
-    window_rect.SetWidth(features.width +
-                         (window_rect.Width() - viewport_size.Width()));
+    window_rect.SetWidth(features.width);
   if (features.height_set)
-    window_rect.SetHeight(features.height +
-                          (window_rect.Height() - viewport_size.Height()));
+    window_rect.SetHeight(features.height);
 
   page->GetChromeClient().SetWindowRectWithAdjustment(window_rect, frame);
   page->GetChromeClient().Show(policy);
@@ -363,16 +361,17 @@ static Frame* CreateWindowHelper(LocalFrame& opener_frame,
 DOMWindow* CreateWindow(const String& url_string,
                         const AtomicString& frame_name,
                         const String& window_features_string,
-                        LocalDOMWindow& calling_window,
-                        LocalFrame& first_frame,
+                        LocalDOMWindow& incumbent_window,
+                        LocalFrame& entered_window_frame,
                         LocalFrame& opener_frame,
                         ExceptionState& exception_state) {
-  LocalFrame* active_frame = calling_window.GetFrame();
+  LocalFrame* active_frame = incumbent_window.GetFrame();
   DCHECK(active_frame);
 
-  KURL completed_url = url_string.IsEmpty()
-                           ? KURL(g_empty_string)
-                           : first_frame.GetDocument()->CompleteURL(url_string);
+  KURL completed_url =
+      url_string.IsEmpty()
+          ? KURL(g_empty_string)
+          : entered_window_frame.GetDocument()->CompleteURL(url_string);
   if (!completed_url.IsEmpty() && !completed_url.IsValid()) {
     UseCounter::Count(active_frame, WebFeature::kWindowOpenWithInvalidURL);
     exception_state.ThrowDOMException(
@@ -401,7 +400,7 @@ DOMWindow* CreateWindow(const String& url_string,
   WebWindowFeatures window_features =
       GetWindowFeaturesFromString(window_features_string);
 
-  FrameLoadRequest frame_request(calling_window.document(),
+  FrameLoadRequest frame_request(incumbent_window.document(),
                                  ResourceRequest(completed_url), frame_name);
   frame_request.SetShouldSetOpener(window_features.noopener ? kNeverSetOpener
                                                             : kMaybeSetOpener);
@@ -435,7 +434,7 @@ DOMWindow* CreateWindow(const String& url_string,
       false /* force_new_foreground_tab */, created);
   if (!new_frame)
     return nullptr;
-  if (new_frame->DomWindow()->IsInsecureScriptAccess(calling_window,
+  if (new_frame->DomWindow()->IsInsecureScriptAccess(incumbent_window,
                                                      completed_url))
     return window_features.noopener ? nullptr : new_frame->DomWindow();
 
@@ -449,7 +448,7 @@ DOMWindow* CreateWindow(const String& url_string,
   // causes the navigation to be flagged as a client redirect, which is
   // observable via the webNavigation extension api.
   if (created) {
-    FrameLoadRequest request(calling_window.document(),
+    FrameLoadRequest request(incumbent_window.document(),
                              ResourceRequest(completed_url));
     request.GetResourceRequest().SetHasUserGesture(has_user_gesture);
     if (const WebInputEvent* input_event = CurrentInputEvent::Get()) {
@@ -457,7 +456,7 @@ DOMWindow* CreateWindow(const String& url_string,
     }
     new_frame->Navigate(request, WebFrameLoadType::kStandard);
   } else if (!url_string.IsEmpty()) {
-    new_frame->ScheduleNavigation(*calling_window.document(), completed_url,
+    new_frame->ScheduleNavigation(*incumbent_window.document(), completed_url,
                                   WebFrameLoadType::kStandard,
                                   has_user_gesture ? UserGestureStatus::kActive
                                                    : UserGestureStatus::kNone);

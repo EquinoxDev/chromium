@@ -505,11 +505,16 @@ void LoginScreenController::SetShowGuestButtonInOobe(bool show) {
       ->SetShowGuestButtonInOobe(show);
 }
 
-void LoginScreenController::SetShowParentAccess(bool show) {
+void LoginScreenController::SetShowParentAccessButton(bool show) {
   Shelf::ForWindow(Shell::Get()->GetPrimaryRootWindow())
       ->shelf_widget()
       ->login_shelf_view()
-      ->SetShowParentAccess(show);
+      ->SetShowParentAccessButton(show);
+}
+
+void LoginScreenController::SetShowParentAccessDialog(bool show) {
+  if (DataDispatcher())
+    DataDispatcher()->SetShowParentAccessDialog(show);
 }
 
 void LoginScreenController::FocusLoginShelf(bool reverse) {
@@ -561,6 +566,10 @@ void LoginScreenController::ShowAccountAccessHelpApp() {
 
 void LoginScreenController::FocusOobeDialog() {
   login_screen_client_->FocusOobeDialog();
+}
+
+void LoginScreenController::NotifyUserActivity() {
+  login_screen_client_->OnUserActivity();
 }
 
 void LoginScreenController::OnAuthenticateComplete(

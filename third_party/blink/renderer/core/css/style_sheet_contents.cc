@@ -32,7 +32,6 @@
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/loader/resource/css_style_sheet_resource.h"
-#include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
@@ -123,9 +122,6 @@ void StyleSheetContents::SetHasSyntacticallyValidCSSHeader(bool is_valid_css) {
 bool StyleSheetContents::IsCacheableForResource() const {
   // This would require dealing with multiple clients for load callbacks.
   if (!LoadCompleted())
-    return false;
-  if (has_media_queries_ &&
-      !RuntimeEnabledFeatures::CacheStyleSheetWithMediaQueriesEnabled())
     return false;
   // FIXME: Support copying import rules.
   if (!import_rules_.IsEmpty())
@@ -335,7 +331,6 @@ void StyleSheetContents::ParseAuthorStyleSheet(
   TRACE_EVENT1(
       "blink,devtools.timeline", "ParseAuthorStyleSheet", "data",
       inspector_parse_author_style_sheet_event::Data(cached_style_sheet));
-  TimeTicks start_time = CurrentTimeTicks();
 
   const ResourceResponse& response = cached_style_sheet->GetResponse();
   CSSStyleSheetResource::MIMETypeCheck mime_type_check =
@@ -356,11 +351,6 @@ void StyleSheetContents::ParseAuthorStyleSheet(
       CSSParserContext::CreateWithStyleSheetContents(ParserContext(), this);
   CSSParser::ParseSheet(context, this, sheet_text,
                         CSSDeferPropertyParsing::kYes);
-
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, parse_histogram,
-                      ("Style.AuthorStyleSheet.ParseTime", 0, 10000000, 50));
-  TimeDelta parse_duration = (CurrentTimeTicks() - start_time);
-  parse_histogram.CountMicroseconds(parse_duration);
 }
 
 ParseSheetResult StyleSheetContents::ParseString(const String& sheet_text,

@@ -16,11 +16,10 @@ namespace autofill {
 
 AutofillDataModel::AutofillDataModel(const std::string& guid,
                                      const std::string& origin)
-    : guid_(guid),
-      origin_(origin),
-      use_count_(1),
-      use_date_(AutofillClock::Now()),
-      modification_date_(AutofillClock::Now()) {}
+    : guid_(guid), origin_(origin), use_count_(1) {
+  set_use_date(AutofillClock::Now());
+  set_modification_date(AutofillClock::Now());
+}
 AutofillDataModel::~AutofillDataModel() {}
 
 bool AutofillDataModel::IsVerified() const {
@@ -30,11 +29,17 @@ bool AutofillDataModel::IsVerified() const {
 // TODO(crbug.com/629507): Add support for injected mock clock for testing.
 void AutofillDataModel::RecordUse() {
   ++use_count_;
-  use_date_ = AutofillClock::Now();
+  set_use_date(AutofillClock::Now());
 }
 
-bool AutofillDataModel::CompareFrecency(const AutofillDataModel* other,
-                                        base::Time comparison_time) const {
+bool AutofillDataModel::UseDateEqualsInSeconds(
+    const AutofillDataModel* other) const {
+  return !((other->use_date() - use_date()).InSeconds());
+}
+
+bool AutofillDataModel::HasGreaterFrecencyThan(
+    const AutofillDataModel* other,
+    base::Time comparison_time) const {
   double score = GetFrecencyScore(comparison_time);
   double other_score = other->GetFrecencyScore(comparison_time);
 
@@ -73,6 +78,12 @@ double AutofillDataModel::GetFrecencyScore(base::Time time) const {
 
 bool AutofillDataModel::IsDeletable() const {
   return use_date_ < AutofillClock::Now() - kDisusedDataModelDeletionTimeDelta;
+}
+
+AutofillDataModel::ValidityState AutofillDataModel::GetValidityState(
+    ServerFieldType type,
+    AutofillDataModel::ValidationSource source) const {
+  return AutofillDataModel::UNSUPPORTED;
 }
 
 }  // namespace autofill

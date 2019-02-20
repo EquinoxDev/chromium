@@ -14,7 +14,6 @@
 
 #include "base/atomicops.h"
 #include "base/callback.h"
-#include "base/containers/hash_tables.h"
 #include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -86,7 +85,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   CONTENT_EXPORT static void CallOnIO(
       GpuProcessKind kind,
       bool force_create,
-      const base::Callback<void(GpuProcessHost*)>& callback);
+      base::OnceCallback<void(GpuProcessHost*)> callback);
 
   // Get the GPU process host for the GPU process with the given ID. Returns
   // null if the process no longer exists.

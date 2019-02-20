@@ -38,6 +38,7 @@ Alex Gartrell <agartrell@cmu.edu>
 Alex Henrie <alexhenrie24@gmail.com>
 Alex Scheele <alexscheele@gmail.com>
 Alexander Douglas <agdoug@amazon.com>
+Alexander Guettler <alexander@guettler.io>
 Alexander Shalamov <alexander.shalamov@intel.com>
 Alexander Sulfrian <alexander@sulfrian.net>
 Alexandre Abreu <wiss1976@gmail.com>
@@ -50,7 +51,7 @@ Alexis La Goutte <alexis.lagoutte@gmail.com>
 Alexis Menard <alexis.menard@intel.com>
 Alfredo Hernandez <ahernandez.miralles@gmail.com>
 Ali Vathi <ali.akbar@gmail.com>
-Allan Sandfeld Jensen <allan.jensen@theqtcompany.com>
+Allan Sandfeld Jensen <allan.jensen@qt.io>
 Alper Çakan <alpercakan98@gmail.com>
 Ambarish Rapte <ambarish.r@samsung.com>
 Amey Jahagirdar <jahagird@amazon.com>
@@ -71,6 +72,7 @@ Andrei Parvu <parvu@adobe.com>
 Andrew Boyarshin <andrew.boyarshin@gmail.com>
 Andrew Brampton <me@bramp.net>
 Andrew Hung <andrhung@amazon.com>
+Andrew Jorgensen <ajorgens@amazon.com>
 Andrew MacPherson <andrew.macpherson@soundtrap.com>
 Andrew Tulloch <andrew@tullo.ch>
 Anish Patankar <anish.p@samsung.com>
@@ -212,6 +214,7 @@ Debashish Samantaray <d.samantaray@samsung.com>
 Debug Wang <debugwang@tencent.com>
 Deepak Dilip Borade <deepak.db@samsung.com>
 Deepak Mittal <deepak.m1@samsung.com>
+Deepak Sharma <deepak.sharma@amd.com>
 Deepak Singla <deepak.s@samsung.com>
 Deokjin Kim <deokjin81.kim@samsung.com>
 Derek Halman <d.halman@gmail.com>
@@ -683,6 +686,7 @@ Peter Collingbourne <peter@pcc.me.uk>
 Peter Gal <pgal.u-szeged@partner.samsung.com>
 Peter Molnar <pmolnar.u-szeged@partner.samsung.com>
 Peter Snyder <snyderp@gmail.com>
+Peter Wong <peter.wm.wong@gmail.com>
 Philip Hanson <philip.hanson@intel.com>
 Philipp Hancke <fippo@andyet.net>
 Philipp Hancke <philipp.hancke@googlemail.com>
@@ -694,6 +698,7 @@ Pierre-Antoine LaFayette <pierre.lafayette@gmail.com>
 Po-Chun Chang <pochang0403@gmail.com>
 Pramod Begur Srinath <pramod.bs@samsung.com>
 Pranay Kumar <pranay.kumar@samsung.com>
+Pranjal Jumde <pranjal@brave.com>
 Prashant Hiremath <prashhir@cisco.com>
 Prashant Nevase <prashant.n@samsung.com>
 Prashant Patil <prashant.patil@imgtec.com>
@@ -746,6 +751,7 @@ Romain Pokrzywka <romain.pokrzywka@gmail.com>
 Rosen Dash <nqk836@motorola.com>
 Rosen Dash <rosen.dash@gmail.com>
 ruben <chromium@hybridsource.org>
+Ruben Bridgewater <ruben@bridgewater.de>
 Ruben Terrazas <rubentopo@gmail.com>
 Rufus Hamade <rufus.hamade@imgtec.com>
 Ruiyi Luo <luoruiyi2008@gmail.com>
@@ -800,6 +806,7 @@ ShankarGanesh K <blr.bmlab@gmail.com>
 Shanmuga Pandi M <shanmuga.m@samsung.com>
 Shaobo Yan <shaobo.yan@intel.com>
 Shashi Kumar <sk.kumar@samsung.com>
+Shen Yu <shenyu.tcv@gmail.com>
 Sherry Mou <wenjinm@amazon.com>
 Shez Baig <sbaig1@bloomberg.net>
 Shigeki Ohtsu <shigeki.ohtsu@gmail.com>
@@ -871,6 +878,7 @@ Thiago Farina <thiago.farina@gmail.com>
 Thiago Marcos P. Santos <thiago.santos@intel.com>
 Thomas Butter <tbutter@gmail.com>
 Thomas Conti <tomc@amazon.com>
+Thomas White <im.toms.inbox@gmail.com>
 Tiago Vignatti <tiago.vignatti@intel.com>
 Tibor Dusnoki <tibor.dusnoki.91@gmail.com>
 Tim Ansell <mithro@mithis.com>
@@ -910,6 +918,7 @@ Vivek Galatage <vivek.vg@samsung.com>
 Volker Sorge <volker.sorge@gmail.com>
 Waihung Fu <fufranci@amazon.com>
 Wanming Lin <wanming.lin@intel.com>
+Wei Li <wei.c.li@intel.com>
 WenSheng He <wensheng.he@samsung.com>
 Wesley Lancel <wesleylancel@gmail.com>
 Wesley Wigham <wwigham@gmail.com>
@@ -1009,9 +1018,11 @@ IBM Inc. <*@ibm.com>
 Igalia S.L. <*@igalia.com>
 Imagination Technologies Limited <*@imagination.corp-partner.google.com>
 Impossible Dreams Network <*@impossibledreams.net>
+Intel Corporation <*@intel.com>
 LG Electronics, Inc. <*@lge.com>
 Loongson Technology Corporation Limited. <*@loongson.cn>
 Macadamian <*@macadamian.com>
+Mediatek <*@mediatek.com>
 Microsoft <*@microsoft.com>
 MIPS Technologies, Inc. <*@mips.com>
 Mozilla Corporation <*@mozilla.com>
@@ -1020,9 +1031,11 @@ NIKE, Inc. <*@nike.com>
 NVIDIA Corporation <*@nvidia.com>
 Opera Software ASA <*@opera.com>
 Optical Tone Ltd <*@opticaltone.com>
+Pengutronix e.K. <*@pengutronix.de>
 Rakuten Kobo Inc. <*@kobo.com>
 Rakuten Kobo Inc. <*@rakuten.com>
 Seznam.cz, a.s. <*@firma.seznam.cz>
+Slack Technologies Inc. <*@slack-corp.com>
 Spotify AB <*@spotify.com>
 Tableau Software <*@tableau.com>
 TeamSpeak Systems GmbH <*@teamspeak.com>

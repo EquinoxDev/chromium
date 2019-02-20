@@ -100,10 +100,10 @@ const base::Feature kSimplifyHttpsIndicator{"SimplifyHttpsIndicator",
 const base::Feature kOmniboxRichEntitySuggestions{
     "OmniboxRichEntitySuggestions", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Feature used to enable enhanced presentation showing larger images, currently
-// only used on desktop platforms.
+// Feature used to enable enhanced presentation showing larger images.
+// This is currently only used on Android.
 const base::Feature kOmniboxNewAnswerLayout{"OmniboxNewAnswerLayout",
-                                            base::FEATURE_ENABLED_BY_DEFAULT};
+                                            base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Feature used to enable swapping the rows on answers.
 const base::Feature kOmniboxReverseAnswers{"OmniboxReverseAnswers",
@@ -126,26 +126,26 @@ const base::Feature kOmniboxTabSwitchSuggestions{
 #endif
 };
 
+// Feature used to reverse the sense of the tab switch button. Selecting the
+// suggestion will switch to the tab, while the button will navigate
+// locally.
+const base::Feature kOmniboxReverseTabSwitchLogic{
+    "OmniboxReverseTabSwitchLogic", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Feature used to enable various experiments on keyword mode, UI and
 // suggestions.
-const base::Feature kExperimentalKeywordMode{"ExperimentalKeywordMode",
+const base::Feature kExperimentalKeywordMode{"OmniboxExperimentalKeywordMode",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Feature used to enable Pedal suggestions as either in-suggestion side button
-// or dedicated suggestion beneath triggering suggestion.
+// Feature used to enable Pedal suggestions.
 const base::Feature kOmniboxPedalSuggestions{"OmniboxPedalSuggestions",
                                              base::FEATURE_DISABLED_BY_DEFAULT};
-constexpr base::FeatureParam<OmniboxFieldTrial::PedalSuggestionMode>::Option
-    kPedalSuggestionModeOptions[] = {
-        {OmniboxFieldTrial::PedalSuggestionMode::IN_SUGGESTION,
-         "in_suggestion"},
-        {OmniboxFieldTrial::PedalSuggestionMode::DEDICATED, "dedicated"},
-};
-constexpr base::FeatureParam<OmniboxFieldTrial::PedalSuggestionMode>
-    pedal_suggestion_mode{&kOmniboxPedalSuggestions,
-                          OmniboxFieldTrial::kPedalSuggestionModeParam,
-                          OmniboxFieldTrial::PedalSuggestionMode::DEDICATED,
-                          &kPedalSuggestionModeOptions};
+
+// Feature used to show a context menu for suggestions when the user
+// right-clicks a suggestion in the omnibox dropdown. It's currently disabled
+// by default during development, but will eventually be enabled by default.
+const base::Feature kOmniboxContextMenuForSuggestions{
+    "OmniboxContextMenuForSuggestions", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Feature used to enable clipboard provider, which provides the user with
 // suggestions of the URL in the user's clipboard (if any) upon omnibox focus.
@@ -157,6 +157,16 @@ const base::Feature kEnableClipboardProvider {
       base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 };
+
+// Feature to enable clipboard provider to suggest copied text.
+const base::Feature kEnableClipboardProviderTextSuggestions{
+    "OmniboxEnableClipboardProviderTextSuggestions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature to enable clipboard provider to suggest searching for copied images.
+const base::Feature kEnableClipboardProviderImageSuggestions{
+    "OmniboxEnableClipboardProviderImageSuggestions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Feature to enable the search provider to send a request to the suggest
 // server on focus.  This allows the suggest server to warm up, by, for
@@ -196,6 +206,12 @@ const base::Feature kUIExperimentMaxAutocompleteMatches{
 const base::Feature kQueryInOmnibox{"QueryInOmnibox",
                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Feature used for showing the URL suggestion favicons as a UI experiment,
+// currently only used on desktop platforms.
+const base::Feature kUIExperimentShowSuggestionFavicons{
+    "OmniboxUIExperimentShowSuggestionFavicons",
+    base::FEATURE_ENABLED_BY_DEFAULT};
+
 // Feature used to always swap the title and URL.
 const base::Feature kUIExperimentSwapTitleAndUrl{
     "OmniboxUIExperimentSwapTitleAndUrl",
@@ -205,6 +221,62 @@ const base::Feature kUIExperimentSwapTitleAndUrl{
     base::FEATURE_ENABLED_BY_DEFAULT
 #endif
 };
+
+// Feature used for the vertical margin UI experiment, currently only used on
+// desktop platforms.
+const base::Feature kUIExperimentVerticalMargin{
+    "OmniboxUIExperimentVerticalMargin", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to color "blue" the generic search icon and search terms.
+// Technically, this makes the search icon and search terms match the color of
+// Omnibox link text, which is blue by convention.
+const base::Feature kUIExperimentBlueSearchLoopAndSearchQuery{
+    "OmniboxUIExperimentBlueSearchLoopAndSearchQuery",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to change the color of text in navigation suggestions. It
+// changes title text from black to blue, and URL text from blue to gray.
+const base::Feature kUIExperimentBlueTitlesAndGrayUrlsOnPageSuggestions{
+    "OmniboxUIExperimentBlueTitlesAndGrayUrlsOnPageSuggestions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to change the color of text in navigation suggestions. It
+// changes title text from black to blue.
+const base::Feature kUIExperimentBlueTitlesOnPageSuggestions{
+    "OmniboxUIExperimentBlueTitlesOnPageSuggestions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to show a " - Google Search", " - Bing Search", etc. suffix on
+// all search suggestions instead of just the first one in each cluster.
+const base::Feature kUIExperimentShowSuffixOnAllSearchSuggestions{
+    "OmniboxUIExperimentShowSuffixOnAllSearchSuggestions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to show a white background in the omnibox while it's unfocused.
+// More technically, with this flag on, it uses the same background color as
+// the results popup (conventionally white).
+const base::Feature kUIExperimentWhiteBackgroundOnBlur{
+    "OmniboxUIExperimentWhiteBackgroundOnBlur",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to show a generic vector icon for omnibox search instead of the
+// search engine favicon.
+const base::Feature kUIExperimentUseGenericSearchEngineIcon{
+    "OminboxUIExperimentUseGenericSearchEngineIcon",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to bold the "user text" part of search suggestions instead
+// of the "autocomplete" part. For example, if the user typed "point reyes",
+// and the search suggestion was "point reyes weather", this feature makes
+// the "point reyes" part of the suggestion bold, instead of "weather".
+const base::Feature kUIExperimentBoldUserTextOnSearchSuggestions{
+    "OmniboxUIExperimentBoldUserTextOnSearchSuggestions",
+    base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Feature used to unbold suggestion text.
+const base::Feature kUIExperimentUnboldSuggestionText{
+    "OmniboxUIExperimentUnboldSuggestionText",
+    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Feature used to enable speculatively starting a service worker associated
 // with the destination of the default match when the user's input looks like a
@@ -218,21 +290,22 @@ const base::Feature kSpeculativeServiceWorkerStartOnQueryInput{
 const base::Feature kDocumentProvider{"OmniboxDocumentProvider",
                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
+// Feature used to dedupe Google Drive URLs between different formats.
+// OmniboxDocumentProvider arms may wish to enable this, though it may also be
+// run on its own.
+const base::Feature kDedupeGoogleDriveURLs{"OmniboxDedupeGoogleDriveURLs",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Feature to replace the standard ZeroSuggest with icons for most visited sites
 // and collections (bookmarks, history, recent tabs, reading list). Only
 // available on iOS.
 const base::Feature kOmniboxPopupShortcutIconsInZeroState{
     "OmniboxPopupShortcutIconsInZeroState", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Feature to differentiate between a copied url and copied text
-const base::Feature kCopiedTextBehavior {
-  "CopiedTextBehavior",
-#if defined(OS_IOS)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
+// Feature to use material design weather icons in the omnibox when displaying
+// weather answers.
+const base::Feature kOmniboxMaterialDesignWeatherIcons{
+    "OmniboxMaterialDesignWeatherIcons", base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace omnibox
 
@@ -418,7 +491,7 @@ bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
   // The value of the rule is a string that encodes an integer containing
   // the max relevance.
   const std::string& max_relevance_str =
-      OmniboxFieldTrial::GetValueForRuleInContext(
+      OmniboxFieldTrial::internal::GetValueForRuleInContext(
           kShortcutsScoringMaxRelevanceRule, current_page_classification);
   if (max_relevance_str.empty())
     return false;
@@ -429,22 +502,24 @@ bool OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
 
 bool OmniboxFieldTrial::SearchHistoryPreventInlining(
     OmniboxEventProto::PageClassification current_page_classification) {
-  return OmniboxFieldTrial::GetValueForRuleInContext(
-      kSearchHistoryRule, current_page_classification) == "PreventInlining";
+  return OmniboxFieldTrial::internal::GetValueForRuleInContext(
+             kSearchHistoryRule, current_page_classification) ==
+         "PreventInlining";
 }
 
 bool OmniboxFieldTrial::SearchHistoryDisable(
     OmniboxEventProto::PageClassification current_page_classification) {
-  return OmniboxFieldTrial::GetValueForRuleInContext(
-      kSearchHistoryRule, current_page_classification) == "Disable";
+  return OmniboxFieldTrial::internal::GetValueForRuleInContext(
+             kSearchHistoryRule, current_page_classification) == "Disable";
 }
 
 void OmniboxFieldTrial::GetDemotionsByType(
     OmniboxEventProto::PageClassification current_page_classification,
     DemotionMultipliers* demotions_by_type) {
   demotions_by_type->clear();
-  std::string demotion_rule = OmniboxFieldTrial::GetValueForRuleInContext(
-      kDemoteByTypeRule, current_page_classification);
+  std::string demotion_rule =
+      OmniboxFieldTrial::internal::GetValueForRuleInContext(
+          kDemoteByTypeRule, current_page_classification);
   // If there is no demotion rule for this context, then use the default
   // value for that context.
   if (demotion_rule.empty()) {
@@ -743,7 +818,7 @@ OmniboxFieldTrial::GetEmphasizeTitlesConditionForInput(
   std::string value_str(variations::GetVariationParamValue(
       kBundledExperimentFieldTrialName,
       std::string(kEmphasizeTitlesRule) + "_" +
-          base::IntToString(static_cast<int>(input.type()))));
+          base::NumberToString(static_cast<int>(input.type()))));
   if (value_str.empty()) {
     value_str = variations::GetVariationParamValue(
         kBundledExperimentFieldTrialName,
@@ -763,11 +838,6 @@ bool OmniboxFieldTrial::IsRichEntitySuggestionsEnabled() {
   return base::FeatureList::IsEnabled(omnibox::kOmniboxRichEntitySuggestions);
 }
 
-bool OmniboxFieldTrial::IsNewAnswerLayoutEnabled() {
-  return base::FeatureList::IsEnabled(omnibox::kOmniboxNewAnswerLayout) ||
-         base::FeatureList::IsEnabled(features::kExperimentalUi);
-}
-
 bool OmniboxFieldTrial::IsReverseAnswersEnabled() {
   return base::FeatureList::IsEnabled(omnibox::kOmniboxReverseAnswers) ||
          base::FeatureList::IsEnabled(features::kExperimentalUi);
@@ -782,13 +852,12 @@ bool OmniboxFieldTrial::IsTabSwitchSuggestionsEnabled() {
 #endif
 }
 
-OmniboxFieldTrial::PedalSuggestionMode
-OmniboxFieldTrial::GetPedalSuggestionMode() {
-  // Disabled case is handled specially, as no parameter values are specified.
-  if (!base::FeatureList::IsEnabled(omnibox::kOmniboxPedalSuggestions)) {
-    return PedalSuggestionMode::NONE;
-  }
-  return omnibox::pedal_suggestion_mode.Get();
+bool OmniboxFieldTrial::IsTabSwitchLogicReversed() {
+  return base::FeatureList::IsEnabled(omnibox::kOmniboxReverseTabSwitchLogic);
+}
+
+bool OmniboxFieldTrial::IsPedalSuggestionsEnabled() {
+  return base::FeatureList::IsEnabled(omnibox::kOmniboxPedalSuggestions);
 }
 
 bool OmniboxFieldTrial::IsHideSteadyStateUrlSchemeEnabled() {
@@ -800,6 +869,14 @@ bool OmniboxFieldTrial::IsHideSteadyStateUrlTrivialSubdomainsEnabled() {
   return base::FeatureList::IsEnabled(
              omnibox::kHideSteadyStateUrlTrivialSubdomains) ||
          base::FeatureList::IsEnabled(features::kExperimentalUi);
+}
+
+int OmniboxFieldTrial::GetSuggestionVerticalMargin() {
+  // When the vertical margin is set to 2dp, the suggestion height is the
+  // closest to the pre-Refresh height. In fact it's 1dp taller than the
+  // pre-Refresh height on Linux.
+  return base::GetFieldTrialParamByFeatureAsInt(
+      omnibox::kUIExperimentVerticalMargin, kUIVerticalMarginParam, 2);
 }
 
 bool OmniboxFieldTrial::IsExperimentalKeywordModeEnabled() {
@@ -876,8 +953,7 @@ const char
 
 const char OmniboxFieldTrial::kUIMaxAutocompleteMatchesParam[] =
     "UIMaxAutocompleteMatches";
-const char OmniboxFieldTrial::kPedalSuggestionModeParam[] =
-    "PedalSuggestionMode";
+const char OmniboxFieldTrial::kUIVerticalMarginParam[] = "UIVerticalMargin";
 
 const char OmniboxFieldTrial::kSimplifyHttpsIndicatorParameterName[] =
     "treatment";
@@ -931,7 +1007,7 @@ int OmniboxFieldTrial::kDefaultMinimumTimeBetweenSuggestQueriesMs = 100;
 // |rule|:*:|instant_extended|, failing that it looks up
 // |rule|:|page_classification|:*, failing that it looks up |rule|:*:*,
 // and failing that it returns the empty string.
-std::string OmniboxFieldTrial::GetValueForRuleInContext(
+std::string OmniboxFieldTrial::internal::GetValueForRuleInContext(
     const std::string& rule,
     OmniboxEventProto::PageClassification page_classification) {
   VariationParams params;
@@ -940,7 +1016,7 @@ std::string OmniboxFieldTrial::GetValueForRuleInContext(
     return std::string();
   }
   const std::string page_classification_str =
-      base::IntToString(static_cast<int>(page_classification));
+      base::NumberToString(static_cast<int>(page_classification));
   const std::string instant_extended =
       search::IsInstantExtendedAPIEnabled() ? "1" : "0";
   // Look up rule in this exact context.

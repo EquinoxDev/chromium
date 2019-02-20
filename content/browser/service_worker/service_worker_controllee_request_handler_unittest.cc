@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind_helpers.h"
 #include "base/callback_helpers.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
@@ -516,9 +517,9 @@ TEST_P(ServiceWorkerControlleeRequestHandlerTest, FallbackWithNoOfflineHeader) {
 }
 #endif  // BUILDFLAG(ENABLE_OFFLINE_PAGE)
 
-INSTANTIATE_TEST_CASE_P(IsServiceWorkerServicificationEnabled,
-                        ServiceWorkerControlleeRequestHandlerTest,
-                        ::testing::Bool(););
+INSTANTIATE_TEST_SUITE_P(IsServiceWorkerServicificationEnabled,
+                         ServiceWorkerControlleeRequestHandlerTest,
+                         ::testing::Bool());
 
 }  // namespace service_worker_controllee_request_handler_unittest
 }  // namespace content

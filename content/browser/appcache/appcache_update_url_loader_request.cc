@@ -4,12 +4,45 @@
 
 #include "content/browser/appcache/appcache_update_url_loader_request.h"
 
+#include "base/bind.h"
 #include "content/browser/appcache/appcache_request_handler.h"
 #include "content/browser/appcache/appcache_update_url_fetcher.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_context.h"
 
 namespace content {
+
+namespace {
+constexpr net::NetworkTrafficAnnotationTag kAppCacheTrafficAnnotation =
+    net::DefineNetworkTrafficAnnotation("appcache_update_job", R"(
+      semantics {
+        sender: "HTML5 AppCache System"
+        description:
+          "Web pages can include a link to a manifest file which lists "
+          "resources to be cached for offline access. The AppCache system"
+          "retrieves those resources in the background."
+        trigger:
+          "User visits a web page containing a <html manifest=manifestUrl> "
+          "tag, or navigates to a document retrieved from an existing appcache "
+          "and some resource should be updated."
+        data: "None"
+        destination: WEBSITE
+      }
+      policy {
+        cookies_allowed: YES
+        cookies_store: "user"
+        setting:
+          "Users can control this feature via the 'Cookies' setting under "
+          "'Privacy, Content settings'. If cookies are disabled for a single "
+          "site, appcaches are disabled for the site only. If they are totally "
+          "disabled, all appcache requests will be stopped."
+        chrome_policy {
+            DefaultCookiesSetting {
+              DefaultCookiesSetting: 2
+            }
+          }
+      })");
+}
 
 AppCacheUpdateJob::UpdateURLLoaderRequest::~UpdateURLLoaderRequest() {}
 
@@ -21,10 +54,11 @@ void AppCacheUpdateJob::UpdateURLLoaderRequest::Start() {
   network::mojom::URLLoaderClientPtr client;
   client_binding_.Bind(mojo::MakeRequest(&client));
 
-  loader_factory_getter_->GetNetworkFactory()->CreateLoaderAndStart(
-      mojo::MakeRequest(&url_loader_), -1, -1,
-      network::mojom::kURLLoadOptionNone, request_, std::move(client),
-      net::MutableNetworkTrafficAnnotationTag(GetTrafficAnnotation()));
+  loader_factory_getter_->GetNetworkFactoryWithCORBEnabled()
+      ->CreateLoaderAndStart(
+          mojo::MakeRequest(&url_loader_), -1, -1,
+          network::mojom::kURLLoadOptionNone, request_, std::move(client),
+          net::MutableNetworkTrafficAnnotationTag(kAppCacheTrafficAnnotation));
 }
 
 void AppCacheUpdateJob::UpdateURLLoaderRequest::SetExtraRequestHeaders(

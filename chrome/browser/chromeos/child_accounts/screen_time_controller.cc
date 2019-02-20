@@ -4,7 +4,11 @@
 
 #include "chrome/browser/chromeos/child_accounts/screen_time_controller.h"
 
+#include <algorithm>
+#include <string>
+
 #include "ash/public/interfaces/login_screen.mojom.h"
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/optional.h"
 #include "base/time/clock.h"
@@ -28,6 +32,9 @@
 namespace chromeos {
 
 namespace {
+
+constexpr base::TimeDelta kUsageTimeLimitWarningTime =
+    base::TimeDelta::FromMinutes(15);
 
 // Dictionary keys for prefs::kScreenTimeLastState.
 constexpr char kScreenStateLocked[] = "locked";
@@ -54,8 +61,12 @@ ScreenTimeController::ScreenTimeController(content::BrowserContext* context)
       pref_service_(Profile::FromBrowserContext(context)->GetPrefs()),
       clock_(base::DefaultClock::GetInstance()),
       next_state_timer_(std::make_unique<base::OneShotTimer>()),
+      usage_time_limit_warning_timer_(std::make_unique<base::OneShotTimer>()),
       time_limit_notifier_(context) {
   session_manager::SessionManager::Get()->AddObserver(this);
+  if (base::FeatureList::IsEnabled(features::kUsageTimeStateNotifier))
+    UsageTimeStateNotifier::GetInstance()->AddObserver(this);
+
   system::TimezoneSettings::GetInstance()->AddObserver(this);
   chromeos::DBusThreadManager::Get()->GetSystemClockClient()->AddObserver(this);
   pref_change_registrar_.Init(pref_service_);
@@ -67,9 +78,22 @@ ScreenTimeController::ScreenTimeController(content::BrowserContext* context)
 
 ScreenTimeController::~ScreenTimeController() {
   session_manager::SessionManager::Get()->RemoveObserver(this);
+  if (base::FeatureList::IsEnabled(features::kUsageTimeStateNotifier))
+    UsageTimeStateNotifier::GetInstance()->RemoveObserver(this);
+
   system::TimezoneSettings::GetInstance()->RemoveObserver(this);
   chromeos::DBusThreadManager::Get()->GetSystemClockClient()->RemoveObserver(
       this);
+}
+
+void ScreenTimeController::AddObserver(Observer* observer) {
+  DCHECK(observer);
+  observers_.AddObserver(observer);
+}
+
+void ScreenTimeController::RemoveObserver(Observer* observer) {
+  DCHECK(observer);
+  observers_.RemoveObserver(observer);
 }
 
 base::TimeDelta ScreenTimeController::GetScreenTimeDuration() {
@@ -79,9 +103,19 @@ base::TimeDelta ScreenTimeController::GetScreenTimeDuration() {
 
 void ScreenTimeController::SetClocksForTesting(
     const base::Clock* clock,
-    const base::TickClock* tick_clock) {
+    const base::TickClock* tick_clock,
+    scoped_refptr<base::SequencedTaskRunner> task_runner) {
   clock_ = clock;
   next_state_timer_ = std::make_unique<base::OneShotTimer>(tick_clock);
+  next_state_timer_->SetTaskRunner(task_runner);
+  usage_time_limit_warning_timer_ =
+      std::make_unique<base::OneShotTimer>(tick_clock);
+  usage_time_limit_warning_timer_->SetTaskRunner(task_runner);
+}
+
+void ScreenTimeController::NotifyUsageTimeLimitWarningForTesting() {
+  for (Observer& observer : observers_)
+    observer.UsageTimeLimitWarning();
 }
 
 void ScreenTimeController::CheckTimeLimit(const std::string& source) {
@@ -90,6 +124,7 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
   // Stop all timers. They will be rescheduled below.
   ResetStateTimers();
   ResetInSessionTimers();
+  ResetWarningTimers();
 
   base::Time now = clock_->Now();
   const icu::TimeZone& time_zone =
@@ -111,9 +146,13 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
   if (state.is_locked) {
     DCHECK(!state.next_unlock_time.is_null());
     if (!session_manager::SessionManager::Get()->IsScreenLocked()) {
-      VLOG(1) << "Request status report before locking screen.";
-      ConsumerStatusReportingServiceFactory::GetForBrowserContext(context_)
-          ->RequestImmediateStatusReport();
+      // This status report are going to be done in EventBasedStatusReporting if
+      // this feature is enabled.
+      if (!base::FeatureList::IsEnabled(features::kEventBasedStatusReporting)) {
+        VLOG(1) << "Request status report before locking screen.";
+        ConsumerStatusReportingServiceFactory::GetForBrowserContext(context_)
+            ->RequestImmediateStatusReport();
+      }
       ForceScreenLockByPolicy(state.next_unlock_time);
     }
   } else {
@@ -140,6 +179,9 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
       time_limit_notifier_.MaybeScheduleNotifications(notification_type.value(),
                                                       remaining_time);
     }
+
+    if (base::FeatureList::IsEnabled(features::kUsageTimeStateNotifier))
+      ScheduleUsageTimeLimitWarning(state);
   }
 
   base::Time next_get_state_time =
@@ -147,8 +189,7 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
                usage_time_limit::GetExpectedResetTime(
                    time_limit->CreateDeepCopy(), now, &time_zone));
   if (!next_get_state_time.is_null()) {
-    VLOG(1) << "Scheduling state change timer in "
-            << state.next_state_change_time - now;
+    VLOG(1) << "Scheduling state change timer in " << next_get_state_time - now;
     next_state_timer_->Start(
         FROM_HERE, next_get_state_time - now,
         base::BindRepeating(&ScreenTimeController::CheckTimeLimit,
@@ -159,6 +200,17 @@ void ScreenTimeController::CheckTimeLimit(const std::string& source) {
 void ScreenTimeController::ForceScreenLockByPolicy(
     base::Time next_unlock_time) {
   DCHECK(!session_manager::SessionManager::Get()->IsScreenLocked());
+
+  // Avoid abrupt session restart that looks like a crash and happens when lock
+  // screen is requested before sign in completion. It is safe, because time
+  // limits will be reevaluated when session state changes to active.
+  // TODO(agawronska): Remove the flag when it is confirmed that this does not
+  // cause a bug (https://crbug.com/924844).
+  if (base::FeatureList::IsEnabled(features::kDMServerOAuthForChildUser) &&
+      session_manager::SessionManager::Get()->session_state() !=
+          session_manager::SessionState::ACTIVE)
+    return;
+
   chromeos::DBusThreadManager::Get()
       ->GetSessionManagerClient()
       ->RequestLockScreen();
@@ -181,8 +233,10 @@ void ScreenTimeController::UpdateTimeLimitsMessage(
   ScreenLocker::default_screen_locker()->SetAuthEnabledForUser(
       account_id, !visible,
       visible ? next_unlock_time : base::Optional<base::Time>());
-  if (base::FeatureList::IsEnabled(features::kParentAccessCode))
-    LoginScreenClient::Get()->login_screen()->SetShowParentAccess(visible);
+  if (base::FeatureList::IsEnabled(features::kParentAccessCode)) {
+    LoginScreenClient::Get()->login_screen()->SetShowParentAccessButton(
+        visible);
+  }
 }
 
 void ScreenTimeController::OnPolicyChanged() {
@@ -194,9 +248,36 @@ void ScreenTimeController::ResetStateTimers() {
   next_state_timer_->Stop();
 }
 
+void ScreenTimeController::ResetWarningTimers() {
+  VLOG(1) << "Stopping warning timers";
+  usage_time_limit_warning_timer_->Stop();
+}
+
 void ScreenTimeController::ResetInSessionTimers() {
   VLOG(1) << "Stopping in-session timers";
   time_limit_notifier_.UnscheduleNotifications();
+}
+
+void ScreenTimeController::ScheduleUsageTimeLimitWarning(
+    const usage_time_limit::State& state) {
+  if (state.next_state_active_policy ==
+          usage_time_limit::ActivePolicies::kUsageLimit &&
+      UsageTimeStateNotifier::GetInstance()->GetState() ==
+          UsageTimeStateNotifier::UsageTimeState::ACTIVE) {
+    base::Time now = clock_->Now();
+    base::TimeDelta time_until_next_state = state.next_state_change_time - now;
+    base::TimeDelta delay =
+        time_until_next_state < kUsageTimeLimitWarningTime
+            ? base::TimeDelta()
+            : time_until_next_state - kUsageTimeLimitWarningTime;
+
+    VLOG(1) << "Scheduling usage time limit warning in " << delay.InMinutes()
+            << " minutes.";
+    usage_time_limit_warning_timer_->Start(
+        FROM_HERE, delay,
+        base::BindRepeating(&ScreenTimeController::UsageTimeLimitWarning,
+                            base::Unretained(this)));
+  }
 }
 
 void ScreenTimeController::SaveCurrentStateToPref(
@@ -308,9 +389,42 @@ ScreenTimeController::GetLastStateFromPref() {
   return result;
 }
 
+void ScreenTimeController::UsageTimeLimitWarning() {
+  base::Time now = clock_->Now();
+  const icu::TimeZone& time_zone =
+      system::TimezoneSettings::GetInstance()->GetTimezone();
+  const base::DictionaryValue* time_limit =
+      pref_service_->GetDictionary(prefs::kUsageTimeLimit);
+
+  base::Optional<base::TimeDelta> remaining_usage =
+      usage_time_limit::GetRemainingTimeUsage(time_limit->CreateDeepCopy(), now,
+                                              GetScreenTimeDuration(),
+                                              &time_zone);
+
+  // Remaining time usage can be bigger than |kUsageTimeLimitWarningTime|
+  // because it is counted in another class so the timers might be called with
+  // some delay. We must ensure that the observers will be called when the
+  // usage time is less than |kUsageTimeLimitWarningTime|.
+  if (remaining_usage && remaining_usage < kUsageTimeLimitWarningTime) {
+    for (Observer& observer : observers_)
+      observer.UsageTimeLimitWarning();
+  } else {
+    CheckTimeLimit("UsageTimeLimitWarning");
+  }
+}
+
 void ScreenTimeController::OnSessionStateChanged() {
   session_manager::SessionState session_state =
       session_manager::SessionManager::Get()->session_state();
+  if (base::FeatureList::IsEnabled(features::kUsageTimeStateNotifier)) {
+    if (session_state == session_manager::SessionState::LOCKED &&
+        next_unlock_time_) {
+      UpdateTimeLimitsMessage(true /*visible*/, next_unlock_time_.value());
+      next_unlock_time_.reset();
+    }
+    return;
+  }
+
   if (session_state == session_manager::SessionState::LOCKED) {
     if (next_unlock_time_) {
       UpdateTimeLimitsMessage(true /*visible*/, next_unlock_time_.value());
@@ -319,6 +433,16 @@ void ScreenTimeController::OnSessionStateChanged() {
     ResetInSessionTimers();
   } else if (session_state == session_manager::SessionState::ACTIVE) {
     CheckTimeLimit("OnSessionStateChanged");
+  }
+}
+
+void ScreenTimeController::OnUsageTimeStateChange(
+    const UsageTimeStateNotifier::UsageTimeState state) {
+  if (state == UsageTimeStateNotifier::UsageTimeState::INACTIVE) {
+    ResetWarningTimers();
+    ResetInSessionTimers();
+  } else {
+    CheckTimeLimit("OnUsageTimeStateChange");
   }
 }
 

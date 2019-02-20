@@ -14,6 +14,7 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "net/nqe/effective_connection_type.h"
+#include "third_party/blink/public/mojom/v8_cache_options.mojom.h"
 #include "ui/base/pointer/pointer_device.h"
 #include "url/gurl.h"
 
@@ -33,16 +34,6 @@ enum EditingBehavior {
   EDITING_BEHAVIOR_UNIX,
   EDITING_BEHAVIOR_ANDROID,
   EDITING_BEHAVIOR_LAST = EDITING_BEHAVIOR_ANDROID
-};
-
-// Cache options for V8. See V8CacheOptions.h for information on the options.
-enum V8CacheOptions {
-  V8_CACHE_OPTIONS_DEFAULT,
-  V8_CACHE_OPTIONS_NONE,
-  V8_CACHE_OPTIONS_CODE,
-  V8_CACHE_OPTIONS_CODE_WITHOUT_HEAT_CHECK,
-  V8_CACHE_OPTIONS_FULLCODE_WITHOUT_HEAT_CHECK,
-  V8_CACHE_OPTIONS_LAST = V8_CACHE_OPTIONS_FULLCODE_WITHOUT_HEAT_CHECK
 };
 
 // ImageAnimationPolicy is used for controlling image animation
@@ -161,6 +152,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool should_print_backgrounds;
   bool should_clear_document_background;
   bool enable_scroll_animator;
+  bool prefers_reduced_motion;
   bool touch_event_feature_detection_enabled;
   bool touch_adjustment_enabled;
   int pointer_events_max_touch_points;
@@ -191,7 +183,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool spatial_navigation_enabled;
   bool use_solid_color_scrollbars;
   bool navigate_on_drag_drop;
-  V8CacheOptions v8_cache_options;
+  blink::mojom::V8CacheOptions v8_cache_options;
   bool record_whole_document;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
@@ -209,6 +201,11 @@ struct CONTENT_EXPORT WebPreferences {
 
   bool user_gesture_required_for_presentation;
 
+  // These fields specify the foreground and background color for WebVTT text
+  // tracks. Their values can be any legal CSS color descriptor.
+  std::string text_track_background_color;
+  std::string text_track_text_color;
+
   // Specifies the margin for WebVTT text tracks as a percentage of media
   // element height/width (for horizontal/vertical text respectively).
   // Cues will not be placed in this margin area.
@@ -220,12 +217,14 @@ struct CONTENT_EXPORT WebPreferences {
 
   bool text_autosizing_enabled;
 
+  // Representation of the Web App Manifest scope if any.
+  GURL web_app_scope;
+
 #if defined(OS_ANDROID)
   float font_scale_factor;
   float device_scale_adjustment;
   bool force_enable_zoom;
   bool fullscreen_supported;
-  GURL media_playback_gesture_whitelist_scope;
   GURL default_video_poster_url;
   bool support_deprecated_target_density_dpi;
   bool use_legacy_background_size_shorthand_behavior;
@@ -256,11 +255,13 @@ struct CONTENT_EXPORT WebPreferences {
   // Enable 8 (#RRGGBBAA) and 4 (#RGBA) value hex colors in CSS Android
   // WebView quirk (http://crbug.com/618472).
   bool css_hex_alpha_color_enabled;
-  bool enable_media_download_in_product_help;
   // Enable support for document.scrollingElement
   // WebView sets this to false to retain old documentElement behaviour
   // (http://crbug.com/761016).
   bool scroll_top_left_interop_enabled;
+  // Enable forcibly modifying content rendering to result in a light on dark
+  // colour scheme.
+  bool force_dark_mode_enabled = false;
 #else  // defined(OS_ANDROID)
 #endif  // defined(OS_ANDROID)
 

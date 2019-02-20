@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "cc/base/switches.h"
@@ -204,10 +205,9 @@ scoped_refptr<SolidColorLayer> LayerTreePixelTest::
   return layer;
 }
 
-void LayerTreePixelTest::RunPixelTest(
-    PixelTestType test_type,
-    scoped_refptr<Layer> content_root,
-    base::FilePath file_name) {
+void LayerTreePixelTest::RunPixelTest(PixelTestType test_type,
+                                      scoped_refptr<Layer> content_root,
+                                      base::FilePath file_name) {
   test_type_ = test_type;
   content_root_ = content_root;
   readback_target_ = nullptr;

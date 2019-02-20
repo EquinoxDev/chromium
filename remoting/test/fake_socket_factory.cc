@@ -19,8 +19,8 @@
 #include "base/time/time.h"
 #include "net/base/io_buffer.h"
 #include "remoting/base/leaky_bucket.h"
-#include "third_party/webrtc/media/base/rtputils.h"
-#include "third_party/webrtc/rtc_base/asyncpacketsocket.h"
+#include "third_party/webrtc/media/base/rtp_utils.h"
+#include "third_party/webrtc/rtc_base/async_packet_socket.h"
 #include "third_party/webrtc/rtc_base/socket.h"
 
 namespace remoting {
@@ -325,8 +325,8 @@ void FakePacketSocketFactory::ReceivePacket(
   pending_packets_.push_back(packet);
   task_runner_->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&FakePacketSocketFactory::DoReceivePacket,
-                 weak_factory_.GetWeakPtr()),
+      base::BindOnce(&FakePacketSocketFactory::DoReceivePacket,
+                     weak_factory_.GetWeakPtr()),
       delay);
 }
 

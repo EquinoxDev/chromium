@@ -24,26 +24,13 @@ declare_args() {
 
   # Enable language splits in the Chrome bundles.
   enable_chrome_language_splits = android_channel == "default"
-
-  # Build Monochrome/Trichrome as a 64-bit browser.
-  android_64bit_browser = false
 }
 
 default_chrome_public_jinja_variables = [
   "channel=$android_channel",
   "enable_vr=$enable_vr",
-  "include_arcore_manifest_flag=$enable_arcore",
+  "include_arcore_manifest_flag=$package_arcore",
 ]
-
-if (android_64bit_browser) {
-  current_abi_is_webview_only =
-      defined(android_secondary_abi_toolchain) &&
-      current_toolchain == android_secondary_abi_toolchain
-} else {
-  current_abi_is_webview_only =
-      defined(android_secondary_abi_toolchain) &&
-      current_toolchain != android_secondary_abi_toolchain
-}
 
 # A template used to declare any target that will implement a full Chromium
 # or Chrome application, either as an APK, or an app bundle module.
@@ -145,7 +132,15 @@ template("chrome_public_common_apk_or_module_tmpl") {
       native_lib_version_rule = "//build/util:chrome_version_json"
     }
     if (!defined(aapt_locale_whitelist)) {
-      aapt_locale_whitelist = locales - android_chrome_omitted_locales
+      if (target_type == "android_apk") {
+        # For APKs, do not include the resource strings files from our
+        # omitted locale list in order to save size.
+        aapt_locale_whitelist = locales - android_chrome_omitted_locales
+      } else {
+        # For bundles, only include resource strings files from our full
+        # locale list, but nothing more.
+        aapt_locale_whitelist = locales
+      }
     }
 
     if (!_is_monochrome) {
@@ -182,6 +177,9 @@ template("chrome_public_common_apk_or_module_tmpl") {
     if (_target_type == "android_app_bundle_module") {
       deps +=
           [ "//components/module_installer/android:module_installer_impl_java" ]
+    } else if (_target_type == "instrumentation_test_apk") {
+      deps +=
+          [ "//components/module_installer/android:module_installer_test_java" ]
     } else {
       deps +=
           [ "//components/module_installer/android:module_installer_stub_java" ]
@@ -273,10 +271,10 @@ template("monochrome_public_common_apk_or_module_tmpl") {
       if (android_64bit_target_cpu) {
         # Build //android_webview:monochrome with the opposite bitness that
         # Chrome runs in.
-        if (android_64bit_browser) {
-          shared_libraries = [ "//chrome/android:monochrome${_suffix}" ]
-          if (build_apk_secondary_abi) {
-            secondary_abi_shared_libraries = [ "//android_webview:monochrome${_suffix}($android_secondary_abi_toolchain)" ]
+        if (defined(invoker.is_64_bit_browser) && invoker.is_64_bit_browser) {
+          shared_libraries = [ "//chrome/android:monochrome_64${_suffix}" ]
+          if (build_apk_secondary_abi && invoker.include_32_bit_webview) {
+            secondary_abi_shared_libraries = [ "//android_webview:monochrome_64${_suffix}($android_secondary_abi_toolchain)" ]
           }
         } else {
           shared_libraries = [ "//android_webview:monochrome${_suffix}" ]
@@ -292,13 +290,14 @@ template("monochrome_public_common_apk_or_module_tmpl") {
         shared_library_for_unwind_asset = "monochrome${_suffix}"
       }
     } else {
-      # Include a placeholder library to ensure that Chrome runs with
-      # the correct bitness (same as the placeholder).
-      if (android_64bit_target_cpu && !android_64bit_browser) {
-        # We don't want to be 64-bit, only include a placeholder for secondary.
+      # Include placeholder libraries to make Chrome multiarch in the same way
+      # as Monochrome, even though Chrome only runs with one of the two
+      # bitnesses. This allows the "32-bit" and "64-bit" versions of Chrome to
+      # depend on their respective versions of the shared library APK even
+      # though they're functionally the same.
+      native_lib_placeholders = [ "libdummy.so" ]
+      if (android_64bit_target_cpu && build_apk_secondary_abi) {
         secondary_native_lib_placeholders = [ "libdummy.so" ]
-      } else {
-        native_lib_placeholders = [ "libdummy.so" ]
       }
     }
 
@@ -306,9 +305,6 @@ template("monochrome_public_common_apk_or_module_tmpl") {
     app_as_shared_lib = true
     use_chromium_linker = false
     min_sdk_version = 24
-
-    # Webview supports all locales (has no omitted ones).
-    aapt_locale_whitelist = locales
 
     # Resources config for blocklisting resource names from obfuscation
     resources_config_path = "//android_webview/aapt2.config"
@@ -328,7 +324,7 @@ template("monochrome_public_common_apk_or_module_tmpl") {
     # Configrations to make android load shared library from APK.
     uncompress_shared_libraries = true
 
-    forward_variables_from(invoker, "*")
+    forward_variables_from(invoker, "*", [ "include_32_bit_webview" ])
 
     # Android N+ better supports multiple locales (https://crbug.com/780847).
     support_zh_hk = false
@@ -370,25 +366,20 @@ template("monochrome_public_common_apk_or_module_tmpl") {
       png_to_webp = true
     }
 
-    # TODO(crbug.com/862719): Remove Java VR code from the monochrome base
-    # module once we can conditionally install the VR DFM.
-    if (enable_vr) {
-      deps += [ "//chrome/browser/android/vr:java" ]
-    }
+    if ((invoker.target_type == "android_apk" || !modularize_ar) &&
+        package_arcore) {
+      deps += [
+        "//chrome/browser/android/vr:ar_java",
+        "//third_party/android_deps:com_google_ar_core_java",
+      ]
 
-    if (invoker.target_type == "android_apk" || !modularize_ar) {
-      if (enable_arcore) {
-        deps += [ "//third_party/arcore-android-sdk:libdynamite_client_java" ]
-      }
-      if (package_arcore) {
-        # We store this as a separate .so in the APK and only load as needed.
-        if (android_64bit_target_cpu && build_apk_secondary_abi) {
-          secondary_abi_loadable_modules = [ "//third_party/arcore-android-sdk/libraries/android_arm/libarcore_sdk_c_minimal.so" ]
-        } else if (android_64bit_target_cpu && !build_apk_secondary_abi) {
-          loadable_modules = [ "//third_party/arcore-android-sdk/libraries/android_arm64/libarcore_sdk_c_minimal.so" ]
-        } else {
-          loadable_modules = [ "//third_party/arcore-android-sdk/libraries/android_arm/libarcore_sdk_c_minimal.so" ]
-        }
+      # We store this as a separate .so in the APK and only load as needed.
+      if (android_64bit_target_cpu && build_apk_secondary_abi) {
+        secondary_abi_loadable_modules = [ "$root_gen_dir/third_party/android_deps/com_google_ar_core_java/jni/armeabi-v7a/libarcore_sdk_c.so" ]
+      } else if (android_64bit_target_cpu && !build_apk_secondary_abi) {
+        loadable_modules = [ "$root_gen_dir/third_party/android_deps/com_google_ar_core_java/jni/armeabi-v7a/libarcore_sdk_c.so" ]
+      } else {
+        loadable_modules = [ "$root_gen_dir/third_party/android_deps/com_google_ar_core_java/jni/armeabi-v7a/libarcore_sdk_c.so" ]
       }
     }
   }

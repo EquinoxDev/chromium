@@ -19,6 +19,7 @@
 #include "content/public/browser/certificate_request_result_type.h"
 #include "content/public/browser/content_browser_client.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-forward.h"
 
 class PrefService;
 
@@ -62,6 +63,7 @@ class VideoResolutionPolicy;
 
 namespace shell {
 class CastBrowserMainParts;
+class CastNetworkContexts;
 class CastResourceDispatcherHostDelegate;
 class URLRequestContextFactory;
 
@@ -199,14 +201,25 @@ class CastContentBrowserClient : public content::ContentBrowserClient {
   bool ShouldEnableStrictSiteIsolation() override;
   std::vector<std::unique_ptr<content::NavigationThrottle>>
   CreateThrottlesForNavigation(content::NavigationHandle* handle) override;
+  void OnNetworkServiceCreated(
+      network::mojom::NetworkService* network_service) override;
+  network::mojom::NetworkContextPtr CreateNetworkContext(
+      content::BrowserContext* context,
+      bool in_memory,
+      const base::FilePath& relative_partition_path) override;
   std::string GetUserAgent() const override;
   CastFeatureListCreator* GetCastFeatureListCreator() {
     return cast_feature_list_creator_;
   }
 
 #if BUILDFLAG(USE_CHROMECAST_CDMS)
-  virtual std::unique_ptr<::media::CdmFactory> CreateCdmFactory();
+  virtual std::unique_ptr<::media::CdmFactory> CreateCdmFactory(
+      service_manager::mojom::InterfaceProvider* host_interfaces);
 #endif  // BUILDFLAG(USE_CHROMECAST_CDMS)
+
+  CastNetworkContexts* cast_network_contexts() {
+    return cast_network_contexts_.get();
+  }
 
  protected:
   explicit CastContentBrowserClient(
@@ -262,6 +275,7 @@ class CastContentBrowserClient : public content::ContentBrowserClient {
 
   // Created by CastContentBrowserClient but owned by BrowserMainLoop.
   CastBrowserMainParts* cast_browser_main_parts_;
+  std::unique_ptr<CastNetworkContexts> cast_network_contexts_;
   std::unique_ptr<URLRequestContextFactory> url_request_context_factory_;
   std::unique_ptr<CastResourceDispatcherHostDelegate>
       resource_dispatcher_host_delegate_;

@@ -2,8 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//services/service_manager/public/service_manifest.gni")
-
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
@@ -27,11 +25,6 @@ source_set("lib") {
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/mojom",
   ]
-}
-
-service_manifest("manifest") {
-  name = "identity"
-  source = "manifest.json"
 }
 
 source_set("tests") {
@@ -58,7 +51,6 @@ source_set("tests") {
   sources = [
     "identity_manager_impl_unittest.cc",
     "public/cpp/access_token_fetcher_unittest.cc",
-    "public/cpp/accounts_mutator_unittest.cc",
     "public/cpp/identity_manager_unittest.cc",
     "public/cpp/identity_test_environment_unittest.cc",
     "public/cpp/primary_account_access_token_fetcher_unittest.cc",

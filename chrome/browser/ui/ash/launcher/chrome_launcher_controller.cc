@@ -15,6 +15,8 @@
 #include "ash/public/cpp/shelf_prefs.h"
 #include "ash/public/cpp/window_animation_types.h"
 #include "ash/public/interfaces/constants.mojom.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/strings/pattern.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -423,13 +425,13 @@ void ChromeLauncherController::ActivateApp(const std::string& app_id,
     return;
   }
 
-  // Create a temporary delegate to see if there are running app instances.
   std::unique_ptr<AppShortcutLauncherItemController> item_delegate =
       AppShortcutLauncherItemController::Create(shelf_id);
-  if (!item_delegate->GetRunningApplications().empty())
+  if (!item_delegate->GetRunningApplications().empty()) {
     SelectItemWithSource(item_delegate.get(), source, display_id);
-  else
+  } else {
     LaunchApp(shelf_id, source, event_flags, display_id);
+  }
 }
 
 void ChromeLauncherController::SetLauncherItemImage(
@@ -591,10 +593,7 @@ ChromeLauncherController::GetV1ApplicationsFromAppId(
   // This should only be called for apps.
   DCHECK(item->type == ash::TYPE_APP || item->type == ash::TYPE_PINNED_APP);
 
-  ash::ShelfItemDelegate* delegate = model_->GetShelfItemDelegate(item->id);
-  AppShortcutLauncherItemController* item_controller =
-      static_cast<AppShortcutLauncherItemController*>(delegate);
-  return item_controller->GetRunningApplications();
+  return AppShortcutLauncherItemController::GetRunningApplications(app_id);
 }
 
 void ChromeLauncherController::ActivateShellApp(const std::string& app_id,

@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "base/bind.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/feedback/feedback_uploader_chrome.h"
@@ -34,6 +35,21 @@
 
 namespace extensions {
 
+namespace {
+
+int GetSysInfoCheckboxStringId(content::BrowserContext* browser_context) {
+#if defined(OS_CHROMEOS)
+  if (arc::IsArcPlayStoreEnabledForProfile(
+          Profile::FromBrowserContext(browser_context))) {
+    return IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX_ARC;
+  }
+#endif
+
+  return IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX;
+}
+
+}  // namespace
+
 ChromeFeedbackPrivateDelegate::ChromeFeedbackPrivateDelegate() = default;
 ChromeFeedbackPrivateDelegate::~ChromeFeedbackPrivateDelegate() = default;
 
@@ -55,18 +71,9 @@ ChromeFeedbackPrivateDelegate::GetStrings(
   SET_STRING("screenshot", IDS_FEEDBACK_SCREENSHOT_LABEL);
   SET_STRING("user-email", IDS_FEEDBACK_USER_EMAIL_LABEL);
   SET_STRING("anonymous-user", IDS_FEEDBACK_ANONYMOUS_EMAIL_OPTION);
-#if defined(OS_CHROMEOS)
-  if (arc::IsArcPlayStoreEnabledForProfile(
-          Profile::FromBrowserContext(browser_context))) {
-    SET_STRING("sys-info",
-               IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_AND_METRICS_CHKBOX_ARC);
-  } else {
-    SET_STRING("sys-info",
-               IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_AND_METRICS_CHKBOX);
-  }
-#else
-  SET_STRING("sys-info", IDS_FEEDBACK_INCLUDE_SYSTEM_INFORMATION_CHKBOX);
-#endif
+  SET_STRING("sys-info", GetSysInfoCheckboxStringId(browser_context));
+  SET_STRING("assistant-info",
+             IDS_FEEDBACK_INCLUDE_ASSISTANT_INFORMATION_CHKBOX);
   SET_STRING("attach-file-label", IDS_FEEDBACK_ATTACH_FILE_LABEL);
   SET_STRING("attach-file-note", IDS_FEEDBACK_ATTACH_FILE_NOTE);
   SET_STRING("attach-file-to-big", IDS_FEEDBACK_ATTACH_FILE_TO_BIG);

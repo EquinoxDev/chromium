@@ -12,8 +12,7 @@
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chromeos/constants/chromeos_paths.h"
-#include "chromeos/constants/chromeos_switches.h"
+#include "chromeos/dbus/constants/dbus_paths.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/ownership/owner_key_util.h"
 #include "components/ownership/owner_key_util_impl.h"
@@ -75,8 +74,10 @@ OwnerSettingsServiceChromeOSFactory::GetOwnerKeyUtil() {
   if (owner_key_util_.get())
     return owner_key_util_;
   base::FilePath public_key_path;
-  if (!base::PathService::Get(chromeos::FILE_OWNER_KEY, &public_key_path))
-    return NULL;
+  if (!base::PathService::Get(chromeos::dbus_paths::FILE_OWNER_KEY,
+                              &public_key_path)) {
+    return nullptr;
+  }
   owner_key_util_ = new ownership::OwnerKeyUtilImpl(public_key_path);
   return owner_key_util_;
 }
@@ -95,22 +96,13 @@ KeyedService* OwnerSettingsServiceChromeOSFactory::BuildInstanceFor(
     return nullptr;
   }
 
-  // TODO(olsen): Delete this code once no tests use kStubCrosSettings switch.
-  // See http://crbug.com/909635
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kStubCrosSettings) &&
-      g_stub_cros_settings_provider_for_testing_ == nullptr) {
-    g_stub_cros_settings_provider_for_testing_ =
-        CrosSettings::Get()->stubbed_provider_for_test();
-  }
-
   // If g_stub_cros_settings_provider_for_testing_ is set, we treat the current
   // user as the owner, and write settings directly to the stubbed provider.
   // This is done using the FakeOwnerSettingsService.
   if (g_stub_cros_settings_provider_for_testing_ != nullptr) {
     return new FakeOwnerSettingsService(
-        profile, GetInstance()->GetOwnerKeyUtil(),
-        g_stub_cros_settings_provider_for_testing_);
+        g_stub_cros_settings_provider_for_testing_, profile,
+        GetInstance()->GetOwnerKeyUtil());
   }
 
   return new OwnerSettingsServiceChromeOS(

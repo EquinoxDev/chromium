@@ -454,6 +454,11 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kComponentUpdatesEnabled,
     prefs::kComponentUpdatesEnabled,
     base::Value::Type::BOOLEAN },
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  { key::kExtensionAllowInsecureUpdates,
+    extensions::pref_names::kInsecureExtensionUpdatesEnabled,
+    base::Value::Type::BOOLEAN },
+#endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 #if BUILDFLAG(ENABLE_SPELLCHECK)
   { key::kSpellCheckServiceEnabled,
@@ -530,6 +535,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
 #endif  // !defined(OS_MACOSX)
 
 #if defined(OS_CHROMEOS)
+  { key::kCertificateManagementAllowed,
+    prefs::kCertificateManagementAllowed,
+    base::Value::Type::INTEGER },
   { key::kChromeOsLockOnIdleSuspend,
     ash::prefs::kEnableAutoScreenLock,
     base::Value::Type::BOOLEAN },
@@ -653,6 +661,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kEcryptfsMigrationStrategy,
     arc::prefs::kEcryptfsMigrationStrategy,
     base::Value::Type::INTEGER },
+  { key::kSchedulerConfiguration,
+    prefs::kSchedulerConfiguration,
+    base::Value::Type::STRING },
   { key::kNativePrintersBulkAccessMode,
     prefs::kRecommendedNativePrintersAccessMode,
     base::Value::Type::INTEGER },
@@ -691,6 +702,9 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
     base::Value::Type::BOOLEAN },
   { key::kCrostiniAllowed,
     crostini::prefs::kUserCrostiniAllowedByPolicy,
+    base::Value::Type::BOOLEAN },
+  { key::kCrostiniExportImportUIAllowed,
+    crostini::prefs::kUserCrostiniExportImportUIAllowedByPolicy,
     base::Value::Type::BOOLEAN },
   { key::kReportCrostiniUsageEnabled,
     crostini::prefs::kReportCrostiniUsageEnabled,
@@ -951,6 +965,15 @@ const PolicyToPreferenceMapEntry kSimplePolicyMap[] = {
   { key::kBrowserSwitcherExternalSitelistUrl,
     browser_switcher::prefs::kExternalSitelistUrl,
     base::Value::Type::STRING },
+  { key::kBrowserSwitcherEnabled,
+    browser_switcher::prefs::kEnabled,
+    base::Value::Type::BOOLEAN },
+  { key::kBrowserSwitcherKeepLastChromeTab,
+    browser_switcher::prefs::kKeepLastTab,
+    base::Value::Type::BOOLEAN },
+  { key::kBrowserSwitcherDelay,
+    browser_switcher::prefs::kDelay,
+    base::Value::Type::INTEGER },
 #endif
 #if defined(OS_WIN)
   { key::kBrowserSwitcherUseIeSitelist,

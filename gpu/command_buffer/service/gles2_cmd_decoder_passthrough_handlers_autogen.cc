@@ -573,7 +573,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteBuffersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t buffers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &buffers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&buffers_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* buffers = GetImmediateDataAs<volatile const GLuint*>(
@@ -596,7 +596,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteFramebuffersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t framebuffers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &framebuffers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&framebuffers_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* framebuffers =
@@ -633,7 +633,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteRenderbuffersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t renderbuffers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &renderbuffers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&renderbuffers_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* renderbuffers =
@@ -659,7 +659,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteSamplersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t samplers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &samplers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&samplers_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* samplers = GetImmediateDataAs<volatile const GLuint*>(
@@ -710,7 +710,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteTexturesImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t textures_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &textures_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&textures_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* textures = GetImmediateDataAs<volatile const GLuint*>(
@@ -737,7 +737,7 @@ GLES2DecoderPassthroughImpl::HandleDeleteTransformFeedbacksImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t ids_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &ids_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&ids_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* ids = GetImmediateDataAs<volatile const GLuint*>(
@@ -957,7 +957,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenBuffersImmediate(
       *static_cast<const volatile gles2::cmds::GenBuffersImmediate*>(cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t buffers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &buffers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&buffers_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* buffers = GetImmediateDataAs<volatile GLuint*>(
@@ -993,7 +993,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenFramebuffersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t framebuffers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &framebuffers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&framebuffers_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* framebuffers = GetImmediateDataAs<volatile GLuint*>(
@@ -1016,7 +1016,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenRenderbuffersImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t renderbuffers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &renderbuffers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&renderbuffers_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* renderbuffers = GetImmediateDataAs<volatile GLuint*>(
@@ -1040,7 +1040,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenSamplersImmediate(
       *static_cast<const volatile gles2::cmds::GenSamplersImmediate*>(cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t samplers_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &samplers_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&samplers_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* samplers = GetImmediateDataAs<volatile GLuint*>(
@@ -1062,7 +1062,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenTexturesImmediate(
       *static_cast<const volatile gles2::cmds::GenTexturesImmediate*>(cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t textures_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &textures_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&textures_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* textures = GetImmediateDataAs<volatile GLuint*>(
@@ -1087,7 +1087,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenTransformFeedbacksImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t ids_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &ids_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&ids_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* ids =
@@ -3701,6 +3701,31 @@ GLES2DecoderPassthroughImpl::HandleRenderbufferStorageMultisampleCHROMIUM(
 }
 
 error::Error
+GLES2DecoderPassthroughImpl::HandleRenderbufferStorageMultisampleAdvancedAMD(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  const volatile gles2::cmds::RenderbufferStorageMultisampleAdvancedAMD& c =
+      *static_cast<const volatile gles2::cmds::
+                       RenderbufferStorageMultisampleAdvancedAMD*>(cmd_data);
+  if (!features().amd_framebuffer_multisample_advanced) {
+    return error::kUnknownCommand;
+  }
+
+  GLenum target = static_cast<GLenum>(c.target);
+  GLsizei samples = static_cast<GLsizei>(c.samples);
+  GLsizei storageSamples = static_cast<GLsizei>(c.storageSamples);
+  GLenum internalformat = static_cast<GLenum>(c.internalformat);
+  GLsizei width = static_cast<GLsizei>(c.width);
+  GLsizei height = static_cast<GLsizei>(c.height);
+  error::Error error = DoRenderbufferStorageMultisampleAdvancedAMD(
+      target, samples, storageSamples, internalformat, width, height);
+  if (error != error::kNoError) {
+    return error;
+  }
+  return error::kNoError;
+}
+
+error::Error
 GLES2DecoderPassthroughImpl::HandleRenderbufferStorageMultisampleEXT(
     uint32_t immediate_data_size,
     const volatile void* cmd_data) {
@@ -3781,7 +3806,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenQueriesEXTImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t queries_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &queries_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&queries_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* queries = GetImmediateDataAs<volatile GLuint*>(
@@ -3804,7 +3829,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteQueriesEXTImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t queries_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &queries_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&queries_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* queries = GetImmediateDataAs<volatile const GLuint*>(
@@ -3865,7 +3890,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleGenVertexArraysOESImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t arrays_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &arrays_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&arrays_size)) {
     return error::kOutOfBounds;
   }
   volatile GLuint* arrays =
@@ -3888,7 +3913,7 @@ error::Error GLES2DecoderPassthroughImpl::HandleDeleteVertexArraysOESImmediate(
           cmd_data);
   GLsizei n = static_cast<GLsizei>(c.n);
   uint32_t arrays_size;
-  if (!SafeMultiplyUint32(n, sizeof(GLuint), &arrays_size)) {
+  if (!base::CheckMul(n, sizeof(GLuint)).AssignIfValid(&arrays_size)) {
     return error::kOutOfBounds;
   }
   volatile const GLuint* arrays = GetImmediateDataAs<volatile const GLuint*>(
@@ -3992,6 +4017,40 @@ error::Error GLES2DecoderPassthroughImpl::HandleDispatchCompute(
   if (error != error::kNoError) {
     return error;
   }
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::HandleGetProgramInterfaceiv(
+    uint32_t immediate_data_size,
+    const volatile void* cmd_data) {
+  if (!feature_info_->IsWebGL2ComputeContext())
+    return error::kUnknownCommand;
+  const volatile gles2::cmds::GetProgramInterfaceiv& c =
+      *static_cast<const volatile gles2::cmds::GetProgramInterfaceiv*>(
+          cmd_data);
+  GLuint program = c.program;
+  GLenum program_interface = static_cast<GLenum>(c.program_interface);
+  GLenum pname = static_cast<GLenum>(c.pname);
+  unsigned int buffer_size = 0;
+  typedef cmds::GetProgramInterfaceiv::Result Result;
+  Result* result = GetSharedMemoryAndSizeAs<Result*>(
+      c.params_shm_id, c.params_shm_offset, sizeof(Result), &buffer_size);
+  GLint* params = result ? result->GetData() : nullptr;
+  if (params == nullptr) {
+    return error::kOutOfBounds;
+  }
+  GLsizei bufsize = Result::ComputeMaxResults(buffer_size);
+  GLsizei written_values = 0;
+  GLsizei* length = &written_values;
+  error::Error error = DoGetProgramInterfaceiv(program, program_interface,
+                                               pname, bufsize, length, params);
+  if (error != error::kNoError) {
+    return error;
+  }
+  if (written_values > bufsize) {
+    return error::kOutOfBounds;
+  }
+  result->SetNumResults(written_values);
   return error::kNoError;
 }
 
@@ -4840,11 +4899,12 @@ error::Error GLES2DecoderPassthroughImpl::
   }
   volatile const GLbyte* mailbox = GetImmediateDataAs<volatile const GLbyte*>(
       c, mailbox_size, immediate_data_size);
+  GLenum internalformat = static_cast<GLenum>(c.internalformat);
   if (mailbox == nullptr) {
     return error::kOutOfBounds;
   }
-  error::Error error =
-      DoCreateAndTexStorage2DSharedImageINTERNAL(texture, mailbox);
+  error::Error error = DoCreateAndTexStorage2DSharedImageINTERNAL(
+      texture, mailbox, internalformat);
   if (error != error::kNoError) {
     return error;
   }

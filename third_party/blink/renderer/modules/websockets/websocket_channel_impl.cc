@@ -80,7 +80,9 @@ class WebSocketChannelImpl::BlobLoader final
     : public GarbageCollectedFinalized<WebSocketChannelImpl::BlobLoader>,
       public FileReaderLoaderClient {
  public:
-  BlobLoader(scoped_refptr<BlobDataHandle>, WebSocketChannelImpl*);
+  BlobLoader(scoped_refptr<BlobDataHandle>,
+             WebSocketChannelImpl*,
+             scoped_refptr<base::SingleThreadTaskRunner>);
   ~BlobLoader() override = default;
 
   void Cancel();
@@ -107,7 +109,7 @@ class WebSocketChannelImpl::Message
   // For WorkerWebSocketChannel
   explicit Message(std::unique_ptr<Vector<char>>, MessageType);
   // Close message
-  Message(unsigned short code, const String& reason);
+  Message(uint16_t code, const String& reason);
 
   void Trace(blink::Visitor* visitor) { visitor->Trace(array_buffer); }
 
@@ -117,16 +119,19 @@ class WebSocketChannelImpl::Message
   scoped_refptr<BlobDataHandle> blob_data_handle;
   Member<DOMArrayBuffer> array_buffer;
   std::unique_ptr<Vector<char>> vector_data;
-  unsigned short code;
+  uint16_t code;
   String reason;
 };
 
 WebSocketChannelImpl::BlobLoader::BlobLoader(
     scoped_refptr<BlobDataHandle> blob_data_handle,
-    WebSocketChannelImpl* channel)
+    WebSocketChannelImpl* channel,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : channel_(channel),
-      loader_(FileReaderLoader::Create(FileReaderLoader::kReadAsArrayBuffer,
-                                       this)) {
+      loader_(std::make_unique<FileReaderLoader>(
+          FileReaderLoader::kReadAsArrayBuffer,
+          this,
+          std::move(task_runner))) {
   loader_->Start(std::move(blob_data_handle));
 }
 
@@ -192,7 +197,9 @@ WebSocketChannelImpl::WebSocketChannelImpl(
       received_data_size_for_flow_control_(0),
       sent_size_of_top_message_(0),
       location_at_construction_(std::move(location)),
-      throttle_passed_(false) {
+      throttle_passed_(false),
+      file_reading_task_runner_(
+          execution_context->GetTaskRunner(TaskType::kFileReading)) {
   if (auto* scope = DynamicTo<WorkerGlobalScope>(*execution_context_))
     scope->EnsureFetcher();
 }
@@ -268,7 +275,8 @@ bool WebSocketChannelImpl::Connect(
 
 bool WebSocketChannelImpl::Connect(const KURL& url, const String& protocol) {
   network::mojom::blink::WebSocketPtr socket_ptr;
-  auto socket_request = mojo::MakeRequest(&socket_ptr);
+  auto socket_request = mojo::MakeRequest(
+      &socket_ptr, execution_context_->GetTaskRunner(TaskType::kWebSocket));
   service_manager::InterfaceProvider* interface_provider =
       execution_context_->GetInterfaceProvider();
   if (interface_provider)
@@ -347,7 +355,7 @@ void WebSocketChannelImpl::SendBinaryAsCharVector(
 void WebSocketChannelImpl::Close(int code, const String& reason) {
   NETWORK_DVLOG(1) << this << " Close(" << code << ", " << reason << ")";
   DCHECK(handle_);
-  unsigned short code_to_send = static_cast<unsigned short>(
+  uint16_t code_to_send = static_cast<uint16_t>(
       code == kCloseEventCodeNotSpecified ? kCloseEventCodeNoStatusRcvd : code);
   messages_.push_back(MakeGarbageCollected<Message>(code_to_send, reason));
   ProcessSendQueue();
@@ -414,8 +422,7 @@ WebSocketChannelImpl::Message::Message(
          type == kMessageTypeBinaryAsCharVector);
 }
 
-WebSocketChannelImpl::Message::Message(unsigned short code,
-                                       const String& reason)
+WebSocketChannelImpl::Message::Message(uint16_t code, const String& reason)
     : type(kMessageTypeClose), code(code), reason(reason) {}
 
 void WebSocketChannelImpl::SendInternal(
@@ -464,8 +471,8 @@ void WebSocketChannelImpl::ProcessSendQueue() {
         CHECK(!blob_loader_);
         CHECK(message);
         CHECK(message->blob_data_handle);
-        blob_loader_ =
-            MakeGarbageCollected<BlobLoader>(message->blob_data_handle, this);
+        blob_loader_ = MakeGarbageCollected<BlobLoader>(
+            message->blob_data_handle, this, file_reading_task_runner_);
         break;
       case kMessageTypeArrayBuffer:
         CHECK(message->array_buffer);
@@ -524,7 +531,7 @@ void WebSocketChannelImpl::AbortAsyncOperations() {
 }
 
 void WebSocketChannelImpl::HandleDidClose(bool was_clean,
-                                          unsigned short code,
+                                          uint16_t code,
                                           const String& reason) {
   handshake_throttle_.reset();
   handle_.reset();
@@ -677,7 +684,7 @@ void WebSocketChannelImpl::DidReceiveData(WebSocketHandle* handle,
 
 void WebSocketChannelImpl::DidClose(WebSocketHandle* handle,
                                     bool was_clean,
-                                    unsigned short code,
+                                    uint16_t code,
                                     const String& reason) {
   NETWORK_DVLOG(1) << this << " DidClose(" << handle << ", " << was_clean
                    << ", " << code << ", " << String(reason) << ")";
@@ -791,6 +798,10 @@ bool WebSocketChannelImpl::ShouldDisallowConnection(const KURL& url) {
 BaseFetchContext* WebSocketChannelImpl::GetBaseFetchContext() const {
   ResourceFetcher* resource_fetcher = execution_context_->Fetcher();
   return static_cast<BaseFetchContext*>(&resource_fetcher->Context());
+}
+
+ExecutionContext* WebSocketChannelImpl::GetExecutionContext() {
+  return execution_context_;
 }
 
 void WebSocketChannelImpl::Trace(blink::Visitor* visitor) {

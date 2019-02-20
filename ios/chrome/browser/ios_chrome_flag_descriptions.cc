@@ -11,6 +11,14 @@
 
 namespace flag_descriptions {
 
+const char kEnableAutocompleteDataRetentionPolicyName[] =
+    "Enable automatic cleanup of expired Autocomplete entries.";
+const char kEnableAutocompleteDataRetentionPolicyDescription[] =
+    "If enabled, will clean-up Autocomplete entries whose last use date is "
+    "older than the current retention policy. These entries will be "
+    "permanently deleted from the client on startup, and will be unlinked "
+    "from sync.";
+
 const char kAutofillCacheQueryResponsesName[] =
     "Cache Autofill Query Responses";
 const char kAutofillCacheQueryResponsesDescription[] =
@@ -47,6 +55,13 @@ const char kCompactTranslateInfobarDescription[] =
     "When enabled, replaces the exisitng translate infobars with a new compact "
     "one.";
 
+#if defined(DCHECK_IS_CONFIGURABLE)
+const char kDcheckIsFatalName[] = "DCHECKs are fatal";
+const char kDcheckIsFatalDescription[] =
+    "By default Chrome will evaluate in this build, but only log failures, "
+    "rather than crashing. If enabled, DCHECKs will crash the calling process.";
+#endif  // defined(DCHECK_IS_CONFIGURABLE)
+
 const char kEnableAutofillCreditCardUploadUpdatePromptExplanationName[] =
     "Enable updated prompt explanation when offering credit card upload";
 const char kEnableAutofillCreditCardUploadUpdatePromptExplanationDescription[] =
@@ -58,6 +73,14 @@ const char kEnableAutofillSaveCreditCardUsesStrikeSystemName[] =
 const char kEnableAutofillSaveCreditCardUsesStrikeSystemDescription[] =
     "If enabled, prevents popping up the credit card offer-to-save prompt if "
     "it has repeatedly been ignored, declined, or failed.";
+
+const char kEnableAutofillSaveCreditCardUsesStrikeSystemV2Name[] =
+    "Enable limit on offering to save the same credit card repeatedly using the"
+    "updated strike system implementation";
+const char kEnableAutofillSaveCreditCardUsesStrikeSystemV2Description[] =
+    "If enabled, uses the updated strike system implementation to prevent"
+    "popping up the credit card offer-to-save prompt if it has repeatedly been"
+    "ignored, declined, or failed.";
 
 const char kEnableSyncUSSBookmarksName[] = "Enable USS for bookmarks sync";
 const char kEnableSyncUSSBookmarksDescription[] =
@@ -73,11 +96,6 @@ const char kSyncPseudoUSSHistoryDeleteDirectivesName[] =
 const char kSyncPseudoUSSHistoryDeleteDirectivesDescription[] =
     "Enable new USS-based codepath for sync datatype "
     "HISTORY_DELETE_DIRECTIVES.";
-
-const char kSyncPseudoUSSPasswordsName[] =
-    "Enable pseudo-USS for PASSWORDS sync.";
-const char kSyncPseudoUSSPasswordsDescription[] =
-    "Enable new USS-based codepath for sync datatype PASSWORDS (pseudo-USS).";
 
 const char kSyncPseudoUSSPreferencesName[] =
     "Enable pseudo-USS for PREFERENCES sync.";
@@ -190,14 +208,21 @@ const char kBrowserContainerContainsNTPDescription[] =
     "When enabled, the BrowserContainer contains the NTP directly, rather than"
     "via native content.";
 
+const char kBrowserContainerKeepsContentViewName[] =
+    "Browser Container retains the content view";
+const char kBrowserContainerKeepsContentViewDescription[] =
+    "When enable, the browser container keeps the content view in the view "
+    "hierarchy, to avoid WKWebView from being unloaded from the process.";
+
+const char kExternalFilesLoadedInWebStateName[] =
+    "External files loaded in WebState";
+const char kExternalFilesLoadedInWebStateDescription[] =
+    "When enabled, external files are loaded in WebState instead of using "
+    "ExternalFileController.";
+
 const char kBrowserTaskScheduler[] = "Task Scheduler";
 const char kBrowserTaskSchedulerDescription[] =
     "Enables redirection of some task posting APIs to the task scheduler.";
-
-const char kCaptivePortalMetricsName[] = "Captive Portal Metrics";
-const char kCaptivePortalMetricsDescription[] =
-    "When enabled, some network issues will trigger a test to check if a "
-    "Captive Portal network is the cause of the issue.";
 
 // TODO(crbug.com/893314) : Remove this flag.
 const char kClosingLastIncognitoTabName[] = "Closing Last Incognito Tab";
@@ -209,9 +234,11 @@ const char kContextualSearch[] = "Contextual Search";
 const char kContextualSearchDescription[] =
     "Whether or not Contextual Search is enabled.";
 
-const char kCopyImageName[] = "Copy Image";
-const char kCopyImageDescription[] =
-    "Enable copying image to system pasteboard via context menu.";
+const char kCopiedContentBehaviorName[] =
+    "Enable differentiating between copied urls, text, and images";
+const char kCopiedContentBehaviorDescription[] =
+    "When enabled, places that handled copied urls (omnibox long-press, toolbar"
+    "menus) will differentiate between copied urls, text, and images.";
 
 const char kDetectMainThreadFreezeName[] = "Detect freeze in the main thread.";
 const char kDetectMainThreadFreezeDescription[] =
@@ -224,6 +251,16 @@ const char kDragAndDropDescription[] = "Enable support for drag and drop.";
 const char kNewClearBrowsingDataUIName[] = "Clear Browsing Data UI";
 const char kNewClearBrowsingDataUIDescription[] =
     "Enable new Clear Browsing Data UI.";
+
+const char kEnableClipboardProviderTextSuggestionsName[] =
+    "Enable copied text provider";
+const char kEnableClipboardProviderTextSuggestionsDescription[] =
+    "Enable suggesting a search for text copied to the clipboard";
+
+const char kEnableClipboardProviderImageSuggestionsName[] =
+    "Enable copied image provider";
+const char kEnableClipboardProviderImageSuggestionsDescription[] =
+    "Enable suggesting a search for the image copied to the clipboard";
 
 const char kFCMInvalidationsName[] =
     "Enable invalidations delivery via new FCM based protocol";
@@ -296,6 +333,12 @@ const char kOmniboxTabSwitchSuggestionsName[] =
 const char kOmniboxTabSwitchSuggestionsDescription[] =
     "Enable the 'switch to this tab' options in the omnibox suggestions.";
 
+const char kOmniboxUIMaxAutocompleteMatchesName[] =
+    "Omnibox UI Max Autocomplete Matches";
+const char kOmniboxUIMaxAutocompleteMatchesDescription[] =
+    "Changes the maximum number of autocomplete matches displayed in the "
+    "Omnibox UI.";
+
 const char kOmniboxUIElideSuggestionUrlAfterHostName[] =
     "Hide the path, query, and ref of omnibox suggestions";
 const char kOmniboxUIElideSuggestionUrlAfterHostDescription[] =
@@ -321,14 +364,14 @@ const char kIgnoresViewportScaleLimitsName[] = "Ignore Viewport Scale Limits";
 const char kIgnoresViewportScaleLimitsDescription[] =
     "When enabled the page can always be scaled, regardless of author intent.";
 
-const char kSearchCopiedImageName[] = "Search copied image";
-const char kSearchCopiedImageDescription[] =
-    "Enable searching from the toolbar search button for an image copied to "
-    "the system pasteboard.";
-
 const char kSearchIconToggleName[] = "Change the icon for the search button";
 const char kSearchIconToggleDescription[] =
     "Different icons for the search button.";
+
+const char kSettingsRefreshName[] = "Enable the UI Refresh for Settings";
+const char kSettingsRefreshDescription[] =
+    "Change the UI appearance of the settings to have something in phase with "
+    "UI Refresh.";
 
 const char kSlimNavigationManagerName[] = "Use Slim Navigation Manager";
 const char kSlimNavigationManagerDescription[] =
@@ -340,26 +383,10 @@ const char kShowAutofillTypePredictionsDescription[] =
     "Annotates web forms with Autofill field type predictions as placeholder "
     "text.";
 
-const char kSSOWithWKWebViewName[] = "SSO with WKWebView";
-const char kSSOWithWKWebViewDescription[] =
-    "Using WKWebView instead of UIWebView in SSO";
-
-const char kCopiedTextBehaviorName[] =
-    "Enable differentiating between copied text and urls";
-const char kCopiedTextBehaviorDescription[] =
-    "When enabled, places that handled copied urls (omnibox long-press, toolbar"
-    "menus) will differentiate between copied text and copied images.";
-
 const char kToolbarContainerName[] = "Use Toolbar Containers";
 const char kToolbarContainerDescription[] =
     "When enabled, the toolbars and their fullscreen animations will be "
     "managed by the toolbar container coordinator rather than BVC.";
-
-const char kPresentSadTabInViewControllerName[] =
-    "Present SadTab in UIViewController";
-const char kPresentSadTabInViewControllerDescription[] =
-    "When enabled, SadTab UI will be presented with UIViewController instead "
-    "of using WebState::ShowTransientView";
 
 const char kSnapshotDrawViewName[] = "Use DrawViewHierarchy for Snapshots";
 const char kSnapshotDrawViewDescription[] =
@@ -387,6 +414,10 @@ const char kUsdzPreviewDescription[] =
 const char kUseDdljsonApiName[] = "Use new ddljson API for Doodles";
 const char kUseDdljsonApiDescription[] =
     "Enables the new ddljson API to fetch Doodles for the NTP.";
+
+const char kWebClearBrowsingDataName[] = "Web-API for browsing data";
+const char kWebClearBrowsingDataDescription[] =
+    "When enabled the Clear Browsing Data feature is using the web API.";
 
 const char kWebFrameMessagingName[] = "Web Frame Messaging";
 const char kWebFrameMessagingDescription[] =

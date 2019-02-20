@@ -58,6 +58,7 @@ import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.omaha.UpdateMenuItemHelper;
+import org.chromium.chrome.browser.omaha.UpdateMenuItemHelper.MenuButtonState;
 import org.chromium.chrome.browser.omnibox.LocationBar;
 import org.chromium.chrome.browser.omnibox.LocationBarPhone;
 import org.chromium.chrome.browser.partnercustomizations.HomepageManager;
@@ -405,7 +406,8 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
         Drawable drawable = ApiCompatibilityUtils.getDrawable(
                 resources, R.drawable.modern_toolbar_background_white);
         drawable.mutate();
-        drawable.setColorFilter(ApiCompatibilityUtils.getColor(resources, R.color.modern_grey_100),
+        drawable.setColorFilter(
+                ApiCompatibilityUtils.getColor(resources, R.color.toolbar_search_background),
                 PorterDuff.Mode.SRC_IN);
         return drawable;
     }
@@ -589,7 +591,9 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
         // those in this current layout pass as they are needed for animations.
         updateUnfocusedLocationBarLayoutParams();
 
-        if (mLayoutLocationBarInFocusedMode || mVisualState == VisualState.NEW_TAB_NORMAL) {
+        if (mLayoutLocationBarInFocusedMode
+                || (mVisualState == VisualState.NEW_TAB_NORMAL
+                        && mTabSwitcherState == STATIC_TAB)) {
             int priorVisibleWidth = 0;
             for (int i = 0; i < mLocationBar.getChildCount(); i++) {
                 View child = mLocationBar.getChildAt(i);
@@ -892,7 +896,9 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
     }
 
     private float getExpansionPercentForVisualState(@VisualState int visualState) {
-        return visualState == VisualState.NEW_TAB_NORMAL ? 1 : mUrlExpansionPercent;
+        return visualState == VisualState.NEW_TAB_NORMAL && mTabSwitcherState == STATIC_TAB
+                ? 1
+                : mUrlExpansionPercent;
     }
 
     /**
@@ -1266,8 +1272,8 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
 
         // Draw the menu button if necessary.
         final ImageButton menuButton = getMenuButton();
-        if (menuButton != null && !mShowMenuBadge && mTabSwitcherAnimationMenuDrawable != null
-                && mUrlExpansionPercent != 1f) {
+        if (menuButton != null && !isShowingAppMenuUpdateBadge()
+                && mTabSwitcherAnimationMenuDrawable != null && mUrlExpansionPercent != 1f) {
             mTabSwitcherAnimationMenuDrawable.setBounds(menuButton.getPaddingLeft(),
                     menuButton.getPaddingTop(),
                     menuButton.getWidth() - menuButton.getPaddingRight(),
@@ -1286,7 +1292,7 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
                 : mTabSwitcherAnimationMenuBadgeDarkDrawable;
 
         final View menuBadge = getMenuBadge();
-        if (menuBadge != null && mShowMenuBadge && badgeDrawable != null
+        if (menuBadge != null && isShowingAppMenuUpdateBadge() && badgeDrawable != null
                 && mUrlExpansionPercent != 1f) {
             badgeDrawable.setBounds(menuBadge.getPaddingLeft(), menuBadge.getPaddingTop(),
                     menuBadge.getWidth() - menuBadge.getPaddingRight(),
@@ -1523,7 +1529,7 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
             return true;
         }
         return !(mTabSwitcherState == TAB_SWITCHER || mTabSwitcherModeAnimation != null
-                || urlHasFocus() || mUrlFocusChangeInProgress);
+                || urlHasFocus() || mUrlFocusChangeInProgress || mNtpSearchBoxScrollPercent > 0);
     }
 
     @Override
@@ -1672,6 +1678,7 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
 
         // Request a texture update to ensure a texture is captured before the user
         // re-enters the tab switcher.
+        postInvalidate();
         mLayoutUpdateHost.requestUpdate();
     }
 
@@ -1735,8 +1742,6 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
      */
     public void setTabSwitcherMode(boolean inTabSwitcherMode, boolean showToolbar,
             boolean delayAnimation, boolean animate) {
-        if (inTabSwitcherMode) cancelAppMenuUpdateBadgeAnimation();
-
         // If setting tab switcher mode to true and the browser is already animating or in the tab
         // switcher skip.
         if (inTabSwitcherMode
@@ -2182,6 +2187,7 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
         });
         mBrandColorTransitionAnimation.start();
         mBrandColorTransitionActive = true;
+        if (mLayoutUpdateHost != null) mLayoutUpdateHost.requestUpdate();
     }
 
     private void updateNtpAnimationState() {
@@ -2392,21 +2398,12 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
             }
         }
 
-        if (getMenuButton() != null) {
-            ColorStateList tintList = mUseLightToolbarDrawables ? mLightModeTint : mDarkModeTint;
-            ApiCompatibilityUtils.setImageTintList(getMenuButton(), tintList);
-        }
-
         updateModernLocationBarColor(getLocationBarColorForToolbarColor(currentPrimaryColor));
         if (mExperimentalButton != null) {
             ColorStateList tintList = mUseLightToolbarDrawables ? mLightModeTint : mDarkModeTint;
             ApiCompatibilityUtils.setImageTintList(mExperimentalButton, tintList);
         }
 
-        setMenuButtonHighlightDrawable(mHighlightingMenu);
-        if (mShowMenuBadge && inOrEnteringStaticTab) {
-            setAppMenuUpdateBadgeDrawable(mUseLightToolbarDrawables);
-        }
         ColorStateList tint = mUseLightToolbarDrawables ? mLightModeTint : mDarkModeTint;
         if (mIsHomeButtonEnabled && mHomeButton != null) {
             ApiCompatibilityUtils.setImageTintList(mHomeButton, tint);
@@ -2421,13 +2418,14 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
         }
 
         if (getMenuButtonWrapper() != null) {
+            setMenuButtonHighlightDrawable();
             getMenuButtonWrapper().setVisibility(View.VISIBLE);
         }
 
         DrawableCompat.setTint(mLocationBarBackground,
-                isIncognito()
-                        ? Color.WHITE
-                        : ApiCompatibilityUtils.getColor(getResources(), R.color.modern_grey_100));
+                isIncognito() ? Color.WHITE
+                              : ApiCompatibilityUtils.getColor(
+                                      getResources(), R.color.toolbar_search_background));
     }
 
     @Override
@@ -2438,30 +2436,6 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
     @Override
     boolean useLightDrawables() {
         return mUseLightToolbarDrawables;
-    }
-
-    @Override
-    void setMenuButtonHighlightDrawable(boolean highlighting) {
-        highlighting &= !isTabSwitcherAnimationRunning();
-        super.setMenuButtonHighlightDrawable(highlighting);
-    }
-
-    @Override
-    void showAppMenuUpdateBadge() {
-        if (getMenuBadge() == null) return;
-        super.showAppMenuUpdateBadge();
-
-        // Finish any in-progress animations and set the TabSwitcherAnimationMenuBadgeDrawables.
-        finishAnimations();
-        setTabSwitcherAnimationMenuBadgeDrawable();
-
-        // Show the badge.
-        if (mTabSwitcherState == STATIC_TAB) {
-            if (mUseLightToolbarDrawables) {
-                setAppMenuUpdateBadgeDrawable(mUseLightToolbarDrawables);
-            }
-            setAppMenuUpdateBadgeToVisible(true);
-        }
     }
 
     @Override
@@ -2679,11 +2653,13 @@ public class ToolbarPhone extends ToolbarLayout implements Invalidator.Client, O
     }
 
     private void setTabSwitcherAnimationMenuBadgeDrawable() {
+        MenuButtonState buttonState = UpdateMenuItemHelper.getInstance().getUiState().buttonState;
+        if (buttonState == null) return;
+
         Drawable darkDrawable =
-                UpdateMenuItemHelper.getInstance().getDarkBadgeDrawable(this.getResources());
+                ApiCompatibilityUtils.getDrawable(getResources(), buttonState.darkBadgeIcon);
         Drawable lightDrawable =
-                UpdateMenuItemHelper.getInstance().getLightBadgeDrawable(this.getResources());
-        if (darkDrawable == null || lightDrawable == null) return;
+                ApiCompatibilityUtils.getDrawable(getResources(), buttonState.lightBadgeIcon);
 
         mTabSwitcherAnimationMenuBadgeDarkDrawable = darkDrawable;
         mTabSwitcherAnimationMenuBadgeDarkDrawable.mutate();

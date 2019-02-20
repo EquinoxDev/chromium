@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
@@ -32,16 +33,16 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/renderer_preference_watcher.mojom.h"
 #include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "services/network/public/cpp/features.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/loader/url_loader_factory_bundle.mojom.h"
+#include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
-#include "third_party/blink/public/web/web_console_message.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -158,7 +159,7 @@ std::unique_ptr<blink::URLLoaderFactoryBundleInfo> CreateFactoryBundle(
 
 using SetupProcessCallback = base::OnceCallback<void(
     blink::ServiceWorkerStatusCode,
-    mojom::EmbeddedWorkerStartParamsPtr,
+    blink::mojom::EmbeddedWorkerStartParamsPtr,
     std::unique_ptr<ServiceWorkerProcessManager::AllocatedProcessInfo>,
     std::unique_ptr<EmbeddedWorkerInstance::DevToolsProxy>,
     std::unique_ptr<
@@ -176,10 +177,11 @@ using SetupProcessCallback = base::OnceCallback<void(
 // ServiceWorkerScriptLoaderFactory and the other is for passing to the
 // renderer. These bundles include factories for non-network URLs like
 // chrome-extension:// as needed.
-void SetupOnUIThread(base::WeakPtr<ServiceWorkerProcessManager> process_manager,
+void SetupOnUIThread(int embedded_worker_id,
+                     base::WeakPtr<ServiceWorkerProcessManager> process_manager,
                      bool can_use_existing_process,
-                     mojom::EmbeddedWorkerStartParamsPtr params,
-                     mojom::EmbeddedWorkerInstanceClientRequest request,
+                     blink::mojom::EmbeddedWorkerStartParamsPtr params,
+                     blink::mojom::EmbeddedWorkerInstanceClientRequest request,
                      ServiceWorkerContextCore* context,
                      base::WeakPtr<ServiceWorkerContextCore> weak_context,
                      SetupProcessCallback callback) {
@@ -206,8 +208,8 @@ void SetupOnUIThread(base::WeakPtr<ServiceWorkerProcessManager> process_manager,
   // Get a process.
   blink::ServiceWorkerStatusCode status =
       process_manager->AllocateWorkerProcess(
-          params->embedded_worker_id, params->script_url,
-          can_use_existing_process, process_info.get());
+          embedded_worker_id, params->script_url, can_use_existing_process,
+          process_info.get());
   if (status != blink::ServiceWorkerStatusCode::kOk) {
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::IO},
@@ -283,14 +285,15 @@ void SetupOnUIThread(base::WeakPtr<ServiceWorkerProcessManager> process_manager,
   devtools_proxy = std::make_unique<EmbeddedWorkerInstance::DevToolsProxy>(
       process_id, routing_id);
 
-  // TODO(crbug.com/862854): Support changes to RendererPreferences while the
-  // worker is running.
+  // TODO(crbug.com/862854): Support changes to
+  // blink::mojom::RendererPreferences while the worker is running.
   DCHECK(process_manager->browser_context() || process_manager->IsShutdown());
+  params->renderer_preferences = blink::mojom::RendererPreferences::New();
   GetContentClient()->browser()->UpdateRendererPreferencesForWorker(
-      process_manager->browser_context(), &params->renderer_preferences);
+      process_manager->browser_context(), params->renderer_preferences.get());
 
   // Create a RendererPreferenceWatcher to observe updates in the preferences.
-  mojom::RendererPreferenceWatcherPtr watcher_ptr;
+  blink::mojom::RendererPreferenceWatcherPtr watcher_ptr;
   params->preference_watcher_request = mojo::MakeRequest(&watcher_ptr);
   GetContentClient()->browser()->RegisterRendererPreferenceWatcherForWorkers(
       process_manager->browser_context(), std::move(watcher_ptr));
@@ -322,6 +325,21 @@ bool HasSentStartWorker(EmbeddedWorkerInstance::StartingPhase phase) {
       NOTREACHED();
   }
   return false;
+}
+
+void NotifyForegroundServiceWorkerOnUIThread(bool added, int process_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(
+      base::FeatureList::IsEnabled(features::kServiceWorkerForegroundPriority));
+
+  RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
+  if (!rph)
+    return;
+
+  if (added)
+    rph->OnForegroundServiceWorkerAdded();
+  else
+    rph->OnForegroundServiceWorkerRemoved();
 }
 
 }  // namespace
@@ -429,7 +447,7 @@ class EmbeddedWorkerInstance::StartTask {
 
   StartTask(EmbeddedWorkerInstance* instance,
             const GURL& script_url,
-            mojom::EmbeddedWorkerInstanceClientRequest request,
+            blink::mojom::EmbeddedWorkerInstanceClientRequest request,
             base::TimeTicks start_time)
       : instance_(instance),
         request_(std::move(request)),
@@ -502,7 +520,7 @@ class EmbeddedWorkerInstance::StartTask {
     return skip_recording_startup_time_;
   }
 
-  void Start(mojom::EmbeddedWorkerStartParamsPtr params,
+  void Start(blink::mojom::EmbeddedWorkerStartParamsPtr params,
              StatusCallback sent_start_callback) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     DCHECK(instance_->context_);
@@ -517,7 +535,6 @@ class EmbeddedWorkerInstance::StartTask {
     bool can_use_existing_process =
         context->GetVersionFailureCount(params->service_worker_version_id) <
         kMaxSameProcessFailureCount;
-    DCHECK_EQ(params->embedded_worker_id, instance_->embedded_worker_id_);
     TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("ServiceWorker", "ALLOCATING_PROCESS",
                                       this);
     base::WeakPtr<ServiceWorkerProcessManager> process_manager =
@@ -528,8 +545,9 @@ class EmbeddedWorkerInstance::StartTask {
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::UI},
         base::BindOnce(
-            &SetupOnUIThread, process_manager, can_use_existing_process,
-            std::move(params), std::move(request_), context.get(), context,
+            &SetupOnUIThread, instance_->embedded_worker_id(), process_manager,
+            can_use_existing_process, std::move(params), std::move(request_),
+            context.get(), context,
             base::BindOnce(&StartTask::OnSetupCompleted,
                            weak_factory_.GetWeakPtr(), process_manager)));
   }
@@ -540,7 +558,7 @@ class EmbeddedWorkerInstance::StartTask {
   void OnSetupCompleted(
       base::WeakPtr<ServiceWorkerProcessManager> process_manager,
       blink::ServiceWorkerStatusCode status,
-      mojom::EmbeddedWorkerStartParamsPtr params,
+      blink::mojom::EmbeddedWorkerStartParamsPtr params,
       std::unique_ptr<ServiceWorkerProcessManager::AllocatedProcessInfo>
           process_info,
       std::unique_ptr<EmbeddedWorkerInstance::DevToolsProxy> devtools_proxy,
@@ -624,7 +642,7 @@ class EmbeddedWorkerInstance::StartTask {
   EmbeddedWorkerInstance* instance_;
 
   // Ownership is transferred by a PostTask() call after process allocation.
-  mojom::EmbeddedWorkerInstanceClientRequest request_;
+  blink::mojom::EmbeddedWorkerInstanceClientRequest request_;
 
   StatusCallback sent_start_callback_;
   bool did_send_start_ = false;
@@ -644,17 +662,15 @@ class EmbeddedWorkerInstance::StartTask {
 
 EmbeddedWorkerInstance::~EmbeddedWorkerInstance() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  DCHECK(status_ == EmbeddedWorkerStatus::STOPPING ||
-         status_ == EmbeddedWorkerStatus::STOPPED)
-      << static_cast<int>(status_);
   devtools_proxy_.reset();
   if (registry_->GetWorker(embedded_worker_id_))
     registry_->RemoveWorker(process_id(), embedded_worker_id_);
-  process_handle_.reset();
+  ReleaseProcess();
 }
 
-void EmbeddedWorkerInstance::Start(mojom::EmbeddedWorkerStartParamsPtr params,
-                                   StatusCallback callback) {
+void EmbeddedWorkerInstance::Start(
+    blink::mojom::EmbeddedWorkerStartParamsPtr params,
+    StatusCallback callback) {
   DCHECK(context_);
   restart_count_++;
   DCHECK_EQ(EmbeddedWorkerStatus::STOPPED, status_);
@@ -671,12 +687,11 @@ void EmbeddedWorkerInstance::Start(mojom::EmbeddedWorkerStartParamsPtr params,
   for (auto& observer : listener_list_)
     observer.OnStarting();
 
-  params->embedded_worker_id = embedded_worker_id_;
   params->worker_devtools_agent_route_id = MSG_ROUTING_NONE;
   params->wait_for_debugger = false;
   params->v8_cache_options = GetV8CacheOptions();
 
-  mojom::EmbeddedWorkerInstanceClientRequest request =
+  blink::mojom::EmbeddedWorkerInstanceClientRequest request =
       mojo::MakeRequest(&client_);
   client_.set_connection_error_handler(
       base::BindOnce(&EmbeddedWorkerInstance::Detach, base::Unretained(this)));
@@ -715,7 +730,7 @@ void EmbeddedWorkerInstance::StopIfNotAttachedToDevTools() {
       // Check ShouldNotifyWorkerStopIgnored not to show the same message
       // multiple times in DevTools.
       if (devtools_proxy_->ShouldNotifyWorkerStopIgnored()) {
-        AddMessageToConsole(blink::WebConsoleMessage::kLevelVerbose,
+        AddMessageToConsole(blink::mojom::ConsoleMessageLevel::kVerbose,
                             kServiceWorkerTerminationCanceledMesage);
         devtools_proxy_->WorkerStopIgnoredNotified();
       }
@@ -749,6 +764,7 @@ EmbeddedWorkerInstance::EmbeddedWorkerInstance(
       instance_host_binding_(this),
       devtools_attached_(false),
       network_accessed_for_script_(false),
+      foreground_notified_(false),
       weak_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
@@ -760,6 +776,9 @@ void EmbeddedWorkerInstance::OnProcessAllocated(
   DCHECK(!process_handle_);
 
   process_handle_ = std::move(handle);
+
+  UpdateForegroundPriority();
+
   start_situation_ = start_situation;
   for (auto& observer : listener_list_)
     observer.OnProcessAllocated();
@@ -779,7 +798,7 @@ void EmbeddedWorkerInstance::OnRegisteredToDevToolsManager(
 }
 
 void EmbeddedWorkerInstance::SendStartWorker(
-    mojom::EmbeddedWorkerStartParamsPtr params,
+    blink::mojom::EmbeddedWorkerStartParamsPtr params,
     scoped_refptr<network::SharedURLLoaderFactory> factory,
     blink::mojom::CacheStoragePtrInfo cache_storage) {
   DCHECK(context_);
@@ -890,7 +909,7 @@ void EmbeddedWorkerInstance::OnScriptEvaluationStart() {
 void EmbeddedWorkerInstance::OnStarted(
     blink::mojom::ServiceWorkerStartStatus start_status,
     int thread_id,
-    mojom::EmbeddedWorkerStartTimingPtr start_timing) {
+    blink::mojom::EmbeddedWorkerStartTimingPtr start_timing) {
   if (!(start_timing->start_worker_received_time <=
             start_timing->script_evaluation_start_time &&
         start_timing->script_evaluation_start_time <=
@@ -954,6 +973,16 @@ void EmbeddedWorkerInstance::Detach() {
   ReleaseProcess();
   for (auto& observer : listener_list_)
     observer.OnDetached(old_status);
+}
+
+void EmbeddedWorkerInstance::UpdateForegroundPriority() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (process_handle_ &&
+      owner_version_->ShouldRequireForegroundPriority(process_id())) {
+    NotifyForegroundServiceWorkerAdded();
+  } else {
+    NotifyForegroundServiceWorkerRemoved();
+  }
 }
 
 base::WeakPtr<EmbeddedWorkerInstance> EmbeddedWorkerInstance::AsWeakPtr() {
@@ -1021,6 +1050,8 @@ void EmbeddedWorkerInstance::ReleaseProcess() {
   // Abort an inflight start task.
   inflight_start_task_.reset();
 
+  NotifyForegroundServiceWorkerRemoved();
+
   instance_host_binding_.Close();
   devtools_proxy_.reset();
   process_handle_.reset();
@@ -1043,7 +1074,7 @@ void EmbeddedWorkerInstance::OnSetupFailed(
 }
 
 void EmbeddedWorkerInstance::AddMessageToConsole(
-    blink::WebConsoleMessage::Level level,
+    blink::mojom::ConsoleMessageLevel level,
     const std::string& message) {
   if (process_id() == ChildProcessHost::kInvalidUniqueID)
     return;
@@ -1100,6 +1131,39 @@ std::string EmbeddedWorkerInstance::StartingPhaseToString(StartingPhase phase) {
 void EmbeddedWorkerInstance::SetNetworkFactoryForTesting(
     const CreateNetworkFactoryCallback& create_network_factory_callback) {
   GetNetworkFactoryCallbackForTest() = create_network_factory_callback;
+}
+
+void EmbeddedWorkerInstance::NotifyForegroundServiceWorkerAdded() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(
+      base::FeatureList::IsEnabled(features::kServiceWorkerForegroundPriority));
+
+  if (!process_handle_ || foreground_notified_)
+    return;
+
+  foreground_notified_ = true;
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::UI},
+      base::BindOnce(&NotifyForegroundServiceWorkerOnUIThread, true /* added */,
+                     process_id()));
+}
+
+void EmbeddedWorkerInstance::NotifyForegroundServiceWorkerRemoved() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(
+      !foreground_notified_ ||
+      base::FeatureList::IsEnabled(features::kServiceWorkerForegroundPriority));
+
+  if (!process_handle_ || !foreground_notified_)
+    return;
+
+  foreground_notified_ = false;
+
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::UI},
+      base::BindOnce(&NotifyForegroundServiceWorkerOnUIThread,
+                     false /* added */, process_id()));
 }
 
 }  // namespace content

@@ -5,6 +5,8 @@
 #include "chrome/browser/chromeos/login/quick_unlock/quick_unlock_utils.h"
 
 #include "base/feature_list.h"
+#include "base/files/file_path.h"
+#include "base/no_destructor.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
@@ -65,10 +67,11 @@ base::TimeDelta PasswordConfirmationFrequencyToTimeDelta(
 }
 
 void RegisterProfilePrefs(PrefRegistrySimple* registry) {
-  base::ListValue quick_unlock_whitelist_default;
-  quick_unlock_whitelist_default.AppendString(kQuickUnlockWhitelistOptionAll);
-  registry->RegisterListPref(prefs::kQuickUnlockModeWhitelist,
-                             quick_unlock_whitelist_default.CreateDeepCopy());
+  base::Value::ListStorage quick_unlock_whitelist_default;
+  quick_unlock_whitelist_default.emplace_back(kQuickUnlockWhitelistOptionAll);
+  registry->RegisterListPref(
+      prefs::kQuickUnlockModeWhitelist,
+      base::Value(std::move(quick_unlock_whitelist_default)));
   registry->RegisterIntegerPref(
       prefs::kQuickUnlockTimeout,
       static_cast<int>(PasswordConfirmationFrequency::DAY));
@@ -110,6 +113,15 @@ bool IsPinEnabled(PrefService* pref_service) {
 bool IsFingerprintEnabled(Profile* profile) {
   if (enable_for_testing_)
     return true;
+
+  // Disable fingerprint if the device does not have a fingerprint reader
+  // TODO(yulunwu): http://crbug.com/922270
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+
+  static const base::NoDestructor<base::FilePath> kFingerprintSensorPath(
+      base::FilePath("/dev/cros_fp"));
+  if (!base::PathExists(*kFingerprintSensorPath))
+    return false;
 
   // Disable fingerprint if the profile does not belong to the primary user.
   if (profile != ProfileManager::GetPrimaryUserProfile())

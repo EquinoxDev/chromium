@@ -4,10 +4,12 @@
 
 package org.chromium.chrome.browser.autofill.keyboard_accessory;
 
-import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.ACTIONS;
+import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.BAR_ITEMS;
 import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.BOTTOM_OFFSET_PX;
 import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.KEYBOARD_TOGGLE_VISIBLE;
+import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.SHEET_TITLE;
 import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.SHOW_KEYBOARD_CALLBACK;
+import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.TAB_LAYOUT_ITEM;
 import static org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.VISIBLE;
 
 import android.support.annotation.Nullable;
@@ -16,16 +18,17 @@ import android.support.v4.view.ViewPager;
 
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.ChromeFeatureList;
-import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryModernViewBinder.ModernActionViewHolder;
-import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryViewBinder.ActionViewHolder;
-import org.chromium.chrome.browser.modelutil.LazyConstructionPropertyMcp;
-import org.chromium.chrome.browser.modelutil.ListModel;
-import org.chromium.chrome.browser.modelutil.PropertyModelChangeProcessor;
-import org.chromium.chrome.browser.modelutil.RecyclerViewAdapter;
-import org.chromium.chrome.browser.modelutil.SimpleRecyclerViewMcp;
+import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryProperties.BarItem;
+import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryViewBinder.BarItemViewHolder;
+import org.chromium.components.autofill.AutofillDelegate;
+import org.chromium.components.autofill.AutofillSuggestion;
 import org.chromium.ui.ViewProvider;
+import org.chromium.ui.modelutil.LazyConstructionPropertyMcp;
+import org.chromium.ui.modelutil.ListModel;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel;
+import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
+import org.chromium.ui.modelutil.RecyclerViewAdapter;
 
 /**
  * Creates and owns all elements which are part of the keyboard accessory component.
@@ -117,16 +120,19 @@ public class KeyboardAccessoryCoordinator {
      */
     public KeyboardAccessoryCoordinator(VisibilityDelegate visibilityDelegate,
             ViewProvider<KeyboardAccessoryView> viewProvider) {
-        PropertyModel model = new PropertyModel
-                                      .Builder(ACTIONS, VISIBLE, BOTTOM_OFFSET_PX,
-                                              KEYBOARD_TOGGLE_VISIBLE, SHOW_KEYBOARD_CALLBACK)
-                                      .with(ACTIONS, new ListModel<>())
-                                      .with(VISIBLE, false)
-                                      .with(KEYBOARD_TOGGLE_VISIBLE, false)
-                                      .build();
+        PropertyModel model =
+                new PropertyModel
+                        .Builder(BAR_ITEMS, VISIBLE, BOTTOM_OFFSET_PX, TAB_LAYOUT_ITEM,
+                                KEYBOARD_TOGGLE_VISIBLE, SHEET_TITLE, SHOW_KEYBOARD_CALLBACK)
+                        .with(BAR_ITEMS, new ListModel<>())
+                        .with(VISIBLE, false)
+                        .with(KEYBOARD_TOGGLE_VISIBLE, false)
+                        .build();
         mMediator = new KeyboardAccessoryMediator(
-                model, visibilityDelegate, mTabLayout.getTabSwitchingDelegate());
-        viewProvider.whenLoaded(barView -> mTabLayout.assignNewView(barView.getTabLayout()));
+                model, visibilityDelegate, mTabLayout.getTabSwitchingDelegate(), mTabLayout);
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.AUTOFILL_KEYBOARD_ACCESSORY)) {
+            viewProvider.whenLoaded(barView -> mTabLayout.assignNewView(barView.getTabLayout()));
+        }
 
         mTabLayout.setTabObserver(mMediator);
         PropertyModelChangeProcessor
@@ -141,20 +147,21 @@ public class KeyboardAccessoryCoordinator {
     }
 
     /**
-     * Creates an adapter to an {@link ActionViewHolder} that is wired
-     * up to the model change processor which listens to the given action list.
-     * @param actions The list of actions shown represented by the adapter.
-     * @return Returns a fully initialized and wired adapter to an ActionViewHolder.
+     * Creates an adapter to an {@link BarItemViewHolder} that is wired
+     * up to the model change processor which listens to the given item list.
+     * @param barItems The list of shown items represented by the adapter.
+     * @return Returns a fully initialized and wired adapter to an BarItemViewHolder.
      */
-    static RecyclerViewAdapter<ActionViewHolder, Void> createActionsAdapter(
-            ListModel<KeyboardAccessoryData.Action> actions) {
-        RecyclerViewAdapter.ViewHolderFactory<ActionViewHolder> factory = ActionViewHolder::create;
+    static RecyclerViewAdapter<BarItemViewHolder, Void> createBarItemsAdapter(
+            ListModel<BarItem> barItems) {
+        RecyclerViewAdapter.ViewHolderFactory<BarItemViewHolder> factory =
+                KeyboardAccessoryViewBinder::create;
         if (ChromeFeatureList.isEnabled(ChromeFeatureList.AUTOFILL_KEYBOARD_ACCESSORY)) {
-            factory = ModernActionViewHolder::create;
+            factory = KeyboardAccessoryModernViewBinder::create;
         }
         return new RecyclerViewAdapter<>(
-                new SimpleRecyclerViewMcp<>(actions, KeyboardAccessoryData.Action::getActionType,
-                        ActionViewHolder::bind),
+                new KeyboardAccessoryRecyclerViewMcp<>(barItems, BarItem::getViewType,
+                        BarItemViewHolder::bind, BarItemViewHolder::recycle),
                 factory);
     }
 
@@ -195,6 +202,19 @@ public class KeyboardAccessoryCoordinator {
     public void registerActionProvider(
             KeyboardAccessoryData.Provider<KeyboardAccessoryData.Action[]> provider) {
         provider.addObserver(mMediator);
+    }
+
+    /**
+     * Registers a KeyboardAccessoryData.Observer to the given KeyboardAccessoryData.Provider. The
+     * new observer will render chips into the accessory bar for every new suggestion and call the
+     * given {@link AutofillDelegate} when the user interacts with a chip.
+     * @param provider A {@link KeyboardAccessoryData.Provider<AutofillSuggestion[]>}.
+     * @param delegate A {@link AutofillDelegate}.
+     */
+    public void registerAutofillProvider(
+            KeyboardAccessoryData.Provider<AutofillSuggestion[]> provider,
+            AutofillDelegate delegate) {
+        provider.addObserver(mMediator.createAutofillSuggestionsObserver(delegate));
     }
 
     /**

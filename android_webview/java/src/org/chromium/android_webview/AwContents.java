@@ -48,6 +48,7 @@ import android.webkit.JavascriptInterface;
 import org.chromium.android_webview.permission.AwGeolocationCallback;
 import org.chromium.android_webview.permission.AwPermissionRequest;
 import org.chromium.android_webview.renderer_priority.RendererPriority;
+import org.chromium.base.BuildInfo;
 import org.chromium.base.Callback;
 import org.chromium.base.LocaleUtils;
 import org.chromium.base.Log;
@@ -59,6 +60,7 @@ import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.AsyncTask;
+import org.chromium.base.task.PostTask;
 import org.chromium.components.autofill.AutofillProvider;
 import org.chromium.components.navigation_interception.InterceptNavigationDelegate;
 import org.chromium.components.navigation_interception.NavigationParams;
@@ -77,6 +79,7 @@ import org.chromium.content_public.browser.NavigationHistory;
 import org.chromium.content_public.browser.SelectionClient;
 import org.chromium.content_public.browser.SelectionPopupController;
 import org.chromium.content_public.browser.SmartClipProvider;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.ViewEventSink;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsAccessibility;
@@ -105,6 +108,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.Callable;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -149,6 +153,13 @@ public class AwContents implements SmartClipProvider {
     // Permit any number of slashes, since chromium seems to canonicalize bad values.
     private static final Pattern sFileAndroidAssetPattern =
             Pattern.compile("^file:/*android_(asset|res).*");
+
+    // Matches a data URL that (may) have a valid fragment selector, pulling the fragment selector
+    // out into a group. Such a URL must contain a single '#' character and everything after that
+    // must be a valid DOM id.
+    // DOM id grammar: https://www.w3.org/TR/1999/REC-html401-19991224/types.html#type-name
+    private static final Pattern sDataURLWithSelectorPattern =
+            Pattern.compile("^[^#]*(#[A-Za-z][A-Za-z0-9\\-_:.]*)$");
 
     private static class ForceAuxiliaryBitmapRendering {
         private static final boolean sResult = lazyCheck();
@@ -260,6 +271,12 @@ public class AwContents implements SmartClipProvider {
          * Create a GL functor associated with native context |context|.
          */
         NativeDrawGLFunctor createGLFunctor(long context);
+
+        /**
+         * Used for draw_fn functor. Only one of these methods need to return non-null.
+         * Prefer this over createGLFunctor.
+         */
+        AwDrawFnImpl.DrawFnAccess getDrawFnAccess();
     }
 
     /**
@@ -515,6 +532,8 @@ public class AwContents implements SmartClipProvider {
         private FullScreenView mFullScreenView;
         /** Whether the initial container view was focused when we entered fullscreen */
         private boolean mWasInitialContainerViewFocused;
+        private int mScrollX;
+        private int mScrollY;
 
         private FullScreenTransitionsState(ViewGroup initialContainerView,
                 InternalAccessDelegate initialInternalAccessAdapter,
@@ -525,13 +544,23 @@ public class AwContents implements SmartClipProvider {
         }
 
         private void enterFullScreen(FullScreenView fullScreenView,
-                boolean wasInitialContainerViewFocused) {
+                boolean wasInitialContainerViewFocused, int scrollX, int scrollY) {
             mFullScreenView = fullScreenView;
             mWasInitialContainerViewFocused = wasInitialContainerViewFocused;
+            mScrollX = scrollX;
+            mScrollY = scrollY;
         }
 
         private boolean wasInitialContainerViewFocused() {
             return mWasInitialContainerViewFocused;
+        }
+
+        private int getScrollX() {
+            return mScrollX;
+        }
+
+        private int getScrollY() {
+            return mScrollY;
         }
 
         private void exitFullScreen() {
@@ -848,7 +877,7 @@ public class AwContents implements SmartClipProvider {
 
             mBrowserContext = browserContext;
 
-            // setWillNotDraw(false) is required since WebView draws it's own contents using it's
+            // setWillNotDraw(false) is required since WebView draws its own contents using its
             // container view. If this is ever not the case we should remove this, as it removes
             // Android's gatherTransparentRegion optimization for the view.
             mContainerView = containerView;
@@ -968,7 +997,8 @@ public class AwContents implements SmartClipProvider {
         if (wasInitialContainerViewFocused) {
             fullScreenView.requestFocus();
         }
-        mFullScreenTransitionsState.enterFullScreen(fullScreenView, wasInitialContainerViewFocused);
+        mFullScreenTransitionsState.enterFullScreen(fullScreenView, wasInitialContainerViewFocused,
+                mScrollOffsetManager.getScrollX(), mScrollOffsetManager.getScrollY());
         mAwViewMethods = new NullAwViewMethods(this, mInternalAccessAdapter, mContainerView);
 
         // Associate this AwContents with the FullScreenView.
@@ -1020,6 +1050,13 @@ public class AwContents implements SmartClipProvider {
         if (mFullScreenTransitionsState.wasInitialContainerViewFocused()) {
             mContainerView.requestFocus();
         }
+
+        if (!isDestroyedOrNoOperation(NO_WARN)) {
+            nativeRestoreScrollAfterTransition(mNativeAwContents,
+                    mFullScreenTransitionsState.getScrollX(),
+                    mFullScreenTransitionsState.getScrollY());
+        }
+
         mFullScreenTransitionsState.exitFullScreen();
     }
 
@@ -1029,7 +1066,7 @@ public class AwContents implements SmartClipProvider {
     }
 
     private void setContainerView(ViewGroup newContainerView) {
-        // setWillNotDraw(false) is required since WebView draws it's own contents using it's
+        // setWillNotDraw(false) is required since WebView draws its own contents using its
         // container view. If this is ever not the case we should remove this, as it removes
         // Android's gatherTransparentRegion optimization for the view.
         mContainerView = newContainerView;
@@ -1046,11 +1083,6 @@ public class AwContents implements SmartClipProvider {
             drawable.onContainerViewChanged(newContainerView);
         }
         onContainerViewChanged();
-
-        // When switching between main view and fullscreen view the container's
-        // view needs to be synchronized to what the native side has otherwise
-        // it may force an unintended scroll to the top of the document.
-        mScrollOffsetManager.syncScrollToContainerView();
     }
 
     /**
@@ -1729,9 +1761,39 @@ public class AwContents implements SmartClipProvider {
         if (isDestroyedOrNoOperation(WARN)) return;
         if (data != null && data.contains("#")) {
             RecordHistogram.recordBooleanHistogram(DATA_URI_HISTOGRAM_NAME, true);
+            if (!BuildInfo.targetsAtLeastQ() && !isBase64Encoded(encoding)) {
+                // As of Chromium M72, data URI parsing strictly enforces encoding of '#'. To
+                // support WebView applications which were not expecting this change, we do it for
+                // them.
+                data = fixupOctothorpesInLoadDataContent(data);
+            }
         }
         loadUrl(LoadUrlParams.createLoadDataParams(
                 fixupData(data), fixupMimeType(mimeType), isBase64Encoded(encoding)));
+    }
+
+    /**
+     * Helper method to fixup content passed to {@link #loadData} which may not have had '#'
+     * characters encoded correctly. Historically Chromium did not strictly enforce the encoding of
+     * '#' characters in Data URLs; they would be treated both as renderable content and as
+     * potential URL fragments for DOM id matching. This behavior changed in Chromium M72 where
+     * stricter parsing was enforced; the first '#' character now marks the end of the renderable
+     * section and the start of the DOM fragment.
+     *
+     * @param data The content passed to {@link #loadData}, which may contain unencoded '#'s.
+     * @return A version of the input with '#' characters correctly encoded, preserving any DOM id
+     *         selector which may have been present in the original.
+     */
+    @VisibleForTesting
+    public static String fixupOctothorpesInLoadDataContent(String data) {
+        // If the data may have had a valid DOM selector, we duplicate the selector and append it as
+        // a proper URL fragment. For example, "<a id='target'>Target</a>#target" will be converted
+        // to "<a id='target'>Target</a>%23target#target". This preserves both the rendering (which
+        // should render 'Target#target' on the page) and the DOM selector behavior (which should
+        // scroll to the anchor).
+        Matcher matcher = sDataURLWithSelectorPattern.matcher(data);
+        String suffix = matcher.matches() ? matcher.group(1) : "";
+        return data.replace("#", "%23") + suffix;
     }
 
     private @UrlScheme int schemeForUrl(String url) {
@@ -1817,7 +1879,7 @@ public class AwContents implements SmartClipProvider {
         // This is a workaround for an issue with PlzNavigate and one of Samsung's OEM mail apps.
         // See http://crbug.com/781535.
         if (isSamsungMailApp() && SAMSUNG_WORKAROUND_BASE_URL.equals(loadUrlParams.getBaseUrl())) {
-            ThreadUtils.postOnUiThreadDelayed(
+            PostTask.postDelayedTask(UiThreadTaskTraits.DEFAULT,
                     () -> loadUrl(loadUrlParams), SAMSUNG_WORKAROUND_DELAY);
             return;
         }
@@ -3398,7 +3460,15 @@ public class AwContents implements SmartClipProvider {
             }
 
             if (canvas.isHardwareAccelerated() && mDrawFunctor == null) {
-                setFunctor(new AwGLFunctor(mNativeDrawFunctorFactory, mContainerView));
+                AwFunctor newFunctor;
+                AwDrawFnImpl.DrawFnAccess drawFnAccess =
+                        mNativeDrawFunctorFactory.getDrawFnAccess();
+                if (drawFnAccess != null) {
+                    newFunctor = new AwDrawFnImpl(drawFnAccess);
+                } else {
+                    newFunctor = new AwGLFunctor(mNativeDrawFunctorFactory, mContainerView);
+                }
+                setFunctor(newFunctor);
             }
 
             mScrollOffsetManager.syncScrollOffsetFromOnDraw();
@@ -3809,6 +3879,7 @@ public class AwContents implements SmartClipProvider {
 
     private native void nativeOnSizeChanged(long nativeAwContents, int w, int h, int ow, int oh);
     private native void nativeScrollTo(long nativeAwContents, int x, int y);
+    private native void nativeRestoreScrollAfterTransition(long nativeAwContents, int x, int y);
     private native void nativeSmoothScroll(
             long nativeAwContents, int targetX, int targetY, long durationMs);
     private native void nativeSetViewVisibility(long nativeAwContents, boolean visible);

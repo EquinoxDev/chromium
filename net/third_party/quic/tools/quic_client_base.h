@@ -10,12 +10,12 @@
 
 #include <string>
 
-#include "base/macros.h"
 #include "net/third_party/quic/core/crypto/crypto_handshake.h"
 #include "net/third_party/quic/core/http/quic_client_push_promise_index.h"
 #include "net/third_party/quic/core/http/quic_spdy_client_session.h"
 #include "net/third_party/quic/core/http/quic_spdy_client_stream.h"
 #include "net/third_party/quic/core/quic_config.h"
+#include "net/third_party/quic/platform/api/quic_macros.h"
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 
@@ -102,7 +102,7 @@ class QuicClientBase {
 
   // Wait for events until the handshake is confirmed.
   // Returns true if the crypto handshake succeeds, false otherwise.
-  bool WaitForCryptoHandshakeConfirmed() WARN_UNUSED_RESULT;
+  bool WaitForCryptoHandshakeConfirmed() QUIC_WARN_UNUSED_RESULT;
 
   // Wait up to 50ms, and handle any events which occur.
   // Returns true if there are any outstanding requests.
@@ -113,6 +113,9 @@ class QuicClientBase {
 
   // Migrate to a new socket (new_host, port) during an active connection.
   bool MigrateSocketWithSpecifiedPort(const QuicIpAddress& new_host, int port);
+
+  // Open a new socket to change to a new ephemeral port.
+  bool ChangeEphemeralPort();
 
   QuicSession* session();
 
@@ -134,17 +137,6 @@ class QuicClientBase {
   // |source|.
   void SetChannelIDSource(ChannelIDSource* source) {
     crypto_config_.SetChannelIDSource(source);
-  }
-
-  // UseTokenBinding enables token binding negotiation in the client.  This
-  // should only be called before the initial Connect().  The client will still
-  // need to check that token binding is negotiated with the server, and add
-  // token binding headers to requests if so.  server, and add token binding
-  // headers to requests if so.  The negotiated token binding parameters can be
-  // found on the QuicCryptoNegotiatedParameters object in
-  // token_binding_key_param.
-  void UseTokenBinding() {
-    crypto_config_.tb_key_params = QuicTagVector{kTB10};
   }
 
   const ParsedQuicVersionVector& supported_versions() const {
@@ -209,6 +201,7 @@ class QuicClientBase {
       writer_.reset(writer);
     }
   }
+
   void reset_writer() { writer_.reset(); }
 
   ProofVerifier* proof_verifier() const;

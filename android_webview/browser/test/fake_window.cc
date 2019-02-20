@@ -7,6 +7,7 @@
 #include "android_webview/browser/browser_view_renderer.h"
 #include "android_webview/browser/child_frame.h"
 #include "android_webview/browser/render_thread_manager.h"
+#include "base/bind.h"
 #include "base/location.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
@@ -215,13 +216,9 @@ void FakeWindow::CheckCurrentlyOnRT() {
 FakeFunctor::FakeFunctor() : window_(nullptr) {}
 
 FakeFunctor::~FakeFunctor() {
-  if (render_thread_manager_) {
-    render_thread_manager_->RemoveFromCompositorFrameProducerOnUI();
-    RenderThreadManager::InsideHardwareReleaseReset release_reset(
-        render_thread_manager_.get());
-    RequestInvokeGL(true);
-  }
-  render_thread_manager_.reset();
+  // Older tests delete functor without bothering to
+  // call either release code path. Release thiings here.
+  ReleaseOnUIWithInvoke();
 }
 
 void FakeFunctor::Init(
@@ -259,13 +256,41 @@ CompositorFrameConsumer* FakeFunctor::GetCompositorFrameConsumer() {
   return render_thread_manager_.get();
 }
 
-void FakeFunctor::OnWindowDetached() {
+void FakeFunctor::ReleaseOnUIWithoutInvoke(base::OnceClosure callback) {
+  DCHECK(render_thread_manager_);
+  render_thread_manager_->RemoveFromCompositorFrameProducerOnUI();
+  window_->render_thread_task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &FakeFunctor::ReleaseOnRT, base::Unretained(this),
+          base::BindOnce(
+              base::IgnoreResult(&base::SingleThreadTaskRunner::PostTask),
+              base::ThreadTaskRunnerHandle::Get(), FROM_HERE,
+              std::move(callback))));
+}
+
+void FakeFunctor::ReleaseOnRT(base::OnceClosure callback) {
+  DCHECK(render_thread_manager_);
+  {
+    RenderThreadManager::InsideHardwareReleaseReset release_reset(
+        render_thread_manager_.get());
+    render_thread_manager_->DestroyHardwareRendererOnRT(
+        false /* save_restore */);
+  }
+  render_thread_manager_.reset();
+  std::move(callback).Run();
+}
+
+void FakeFunctor::ReleaseOnUIWithInvoke() {
   if (!render_thread_manager_)
     return;
   render_thread_manager_->RemoveFromCompositorFrameProducerOnUI();
-  RenderThreadManager::InsideHardwareReleaseReset release_reset(
-      render_thread_manager_.get());
-  RequestInvokeGL(true);
+  {
+    RenderThreadManager::InsideHardwareReleaseReset release_reset(
+        render_thread_manager_.get());
+    RequestInvokeGL(true);
+  }
+  render_thread_manager_.reset();
 }
 
 void FakeFunctor::Invoke(WindowHooks* hooks) {

@@ -73,15 +73,7 @@ class CommonMenuModel : public ui::MenuModel {
 
   ui::MenuModel* GetSubmenuModelAt(int index) const override { return nullptr; }
 
-  void HighlightChangedTo(int index) override {}
-
   void ActivatedAt(int index) override {}
-
-  void SetMenuModelDelegate(ui::MenuModelDelegate* delegate) override {}
-
-  ui::MenuModelDelegate* GetMenuModelDelegate() const override {
-    return nullptr;
-  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CommonMenuModel);

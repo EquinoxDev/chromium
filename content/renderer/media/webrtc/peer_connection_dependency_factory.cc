@@ -27,7 +27,6 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/feature_h264_with_openh264_ffmpeg.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/webrtc_ip_handling_policy.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/media/stream/media_stream_video_source.h"
@@ -61,12 +60,12 @@
 #include "third_party/blink/public/web/web_document.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/webrtc/api/create_peerconnection_factory.h"
-#include "third_party/webrtc/api/mediaconstraintsinterface.h"
-#include "third_party/webrtc/api/videosourceproxy.h"
-#include "third_party/webrtc/media/engine/multiplexcodecfactory.h"
+#include "third_party/webrtc/api/video_track_source_proxy.h"
+#include "third_party/webrtc/media/engine/fake_video_codec_factory.h"
+#include "third_party/webrtc/media/engine/multiplex_codec_factory.h"
 #include "third_party/webrtc/modules/video_coding/codecs/h264/include/h264.h"
-#include "third_party/webrtc/rtc_base/refcountedobject.h"
-#include "third_party/webrtc/rtc_base/ssladapter.h"
+#include "third_party/webrtc/rtc_base/ref_counted_object.h"
+#include "third_party/webrtc/rtc_base/ssl_adapter.h"
 
 namespace content {
 
@@ -305,6 +304,13 @@ void PeerConnectionDependencyFactory::InitializeSignalingThread(
         std::move(webrtc_decoder_factory));
   }
 
+  if (cmd_line->HasSwitch(switches::kUseFakeCodecForPeerConnection)) {
+    webrtc_encoder_factory =
+        std::make_unique<webrtc::FakeVideoEncoderFactory>();
+    webrtc_decoder_factory =
+        std::make_unique<webrtc::FakeVideoDecoderFactory>();
+  }
+
   pc_factory_ = webrtc::CreatePeerConnectionFactory(
       worker_thread_ /* network thread */, worker_thread_, signaling_thread_,
       audio_device_.get(), CreateWebrtcAudioEncoderFactory(),
@@ -338,8 +344,7 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
 
   webrtc::PeerConnectionDependencies dependencies(observer);
   dependencies.allocator = CreatePortAllocator(web_frame);
-  dependencies.async_resolver_factory =
-      std::make_unique<ProxyAsyncResolverFactory>(socket_factory_.get());
+  dependencies.async_resolver_factory = CreateAsyncResolverFactory();
   return GetPcFactory()
       ->CreatePeerConnection(config, std::move(dependencies))
       .get();
@@ -461,6 +466,11 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
     port_allocator->SetPortRange(min_port, max_port);
 
   return port_allocator;
+}
+
+std::unique_ptr<webrtc::AsyncResolverFactory>
+PeerConnectionDependencyFactory::CreateAsyncResolverFactory() {
+  return std::make_unique<ProxyAsyncResolverFactory>(socket_factory_.get());
 }
 
 scoped_refptr<webrtc::MediaStreamInterface>

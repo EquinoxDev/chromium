@@ -35,6 +35,7 @@
 #include "components/payments/core/features.h"
 #include "components/prefs/ios/pref_observer_bridge.h"
 #include "components/prefs/pref_change_registrar.h"
+#include "components/search_engines/template_url_service.h"
 #include "components/url_formatter/url_formatter.h"
 #include "components/web_resource/web_resource_pref_names.h"
 #import "ios/chrome/app/application_delegate/app_state.h"
@@ -123,18 +124,22 @@
 #import "ios/chrome/browser/ui/main/view_controller_swapping.h"
 #import "ios/chrome/browser/ui/orientation_limiting_navigation_controller.h"
 #import "ios/chrome/browser/ui/promos/signin_promo_view_controller.h"
-#import "ios/chrome/browser/ui/settings/google_services_navigation_coordinator.h"
+#import "ios/chrome/browser/ui/settings/google_services/google_services_navigation_coordinator.h"
 #import "ios/chrome/browser/ui/settings/settings_navigation_controller.h"
 #import "ios/chrome/browser/ui/signin_interaction/signin_interaction_coordinator.h"
 #include "ios/chrome/browser/ui/tab_grid/tab_grid_coordinator.h"
 #import "ios/chrome/browser/ui/toolbar/public/omnibox_focuser.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/top_view_controller.h"
 #include "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/browser/ui/webui/chrome_web_ui_ios_controller_factory.h"
+#import "ios/chrome/browser/url_loading/url_loading_service.h"
+#import "ios/chrome/browser/url_loading/url_loading_service_factory.h"
 #import "ios/chrome/browser/web/tab_id_tab_helper.h"
-#import "ios/chrome/browser/web/web_navigation_util.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
+#include "ios/chrome/common/app_group/app_group_constants.h"
+#include "ios/chrome/common/app_group/app_group_field_trial_version.h"
 #include "ios/chrome/common/app_group/app_group_utils.h"
 #include "ios/net/cookies/cookie_store_ios.h"
 #import "ios/net/crn_http_protocol_handler.h"
@@ -149,6 +154,7 @@
 #include "ios/web/net/request_tracker_factory_impl.h"
 #include "ios/web/net/request_tracker_impl.h"
 #include "ios/web/net/web_http_protocol_handler_delegate.h"
+#import "ios/web/public/navigation_item.h"
 #import "ios/web/public/navigation_manager.h"
 #import "ios/web/public/web_state/web_state.h"
 #import "ios/web/public/web_view_creation_util.h"
@@ -184,6 +190,9 @@ NSString* const kMemoryDebuggingToolsStartup = @"MemoryDebuggingToolsStartup";
 
 // Constants for deferring mailto handling initialization.
 NSString* const kMailtoHandlingInitialization = @"MailtoHandlingInitialization";
+
+// Constants for deferring saving field trial values
+NSString* const kSaveFieldTrialValues = @"SaveFieldTrialValues";
 
 // Constants for deferred check if it is necessary to send pings to
 // Chrome distribution related services.
@@ -427,6 +436,8 @@ enum class EnterTabSwitcherSnapshotResult {
 - (void)showTabSwitcher;
 // Starts a voice search on the current BVC.
 - (void)startVoiceSearchInCurrentBVC;
+// Loads the query from startup parameters in the current BVC.
+- (void)loadStartupQueryInCurrentBVC;
 // Dismisses |signinInteractionCoordinator|.
 - (void)dismissSigninInteractionCoordinator;
 // Called when the last incognito tab was closed.
@@ -444,9 +455,11 @@ enum class EnterTabSwitcherSnapshotResult {
 // out if it is showing, the target BVC will become active, and the new tab will
 // be shown.
 // If the current tab in |targetMode| is a NTP, it can be reused to open URL.
-// |completion| is executed after the tab is opened.
+// |completion| is executed after the tab is opened. After Tab is open the
+// virtual URL is set to the pending navigation item.
 - (Tab*)openSelectedTabInMode:(ApplicationMode)targetMode
                       withURL:(const GURL&)url
+                   virtualURL:(const GURL&)virtualURL
                    transition:(ui::PageTransition)transition
                    completion:(ProceduralBlock)completion;
 // Checks the target BVC's current tab's URL. If this URL is chrome://newtab,
@@ -455,6 +468,7 @@ enum class EnterTabSwitcherSnapshotResult {
 // |tabDisplayedCompletion| will be called on the new tab (if not nil).
 - (Tab*)openOrReuseTabInMode:(ApplicationMode)targetMode
                      withURL:(const GURL&)url
+                  virtualURL:(const GURL&)virtualURL
                   transition:(ui::PageTransition)transition
          tabOpenedCompletion:(ProceduralBlock)tabOpenedCompletion;
 // Returns whether the restore infobar should be displayed.
@@ -735,8 +749,11 @@ enum class EnterTabSwitcherSnapshotResult {
   feature_engagement::TrackerFactory::GetForBrowserState(chromeBrowserState)
       ->NotifyEvent(feature_engagement::events::kChromeOpened);
 
-  // Ensure the main tab model is created.
-  [_browserViewWrangler createMainTabModel];
+  // Make sure Roboto is available before any UI is created.
+  [MDCTypography setFontLoader:[MDFRobotoFontLoader sharedInstance]];
+
+  // Ensure the main tab model is created. This also creates the BVC.
+  [_browserViewWrangler createMainBrowser];
 
   _spotlightManager =
       [SpotlightManager spotlightManagerWithBrowserState:_mainBrowserState];
@@ -757,8 +774,6 @@ enum class EnterTabSwitcherSnapshotResult {
   }
   if (switchFromIncognito)
     startInIncognito = NO;
-
-  [MDCTypography setFontLoader:[MDFRobotoFontLoader sharedInstance]];
 
   if ([PreviousSessionInfo sharedInstance].isFirstSessionAfterLanguageChange) {
     IOSChromeContentSuggestionsServiceFactory::GetForBrowserState(
@@ -793,7 +808,11 @@ enum class EnterTabSwitcherSnapshotResult {
     // The startup parameters may create new tabs or navigations. If the restore
     // infobar is displayed now, it may be dismissed immediately and the user
     // will never be able to restore the session.
-    [_restoreHelper showRestoreIfNeeded:[self currentTabModel]];
+    TabModel* currentTabModel = [self currentTabModel];
+    [_restoreHelper
+        showRestoreIfNeededUsingWebState:currentTabModel.webStateList
+                                             ->GetActiveWebState()
+                         sessionRestorer:currentTabModel];
     _restoreHelper = nil;
   }
 
@@ -822,7 +841,8 @@ enum class EnterTabSwitcherSnapshotResult {
 
   if (_startupParameters) {
     [self dismissModalsAndOpenSelectedTabInMode:ApplicationMode::NORMAL
-                                        withURL:[_startupParameters externalURL]
+                                        withURL:_startupParameters.externalURL
+                                     virtualURL:GURL::EmptyGURL()
                                  dismissOmnibox:YES
                                      transition:ui::PAGE_TRANSITION_LINK
                                      completion:^{
@@ -862,7 +882,7 @@ enum class EnterTabSwitcherSnapshotResult {
   // be destroyed.
   [_tabSwitcher setOtrTabModel:nil];
 
-  [_browserViewWrangler destroyAndRebuildIncognitoTabModel];
+  [_browserViewWrangler destroyAndRebuildIncognitoBrowser];
 
   if (otrBVCIsCurrent) {
     [self activateBVCAndMakeCurrentBVCPrimary];
@@ -1135,6 +1155,49 @@ enum class EnterTabSwitcherSnapshotResult {
                   }];
 }
 
+/**
+ Schedule a call to |saveFieldTrialValuesForExtensions| for deferred execution.
+ */
+- (void)scheduleSaveFieldTrialValuesForExtensions {
+  [[DeferredInitializationRunner sharedInstance]
+      enqueueBlockNamed:kSaveFieldTrialValues
+                  block:^{
+                    [self saveFieldTrialValuesForExtensions];
+                  }];
+}
+
+/**
+ Some extensions need the value of field trials but can't get them because
+ the field trial infrastruction isn't in extensions. Save the necessary
+ values to NSUserDefaults here.
+ */
+- (void)saveFieldTrialValuesForExtensions {
+  NSUserDefaults* sharedDefaults = app_group::GetGroupUserDefaults();
+
+  NSString* fieldTrialValueKey =
+      base::SysUTF8ToNSString(app_group::kChromeExtensionFieldTrialPreference);
+  NSNumber* copiedContentBehaviorValue = [NSNumber
+      numberWithBool:base::FeatureList::IsEnabled(kCopiedContentBehavior)];
+
+  /**
+   Add other field trial values here if they are needed by extensions.
+   The general format is
+   {
+     name: {
+       value: bool,
+       version: bool
+     }
+   }
+   */
+  NSDictionary* fieldTrialValues = @{
+    base::SysUTF8ToNSString(kCopiedContentBehavior.name) : @{
+      kFieldTrialValueKey : copiedContentBehaviorValue,
+      kFieldTrialVersionKey : kCopiedContentBehaviorVersion
+    }
+  };
+  [sharedDefaults setObject:fieldTrialValues forKey:fieldTrialValueKey];
+}
+
 - (void)startFreeMemoryMonitoring {
   // No need for a post-task or a deferred initialisation as the memory
   // monitoring already happens on a background sequence.
@@ -1160,6 +1223,7 @@ enum class EnterTabSwitcherSnapshotResult {
   [self startFreeMemoryMonitoring];
   [self scheduleAppDistributionPings];
   [self initializeMailtoHandling];
+  [self scheduleSaveFieldTrialValuesForExtensions];
 }
 
 - (void)scheduleTasksRequiringBVCWithBrowserState {
@@ -1404,7 +1468,9 @@ enum class EnterTabSwitcherSnapshotResult {
   _historyCoordinator =
       [[HistoryCoordinator alloc] initWithBaseViewController:self.currentBVC
                                                 browserState:_mainBrowserState];
-  _historyCoordinator.loader = self.currentBVC;
+  _historyCoordinator.loader = UrlLoadingServiceFactory::GetForBrowserState(
+                                   [self.currentBVC browserState])
+                                   ->GetUrlLoader();
   _historyCoordinator.dispatcher = self.mainBVC.dispatcher;
   [_historyCoordinator start];
 }
@@ -1496,6 +1562,7 @@ enum class EnterTabSwitcherSnapshotResult {
     if ([command fromChrome]) {
       [self dismissModalsAndOpenSelectedTabInMode:ApplicationMode::NORMAL
                                           withURL:[command URL]
+                                       virtualURL:GURL::EmptyGURL()
                                    dismissOmnibox:YES
                                        transition:ui::PAGE_TRANSITION_TYPED
                                        completion:nil];
@@ -1505,7 +1572,9 @@ enum class EnterTabSwitcherSnapshotResult {
       [self
           dismissModalDialogsWithCompletion:^{
             [self setCurrentInterfaceForMode:mode];
-            [self.currentBVC webPageOrderedOpen:command];
+            UrlLoadingServiceFactory::GetForBrowserState(
+                [self.currentBVC browserState])
+                ->OpenUrlInNewTab(command);
           }
                              dismissOmnibox:YES];
     }
@@ -1736,6 +1805,7 @@ enum class EnterTabSwitcherSnapshotResult {
   ProceduralBlock completion = ^{
     [self dismissModalsAndOpenSelectedTabInMode:ApplicationMode::NORMAL
                                         withURL:[command URL]
+                                     virtualURL:GURL::EmptyGURL()
                                  dismissOmnibox:YES
                                      transition:ui::PAGE_TRANSITION_TYPED
                                      completion:nil];
@@ -1752,6 +1822,26 @@ enum class EnterTabSwitcherSnapshotResult {
     [backgroundBVC startVoiceSearch];
   else
     [self.currentBVC startVoiceSearch];
+}
+
+- (void)loadStartupQueryInCurrentBVC {
+  NSString* query = self.startupParameters.textQuery;
+
+  TemplateURLService* templateURLService =
+      ios::TemplateURLServiceFactory::GetForBrowserState(_mainBrowserState);
+  const TemplateURL* defaultURL =
+      templateURLService->GetDefaultSearchProvider();
+  DCHECK(!defaultURL->url().empty());
+  DCHECK(
+      defaultURL->url_ref().IsValid(templateURLService->search_terms_data()));
+  base::string16 queryString = base::SysNSStringToUTF16(query);
+  TemplateURLRef::SearchTermsArgs search_args(queryString);
+
+  GURL result(defaultURL->url_ref().ReplaceSearchTerms(
+      search_args, templateURLService->search_terms_data()));
+  web::NavigationManager::WebLoadParams params(result);
+  params.transition_type = ui::PAGE_TRANSITION_TYPED;
+  [self.currentBVC.dispatcher loadURLWithParams:ChromeLoadParams(params)];
 }
 
 #pragma mark - Preferences Management
@@ -1982,6 +2072,7 @@ enum class EnterTabSwitcherSnapshotResult {
 
   [_tabSwitcher dismissWithNewTabAnimationToModel:self.mainTabModel
                                           withURL:GURL(kChromeUINewTabURL)
+                                       virtualURL:GURL::EmptyGURL()
                                           atIndex:self.mainTabModel.count
                                        transition:ui::PAGE_TRANSITION_TYPED];
   return YES;
@@ -2151,9 +2242,11 @@ enum class EnterTabSwitcherSnapshotResult {
 
 #pragma mark - TabModelObserver
 
-// Called when the number of tabs changes. Triggers the switcher view when
-// the last tab is closed on a device that uses the switcher.
-- (void)tabModelDidChangeTabCount:(TabModel*)notifiedTabModel {
+// Called when a Tab is removed. Triggers the switcher view when the last tab is
+// closed on a device that uses the switcher.
+- (void)tabModel:(TabModel*)notifiedTabModel
+    didRemoveTab:(Tab*)tab
+         atIndex:(NSUInteger)index {
   TabModel* currentTabModel = [self currentTabModel];
   // Do nothing on initialization.
   if (!currentTabModel)
@@ -2172,6 +2265,7 @@ enum class EnterTabSwitcherSnapshotResult {
 
 - (Tab*)openOrReuseTabInMode:(ApplicationMode)targetMode
                      withURL:(const GURL&)URL
+                  virtualURL:(const GURL&)virtualURL
                   transition:(ui::PageTransition)transition
          tabOpenedCompletion:(ProceduralBlock)tabOpenedCompletion {
   BrowserViewController* targetBVC =
@@ -2179,24 +2273,45 @@ enum class EnterTabSwitcherSnapshotResult {
   TabModel* targetTabModel = targetBVC.tabModel;
 
   Tab* currentTabInTargetBVC = [targetTabModel currentTab];
-  if (!(currentTabInTargetBVC.webState &&
-        IsURLNtp(currentTabInTargetBVC.webState->GetVisibleURL()))) {
-    [targetBVC appendTabAddedCompletion:tabOpenedCompletion];
-    auto params = web_navigation_util::CreateWebLoadParams(
-        URL, transition, /*post_data=*/nullptr);
-    [targetTabModel insertTabWithLoadParams:params
-                                     opener:nil
-                                openedByDOM:NO
-                                    atIndex:targetTabModel.count
-                               inBackground:NO];
+
+  // Don't call loadWithParams for chrome://newtab when it's already loaded.
+  // Note that it's safe to use -GetVisibleURL here, as it doesn't matter if the
+  // NTP hasn't finished loading.
+  if (currentTabInTargetBVC.webState &&
+      IsURLNtp(currentTabInTargetBVC.webState->GetVisibleURL()) &&
+      IsURLNtp(URL)) {
+    if (tabOpenedCompletion) {
+      tabOpenedCompletion();
+    }
+    return currentTabInTargetBVC;
   }
 
-  Tab* newTab = currentTabInTargetBVC;
-  // Don't call loadWithParams for chrome://newtab, it's already loaded.
-  if (!(IsURLNtp(URL))) {
+  // With kBrowserContainerContainsNTP enabled paired with a restored NTP
+  // session, the NTP may appear committed when it is still loading.  For the
+  // time being, always load within a new tab when this feature is enabled.
+  // TODO(crbug.com/931284): Revert this change when fixed.
+  BOOL alwaysInsertNewTab = YES;
+  // If the current tab isn't an NTP, open a new tab.  Be sure to use
+  // -GetLastCommittedURL incase the NTP is still loading.
+  if (alwaysInsertNewTab ||
+      !(currentTabInTargetBVC.webState &&
+        IsURLNtp(currentTabInTargetBVC.webState->GetLastCommittedURL()))) {
+    [targetBVC appendTabAddedCompletion:tabOpenedCompletion];
     web::NavigationManager::WebLoadParams params(URL);
-    [newTab webState]->GetNavigationManager()->LoadURLWithParams(params);
+    params.transition_type = transition;
+    params.virtual_url = virtualURL;
+    return [targetTabModel insertTabWithLoadParams:params
+                                            opener:nil
+                                       openedByDOM:NO
+                                           atIndex:targetTabModel.count
+                                      inBackground:NO];
   }
+
+  // Otherwise, load |url| in the current tab.
+  Tab* newTab = currentTabInTargetBVC;
+  web::NavigationManager::WebLoadParams params(URL);
+  params.virtual_url = virtualURL;
+  newTab.webState->GetNavigationManager()->LoadURLWithParams(params);
   if (tabOpenedCompletion) {
     tabOpenedCompletion();
   }
@@ -2218,6 +2333,10 @@ enum class EnterTabSwitcherSnapshotResult {
       return ^{
         [self.currentBVC.dispatcher focusOmnibox];
       };
+    case SEARCH_TEXT:
+      return ^{
+        [self loadStartupQueryInCurrentBVC];
+      };
     default:
       return nil;
   }
@@ -2225,6 +2344,7 @@ enum class EnterTabSwitcherSnapshotResult {
 
 - (Tab*)openSelectedTabInMode:(ApplicationMode)targetMode
                       withURL:(const GURL&)url
+                   virtualURL:(const GURL&)virtualURL
                    transition:(ui::PageTransition)transition
                    completion:(ProceduralBlock)completion {
   id<BrowserInterface> targetInterface =
@@ -2235,6 +2355,7 @@ enum class EnterTabSwitcherSnapshotResult {
   ProceduralBlock startupCompletion =
       [self completionBlockForTriggeringAction:[_startupParameters
                                                    postOpeningAction]];
+
   // Commands are only allowed on NTP.
   DCHECK(IsURLNtp(url) || !startupCompletion);
 
@@ -2263,8 +2384,9 @@ enum class EnterTabSwitcherSnapshotResult {
               ? TabSwitcherDismissalMode::NORMAL
               : TabSwitcherDismissalMode::INCOGNITO;
       [targetInterface.bvc appendTabAddedCompletion:tabOpenedCompletion];
-      auto params = web_navigation_util::CreateWebLoadParams(
-          url, transition, /*post_data=*/nullptr);
+      web::NavigationManager::WebLoadParams params(url);
+      params.transition_type = transition;
+      params.virtual_url = virtualURL;
       tab = [targetInterface.tabModel insertTabWithLoadParams:params
                                                        opener:nil
                                                   openedByDOM:NO
@@ -2279,6 +2401,7 @@ enum class EnterTabSwitcherSnapshotResult {
       tab = [_tabSwitcher
           dismissWithNewTabAnimationToModel:targetInterface.tabModel
                                     withURL:url
+                                 virtualURL:virtualURL
                                     atIndex:tabIndex
                                  transition:transition];
     }
@@ -2289,6 +2412,7 @@ enum class EnterTabSwitcherSnapshotResult {
     [self setCurrentInterfaceForMode:targetMode];
     tab = [self openOrReuseTabInMode:targetMode
                              withURL:url
+                          virtualURL:virtualURL
                           transition:transition
                  tabOpenedCompletion:tabOpenedCompletion];
   }
@@ -2297,7 +2421,11 @@ enum class EnterTabSwitcherSnapshotResult {
     // Now that all the operations on the tabs have been done, display the
     // restore infobar if needed.
     dispatch_async(dispatch_get_main_queue(), ^{
-      [_restoreHelper showRestoreIfNeeded:[self currentTabModel]];
+      TabModel* currentTabModel = [self currentTabModel];
+      [_restoreHelper
+          showRestoreIfNeededUsingWebState:currentTabModel.webStateList
+                                               ->GetActiveWebState()
+                           sessionRestorer:currentTabModel];
       _restoreHelper = nil;
     });
   }
@@ -2427,17 +2555,21 @@ enum class EnterTabSwitcherSnapshotResult {
 
 - (void)dismissModalsAndOpenSelectedTabInMode:(ApplicationMode)targetMode
                                       withURL:(const GURL&)url
+                                   virtualURL:(const GURL&)virtualURL
                                dismissOmnibox:(BOOL)dismissOmnibox
                                    transition:(ui::PageTransition)transition
                                    completion:(ProceduralBlock)completion {
   GURL copyOfURL = url;
-  [self dismissModalDialogsWithCompletion:^{
-    [self openSelectedTabInMode:targetMode
-                        withURL:copyOfURL
-                     transition:transition
-                     completion:completion];
-  }
-                           dismissOmnibox:dismissOmnibox];
+  GURL copyOfVirtualURL = virtualURL;
+  [self
+      dismissModalDialogsWithCompletion:^{
+        [self openSelectedTabInMode:targetMode
+                            withURL:copyOfURL
+                         virtualURL:copyOfVirtualURL
+                         transition:transition
+                         completion:completion];
+      }
+                         dismissOmnibox:dismissOmnibox];
 }
 
 - (void)openTabFromLaunchOptions:(NSDictionary*)launchOptions

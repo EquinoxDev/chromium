@@ -16,11 +16,11 @@
 #import "components/autofill/ios/browser/js_suggestion_manager.h"
 #include "google_apis/google_api_keys.h"
 #include "ios/web/public/favicon_url.h"
-#include "ios/web/public/load_committed_details.h"
 #import "ios/web/public/navigation_item.h"
 #import "ios/web/public/navigation_manager.h"
 #include "ios/web/public/referrer.h"
 #include "ios/web/public/reload_type.h"
+#import "ios/web/public/web_client.h"
 #import "ios/web/public/web_state/context_menu_params.h"
 #import "ios/web/public/web_state/js/crw_js_injection_receiver.h"
 #import "ios/web/public/web_state/navigation_context.h"
@@ -30,7 +30,7 @@
 #import "ios/web/public/web_state/web_state.h"
 #import "ios/web/public/web_state/web_state_delegate_bridge.h"
 #import "ios/web/public/web_state/web_state_observer_bridge.h"
-#include "ios/web_view/cwv_web_view_features.h"
+#include "ios/web_view/cwv_web_view_buildflags.h"
 #import "ios/web_view/internal/autofill/cwv_autofill_controller_internal.h"
 #import "ios/web_view/internal/cwv_favicon_internal.h"
 #import "ios/web_view/internal/cwv_html_element_internal.h"
@@ -87,8 +87,13 @@ class WebViewHolder : public web::WebStateUserData<WebViewHolder> {
   void set_web_view(CWVWebView* web_view) { web_view_ = web_view; }
 
  private:
+  friend class web::WebStateUserData<WebViewHolder>;
+
   __weak CWVWebView* web_view_ = nil;
+  WEB_STATE_USER_DATA_KEY_DECL();
 };
+
+WEB_STATE_USER_DATA_KEY_IMPL(WebViewHolder)
 }  // namespace
 
 @interface CWVWebView ()<CRWWebStateDelegate, CRWWebStateObserver> {
@@ -308,25 +313,18 @@ static NSString* gUserAgentProduct = nil;
 }
 
 - (void)webState:(web::WebState*)webState
-    didCommitNavigationWithDetails:(const web::LoadCommittedDetails&)details {
-  if (details.is_in_page) {
-    // Do not call webViewDidCommitNavigation: for fragment navigations.
-    return;
-  }
-
-  if ([_navigationDelegate
-          respondsToSelector:@selector(webViewDidCommitNavigation:)]) {
-    [_navigationDelegate webViewDidCommitNavigation:self];
-  }
-}
-
-- (void)webState:(web::WebState*)webState
     didFinishNavigation:(web::NavigationContext*)navigation {
   [self updateNavigationAvailability];
   [self updateCurrentURLs];
 
   // TODO(crbug.com/898357): Remove this once crbug.com/898357 is fixed.
   [self updateVisibleSSLStatus];
+
+  if (navigation->HasCommitted() &&
+      [_navigationDelegate
+          respondsToSelector:@selector(webViewDidCommitNavigation:)]) {
+    [_navigationDelegate webViewDidCommitNavigation:self];
+  }
 
   NSError* error = navigation->GetError();
   SEL selector = @selector(webView:didFailNavigationWithError:);
@@ -668,6 +666,12 @@ static NSString* gUserAgentProduct = nil;
   [self updateVisibleSSLStatus];
   self.loading = NO;
   self.estimatedProgress = 0.0;
+
+  // TODO(crbug.com/873729): The session will not be restored until
+  // LoadIfNecessary call. Fix the bug and remove extra call.
+  if (web::GetWebClient()->IsSlimNavigationManagerEnabled() && sessionStorage) {
+    _webState->GetNavigationManager()->LoadIfNecessary();
+  }
 }
 
 // Adds the web view provided by |_webState| as a subview unless it has already.

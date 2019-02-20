@@ -89,8 +89,8 @@ Polymer({
     'onSettingsChanged_(settings.color.value, settings.cssBackground.value, ' +
         'settings.fitToPage.value, settings.headerFooter.value, ' +
         'settings.layout.value, settings.ranges.value, ' +
-        'settings.selectionOnly.value, settings.scaling.value, ' +
-        'settings.rasterize.value, destination)',
+        'settings.selectionOnly.value, settings.customScaling.value, ' +
+        'settings.scaling.value, settings.rasterize.value, destination)',
     'onMarginsChanged_(settings.margins.value)',
     'onCustomMarginsChanged_(settings.customMargins.value)',
     'onMediaSizeChanged_(settings.mediaSize.value)',
@@ -505,8 +505,8 @@ Polymer({
   },
 
   /**
-   * @param {!CustomEvent} e Contains information about where the plugin
-   *     should scroll to.
+   * @param {!CustomEvent<{x: number, y: number}>} e Contains information about
+   *     where the plugin should scroll to.
    * @private
    */
   onTextFocusPosition_: function(e) {
@@ -519,7 +519,7 @@ Polymer({
     this.scrollTop = 0;
     this.scrollLeft = 0;
 
-    const position = /** @type {{ x: number, y: number }} */ (e.detail);
+    const position = e.detail;
     if (position.x === 0 && position.y === 0) {
       return;
     }
@@ -625,7 +625,9 @@ Polymer({
       requestID: this.inFlightRequestId_,
       previewModifiable: this.documentModifiable,
       fitToPageEnabled: this.getSettingValue('fitToPage'),
-      scaleFactor: parseInt(this.getSettingValue('scaling'), 10),
+      scaleFactor: this.getSettingValue('customScaling') ?
+          parseInt(this.getSettingValue('scaling'), 10) :
+          100,
       shouldPrintBackgrounds: this.getSettingValue('cssBackground'),
       shouldPrintSelectionOnly: this.getSettingValue('selectionOnly'),
       // NOTE: Even though the remaining fields don't directly relate to the

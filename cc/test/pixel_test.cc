@@ -12,6 +12,7 @@
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "cc/raster/raster_buffer_provider.h"
 #include "cc/test/fake_output_surface_client.h"
@@ -38,6 +39,7 @@
 #include "components/viz/test/test_shared_bitmap_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/shared_memory_limits.h"
+#include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/ipc/gpu_in_process_thread_service.h"
@@ -47,6 +49,11 @@
 #include "services/viz/privileged/interfaces/gl/gpu_host.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/init/gl_factory.h"
+
+#if BUILDFLAG(ENABLE_VULKAN)
+#include "gpu/vulkan/init/vulkan_factory.h"
+#include "gpu/vulkan/vulkan_implementation.h"
+#endif
 
 namespace cc {
 
@@ -149,13 +156,13 @@ bool PixelTest::RunPixelTest(viz::RenderPassList* pass_list,
   return comparator.Compare(*result_bitmap_, ref_pixels_bitmap);
 }
 
-void PixelTest::ReadbackResult(base::Closure quit_run_loop,
+void PixelTest::ReadbackResult(base::OnceClosure quit_run_loop,
                                std::unique_ptr<viz::CopyOutputResult> result) {
   ASSERT_FALSE(result->IsEmpty());
   EXPECT_EQ(result->format(), viz::CopyOutputResult::Format::RGBA_BITMAP);
   result_bitmap_ = std::make_unique<SkBitmap>(result->AsSkBitmap());
   EXPECT_TRUE(result_bitmap_->readyToDraw());
-  quit_run_loop.Run();
+  std::move(quit_run_loop).Run();
 }
 
 bool PixelTest::PixelsMatchReference(const base::FilePath& ref_file,
@@ -224,8 +231,9 @@ void PixelTest::SetUpGLWithoutRenderer(bool flipped_output_surface) {
       /*enable_oop_rasterization=*/false, /*support_locking=*/false);
   result = child_context_provider_->BindToCurrentThread();
   DCHECK_EQ(result, gpu::ContextResult::kSuccess);
+  constexpr bool sync_token_verification = false;
   child_resource_provider_ =
-      std::make_unique<viz::ClientResourceProvider>(true);
+      std::make_unique<viz::ClientResourceProvider>(sync_token_verification);
 }
 
 void PixelTest::SetUpGLRenderer(bool flipped_output_surface) {
@@ -239,16 +247,35 @@ void PixelTest::SetUpGLRenderer(bool flipped_output_surface) {
 
 void PixelTest::SetUpGpuServiceOnGpuThread(base::WaitableEvent* event) {
   ASSERT_TRUE(gpu_thread_->task_runner()->BelongsToCurrentThread());
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
+  gpu::GpuPreferences gpu_preferences =
+      gpu::gles2::ParseGpuPreferences(command_line);
+  if (gpu_preferences.enable_vulkan) {
+#if BUILDFLAG(ENABLE_VULKAN)
+    vulkan_implementation_ = gpu::CreateVulkanImplementation();
+    if (!vulkan_implementation_ ||
+        !vulkan_implementation_->InitializeVulkanInstance()) {
+      LOG(FATAL) << "Failed to create and initialize Vulkan implementation.";
+    }
+#else
+    NOTREACHED();
+#endif
+  }
   gpu::GpuFeatureInfo gpu_feature_info;
   // To test SkiaRenderer with DDL, we need enable OOP-R.
   gpu_feature_info.status_values[gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION] =
       gpu::kGpuFeatureStatusEnabled;
   gpu_service_ = std::make_unique<viz::GpuServiceImpl>(
       gpu::GPUInfo(), nullptr /* watchdog_thread */, io_thread_->task_runner(),
-      gpu_feature_info, gpu::GpuPreferences(),
+      gpu_feature_info, gpu_preferences,
       gpu::GPUInfo() /* gpu_info_for_hardware_gpu */,
       gpu::GpuFeatureInfo() /* gpu_feature_info_for_hardware_gpu */,
+#if BUILDFLAG(ENABLE_VULKAN)
+      vulkan_implementation_.get(),
+#else
       nullptr /* vulkan_implementation */,
+#endif
       base::DoNothing() /* exit_callback */);
 
   // Uses a null gpu_host here, because we don't want to receive any message.
@@ -268,7 +295,9 @@ void PixelTest::SetUpGpuServiceOnGpuThread(base::WaitableEvent* event) {
           ->default_offscreen_surface()
           ->GetFormat(),
       gpu_service_->gpu_feature_info(),
-      gpu_service_->gpu_channel_manager()->gpu_preferences());
+      gpu_service_->gpu_channel_manager()->gpu_preferences(),
+      gpu_service_->shared_image_manager(),
+      gpu_service_->gpu_channel_manager()->program_cache());
   event->Signal();
 }
 
@@ -315,15 +344,22 @@ void PixelTest::SetUpSkiaRenderer() {
   gpu::ImageFactory* image_factory = gpu_service_->gpu_image_factory();
   auto* gpu_channel_manager_delegate =
       gpu_service_->gpu_channel_manager()->delegate();
+  viz::RendererSettings renderer_settings;
+  renderer_settings.requires_alpha_channel = false;
+#if defined(OS_ANDROID)
+  // Pick a reasonable arbitrary size for tests - used to set memory limits.
+  renderer_settings.initial_screen_size = gfx::Size(1920, 1080);
+  renderer_settings.color_space = gfx::ColorSpace::CreateSRGB();
+#endif
   child_context_provider_ =
       base::MakeRefCounted<viz::VizProcessContextProvider>(
           task_executor_, gpu::kNullSurfaceHandle,
           gpu_memory_buffer_manager_.get(), image_factory,
-          gpu_channel_manager_delegate, gpu::SharedMemoryLimits(),
-          false /* requires_alpha_channel */);
+          gpu_channel_manager_delegate, renderer_settings);
   child_context_provider_->BindToCurrentThread();
+  constexpr bool sync_token_verification = false;
   child_resource_provider_ =
-      std::make_unique<viz::ClientResourceProvider>(true);
+      std::make_unique<viz::ClientResourceProvider>(sync_token_verification);
 }
 
 void PixelTest::TearDownGpuServiceOnGpuThread(base::WaitableEvent* event) {
@@ -371,8 +407,9 @@ void PixelTest::SetUpSoftwareRenderer() {
   resource_provider_ = std::make_unique<viz::DisplayResourceProvider>(
       viz::DisplayResourceProvider::kSoftware, nullptr,
       shared_bitmap_manager_.get());
+  constexpr bool sync_token_verification = false;
   child_resource_provider_ =
-      std::make_unique<viz::ClientResourceProvider>(true);
+      std::make_unique<viz::ClientResourceProvider>(sync_token_verification);
 
   auto renderer = std::make_unique<viz::SoftwareRenderer>(
       &renderer_settings_, output_surface_.get(), resource_provider_.get());

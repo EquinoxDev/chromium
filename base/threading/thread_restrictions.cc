@@ -41,10 +41,6 @@ void AssertBlockingAllowed() {
 
 }  // namespace internal
 
-void AssertBlockingAllowedDeprecated() {
-  internal::AssertBlockingAllowed();
-}
-
 void DisallowBlocking() {
   g_blocking_disallowed.Get().Set(true);
 }
@@ -186,13 +182,6 @@ bool ThreadRestrictions::SetWaitAllowed(bool allowed) {
   bool previous_disallowed = g_base_sync_primitives_disallowed.Get().Get();
   g_base_sync_primitives_disallowed.Get().Set(!allowed);
   return !previous_disallowed;
-}
-
-ThreadRestrictions::ScopedAllowWait::ScopedAllowWait()
-    : was_allowed_(SetWaitAllowed(true)) {}
-
-ThreadRestrictions::ScopedAllowWait::~ScopedAllowWait() {
-  SetWaitAllowed(was_allowed_);
 }
 
 }  // namespace base

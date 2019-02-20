@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/sys_byteorder.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "jingle/glue/fake_ssl_client_socket.h"
@@ -19,7 +20,7 @@
 #include "services/network/proxy_resolving_client_socket.h"
 #include "services/network/proxy_resolving_client_socket_factory.h"
 #include "services/network/public/cpp/p2p_param_traits.h"
-#include "third_party/webrtc/media/base/rtputils.h"
+#include "third_party/webrtc/media/base/rtp_utils.h"
 #include "url/gurl.h"
 
 namespace network {

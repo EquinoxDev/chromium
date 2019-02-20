@@ -20,6 +20,7 @@ is_linux_without_udev = is_linux && !use_udev
 test("device_unittests") {
   sources = [
     "base/synchronization/one_writer_seqlock_unittest.cc",
+    "bluetooth/bluetooth_adapter_mac_metrics_unittest.mm",
     "bluetooth/bluetooth_adapter_mac_unittest.mm",
     "bluetooth/bluetooth_adapter_unittest.cc",
     "bluetooth/bluetooth_adapter_win_unittest.cc",
@@ -99,6 +100,7 @@ test("device_unittests") {
     "fido/u2f_command_constructor_unittest.cc",
     "fido/u2f_register_operation_unittest.cc",
     "fido/u2f_sign_operation_unittest.cc",
+    "fido/win/type_conversions_unittest.cc",
     "gamepad/abstract_haptic_gamepad_unittest.cc",
     "gamepad/gamepad_id_list_unittest.cc",
     "gamepad/gamepad_provider_unittest.cc",
@@ -206,14 +208,6 @@ test("device_unittests") {
       ":bluetooth_test_java",
       ":bluetooth_test_jni_headers",
       "//device/usb:java",
-    ]
-  }
-
-  if (is_chromeos) {
-    deps += [
-      "//chromeos",
-      "//chromeos:test_support",
-      "//chromeos:test_support_without_gmock",
     ]
   }
 

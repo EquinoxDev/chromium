@@ -4,8 +4,12 @@
 
 module device.mojom;
 
+import "mojo/public/mojom/base/file_path.mojom";
+import "mojo/public/mojom/base/unguessable_token.mojom";
+
 struct SerialPortInfo {
-  string path;
+  mojo_base.mojom.UnguessableToken token;
+  mojo_base.mojom.FilePath path;
   uint16 vendor_id;
   bool has_vendor_id = false;
   uint16 product_id;
@@ -87,20 +91,15 @@ struct SerialPortControlSignals {
 // Discovers and enumerates serial devices available to the host.
 interface SerialPortManager {
   GetDevices() => (array<SerialPortInfo> devices);
-  GetPort(string path, SerialPort& port_request);
+  GetPort(mojo_base.mojom.UnguessableToken token, SerialPort& port_request);
 };
 
 // Performs asynchronous I/O on serial devices.
 interface SerialPort {
   // Initiates an Open of the device then returns result.
-  Open(SerialConnectionOptions options) => (bool success);
-
-  // Performs a Read operation then returns retrieved data and the
-  // result. Note that the Read may succeed partially, means that even if
-  // |error| indicates an error other than NONE, |data| may still contain
-  // some retrieved data with the max size |bytes|. Behavior is undefined if
-  // this is called while a Read is already pending.
-  Read(uint32 bytes) => (array<uint8> data, SerialReceiveError error);
+  Open(SerialConnectionOptions options,
+       handle<data_pipe_producer> out_stream,
+       associated SerialPortClient client) => (bool success);
 
   // Performs a Write operation then returns written data and the result.
   // Note that the Write may succeed partially, means that even if |error|
@@ -109,8 +108,10 @@ interface SerialPort {
   // is called while a Write is already pending.
   Write(array<uint8> data) => (uint32 bytes_written, SerialSendError error);
 
-  // Attempts to cancel a pending read operation.
-  CancelRead(SerialReceiveError reason);
+  // Try to clear existing read error and reconnect the data pipe for read.
+  // This is supposed to be called after SerialPortClient#OnReadError is
+  // notified.
+  ClearReadError(handle<data_pipe_producer> producer);
 
   // Attempts to cancel a pending write operation.
   CancelWrite(SerialSendError reason);
@@ -137,4 +138,8 @@ interface SerialPort {
   // Terminates the BREAK signal. Places the transmission line in a nonbreak
   // state.
   ClearBreak() => (bool success);
+};
+
+interface SerialPortClient {
+  OnReadError(SerialReceiveError error);
 };

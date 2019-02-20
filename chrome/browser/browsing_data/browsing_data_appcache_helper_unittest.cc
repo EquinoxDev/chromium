@@ -5,6 +5,7 @@
 #include "chrome/browser/browsing_data/browsing_data_appcache_helper.h"
 
 #include <set>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -15,6 +16,7 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
 
 namespace {
 class TestCompletionCallback {
@@ -43,9 +45,7 @@ class TestCompletionCallback {
 class CannedBrowsingDataAppCacheHelperTest : public testing::Test {
  public:
   CannedBrowsingDataAppCacheHelperTest()
-      : thread_bundle_(base::test::ScopedTaskEnvironment::MainThreadType::UI,
-                       base::test::ScopedTaskEnvironment::ExecutionMode::ASYNC,
-                       content::TestBrowserThreadBundle::REAL_IO_THREAD) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::REAL_IO_THREAD) {}
 
   void TearDown() override {
     // Make sure we run all pending tasks on IO thread before testing
@@ -75,7 +75,7 @@ TEST_F(CannedBrowsingDataAppCacheHelperTest, SetInfo) {
                                    base::Unretained(&callback)));
   ASSERT_TRUE(callback.have_result());
 
-  std::map<url::Origin, content::AppCacheInfoVector>& collection =
+  std::map<url::Origin, std::vector<blink::mojom::AppCacheInfo>>& collection =
       callback.info_collection()->infos_by_origin;
 
   ASSERT_EQ(2u, collection.size());
@@ -108,7 +108,7 @@ TEST_F(CannedBrowsingDataAppCacheHelperTest, Unique) {
                                    base::Unretained(&callback)));
   ASSERT_TRUE(callback.have_result());
 
-  std::map<url::Origin, content::AppCacheInfoVector>& collection =
+  std::map<url::Origin, std::vector<blink::mojom::AppCacheInfo>>& collection =
       callback.info_collection()->infos_by_origin;
 
   ASSERT_EQ(1u, collection.size());

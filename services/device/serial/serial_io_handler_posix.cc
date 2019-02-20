@@ -7,6 +7,10 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 
+#include <algorithm>
+#include <utility>
+
+#include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
@@ -114,8 +118,9 @@ namespace device {
 
 // static
 scoped_refptr<SerialIoHandler> SerialIoHandler::Create(
+    const base::FilePath& port,
     scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner) {
-  return new SerialIoHandlerPosix(ui_thread_task_runner);
+  return new SerialIoHandlerPosix(port, std::move(ui_thread_task_runner));
 }
 
 void SerialIoHandlerPosix::ReadImpl() {
@@ -291,8 +296,9 @@ bool SerialIoHandlerPosix::PostOpen() {
 }
 
 SerialIoHandlerPosix::SerialIoHandlerPosix(
+    const base::FilePath& port,
     scoped_refptr<base::SingleThreadTaskRunner> ui_thread_task_runner)
-    : SerialIoHandler(ui_thread_task_runner) {}
+    : SerialIoHandler(port, std::move(ui_thread_task_runner)) {}
 
 SerialIoHandlerPosix::~SerialIoHandlerPosix() = default;
 
@@ -632,10 +638,6 @@ int SerialIoHandlerPosix::CheckReceiveError(char* buffer,
   memcpy(buffer, chars_stashed_, std::min(new_bytes_read, 2));
   memcpy(chars_stashed_, tmp, num_chars_stashed_);
   return new_bytes_read;
-}
-
-std::string SerialIoHandler::MaybeFixUpPortName(const std::string& port_name) {
-  return port_name;
 }
 
 }  // namespace device

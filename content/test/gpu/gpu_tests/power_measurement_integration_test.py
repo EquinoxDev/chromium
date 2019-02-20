@@ -25,12 +25,59 @@ This script is tested and works fine with the following video sites:
 
 from gpu_tests import gpu_integration_test
 from gpu_tests import ipg_utils
+from gpu_tests import path_util
 from gpu_tests.gpu_test_expectations import GpuTestExpectations
 
+import logging
 import os
 import sys
+import time
 
-fullscreen_script = r"""
+# Waits for [x] seconds after browser launch before measuring power to
+# avoid startup tasks affecting results.
+_POWER_MEASUREMENT_DELAY = 20
+
+# Measures power for [x] seconds and calculates the average as results.
+_POWER_MEASUREMENT_DURATION = 30
+
+# Measures power in resolution of [x] milli-seconds.
+_POWER_MEASUREMENT_RESOLUTION = 100
+
+_GPU_RELATIVE_PATH = "content/test/data/gpu/"
+
+_DATA_PATHS = [os.path.join(
+                   path_util.GetChromiumSrcDir(), _GPU_RELATIVE_PATH),
+               os.path.join(
+                   path_util.GetChromiumSrcDir(), 'media', 'test', 'data')]
+
+_BASIC_TEST_HARNESS_SCRIPT = r"""
+  var domAutomationController = {};
+
+  domAutomationController._proceed = false;
+
+  domAutomationController._readyForActions = false;
+  domAutomationController._succeeded = false;
+  domAutomationController._finished = false;
+
+  domAutomationController.send = function(msg) {
+    domAutomationController._proceed = true;
+    let lmsg = msg.toLowerCase();
+    if (lmsg == "ready") {
+      domAutomationController._readyForActions = true;
+    } else {
+      domAutomationController._finished = true;
+      if (lmsg == "success") {
+        domAutomationController._succeeded = true;
+      } else {
+        domAutomationController._succeeded = false;
+      }
+    }
+  }
+
+  window.domAutomationController = domAutomationController;
+"""
+
+_FULLSCREEN_SCRIPT = r"""
   function locateElement(tag) {
     // return the element with largest width.
     var elements = document.getElementsByTagName(tag);
@@ -73,6 +120,8 @@ fullscreen_script = r"""
         var left = vid_rect.left - parent_rect.left;
         layer.style.top = top.toString() + "px";
         layer.style.left = left.toString() + "px";
+        // The following might mess with the layout of some sites.
+        video.parentNode.style.position = "relative";
         video.parentNode.appendChild(layer);
       }
       return video.currentTime > 0;
@@ -120,14 +169,17 @@ class PowerMeasurementIntegrationTest(gpu_integration_test.GpuIntegrationTest):
   @classmethod
   def AddCommandlineArgs(cls, parser):
     super(PowerMeasurementIntegrationTest, cls).AddCommandlineArgs(parser)
-    parser.add_option("--duration", default=60, type="int",
+    parser.add_option("--duration", default=_POWER_MEASUREMENT_DURATION,
+                      type="int",
                       help="specify how many seconds Intel Power Gadget "
-                      "measures. By default, 60 seconds is selected.")
-    parser.add_option("--delay", default=10, type="int",
+                      "measures. By default, %d seconds is selected." %
+                          _POWER_MEASUREMENT_DURATION)
+    parser.add_option("--delay", default=_POWER_MEASUREMENT_DELAY, type="int",
                       help="specify how many seconds we skip in the data "
                       "Intel Power Gadget collects. This time is for starting "
                       "video play, switching to fullscreen mode, etc. "
-                      "By default, 10 seconds is selected.")
+                      "By default, %d seconds is selected." %
+                          _POWER_MEASUREMENT_DELAY)
     parser.add_option("--resolution", default=100, type="int",
                       help="specify how often Intel Power Gadget samples "
                       "data in milliseconds. By default, 100 ms is selected.")
@@ -154,48 +206,136 @@ class PowerMeasurementIntegrationTest(gpu_integration_test.GpuIntegrationTest):
                       help="if a test is repeated multiples and outliers is "
                       "set to N, then N smallest results and N largest results "
                       "are discarded before computing mean and stdev.")
+    parser.add_option("--bypass-ipg", action="store_true", default=False,
+                      help="Do not launch Intel Power Gadget. This is for "
+                      "testing convenience on machines where Intel Power "
+                      "Gadget does not work.")
 
   @classmethod
   def GenerateGpuTests(cls, options):
-    yield ('url', options.url, (options.repeat,
-                                options.outliers,
-                                options.fullscreen,
-                                options.underlay,
-                                options.logdir,
-                                options.duration,
-                                options.delay,
-                                options.resolution))
+    if options.url is not None:
+      # This is for local testing convenience only and is not to be added to
+      # any bots.
+      yield ('URL', options.url,
+             {'test_func': 'URL',
+              'repeat': options.repeat,
+              'outliers': options.outliers,
+              'fullscreen': options.fullscreen,
+              'underlay': options.underlay,
+              'logdir': options.logdir,
+              'duration': options.duration,
+              'delay': options.delay,
+              'resolution': options.resolution,
+              'bypass_ipg': options.bypass_ipg})
+    else:
+      yield ('Basic', '-',
+             {'test_func': 'Basic',
+              'bypass_ipg': options.bypass_ipg})
+      yield ('Video_720_MP4',
+             _GPU_RELATIVE_PATH + 'power_video_bear_1280x720_mp4.html',
+             {'test_func': 'Video',
+              'bypass_ipg': options.bypass_ipg,
+              'underlay': False,
+              'fullscreen': False})
+      yield ('Video_720_MP4_Underlay',
+             _GPU_RELATIVE_PATH + 'power_video_bear_1280x720_mp4.html',
+             {'test_func': 'Video',
+              'bypass_ipg': options.bypass_ipg,
+              'underlay': True,
+              'fullscreen': False})
 
   @classmethod
   def SetUpProcess(cls):
     super(cls, PowerMeasurementIntegrationTest).SetUpProcess()
-    cls.CustomizeBrowserArgs([
-      '--autoplay-policy=no-user-gesture-required'
-    ])
+    path_util.SetupTelemetryPaths()
+    cls.CustomizeBrowserArgs(cls._AddDefaultArgs([]))
     cls.StartBrowser()
+    cls.SetStaticServerDirs(_DATA_PATHS)
 
   def RunActualGpuTest(self, test_path, *args):
-    ipg_path = ipg_utils.LocateIPG()
-    if not ipg_path:
-      self.fail("Fail to locate Intel Power Gadget")
+    test_params = args[0]
+    assert test_params is not None and 'test_func' in test_params
+    prefixed_test_func_name = '_RunTest_%s' % test_params['test_func']
+    getattr(self, prefixed_test_func_name)(test_path, test_params)
 
-    repeat = args[0]
-    outliers = args[1]
-    fullscreen = args[2]
-    underlay = args[3]
-    ipg_logdir = args[4]
-    ipg_duration = args[5]
-    ipg_delay = args[6]
-    ipg_resolution = args[7]
+  @classmethod
+  def _CreateExpectations(cls):
+    return PowerMeasurementExpectations()
 
-    print ""
-    print "Total iterations: ", repeat
+  @staticmethod
+  def _AddDefaultArgs(browser_args):
+    # All tests receive the following options.
+    return ['--autoplay-policy=no-user-gesture-required'] + browser_args
+
+  @staticmethod
+  def _MeasurePowerWithIPG(bypass_ipg):
+    total_time = _POWER_MEASUREMENT_DURATION + _POWER_MEASUREMENT_DELAY
+    if bypass_ipg:
+      logging.info("Bypassing Intel Power Gadget")
+      time.sleep(total_time)
+      return
+    logfile = None # Use the default path
+    ipg_utils.RunIPG(total_time, _POWER_MEASUREMENT_RESOLUTION, logfile)
+    results = ipg_utils.AnalyzeIPGLogFile(logfile, _POWER_MEASUREMENT_DELAY)
+    # TODO(zmo): output in a way that the results can be tracked at
+    # chromeperf.appspot.com.
+    logging.info("Results: %s", str(results))
+
+  #########################################
+  # Actual test functions
+
+  def _RunTest_Basic(self, test_path, params):
+    bypass_ipg = params['bypass_ipg']
+    PowerMeasurementIntegrationTest._MeasurePowerWithIPG(bypass_ipg)
+
+
+  def _RunTest_Video(self, test_path, params):
+    fullscreen = params['fullscreen']
+    underlay = params['underlay']
+    bypass_ipg = params['bypass_ipg']
+
+    disabled_features = [
+      'D3D11VideoDecoder',
+      'DirectCompositionUseNV12DecodeSwapChain',
+      'DirectCompositionUnderlays']
+    self.RestartBrowserWithArgs(
+      PowerMeasurementIntegrationTest._AddDefaultArgs([
+        '--disable-features=' + ','.join(disabled_features)]))
+
+    url = self.UrlOfStaticFilePath(test_path)
+    self.tab.Navigate(
+      url, script_to_evaluate_on_commit=_BASIC_TEST_HARNESS_SCRIPT)
+    self.tab.action_runner.WaitForJavaScriptCondition(
+      'domAutomationController._finished', timeout=30)
+    if fullscreen:
+      # TODO(zmo): Figure out why the following doesn't work
+      self.tab.action_runner.ClickElement(element_function=(
+        'document.getElementById("fullscreen")'))
+    if underlay:
+      self.tab.action_runner.ExecuteJavaScript('goUnderlay();')
+
+    PowerMeasurementIntegrationTest._MeasurePowerWithIPG(bypass_ipg)
+
+
+  def _RunTest_URL(self, test_path, params):
+    repeat = params['repeat']
+    outliers = params['outliers']
+    fullscreen = params['fullscreen']
+    underlay = params['underlay']
+    ipg_logdir = params['logdir']
+    ipg_duration = params['duration']
+    ipg_delay = params['delay']
+    ipg_resolution = params['resolution']
+    bypass_ipg = params['bypass_ipg']
+
+    if repeat > 1:
+      logging.info("Total iterations: %d", repeat)
     logfiles = []
     for iteration in range(repeat):
-      run_label = "Iteration_%d" % iteration
-      print run_label
+      if repeat > 1:
+        logging.info("Iteration %d", iteration)
       if test_path:
-        self.tab.action_runner.Navigate(test_path, fullscreen_script)
+        self.tab.action_runner.Navigate(test_path, _FULLSCREEN_SCRIPT)
         self.tab.WaitForDocumentReadyStateToBeComplete()
         code = "setupVideoElement(%s)" % ("true" if underlay else "false")
         if not self.tab.action_runner.EvaluateJavaScript(code):
@@ -211,22 +351,29 @@ class PowerMeasurementIntegrationTest(gpu_integration_test.GpuIntegrationTest):
         self.tab.action_runner.ClickElement(element_function=(
             'locateFullscreenButton()'))
 
-      logfile = None
-      if ipg_logdir:
-        if not os.path.isdir(ipg_logdir):
-          self.fail("Folder " + ipg_logdir + " doesn't exist")
-        logfile = ipg_utils.GenerateIPGLogFilename(log_dir=ipg_logdir,
-                                                   timestamp=True)
-      ipg_utils.RunIPG(ipg_duration + ipg_delay, ipg_resolution, logfile)
-      logfiles.append(logfile)
+      if bypass_ipg:
+        logging.info("Bypassing Intel Power Gadget")
+        time.sleep(ipg_duration + ipg_delay)
+      else:
+        logfile = None
+        if ipg_logdir:
+          if not os.path.isdir(ipg_logdir):
+            self.fail("Folder " + ipg_logdir + " doesn't exist")
+          logfile = ipg_utils.GenerateIPGLogFilename(log_dir=ipg_logdir,
+                                                     timestamp=True)
+        ipg_utils.RunIPG(ipg_duration + ipg_delay, ipg_resolution, logfile)
+        logfiles.append(logfile)
 
       if repeat > 1 and iteration < repeat - 1:
         self.StopBrowser()
         self.StartBrowser()
 
+    if bypass_ipg:
+      return
+
     if repeat == 1:
       results = ipg_utils.AnalyzeIPGLogFile(logfiles[0], ipg_delay)
-      print "Results: ", results
+      logging.info("Results: %s", str(results))
     else:
       json_path = None
       if ipg_logdir:
@@ -235,11 +382,8 @@ class PowerMeasurementIntegrationTest(gpu_integration_test.GpuIntegrationTest):
 
       summary = ipg_utils.ProcessResultsFromMultipleIPGRuns(
         logfiles, ipg_delay, outliers, json_path)
-      print 'Summary: ', summary
+      logging.info("Summary: %s", str(summary))
 
-  @classmethod
-  def _CreateExpectations(cls):
-    return PowerMeasurementExpectations()
 
 def load_tests(loader, tests, pattern):
   del loader, tests, pattern  # Unused.

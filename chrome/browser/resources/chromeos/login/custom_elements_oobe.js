@@ -17,7 +17,6 @@
 // <include src="gaia_input.js">
 // <include src="gaia_password_changed.js">
 // <include src="hd-iron-icon.js">
-// <include src="html-echo.js">
 // <include src="network_select_login.js">
 // <include src="notification_card.js">
 // <include src="offline_gaia.js">
@@ -42,8 +41,6 @@
 // <include src="offline_ad_login.js">
 // <include src="active_directory_password_change.js">
 // <include src="arc_terms_of_service.js">
-// <include src="oobe_voice_interaction_value_prop.js">
-// <include src="oobe_wait_for_container_ready.js">
 // <include src="oobe_supervision_transition.js">
 // <include src="enrollment_license_card.js">
 // <include src="sync_consent.js">

@@ -24,6 +24,24 @@ using blink::WebMouseWheelEvent;
 
 namespace content {
 
+namespace {
+
+int WebEventButtonToUIEventButtonFlags(blink::WebMouseEvent::Button button) {
+  if (button == blink::WebMouseEvent::Button::kLeft)
+    return ui::EF_LEFT_MOUSE_BUTTON;
+  if (button == blink::WebMouseEvent::Button::kMiddle)
+    return ui::EF_MIDDLE_MOUSE_BUTTON;
+  if (button == blink::WebMouseEvent::Button::kRight)
+    return ui::EF_RIGHT_MOUSE_BUTTON;
+  if (button == blink::WebMouseEvent::Button::kBack)
+    return ui::EF_BACK_MOUSE_BUTTON;
+  if (button == blink::WebMouseEvent::Button::kForward)
+    return ui::EF_FORWARD_MOUSE_BUTTON;
+  return 0;
+}
+
+}  // namespace
+
 SyntheticGestureTargetAura::SyntheticGestureTargetAura(
     RenderWidgetHostImpl* host)
     : SyntheticGestureTargetBase(host) {
@@ -69,14 +87,8 @@ void SyntheticGestureTargetAura::DispatchWebMouseWheelEventToPlatform(
       const blink::WebMouseWheelEvent& web_wheel,
       const ui::LatencyInfo&) {
   if (web_wheel.phase == blink::WebMouseWheelEvent::kPhaseEnded) {
-    DCHECK(
-        !render_widget_host()->GetView()->IsRenderWidgetHostViewChildFrame() &&
-        !render_widget_host()->GetView()->IsRenderWidgetHostViewGuest());
     // Send the pending wheel end event immediately.
-    static_cast<RenderWidgetHostViewAura*>(render_widget_host()->GetView())
-        ->event_handler()
-        ->mouse_wheel_phase_handler()
-        .DispatchPendingWheelEndEvent();
+    GetView()->GetMouseWheelPhaseHandler()->DispatchPendingWheelEndEvent();
     return;
   }
   base::TimeTicks timestamp = web_wheel.TimeStamp();
@@ -153,8 +165,14 @@ void SyntheticGestureTargetAura::DispatchWebMouseEventToPlatform(
   int flags = ui::WebEventModifiersToEventFlags(web_mouse_event.GetModifiers());
   ui::PointerDetails pointer_details(
       ui::WebPointerTypeToEventPointerType(web_mouse_event.pointer_type));
+  int changed_button_flags = 0;
+  if (event_type == ui::ET_MOUSE_PRESSED ||
+      event_type == ui::ET_MOUSE_RELEASED) {
+    changed_button_flags =
+        WebEventButtonToUIEventButtonFlags(web_mouse_event.button);
+  }
   ui::MouseEvent mouse_event(event_type, gfx::Point(), gfx::Point(),
-                             ui::EventTimeForNow(), flags, flags,
+                             ui::EventTimeForNow(), flags, changed_button_flags,
                              pointer_details);
   gfx::PointF location(
       web_mouse_event.PositionInWidget().x * device_scale_factor_,
@@ -164,6 +182,7 @@ void SyntheticGestureTargetAura::DispatchWebMouseEventToPlatform(
 
   aura::Window* window = GetWindow();
   mouse_event.ConvertLocationToTarget(window, window->GetRootWindow());
+  mouse_event.SetClickCount(web_mouse_event.click_count);
   ui::EventDispatchDetails details =
       event_injector_.Inject(window->GetHost(), &mouse_event);
   if (details.dispatcher_destroyed)
@@ -188,8 +207,15 @@ float SyntheticGestureTargetAura::GetMinScalingSpanInDips() const {
   return ui::GestureConfiguration::GetInstance()->min_scaling_span_in_pixels();
 }
 
+RenderWidgetHostViewAura* SyntheticGestureTargetAura::GetView() const {
+  auto* view =
+      static_cast<RenderWidgetHostViewAura*>(render_widget_host()->GetView());
+  DCHECK(view);
+  return view;
+}
+
 aura::Window* SyntheticGestureTargetAura::GetWindow() const {
-  aura::Window* window = render_widget_host()->GetView()->GetNativeView();
+  aura::Window* window = GetView()->GetNativeView();
   DCHECK(window);
   return window;
 }

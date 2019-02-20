@@ -27,7 +27,7 @@ import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.ChromeSwitches;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.vr.util.NativeUiUtils;
 import org.chromium.chrome.browser.vr.util.PermissionUtils;
 import org.chromium.chrome.browser.vr.util.VrTestRuleUtils;
@@ -134,9 +134,8 @@ public class WebXrVrTabTest {
 
     private void testPermissionsInOtherTabImpl(boolean incognito) throws InterruptedException {
         mWebXrVrTestFramework.loadUrlAndAwaitInitialization(
-                mTestRule.getTestServer().getURL(
-                        WebXrVrTestFramework.getEmbeddedServerPathForHtmlTestFile(
-                                "generic_webxr_permission_page")),
+                mWebXrVrTestFramework.getEmbeddedServerUrlForHtmlTestFile(
+                        "generic_webxr_permission_page"),
                 PAGE_LOAD_TIMEOUT_S);
         // Be sure to store the stream we're given so that the permission is actually in use, as
         // otherwise the toast doesn't show up since another tab isn't actually using the

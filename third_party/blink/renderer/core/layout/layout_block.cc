@@ -49,6 +49,7 @@
 #include "third_party/blink/renderer/core/layout/layout_flexible_box.h"
 #include "third_party/blink/renderer/core/layout/layout_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_grid.h"
+#include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_object_factory.h"
 #include "third_party/blink/renderer/core/layout/layout_table_cell.h"
@@ -322,7 +323,9 @@ void LayoutBlock::AddChildBeforeDescendant(LayoutObject* new_child,
   // If the requested insertion point is not one of our children, then this is
   // because there is an anonymous container within this object that contains
   // the beforeDescendant.
-  if (before_descendant_container->IsAnonymousBlock()) {
+  if (before_descendant_container->IsAnonymousBlock() ||
+      (before_descendant_container->IsLayoutInline() &&
+       ToLayoutInline(before_descendant_container)->IsFirstLineAnonymous())) {
     // Insert the child into the anonymous block box instead of here.
     if (new_child->IsInline() ||
         (new_child->IsFloatingOrOutOfFlowPositioned() &&
@@ -528,10 +531,6 @@ void LayoutBlock::ComputeVisualOverflow(bool) {
   AddVisualOverflowFromTheme();
 
   if (VisualOverflowRect() != previous_visual_overflow_rect) {
-    if (Layer()) {
-      Layer()->SetNeedsCompositingInputsUpdate(
-          PaintLayer::DoesNotNeedDescendantDependentUpdate);
-    }
     SetShouldCheckForPaintInvalidation();
     GetFrameView()->SetIntersectionObservationState(LocalFrameView::kDesired);
   }
@@ -799,8 +798,8 @@ LayoutUnit LayoutBlock::MarginIntrinsicLogicalWidthForChild(
   // A margin has three types: fixed, percentage, and auto (variable).
   // Auto and percentage margins become 0 when computing min/max width.
   // Fixed margins can be added in as is.
-  Length margin_left = child.StyleRef().MarginStartUsing(StyleRef());
-  Length margin_right = child.StyleRef().MarginEndUsing(StyleRef());
+  const Length& margin_left = child.StyleRef().MarginStartUsing(StyleRef());
+  const Length& margin_right = child.StyleRef().MarginEndUsing(StyleRef());
   LayoutUnit margin;
   if (margin_left.IsFixed())
     margin += margin_left.Value();
@@ -882,6 +881,7 @@ void LayoutBlock::LayoutPositionedObject(LayoutBox* positioned_object,
   bool needs_block_direction_location_set_before_layout =
       is_paginated &&
       positioned_object->GetPaginationBreakability() != kForbidBreaks;
+  bool bogus_logical_top_estimate = false;
   if (needs_block_direction_location_set_before_layout) {
     // Out-of-flow objects are normally positioned after layout (while in-flow
     // objects are positioned before layout). If the child object is paginated
@@ -900,6 +900,7 @@ void LayoutBlock::LayoutPositionedObject(LayoutBox* positioned_object,
       // fragmentainer, or decrease it if a descendant margin collides into a
       // fragmentainer boundary), and thus give us a bad block-start offset.
       logical_top_estimate = -OffsetFromLogicalTopOfFirstPage();
+      bogus_logical_top_estimate = true;
     } else {
       LogicalExtentComputedValues computed_values;
       positioned_object->ComputeLogicalHeight(
@@ -910,8 +911,13 @@ void LayoutBlock::LayoutPositionedObject(LayoutBox* positioned_object,
     positioned_object->SetLogicalTop(logical_top_estimate);
   }
 
-  if (!positioned_object->NeedsLayout())
+  if (!positioned_object->NeedsLayout()) {
     MarkChildForPaginationRelayoutIfNeeded(*positioned_object, layout_scope);
+    // If we're not able to set a decent block start estimate, we need to force
+    // layout to figure it out.
+    if (bogus_logical_top_estimate)
+      layout_scope.SetChildNeedsLayout(positioned_object);
+  }
 
   // FIXME: We should be able to do a r->setNeedsPositionedMovementLayout()
   // here instead of a full layout. Need to investigate why it does not
@@ -1027,12 +1033,6 @@ void LayoutBlock::RemovePositionedObject(LayoutBox* o) {
     g_positioned_descendants_map->erase(container);
     container->has_positioned_objects_ = false;
   }
-
-  // Need to clear the anchor of the positioned object in its container box.
-  // The anchors are created in the logical container box, not in the CSS
-  // containing block.
-  if (LayoutObject* parent = o->Parent())
-    parent->MarkContainerNeedsCollectInlines();
 }
 
 bool LayoutBlock::IsAnonymousNGFieldsetContentWrapper() const {
@@ -1049,6 +1049,34 @@ void LayoutBlock::InvalidatePaint(
 void LayoutBlock::ClearPreviousVisualRects() {
   LayoutBox::ClearPreviousVisualRects();
   BlockPaintInvalidator(*this).ClearPreviousVisualRects();
+}
+
+void LayoutBlock::ImageChanged(WrappedImagePtr image,
+                               CanDeferInvalidation defer) {
+  LayoutBox::ImageChanged(image, defer);
+
+  if (!StyleRef().HasPseudoStyle(kPseudoIdFirstLine))
+    return;
+
+  // ImageChanged() is also called when we add image observers. Don't use
+  // FirstLineStyleRef() here because it will update the first line style cache
+  // too early. We should just access the current cached style and bail out if
+  // it's not ready (and we'll update pending image observer when the cache is
+  // updated).
+  const auto* cached_first_line_style =
+      StyleRef().GetCachedPseudoStyle(kPseudoIdFirstLine);
+  if (!cached_first_line_style)
+    return;
+
+  if (auto* first_line_container = NearestInnerBlockWithFirstLine()) {
+    for (const auto* layer = &cached_first_line_style->BackgroundLayers();
+         layer; layer = layer->Next()) {
+      if (layer->GetImage() && image == layer->GetImage()->Data()) {
+        first_line_container->SetShouldDoFullPaintInvalidationForFirstLine();
+        break;
+      }
+    }
+  }
 }
 
 void LayoutBlock::RemovePositionedObjects(
@@ -1080,13 +1108,9 @@ void LayoutBlock::RemovePositionedObjects(
       }
 
       // It is parent blocks job to add positioned child to positioned objects
-      // list of its containing block
+      // list of its containing block.
       // Parent layout needs to be invalidated to ensure this happens.
-      LayoutObject* p = positioned_object->Parent();
-      while (p && !p->IsLayoutBlock())
-        p = p->Parent();
-      if (p)
-        p->SetChildNeedsLayout();
+      positioned_object->MarkParentForOutOfFlowPositionedChange();
 
       dead_objects.push_back(positioned_object);
     }
@@ -1572,8 +1596,9 @@ void LayoutBlock::ComputeBlockPreferredLogicalWidths(
     // (variable).
     // Auto and percentage margins simply become 0 when computing min/max width.
     // Fixed margins can be added in as is.
-    Length start_margin_length = child_style->MarginStartUsing(style_to_use);
-    Length end_margin_length = child_style->MarginEndUsing(style_to_use);
+    const Length& start_margin_length =
+        child_style->MarginStartUsing(style_to_use);
+    const Length& end_margin_length = child_style->MarginEndUsing(style_to_use);
     LayoutUnit margin;
     LayoutUnit margin_start;
     LayoutUnit margin_end;

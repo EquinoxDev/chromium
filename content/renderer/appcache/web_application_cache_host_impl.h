@@ -7,8 +7,10 @@
 
 #include <string>
 
-#include "content/common/appcache_interfaces.h"
 #include "mojo/public/cpp/system/message_pipe.h"
+#include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
+#include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "third_party/blink/public/platform/web_application_cache_host.h"
 #include "third_party/blink/public/platform/web_application_cache_host_client.h"
 #include "third_party/blink/public/platform/web_url_response.h"
@@ -17,30 +19,27 @@
 
 namespace content {
 
-class AppCacheBackendProxy;
-
 class WebApplicationCacheHostImpl : public blink::WebApplicationCacheHost {
  public:
   // Returns the host having given id or NULL if there is no such host.
   static WebApplicationCacheHostImpl* FromId(int id);
 
   WebApplicationCacheHostImpl(blink::WebApplicationCacheHostClient* client,
-                              AppCacheBackendProxy* backend,
-                              int appcache_host_id);
+                              blink::mojom::AppCacheBackend* backend,
+                              int appcache_host_id,
+                              int render_frame_id);
   ~WebApplicationCacheHostImpl() override;
 
   int host_id() const { return host_id_; }
-  AppCacheBackendProxy* backend() const { return backend_; }
+  blink::mojom::AppCacheBackend* backend() const { return backend_; }
   blink::WebApplicationCacheHostClient* client() const { return client_; }
 
-  virtual void OnCacheSelected(const AppCacheInfo& info);
-  void OnStatusChanged(AppCacheStatus);
-  void OnEventRaised(AppCacheEventID);
+  virtual void OnCacheSelected(const blink::mojom::AppCacheInfo& info);
+  void OnEventRaised(blink::mojom::AppCacheEventID);
   void OnProgressEventRaised(const GURL& url, int num_total, int num_complete);
-  void OnErrorEventRaised(const AppCacheErrorDetails& details);
-  virtual void OnLogMessage(AppCacheLogLevel log_level,
+  void OnErrorEventRaised(const blink::mojom::AppCacheErrorDetails& details);
+  virtual void OnLogMessage(blink::mojom::ConsoleMessageLevel log_level,
                             const std::string& message) {}
-  virtual void OnContentBlocked(const GURL& manifest_url) {}
 
   // blink::WebApplicationCacheHost:
   void WillStartMainResourceRequest(
@@ -50,14 +49,14 @@ class WebApplicationCacheHostImpl : public blink::WebApplicationCacheHost {
   void SelectCacheWithoutManifest() override;
   bool SelectCacheWithManifest(const blink::WebURL& manifestURL) override;
   void DidReceiveResponseForMainResource(const blink::WebURLResponse&) override;
-  void DidReceiveDataForMainResource(const char* data, size_t len) override;
-  void DidFinishLoadingMainResource(bool success) override;
-  blink::WebApplicationCacheHost::Status GetStatus() override;
+  blink::mojom::AppCacheStatus GetStatus() override;
   bool StartUpdate() override;
   bool SwapCache() override;
   void GetResourceList(blink::WebVector<ResourceInfo>* resources) override;
   void GetAssociatedCacheInfo(CacheInfo* info) override;
   int GetHostID() const override;
+
+  void SelectCacheForSharedWorker(long long app_cache_id);
 
   // Set the URLLoaderFactory instance to be used for subresource requests.
   virtual void SetSubresourceFactory(
@@ -67,15 +66,16 @@ class WebApplicationCacheHostImpl : public blink::WebApplicationCacheHost {
   enum IsNewMasterEntry { MAYBE_NEW_ENTRY, NEW_ENTRY, OLD_ENTRY };
 
   blink::WebApplicationCacheHostClient* client_;
-  AppCacheBackendProxy* backend_;
+  blink::mojom::AppCacheBackend* backend_;
+  blink::mojom::AppCacheHostPtr backend_host_;
   int host_id_;
-  AppCacheStatus status_;
+  blink::mojom::AppCacheStatus status_;
   blink::WebURLResponse document_response_;
   GURL document_url_;
   bool is_scheme_supported_;
   bool is_get_method_;
   IsNewMasterEntry is_new_master_entry_;
-  AppCacheInfo cache_info_;
+  blink::mojom::AppCacheInfo cache_info_;
   GURL original_main_resource_url_;  // Used to detect redirection.
   bool was_select_cache_called_;
 };

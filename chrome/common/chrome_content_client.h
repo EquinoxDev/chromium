@@ -18,6 +18,7 @@
 #include "chrome/common/origin_trials/chrome_origin_trial_policy.h"
 #include "components/nacl/common/buildflags.h"
 #include "content/public/common/content_client.h"
+#include "pdf/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -55,12 +56,14 @@ class ChromeContentClient : public content::ContentClient {
       content::PepperPluginInfo::PPP_ShutdownModuleFunc shutdown_module);
 #endif
 
-#if BUILDFLAG(ENABLE_PLUGINS)
+#if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_PDF)
   static void SetPDFEntryFunctions(
       content::PepperPluginInfo::GetInterfaceFunc get_interface,
       content::PepperPluginInfo::PPP_InitializeModuleFunc initialize_module,
       content::PepperPluginInfo::PPP_ShutdownModuleFunc shutdown_module);
+#endif
 
+#if BUILDFLAG(ENABLE_PLUGINS)
   // This returns the most recent plugin based on the plugin versions. In the
   // event of a tie, a debug plugin will be considered more recent than a
   // non-debug plugin.
@@ -90,7 +93,8 @@ class ChromeContentClient : public content::ContentClient {
   base::DictionaryValue GetNetLogConstants() const override;
   std::string GetProcessTypeNameInEnglish(int type) override;
 
-  bool AllowScriptExtensionForServiceWorker(const GURL& script_url) override;
+  bool AllowScriptExtensionForServiceWorker(
+      const url::Origin& script_origin) override;
 
   blink::OriginTrialPolicy* GetOriginTrialPolicy() override;
 

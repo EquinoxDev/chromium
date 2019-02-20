@@ -64,13 +64,21 @@ class WebWidgetClient {
  public:
   virtual ~WebWidgetClient() = default;
 
-  // Called when a region of the WebWidget needs to be re-painted.
-  virtual void DidInvalidateRect(const WebRect&) {}
+  // Sets the root layer of the tree in the compositor. It may be null to remove
+  // the root layer in which case nothing would be shown by the compositor.
+  virtual void SetRootLayer(scoped_refptr<cc::Layer>) {}
 
   // Called to request a BeginMainFrame from the compositor. For tests with
   // single thread and no scheduler, the impl should schedule a task to run
   // a synchronous composite.
   virtual void ScheduleAnimation() {}
+
+  // Show or hide compositor debug visualizations.
+  virtual void SetShowFPSCounter(bool) {}
+  virtual void SetShowPaintRects(bool) {}
+  virtual void SetShowDebugBorders(bool) {}
+  virtual void SetShowScrollBottleneckRects(bool) {}
+  virtual void SetShowHitTestBorders(bool) {}
 
   // A notification callback for when the intrinsic sizing of the
   // widget changed. This is only called for SVG within a remote frame.
@@ -90,8 +98,11 @@ class WebWidgetClient {
   virtual void AutoscrollFling(const WebFloatSize& velocity) {}
   virtual void AutoscrollEnd() {}
 
-  // Called when the widget should be closed.  WebWidget::close() should
-  // be called asynchronously as a result of this notification.
+  // Called when the window for this top-level widget should be closed.
+  // WebWidget::Close() should be called asynchronously as a result of this
+  // notification.
+  // TODO(danakj): Move this to WebView::CloseWindowSoon(), so we can call
+  // it when the main frame is remote and there is no top-level widget.
   virtual void CloseWidgetSoon() {}
 
   // Called to show the widget according to the given policy.
@@ -149,6 +160,10 @@ class WebWidgetClient {
   // Requests unbuffered (ie. low latency) input until a pointerup
   // event occurs.
   virtual void RequestUnbufferedInputEvents() {}
+
+  // Requests unbuffered (ie. low latency) input due to debugger being
+  // attached. Debugger needs to paint when stopped in the event handler.
+  virtual void SetNeedsUnbufferedInputForDebugger(bool) {}
 
   // Called during WebWidget::HandleInputEvent for a TouchStart event to inform
   // the embedder of the touch actions that are permitted for this touch.

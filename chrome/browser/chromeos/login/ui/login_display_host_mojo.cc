@@ -7,6 +7,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
 #include "chrome/browser/chromeos/login/mojo_system_info_dispatcher.h"
@@ -234,15 +235,6 @@ void LoginDisplayHostMojo::OnStartArcKiosk() {
 
 void LoginDisplayHostMojo::OnBrowserCreated() {
   NOTIMPLEMENTED();
-}
-
-void LoginDisplayHostMojo::StartVoiceInteractionOobe() {
-  NOTIMPLEMENTED();
-}
-
-bool LoginDisplayHostMojo::IsVoiceInteractionOobe() {
-  NOTIMPLEMENTED();
-  return false;
 }
 
 void LoginDisplayHostMojo::ShowGaiaDialog(

@@ -25,13 +25,22 @@ class AppServiceAppResult : public AppResult {
  private:
   // ChromeSearchResult overrides:
   void Open(int event_flags) override;
+  void GetContextMenuModel(GetMenuModelCallback callback) override;
+  AppContextMenu* GetAppContextMenu() override;
 
   // AppContextMenuDelegate overrides:
   void ExecuteLaunchCommand(int event_flags) override;
 
+  void Launch(int event_flags, apps::mojom::LaunchSource launch_source);
+
+  void CallLoadIcon(bool chip, bool allow_placeholder_icon);
   void OnLoadIcon(bool chip, apps::mojom::IconValuePtr icon_value);
 
-  // TODO(crbug.com/826982): implement context menus.
+  apps::mojom::AppType app_type_;
+  bool is_platform_app_;
+  bool show_in_launcher_;
+
+  std::unique_ptr<AppContextMenu> context_menu_;
 
   base::WeakPtrFactory<AppServiceAppResult> weak_ptr_factory_;
 

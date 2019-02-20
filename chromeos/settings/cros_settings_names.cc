@@ -94,6 +94,11 @@ const char kReportDeviceVersionInfo[] =
 const char kReportDeviceActivityTimes[] =
     "cros.device_status.report_activity_times";
 
+// A boolean pref that determines whether the board status should be
+// included in status reports to the device management server.
+const char kReportDeviceBoardStatus[] =
+    "cros.device_status.report_board_status";
+
 // A boolean pref that indicates whether the state of the dev mode switch at
 // boot should be reported along with device policy requests.
 const char kReportDeviceBootMode[] = "cros.device_status.report_boot_mode";
@@ -106,6 +111,16 @@ const char kReportDeviceLocation[] = "cros.device_status.report_location";
 // in device status reports to the device management server.
 const char kReportDeviceNetworkInterfaces[] =
     "cros.device_status.report_network_interfaces";
+
+// A boolean pref that determines whether the device power status should be
+// included in status reports to the device management server.
+const char kReportDevicePowerStatus[] =
+    "cros.device_status.report_power_status";
+
+// A boolean pref that determines whether the storage status should be
+// included in status reports to the device management server.
+const char kReportDeviceStorageStatus[] =
+    "cros.device_status.report_storage_status";
 
 // Determines whether the device reports recently logged in users in device
 // status reports to the device management server.
@@ -253,10 +268,6 @@ const char kLoginVideoCaptureAllowedUrls[] =
 const char kDeviceLoginScreenAppInstallList[] =
     "cros.device.login_screen_app_install_list";
 
-// A string pref storing the url and cryptographic hash of the image in JSON
-// format allowed to set a device-level wallpaper before any user logs in.
-const char kDeviceWallpaperImage[] = "cros.device_wallpaper_image";
-
 // A list pref specifying the locales allowed on the login screen. Currently
 // only the first value is used, as the single locale allowed on the login
 // screen.
@@ -290,8 +301,6 @@ const char kFineGrainedTimeZoneResolveEnabled[] =
 // }
 const char kDeviceOffHours[] = "cros.device_off_hours";
 
-// An external data pref for the printer configurations download.
-const char kDeviceNativePrinters[] = "cros.device.native_printers";
 // An enum specifying the access policy device printers should observe.
 const char kDeviceNativePrintersAccessMode[] =
     "cros.device.native_printers_access_mode";
@@ -352,5 +361,11 @@ const char kDeviceUnaffiliatedCrostiniAllowed[] =
 // A boolean pref that indicates whether PluginVm is allowed to run on this
 // device.
 const char kPluginVmAllowed[] = "cros.device.plugin_vm_allowed";
+// A string pref that specifies PluginVm license key for this device.
+const char kPluginVmLicenseKey[] = "cros.device.plugin_vm_license_key";
+
+// An enum pref specifying the case when device needs to reboot on user sign
+// out.
+const char kDeviceRebootOnUserSignout[] = "cros.device.reboot_on_user_signout";
 
 }  // namespace chromeos

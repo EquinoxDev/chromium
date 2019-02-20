@@ -35,8 +35,8 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_blob_callback.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
 #include "third_party/blink/renderer/core/html/canvas/image_encode_options.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
@@ -234,7 +234,7 @@ class CORE_EXPORT HTMLCanvasElement final
                            base::WeakPtr<CanvasResourceDispatcher>,
                            scoped_refptr<base::SingleThreadTaskRunner>,
                            unsigned resource_id) override;
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
   void SetResourceProviderForTesting(std::unique_ptr<CanvasResourceProvider>,
                                      std::unique_ptr<Canvas2DLayerBridge>,

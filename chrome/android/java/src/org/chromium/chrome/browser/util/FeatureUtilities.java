@@ -17,13 +17,14 @@ import android.speech.RecognizerIntent;
 
 import org.chromium.base.CommandLine;
 import org.chromium.base.ContextUtils;
-import org.chromium.base.StrictModeContext;
 import org.chromium.base.SysUtils;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
+import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.firstrun.FirstRunUtils;
 import org.chromium.chrome.browser.locale.LocaleManager;
 import org.chromium.chrome.browser.partnercustomizations.PartnerBrowserCustomizations;
@@ -75,6 +76,9 @@ public class FeatureUtilities {
     private static Boolean sIsNewTabPageButtonEnabled;
     private static Boolean sIsBottomToolbarEnabled;
     private static Boolean sShouldInflateToolbarOnBackgroundThread;
+    private static Boolean sIsNightModeAvailable;
+
+    private static Boolean sDownloadAutoResumptionEnabledInNative;
 
     private static final String NTP_BUTTON_TRIAL_NAME = "NewTabPage";
     private static final String NTP_BUTTON_VARIANT_PARAM_NAME = "variation";
@@ -187,12 +191,16 @@ public class FeatureUtilities {
         cacheNewTabPageButtonEnabled();
         cacheBottomToolbarEnabled();
         cacheInflateToolbarOnBackgroundThread();
+        cacheNightModeAvailable();
+        cacheDownloadAutoResumptionEnabledInNative();
 
-        // Propagate DONT_PREFETCH_LIBRARIES feature value to LibraryLoader. This can't
-        // be done in LibraryLoader itself because it lives in //base and can't depend
-        // on ChromeFeatureList.
+        // Propagate DONT_PREFETCH_LIBRARIES and REACHED_CODE_PROFILER feature values to
+        // LibraryLoader. This can't be done in LibraryLoader itself because it lives in //base and
+        // can't depend on ChromeFeatureList.
         LibraryLoader.setDontPrefetchLibrariesOnNextRuns(
                 ChromeFeatureList.isEnabled(ChromeFeatureList.DONT_PREFETCH_LIBRARIES));
+        LibraryLoader.setReachedCodeProfilerEnabledOnNextRuns(
+                ChromeFeatureList.isEnabled(ChromeFeatureList.REACHED_CODE_PROFILER));
     }
 
     /**
@@ -223,10 +231,8 @@ public class FeatureUtilities {
         if (sIsHomePageButtonForceEnabled == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
 
-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                sIsHomePageButtonForceEnabled = prefManager.readBoolean(
-                        ChromePreferenceManager.HOME_PAGE_BUTTON_FORCE_ENABLED_KEY, false);
-            }
+            sIsHomePageButtonForceEnabled = prefManager.readBoolean(
+                    ChromePreferenceManager.HOME_PAGE_BUTTON_FORCE_ENABLED_KEY, false);
         }
         return sIsHomePageButtonForceEnabled;
     }
@@ -256,12 +262,24 @@ public class FeatureUtilities {
         if (sShouldInflateToolbarOnBackgroundThread == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
 
-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                sShouldInflateToolbarOnBackgroundThread = prefManager.readBoolean(
-                        ChromePreferenceManager.INFLATE_TOOLBAR_ON_BACKGROUND_THREAD_KEY, false);
-            }
+            sShouldInflateToolbarOnBackgroundThread = prefManager.readBoolean(
+                    ChromePreferenceManager.INFLATE_TOOLBAR_ON_BACKGROUND_THREAD_KEY, false);
         }
         return sShouldInflateToolbarOnBackgroundThread;
+    }
+
+    /**
+     * @return Whether or not the download auto-resumptions should be enabled in native.
+     */
+    @CalledByNative
+    public static boolean isDownloadAutoResumptionEnabledInNative() {
+        if (sDownloadAutoResumptionEnabledInNative == null) {
+            ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
+
+            sDownloadAutoResumptionEnabledInNative = prefManager.readBoolean(
+                    ChromePreferenceManager.DOWNLOAD_AUTO_RESUMPTION_IN_NATIVE_KEY, true);
+        }
+        return sDownloadAutoResumptionEnabledInNative;
     }
 
     /**
@@ -281,10 +299,8 @@ public class FeatureUtilities {
         if (sIsHomepageTileEnabled == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
 
-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                sIsHomepageTileEnabled = prefManager.readBoolean(
-                        ChromePreferenceManager.HOMEPAGE_TILE_ENABLED_KEY, false);
-            }
+            sIsHomepageTileEnabled = prefManager.readBoolean(
+                    ChromePreferenceManager.HOMEPAGE_TILE_ENABLED_KEY, false);
         }
         return sIsHomepageTileEnabled;
     }
@@ -316,10 +332,8 @@ public class FeatureUtilities {
         if (sIsNewTabPageButtonEnabled == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
 
-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                sIsNewTabPageButtonEnabled = prefManager.readBoolean(
-                        ChromePreferenceManager.NTP_BUTTON_ENABLED_KEY, false);
-            }
+            sIsNewTabPageButtonEnabled =
+                    prefManager.readBoolean(ChromePreferenceManager.NTP_BUTTON_ENABLED_KEY, false);
         }
         return sIsNewTabPageButtonEnabled;
     }
@@ -335,20 +349,52 @@ public class FeatureUtilities {
     }
 
     /**
+     * Cache whether or not download auto-resumptions are enabled in native so on next startup, the
+     * value can be made available immediately.
+     */
+    private static void cacheDownloadAutoResumptionEnabledInNative() {
+        ChromePreferenceManager.getInstance().writeBoolean(
+                ChromePreferenceManager.DOWNLOAD_AUTO_RESUMPTION_IN_NATIVE_KEY,
+                ChromeFeatureList.isEnabled(ChromeFeatureList.DOWNLOADS_AUTO_RESUMPTION_NATIVE));
+    }
+
+    /**
      * @return Whether or not the bottom toolbar is enabled.
      */
     public static boolean isBottomToolbarEnabled() {
         if (sIsBottomToolbarEnabled == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
 
-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                sIsBottomToolbarEnabled = prefManager.readBoolean(
-                        ChromePreferenceManager.BOTTOM_TOOLBAR_ENABLED_KEY, false);
-            }
+            sIsBottomToolbarEnabled = prefManager.readBoolean(
+                    ChromePreferenceManager.BOTTOM_TOOLBAR_ENABLED_KEY, false);
         }
         return sIsBottomToolbarEnabled
                 && !DeviceFormFactor.isNonMultiDisplayContextOnTablet(
                            ContextUtils.getApplicationContext());
+    }
+
+    /**
+     * Cache whether or not night mode is available (i.e. night mode experiment is enabled) so on
+     * next startup, the value can be made available immediately.
+     */
+    public static void cacheNightModeAvailable() {
+        ChromePreferenceManager.getInstance().writeBoolean(
+                ChromePreferenceManager.NIGHT_MODE_AVAILABLE_KEY,
+                ChromeFeatureList.isEnabled(ChromeFeatureList.ANDROID_NIGHT_MODE));
+    }
+
+    /**
+     * @return Whether or not night mode experiment is enabled (i.e. night mode experiment is
+     *         enabled).
+     */
+    public static boolean isNightModeAvailable() {
+        if (sIsNightModeAvailable == null) {
+            ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
+
+            sIsNightModeAvailable = prefManager.readBoolean(
+                    ChromePreferenceManager.NIGHT_MODE_AVAILABLE_KEY, false);
+        }
+        return sIsNightModeAvailable;
     }
 
     /**
@@ -390,11 +436,8 @@ public class FeatureUtilities {
         if (sIsSoleEnabled == null) {
             ChromePreferenceManager prefManager = ChromePreferenceManager.getInstance();
 
-            // Allow disk access for preferences while Sole is in experimentation.
-            try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-                sIsSoleEnabled = prefManager.readBoolean(
-                        ChromePreferenceManager.SOLE_INTEGRATION_ENABLED_KEY, true);
-            }
+            sIsSoleEnabled = prefManager.readBoolean(
+                    ChromePreferenceManager.SOLE_INTEGRATION_ENABLED_KEY, true);
         }
         return sIsSoleEnabled;
     }
@@ -414,12 +457,31 @@ public class FeatureUtilities {
     }
 
     /**
+     * @param activityContext The context for the containing {@link android.app.Activity}.
+     * @return Whether the Grid Tab Switcher UI is enabled and available for use.
+     */
+    public static boolean isGridTabSwitcherEnabled(Context activityContext) {
+        // TODO(yusufo): AccessibilityLayout check should not be here and the flow should support
+        // changing that setting while Chrome is alive.
+        return !DeviceFormFactor.isNonMultiDisplayContextOnTablet(activityContext)
+                && !SysUtils.isLowEndDevice() && !DeviceClassManager.enableAccessibilityLayout()
+                && ChromeFeatureList.isEnabled(ChromeFeatureList.TAB_GRID_LAYOUT_ANDROID);
+    }
+
+    /**
      * @return Whether this device is running Android Go. This is assumed when we're running Android
      * O or later and we're on a low-end device.
      */
     public static boolean isAndroidGo() {
         return SysUtils.isLowEndDevice()
                 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O;
+    }
+
+    /**
+     * @return Whether no-touch-mode is enabled.
+     */
+    public static boolean isNoTouchModeEnabled() {
+        return CommandLine.getInstance().hasSwitch(ChromeSwitches.NO_TOUCH_MODE);
     }
 
     private static native void nativeSetCustomTabVisible(boolean visible);

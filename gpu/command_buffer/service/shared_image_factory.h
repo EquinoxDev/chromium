@@ -20,6 +20,7 @@
 #include "ui/gl/gl_bindings.h"
 
 namespace gpu {
+class SharedContextState;
 class GpuDriverBugWorkarounds;
 class ImageFactory;
 class MailboxManager;
@@ -30,7 +31,6 @@ class MemoryTracker;
 
 namespace raster {
 class WrappedSkImageFactory;
-struct RasterDecoderContextState;
 }  // namespace raster
 
 // TODO(ericrk): Make this a very thin wrapper around SharedImageManager like
@@ -40,7 +40,7 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   SharedImageFactory(const GpuPreferences& gpu_preferences,
                      const GpuDriverBugWorkarounds& workarounds,
                      const GpuFeatureInfo& gpu_feature_info,
-                     raster::RasterDecoderContextState* context_state,
+                     SharedContextState* context_state,
                      MailboxManager* mailbox_manager,
                      SharedImageManager* manager,
                      ImageFactory* image_factory,
@@ -92,6 +92,8 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   // eventually.
   std::unique_ptr<SharedImageBackingFactory> backing_factory_;
 
+  std::unique_ptr<SharedImageBackingFactory> interop_backing_factory_;
+
   // Non-null if gpu_preferences.enable_raster_to_sk_image.
   std::unique_ptr<raster::WrappedSkImageFactory> wrapped_sk_image_factory_;
 };
@@ -101,10 +103,6 @@ class GPU_GLES2_EXPORT SharedImageRepresentationFactory {
   SharedImageRepresentationFactory(SharedImageManager* manager,
                                    MemoryTracker* tracker);
   ~SharedImageRepresentationFactory();
-
-  bool IsSharedImage(const Mailbox& mailbox) const {
-    return manager_->IsSharedImage(mailbox);
-  }
 
   // Helpers which call similar classes on SharedImageManager, providing a
   // MemoryTypeTracker.

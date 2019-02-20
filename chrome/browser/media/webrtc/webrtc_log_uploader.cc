@@ -7,11 +7,13 @@
 #include <stddef.h>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/pickle.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/task/post_task.h"
@@ -29,6 +31,7 @@
 #include "mojo/public/cpp/bindings/interface_request.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_status_code.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -172,7 +175,7 @@ void WebRtcLogUploader::PrepareMultipartPostData(
   // implemented according to the test plan. http://crbug.com/257329.
   if (post_data_) {
     *post_data_ = *post_data;
-    NotifyUploadDone(net::HTTP_OK, "", upload_done_data);
+    NotifyUploadDoneAndLogStats(net::HTTP_OK, net::OK, "", upload_done_data);
     return;
   }
 
@@ -316,10 +319,11 @@ void WebRtcLogUploader::OnSimpleLoaderComplete(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(!shutting_down_);
   network::SimpleURLLoader* loader = it->get();
-  int response_code = -1;
+  base::Optional<int> response_code;
   if (loader->ResponseInfo() && loader->ResponseInfo()->headers) {
     response_code = loader->ResponseInfo()->headers->response_code();
   }
+  const int network_error_code = loader->NetError();
   pending_uploads_.erase(it);
   std::string report_id;
   if (response_body)
@@ -337,7 +341,8 @@ void WebRtcLogUploader::OnSimpleLoaderComplete(
                        log_list_path, upload_done_data.local_log_id,
                        report_id));
   }
-  NotifyUploadDone(response_code, report_id, upload_done_data);
+  NotifyUploadDoneAndLogStats(response_code, network_error_code, report_id,
+                              upload_done_data);
 }
 
 void WebRtcLogUploader::InitURLLoaderFactoryIfNeeded() {
@@ -511,7 +516,9 @@ void WebRtcLogUploader::UploadCompressedLog(
 
   constexpr char kUploadURL[] = "https://clients2.google.com/cr/report";
   auto resource_request = std::make_unique<network::ResourceRequest>();
-  resource_request->url = GURL(kUploadURL);
+  resource_request->url = !upload_url_for_testing_.is_empty()
+                              ? upload_url_for_testing_
+                              : GURL(kUploadURL);
   resource_request->load_flags =
       net::LOAD_DO_NOT_SEND_COOKIES | net::LOAD_DO_NOT_SAVE_COOKIES;
   resource_request->method = "POST";
@@ -635,8 +642,9 @@ void WebRtcLogUploader::AddUploadedLogInfoToUploadListFile(
   }
 }
 
-void WebRtcLogUploader::NotifyUploadDone(
-    int response_code,
+void WebRtcLogUploader::NotifyUploadDoneAndLogStats(
+    base::Optional<int> response_code,
+    int network_error_code,
     const std::string& report_id,
     const WebRtcLogUploadDoneData& upload_done_data) {
   base::PostTaskWithTraits(
@@ -644,7 +652,7 @@ void WebRtcLogUploader::NotifyUploadDone(
       base::BindOnce(&WebRtcLoggingHandlerHost::UploadLogDone,
                      upload_done_data.host));
   if (!upload_done_data.callback.is_null()) {
-    bool success = response_code == net::HTTP_OK;
+    const bool success = response_code == net::HTTP_OK;
     std::string error_message;
     if (success) {
       base::UmaHistogramSparse("WebRtcTextLogging.UploadSuccessful",
@@ -652,10 +660,22 @@ void WebRtcLogUploader::NotifyUploadDone(
     } else {
       base::UmaHistogramSparse("WebRtcTextLogging.UploadFailed",
                                upload_done_data.web_app_id);
-      base::UmaHistogramSparse("WebRtcTextLogging.UploadFailureReason",
-                               response_code);
-      error_message = "Uploading failed, response code: " +
-                      base::IntToString(response_code);
+      if (response_code.has_value()) {
+        base::UmaHistogramSparse("WebRtcTextLogging.UploadFailureReason",
+                                 response_code.value());
+      } else {
+        DCHECK_NE(network_error_code, net::OK);
+        base::UmaHistogramSparse(
+            "WebRtcTextLogging.UploadFailureReason",
+            WebRtcLoggingHandlerHost::UploadFailureReason::kNetworkError);
+        base::UmaHistogramSparse("WebRtcTextLogging.UploadFailureNetErrorCode",
+                                 network_error_code);
+      }
+      error_message =
+          base::StrCat({"Uploading failed, response code: ",
+                        response_code.has_value()
+                            ? base::NumberToString(response_code.value())
+                            : "<no value>"});
     }
     base::PostTaskWithTraits(FROM_HERE, {BrowserThread::UI},
                              base::BindOnce(upload_done_data.callback, success,

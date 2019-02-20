@@ -4,6 +4,7 @@
 
 #include "net/url_request/url_request_ftp_job.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
@@ -254,8 +255,8 @@ void URLRequestFtpJob::OnStartCompleted(int result) {
 
 void URLRequestFtpJob::OnStartCompletedAsync(int result) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&URLRequestFtpJob::OnStartCompleted,
-                            weak_factory_.GetWeakPtr(), result));
+      FROM_HERE, base::BindOnce(&URLRequestFtpJob::OnStartCompleted,
+                                weak_factory_.GetWeakPtr(), result));
 }
 
 void URLRequestFtpJob::OnReadCompleted(int result) {

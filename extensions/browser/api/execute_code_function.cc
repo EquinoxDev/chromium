@@ -7,6 +7,7 @@
 
 #include "extensions/browser/api/execute_code_function.h"
 
+#include "base/bind.h"
 #include "base/task/post_task.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "extensions/browser/component_extension_resource_manager.h"
@@ -228,18 +229,19 @@ bool ExecuteCodeFunction::LoadFile(const std::string& file,
   // DCHECK.
   bool might_require_localization = ShouldInsertCSS() && !extension_id.empty();
 
-  int resource_id;
+  ComponentExtensionResourceInfo resource_info;
   const ComponentExtensionResourceManager*
       component_extension_resource_manager =
           ExtensionsBrowserClient::Get()
               ->GetComponentExtensionResourceManager();
   if (component_extension_resource_manager &&
       component_extension_resource_manager->IsComponentExtensionResource(
-          resource_.extension_root(),
-          resource_.relative_path(),
-          &resource_id)) {
+          resource_.extension_root(), resource_.relative_path(),
+          &resource_info)) {
+    DCHECK(!resource_info.gzipped);
     base::StringPiece resource =
-        ui::ResourceBundle::GetSharedInstance().GetRawDataResource(resource_id);
+        ui::ResourceBundle::GetSharedInstance().GetRawDataResource(
+            resource_info.resource_id);
     std::unique_ptr<std::string> data(
         new std::string(resource.data(), resource.size()));
 

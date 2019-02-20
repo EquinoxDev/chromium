@@ -76,6 +76,11 @@ class COMPONENTS_DOWNLOAD_EXPORT InProgressDownloadManager
                             const IsOriginSecureCallback& is_origin_secure_cb,
                             const URLSecurityPolicy& url_security_policy);
   ~InProgressDownloadManager() override;
+
+  // Download a URL given by the |params|. Returns true if the download could
+  // take place, or false otherwise.
+  bool DownloadUrl(std::unique_ptr<DownloadUrlParameters> params);
+
   // Called to start a download.
   void BeginDownload(
       std::unique_ptr<DownloadUrlParameters> params,
@@ -121,6 +126,9 @@ class COMPONENTS_DOWNLOAD_EXPORT InProgressDownloadManager
 
   // Called to remove an in-progress download.
   void RemoveInProgressDownload(const std::string& guid);
+
+  // Called to get all in-progress downloads.
+  void GetAllDownloads(std::vector<download::DownloadItem*>* downloads) const;
 
   // Called to retrieve an in-progress download.
   DownloadItemImpl* GetInProgressDownload(const std::string& guid);

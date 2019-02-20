@@ -90,6 +90,9 @@ static gfx::Rect ComputeGlobalNodeBounds(AutomationAXTreeWrapper* tree_wrapper,
     bounds = tree_wrapper->tree()->RelativeToTreeBounds(node, bounds, offscreen,
                                                         clip_bounds);
 
+    if (!tree_wrapper->owner())
+      break;
+
     AutomationAXTreeWrapper* previous_tree_wrapper = tree_wrapper;
     ui::AXNode* parent = tree_wrapper->owner()->GetParent(
         tree_wrapper->tree()->root(), &tree_wrapper);
@@ -449,8 +452,9 @@ class AutomationMessageFilter : public IPC::MessageFilter {
   bool OnMessageReceived(const IPC::Message& message) override {
     task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&AutomationMessageFilter::OnMessageReceivedOnRenderThread,
-                   this, message));
+        base::BindOnce(
+            &AutomationMessageFilter::OnMessageReceivedOnRenderThread, this,
+            message));
 
     // Always return false in case there are multiple
     // AutomationInternalCustomBindings instances attached to the same thread.
@@ -966,6 +970,15 @@ void AutomationInternalCustomBindings::AddRoutes() {
         result.Set(v8::Boolean::New(isolate, value));
       });
   RouteNodeIDFunction(
+      "GetDetectedLanguage",
+      [](v8::Isolate* isolate, v8::ReturnValue<v8::Value> result,
+         AutomationAXTreeWrapper* tree_wrapper, ui::AXNode* node) {
+        std::string detectedLanguage = node->GetLanguage();
+        result.Set(v8::String::NewFromUtf8(isolate, detectedLanguage.c_str(),
+                                           v8::NewStringType::kNormal)
+                       .ToLocalChecked());
+      });
+  RouteNodeIDFunction(
       "GetCustomActions",
       [](v8::Isolate* isolate, v8::ReturnValue<v8::Value> result,
          AutomationAXTreeWrapper* tree_wrapper, ui::AXNode* node) {
@@ -1142,6 +1155,16 @@ void AutomationInternalCustomBindings::AddRoutes() {
                             v8::Integer::New(isolate, row_headers[i]));
         result.Set(array_result);
       });
+  RouteNodeIDFunction(
+      "GetTableCellColumnIndex",
+      [](v8::Isolate* isolate, v8::ReturnValue<v8::Value> result,
+         AutomationAXTreeWrapper* tree_wrapper,
+         ui::AXNode* node) { result.Set(node->GetTableCellColIndex()); });
+  RouteNodeIDFunction(
+      "GetTableCellRowIndex",
+      [](v8::Isolate* isolate, v8::ReturnValue<v8::Value> result,
+         AutomationAXTreeWrapper* tree_wrapper,
+         ui::AXNode* node) { result.Set(node->GetTableCellRowIndex()); });
 }
 
 void AutomationInternalCustomBindings::Invalidate() {

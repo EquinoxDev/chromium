@@ -43,6 +43,7 @@
 #include "net/socket/socket_test_util.h"
 #include "net/spdy/spdy_test_util_common.h"
 #include "net/test/test_with_scoped_task_environment.h"
+#include "net/third_party/quic/core/quic_utils.h"
 #include "net/third_party/quic/test_tools/mock_random.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -91,38 +92,6 @@ class FailingProxyResolverFactory : public ProxyResolverFactory {
                           CompletionOnceCallback callback,
                           std::unique_ptr<Request>* request) override {
     return ERR_PAC_SCRIPT_FAILED;
-  }
-};
-
-class FailingHostResolver : public MockHostResolverBase {
- public:
-  FailingHostResolver() : MockHostResolverBase(false /*use_caching*/) {}
-  ~FailingHostResolver() override = default;
-
-  int Resolve(const RequestInfo& info,
-              RequestPriority priority,
-              AddressList* addresses,
-              CompletionOnceCallback callback,
-              std::unique_ptr<Request>* out_req,
-              const NetLogWithSource& net_log) override {
-    return ERR_NAME_NOT_RESOLVED;
-  }
-};
-
-// TODO(xunjieli): This should just use HangingHostResolver from
-// mock_host_resolver.h
-class HangingResolver : public MockHostResolverBase {
- public:
-  HangingResolver() : MockHostResolverBase(false /*use_caching*/) {}
-  ~HangingResolver() override = default;
-
-  int Resolve(const RequestInfo& info,
-              RequestPriority priority,
-              AddressList* addresses,
-              CompletionOnceCallback callback,
-              std::unique_ptr<Request>* out_req,
-              const NetLogWithSource& net_log) override {
-    return ERR_IO_PENDING;
   }
 };
 
@@ -349,7 +318,7 @@ class HttpStreamFactoryJobControllerTest
   quic::test::MockRandom random_generator_{0};
   QuicTestPacketMaker client_maker_{
       HttpNetworkSession::Params().quic_supported_versions[0],
-      quic::EmptyQuicConnectionId(),
+      quic::QuicUtils::CreateRandomConnectionId(&random_generator_),
       &clock_,
       kServerHostname,
       quic::Perspective::IS_CLIENT,
@@ -498,7 +467,7 @@ class JobControllerReconsiderProxyAfterErrorTest
   HttpStreamFactory::JobFactory default_job_factory_;
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     JobControllerReconsiderProxyAfterErrorTest,
     ::testing::Combine(::testing::Bool(),
@@ -1831,7 +1800,8 @@ TEST_F(HttpStreamFactoryJobControllerTest, ResumeMainJobLaterCanceled) {
   session_deps_.proxy_resolution_service = std::move(proxy_resolution_service);
 
   // Using hanging resolver will cause the alternative job to hang indefinitely.
-  session_deps_.host_resolver = std::make_unique<HangingResolver>();
+  session_deps_.alternate_host_resolver =
+      std::make_unique<HangingHostResolver>();
 
   HttpRequestInfo request_info;
   request_info.method = "GET";
@@ -2031,7 +2001,8 @@ TEST_F(HttpStreamFactoryJobControllerTest,
 // scheme is HTTPS.
 TEST_F(HttpStreamFactoryJobControllerTest, HttpsURL) {
   // Using hanging resolver will cause the alternative job to hang indefinitely.
-  session_deps_.host_resolver = std::make_unique<HangingResolver>();
+  session_deps_.alternate_host_resolver =
+      std::make_unique<HangingHostResolver>();
 
   HttpRequestInfo request_info;
   request_info.method = "GET";
@@ -2054,7 +2025,8 @@ TEST_F(HttpStreamFactoryJobControllerTest, HttpsURL) {
 // does not fetch the resource through a proxy.
 TEST_F(HttpStreamFactoryJobControllerTest, HttpURLWithNoProxy) {
   // Using hanging resolver will cause the alternative job to hang indefinitely.
-  session_deps_.host_resolver = std::make_unique<HangingResolver>();
+  session_deps_.alternate_host_resolver =
+      std::make_unique<HangingHostResolver>();
 
   HttpRequestInfo request_info;
   request_info.method = "GET";
@@ -2722,7 +2694,7 @@ class HttpStreamFactoryJobControllerMisdirectedRequestRetry
     : public HttpStreamFactoryJobControllerTest,
       public ::testing::WithParamInterface<::testing::tuple<bool, bool>> {};
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     HttpStreamFactoryJobControllerMisdirectedRequestRetry,
     ::testing::Combine(::testing::Bool(), ::testing::Bool()));
@@ -2813,7 +2785,7 @@ class HttpStreamFactoryJobControllerPreconnectTest
   HttpRequestInfo request_info_;
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     HttpStreamFactoryJobControllerPreconnectTest,
     ::testing::Bool());

@@ -5,17 +5,16 @@
 #include "net/third_party/quic/core/qpack/qpack_header_table.h"
 
 #include "net/third_party/quic/core/qpack/qpack_static_table.h"
-#include "net/third_party/quic/core/qpack/qpack_test_utils.h"
 #include "net/third_party/quic/platform/api/quic_arraysize.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
-#include "net/third_party/spdy/core/hpack/hpack_entry.h"
+#include "net/third_party/quiche/src/spdy/core/hpack/hpack_entry.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace quic {
 namespace test {
 namespace {
 
-const size_t kMaximumDynamicTableCapacityForTesting = 1024 * 1024;
+const uint64_t kMaximumDynamicTableCapacityForTesting = 1024 * 1024;
 
 class QpackHeaderTableTest : public QuicTest {
  protected:
@@ -26,7 +25,7 @@ class QpackHeaderTableTest : public QuicTest {
   ~QpackHeaderTableTest() override = default;
 
   void ExpectEntryAtIndex(bool is_static,
-                          size_t index,
+                          uint64_t index,
                           QuicStringPiece expected_name,
                           QuicStringPiece expected_value) const {
     const auto* entry = table_.LookupEntry(is_static, index);
@@ -35,7 +34,7 @@ class QpackHeaderTableTest : public QuicTest {
     EXPECT_EQ(expected_value, entry->value());
   }
 
-  void ExpectNoEntryAtIndex(bool is_static, size_t index) const {
+  void ExpectNoEntryAtIndex(bool is_static, uint64_t index) const {
     EXPECT_FALSE(table_.LookupEntry(is_static, index));
   }
 
@@ -43,11 +42,11 @@ class QpackHeaderTableTest : public QuicTest {
                    QuicStringPiece value,
                    QpackHeaderTable::MatchType expected_match_type,
                    bool expected_is_static,
-                   size_t expected_index) const {
+                   uint64_t expected_index) const {
     // Initialize outparams to a value different from the expected to ensure
     // that FindHeaderField() sets them.
     bool is_static = !expected_is_static;
-    size_t index = expected_index + 1;
+    uint64_t index = expected_index + 1;
 
     QpackHeaderTable::MatchType matchtype =
         table_.FindHeaderField(name, value, &is_static, &index);
@@ -59,7 +58,7 @@ class QpackHeaderTableTest : public QuicTest {
 
   void ExpectNoMatch(QuicStringPiece name, QuicStringPiece value) const {
     bool is_static = false;
-    size_t index = 0;
+    uint64_t index = 0;
 
     QpackHeaderTable::MatchType matchtype =
         table_.FindHeaderField(name, value, &is_static, &index);
@@ -76,13 +75,15 @@ class QpackHeaderTableTest : public QuicTest {
     EXPECT_FALSE(table_.InsertEntry(name, value));
   }
 
-  bool UpdateTableSize(size_t max_size) {
-    return table_.UpdateTableSize(max_size);
+  bool SetDynamicTableCapacity(uint64_t capacity) {
+    return table_.SetDynamicTableCapacity(capacity);
   }
 
-  size_t max_entries() const { return table_.max_entries(); }
-  size_t inserted_entry_count() const { return table_.inserted_entry_count(); }
-  size_t dropped_entry_count() const { return table_.dropped_entry_count(); }
+  uint64_t max_entries() const { return table_.max_entries(); }
+  uint64_t inserted_entry_count() const {
+    return table_.inserted_entry_count();
+  }
+  uint64_t dropped_entry_count() const { return table_.dropped_entry_count(); }
 
  private:
   QpackHeaderTable table_;
@@ -96,7 +97,8 @@ TEST_F(QpackHeaderTableTest, LookupStaticEntry) {
   // 98 is the last entry.
   ExpectEntryAtIndex(/* is_static = */ true, 98, "x-frame-options",
                      "sameorigin");
-  assert(QUIC_ARRAYSIZE(kQpackStaticTable) == 99);
+
+  ASSERT_EQ(99u, QpackStaticTableVector().size());
   ExpectNoEntryAtIndex(/* is_static = */ true, 99);
 }
 
@@ -234,20 +236,21 @@ TEST_F(QpackHeaderTableTest, MaxEntries) {
   EXPECT_EQ(15u, table2.max_entries());
 }
 
-TEST_F(QpackHeaderTableTest, UpdateTableSize) {
+TEST_F(QpackHeaderTableTest, SetDynamicTableCapacity) {
   // Dynamic table capacity does not affect MaxEntries.
-  EXPECT_TRUE(UpdateTableSize(1024));
+  EXPECT_TRUE(SetDynamicTableCapacity(1024));
   EXPECT_EQ(32u * 1024, max_entries());
 
-  EXPECT_TRUE(UpdateTableSize(500));
+  EXPECT_TRUE(SetDynamicTableCapacity(500));
   EXPECT_EQ(32u * 1024, max_entries());
 
   // Dynamic table capacity cannot exceed maximum dynamic table capacity.
-  EXPECT_FALSE(UpdateTableSize(2 * kMaximumDynamicTableCapacityForTesting));
+  EXPECT_FALSE(
+      SetDynamicTableCapacity(2 * kMaximumDynamicTableCapacityForTesting));
 }
 
 TEST_F(QpackHeaderTableTest, EvictByInsertion) {
-  EXPECT_TRUE(UpdateTableSize(40));
+  EXPECT_TRUE(SetDynamicTableCapacity(40));
 
   // Entry size is 3 + 3 + 32 = 38.
   InsertEntry("foo", "bar");
@@ -282,7 +285,7 @@ TEST_F(QpackHeaderTableTest, EvictByUpdateTableSize) {
   ExpectMatch("baz", "qux", QpackHeaderTable::MatchType::kNameAndValue,
               /* expected_is_static = */ false, 1u);
 
-  EXPECT_TRUE(UpdateTableSize(40));
+  EXPECT_TRUE(SetDynamicTableCapacity(40));
   EXPECT_EQ(2u, inserted_entry_count());
   EXPECT_EQ(1u, dropped_entry_count());
 
@@ -290,7 +293,7 @@ TEST_F(QpackHeaderTableTest, EvictByUpdateTableSize) {
   ExpectMatch("baz", "qux", QpackHeaderTable::MatchType::kNameAndValue,
               /* expected_is_static = */ false, 1u);
 
-  EXPECT_TRUE(UpdateTableSize(20));
+  EXPECT_TRUE(SetDynamicTableCapacity(20));
   EXPECT_EQ(2u, inserted_entry_count());
   EXPECT_EQ(2u, dropped_entry_count());
 
@@ -299,7 +302,7 @@ TEST_F(QpackHeaderTableTest, EvictByUpdateTableSize) {
 }
 
 TEST_F(QpackHeaderTableTest, EvictOldestOfIdentical) {
-  EXPECT_TRUE(UpdateTableSize(80));
+  EXPECT_TRUE(SetDynamicTableCapacity(80));
 
   // Entry size is 3 + 3 + 32 = 38.
   // Insert same entry twice.
@@ -324,7 +327,7 @@ TEST_F(QpackHeaderTableTest, EvictOldestOfIdentical) {
 }
 
 TEST_F(QpackHeaderTableTest, EvictOldestOfSameName) {
-  EXPECT_TRUE(UpdateTableSize(80));
+  EXPECT_TRUE(SetDynamicTableCapacity(80));
 
   // Entry size is 3 + 3 + 32 = 38.
   // Insert two entries with same name but different values.

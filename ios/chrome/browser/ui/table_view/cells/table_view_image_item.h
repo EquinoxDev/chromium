@@ -7,6 +7,7 @@
 
 #import <UIKit/UIKit.h>
 
+#import "ios/chrome/browser/ui/table_view/cells/table_view_cell.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_item.h"
 
 // TableViewImageItem contains the model data for a TableViewImageCell.
@@ -19,11 +20,14 @@
 // UIColor for the cell's textLabel. ChromeTableViewStyler's |cellTitleColor|
 // takes precedence over the default color, but not over |textColor|.
 @property(nonatomic, strong) UIColor* textColor;
+// Whether the item is enabled. When it is not enabled, the associated cell
+// cannot be interacted with.
+@property(nonatomic, assign, getter=isEnabled) BOOL enabled;
 
 @end
 
 // TableViewImageCell contains a favicon, a title, and an optional chevron.
-@interface TableViewImageCell : UITableViewCell
+@interface TableViewImageCell : TableViewCell
 
 // The cell favicon imageView.
 @property(nonatomic, readonly, strong) UIImageView* imageView;

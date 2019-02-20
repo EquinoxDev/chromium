@@ -33,14 +33,12 @@
 #include "base/optional.h"
 #include "cc/layers/picture_layer.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
-#include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_availability.h"
-#include "third_party/blink/public/platform/modules/remoteplayback/web_remote_playback_client.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/web_connection_type.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_iterator_result_value.h"
 #include "third_party/blink/renderer/core/animation/document_timeline.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -100,6 +98,7 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
+#include "third_party/blink/renderer/core/html/media/remote_playback_controller.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
@@ -120,6 +119,7 @@
 #include "third_party/blink/renderer/core/page/scrolling/root_scroller_controller.h"
 #include "third_party/blink/renderer/core/page/scrolling/scroll_state.h"
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator_context.h"
+#include "third_party/blink/renderer/core/page/spatial_navigation_controller.h"
 #include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/compositing/graphics_layer_tree_as_text.h"
@@ -127,6 +127,7 @@
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
+#include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/scroll/programmatic_scroll_animator.h"
 #include "third_party/blink/renderer/core/scroll/scroll_animator_base.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
@@ -1674,9 +1675,10 @@ unsigned Internals::mediaKeySessionCount() {
       InstanceCounters::kMediaKeySessionCounter);
 }
 
-unsigned Internals::pausableObjectCount(Document* document) {
+unsigned Internals::contextLifecycleStateObserverObjectCount(
+    Document* document) {
   DCHECK(document);
-  return document->PausableObjectCount();
+  return document->ContextLifecycleStateObserverCount();
 }
 
 static unsigned EventHandlerCount(
@@ -1698,7 +1700,8 @@ static unsigned EventHandlerCount(
 unsigned Internals::wheelEventHandlerCount(Document* document) const {
   DCHECK(document);
   return EventHandlerCount(*document,
-                           EventHandlerRegistry::kWheelEventBlocking);
+                           EventHandlerRegistry::kWheelEventBlocking) +
+         EventHandlerCount(*document, EventHandlerRegistry::kWheelEventPassive);
 }
 
 unsigned Internals::scrollEventHandlerCount(Document* document) const {
@@ -1941,7 +1944,8 @@ HitTestLayerRectList* Internals::touchEventTargetLayerRects(
       const cc::TouchActionRegion& touch_action_region =
           layer->touch_action_region();
       if (!touch_action_region.region().IsEmpty()) {
-        IntRect layer_rect(RoundedIntPoint(FloatPoint(layer->position())),
+        const auto& offset = layer->offset_to_transform_parent();
+        IntRect layer_rect(RoundedIntPoint(FloatPoint(offset.x(), offset.y())),
                            IntSize(layer->bounds()));
 
         Vector<IntRect> layer_hit_test_rects;
@@ -2495,20 +2499,18 @@ void Internals::mediaPlayerRemoteRouteAvailabilityChanged(
     HTMLMediaElement* media_element,
     bool available) {
   DCHECK(media_element);
-  DCHECK(media_element->remote_playback_client_);
-  media_element->remote_playback_client_->AvailabilityChanged(
-      available ? WebRemotePlaybackAvailability::kDeviceAvailable
-                : WebRemotePlaybackAvailability::kDeviceNotAvailable);
+
+  RemotePlaybackController::From(*media_element)
+      ->AvailabilityChangedForTesting(available);
 }
 
 void Internals::mediaPlayerPlayingRemotelyChanged(
     HTMLMediaElement* media_element,
     bool remote) {
   DCHECK(media_element);
-  if (remote)
-    media_element->ConnectedToRemoteDevice();
-  else
-    media_element->DisconnectedFromRemoteDevice();
+
+  RemotePlaybackController::From(*media_element)
+      ->StateChangedForTesting(remote);
 }
 
 void Internals::setPersistent(HTMLVideoElement* video_element,
@@ -3215,71 +3217,21 @@ bool Internals::ignoreLayoutWithPendingStylesheets(Document* document) {
   return document->IgnoreLayoutWithPendingStylesheets();
 }
 
-void Internals::setNetworkConnectionInfoOverride(
-    bool on_line,
-    const String& type,
-    const String& effective_type,
-    unsigned long http_rtt_msec,
-    double downlink_max_mbps,
-    ExceptionState& exception_state) {
-  WebConnectionType webtype;
-  if (type == "cellular2g") {
-    webtype = kWebConnectionTypeCellular2G;
-  } else if (type == "cellular3g") {
-    webtype = kWebConnectionTypeCellular3G;
-  } else if (type == "cellular4g") {
-    webtype = kWebConnectionTypeCellular4G;
-  } else if (type == "bluetooth") {
-    webtype = kWebConnectionTypeBluetooth;
-  } else if (type == "ethernet") {
-    webtype = kWebConnectionTypeEthernet;
-  } else if (type == "wifi") {
-    webtype = kWebConnectionTypeWifi;
-  } else if (type == "wimax") {
-    webtype = kWebConnectionTypeWimax;
-  } else if (type == "other") {
-    webtype = kWebConnectionTypeOther;
-  } else if (type == "none") {
-    webtype = kWebConnectionTypeNone;
-  } else if (type == "unknown") {
-    webtype = kWebConnectionTypeUnknown;
-  } else {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kNotFoundError,
-        ExceptionMessages::FailedToEnumerate("connection type", type));
-    return;
-  }
-  WebEffectiveConnectionType web_effective_type =
-      WebEffectiveConnectionType::kTypeUnknown;
-  if (effective_type == "offline") {
-    web_effective_type = WebEffectiveConnectionType::kTypeOffline;
-  } else if (effective_type == "slow-2g") {
-    web_effective_type = WebEffectiveConnectionType::kTypeSlow2G;
-  } else if (effective_type == "2g") {
-    web_effective_type = WebEffectiveConnectionType::kType2G;
-  } else if (effective_type == "3g") {
-    web_effective_type = WebEffectiveConnectionType::kType3G;
-  } else if (effective_type == "4g") {
-    web_effective_type = WebEffectiveConnectionType::kType4G;
-  } else if (effective_type != "unknown") {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kNotFoundError,
-        ExceptionMessages::FailedToEnumerate("effective connection type",
-                                             effective_type));
-    return;
-  }
-  GetNetworkStateNotifier().SetNetworkConnectionInfoOverride(
-      on_line, webtype, web_effective_type, http_rtt_msec, downlink_max_mbps);
-  GetFrame()->Client()->SetEffectiveConnectionTypeForTesting(
-      web_effective_type);
-}
+Element* Internals::interestedElement() {
+  if (!GetFrame() || !GetFrame()->GetPage())
+    return nullptr;
 
-void Internals::setSaveDataEnabled(bool enabled) {
-  GetNetworkStateNotifier().SetSaveDataEnabledOverride(enabled);
-}
+  if (!RuntimeEnabledFeatures::FocuslessSpatialNavigationEnabled()) {
+    return ToLocalFrame(
+               GetFrame()->GetPage()->GetFocusController().FocusedOrMainFrame())
+        ->GetDocument()
+        ->ActiveElement();
+  }
 
-void Internals::clearNetworkConnectionInfoOverride() {
-  GetNetworkStateNotifier().ClearOverride();
+  return GetFrame()
+      ->GetPage()
+      ->GetSpatialNavigationController()
+      .GetInterestedElement();
 }
 
 unsigned Internals::countHitRegions(CanvasRenderingContext* context) {
@@ -3488,11 +3440,12 @@ String Internals::evaluateInInspectorOverlay(const String& script) {
 }
 
 void Internals::setIsLowEndDevice(bool is_low_end_device) {
-  MemoryCoordinator::SetIsLowEndDeviceForTesting(is_low_end_device);
+  MemoryPressureListenerRegistry::SetIsLowEndDeviceForTesting(
+      is_low_end_device);
 }
 
 bool Internals::isLowEndDevice() const {
-  return MemoryCoordinator::IsLowEndDevice();
+  return MemoryPressureListenerRegistry::IsLowEndDevice();
 }
 
 Vector<String> Internals::supportedTextEncodingLabels() const {
@@ -3530,6 +3483,35 @@ void Internals::DisableIntersectionObserverThrottleDelay() const {
 void Internals::addEmbedderCustomElementName(const AtomicString& name,
                                              ExceptionState& exception_state) {
   CustomElement::AddEmbedderCustomElementNameForTesting(name, exception_state);
+}
+
+String Internals::resolveModuleSpecifier(const String& specifier,
+                                         const String& base_url_string,
+                                         Document* document,
+                                         ExceptionState& exception_state) {
+  Modulator* modulator =
+      Modulator::From(ToScriptStateForMainWorld(document->GetFrame()));
+
+  if (!modulator) {
+    V8ThrowException::ThrowTypeError(
+        v8::Isolate::GetCurrent(),
+        "Failed to resolve module specifier " + specifier + ": No modulator");
+    return NullURL();
+  }
+
+  const KURL base_url = document->CompleteURL(base_url_string);
+  String failure_reason = "Failed";
+  const KURL result =
+      modulator->ResolveModuleSpecifier(specifier, base_url, &failure_reason);
+
+  if (!result.IsValid()) {
+    V8ThrowException::ThrowTypeError(v8::Isolate::GetCurrent(),
+                                     "Failed to resolve module specifier " +
+                                         specifier + ": " + failure_reason);
+    return NullURL();
+  }
+
+  return result.GetString();
 }
 
 }  // namespace blink

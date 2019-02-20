@@ -16,7 +16,6 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_floats_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_layout_algorithm.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float.h"
-#include "third_party/blink/renderer/core/layout/ng/ng_unpositioned_float_vector.h"
 
 namespace blink {
 
@@ -137,9 +136,10 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   // function adds part of cached fragments to |container_builder_|, update
   // |break_token_| to continue layout from the last reused fragment, and
   // returns |true|. Otherwise returns |false|.
-  const NGBreakToken* TryReuseFragmentsFromCache(NGInlineNode child,
-                                                 NGPreviousInflowPosition*,
-                                                 bool* abort_out);
+  const NGInlineBreakToken* TryReuseFragmentsFromCache(
+      NGInlineNode child,
+      NGPreviousInflowPosition*,
+      bool* abort_out);
 
   void HandleOutOfFlowPositioned(const NGPreviousInflowPosition&, NGBlockNode);
   void HandleFloat(const NGPreviousInflowPosition&,
@@ -163,11 +163,9 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   //
   // Returns false if we need to abort layout, because a previously unknown BFC
   // block offset has now been resolved.
-  bool HandleNewFormattingContext(
-      NGLayoutInputNode child,
-      const NGBreakToken* child_break_token,
-      NGPreviousInflowPosition*,
-      scoped_refptr<const NGBreakToken>* previous_inline_break_token);
+  bool HandleNewFormattingContext(NGLayoutInputNode child,
+                                  const NGBreakToken* child_break_token,
+                                  NGPreviousInflowPosition*);
 
   // Performs the actual layout of a new formatting context. This may be called
   // multiple times from HandleNewFormattingContext.
@@ -185,7 +183,16 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
       NGLayoutInputNode child,
       const NGBreakToken* child_break_token,
       NGPreviousInflowPosition*,
-      scoped_refptr<const NGBreakToken>* previous_inline_break_token);
+      scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token);
+
+  bool FinishInflow(
+      NGLayoutInputNode child,
+      const NGBreakToken* child_break_token,
+      const NGConstraintSpace&,
+      scoped_refptr<NGLayoutResult>,
+      NGInflowChildData*,
+      NGPreviousInflowPosition*,
+      scoped_refptr<const NGInlineBreakToken>* previous_inline_break_token);
 
   // Return the amount of block space available in the current fragmentainer
   // for the node being laid out by this algorithm.
@@ -263,10 +270,6 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   // Positions pending floats starting from {@origin_block_offset}.
   void PositionPendingFloats(LayoutUnit origin_block_offset);
 
-  // Adds a set of positioned floats as children to the current fragment.
-  template <class Vec>
-  void AddPositionedFloats(const Vec& positioned_floats);
-
   // Positions a list marker for the specified block content.
   void PositionOrPropagateListMarker(const NGLayoutResult&, NGLogicalOffset*);
 
@@ -281,10 +284,6 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
       const NGFragment& fragment,
       LayoutUnit child_bfc_line_offset,
       const base::Optional<LayoutUnit>& child_bfc_block_offset);
-
-  // Computes default content size for HTML and BODY elements in quirks mode.
-  // Returns NGSizeIndefinite in all other cases.
-  LayoutUnit CalculateDefaultBlockSize();
 
   // Computes minimum size for HTML and BODY elements in quirks mode.
   // Returns NGSizeIndefinite in all other cases.
@@ -325,7 +324,7 @@ class CORE_EXPORT NGBlockLayoutAlgorithm
   bool has_processed_first_child_ = false;
 
   NGExclusionSpace exclusion_space_;
-  NGUnpositionedFloatVector unpositioned_floats_;
+  Vector<NGUnpositionedFloat, 1> unpositioned_floats_;
 };
 
 }  // namespace blink

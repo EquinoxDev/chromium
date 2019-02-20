@@ -150,8 +150,8 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
     delegate_was_shown_after_crash_ = false;
 
     view_->SetFrameConnectorDelegate(this);
-    if (is_hidden_)
-      OnVisibilityChanged(false);
+    if (visibility_ != blink::mojom::FrameVisibility::kRenderedInViewport)
+      OnVisibilityChanged(visibility_);
     FrameMsg_ViewChanged_Params params;
     if (!features::IsMultiProcessMash())
       params.frame_sink_id = view_->GetFrameSinkId();
@@ -225,15 +225,15 @@ bool CrossProcessFrameConnector::TransformPointToLocalCoordSpaceLegacy(
   // Transformations use physical pixels rather than DIP, so conversion
   // is necessary.
   *transformed_point =
-      gfx::ConvertPointToPixel(view_->current_surface_scale_factor(), point);
+      gfx::ConvertPointToPixel(view_->GetDeviceScaleFactor(), point);
   viz::SurfaceHittest hittest(nullptr,
                               GetFrameSinkManager()->surface_manager());
   if (!hittest.TransformPointToTargetSurface(original_surface, local_surface_id,
                                              transformed_point))
     return false;
 
-  *transformed_point = gfx::ConvertPointToDIP(
-      view_->current_surface_scale_factor(), *transformed_point);
+  *transformed_point =
+      gfx::ConvertPointToDIP(view_->GetDeviceScaleFactor(), *transformed_point);
   return true;
 }
 
@@ -276,7 +276,7 @@ void CrossProcessFrameConnector::ForwardAckedTouchpadZoomEvent(
   root_view->GestureEventAck(root_event, ack_result);
 }
 
-void CrossProcessFrameConnector::BubbleScrollEvent(
+bool CrossProcessFrameConnector::BubbleScrollEvent(
     const blink::WebGestureEvent& event) {
   DCHECK(event.GetType() == blink::WebInputEvent::kGestureScrollBegin ||
          event.GetType() == blink::WebInputEvent::kGestureScrollUpdate ||
@@ -284,7 +284,7 @@ void CrossProcessFrameConnector::BubbleScrollEvent(
   auto* parent_view = GetParentRenderWidgetHostView();
 
   if (!parent_view)
-    return;
+    return false;
 
   auto* event_router = parent_view->host()->delegate()->GetInputEventRouter();
 
@@ -300,7 +300,8 @@ void CrossProcessFrameConnector::BubbleScrollEvent(
   // action of the parent frame to Auto so that this gesture event is allowed.
   parent_view->host()->input_router()->ForceSetTouchActionAuto();
 
-  event_router->BubbleScrollEvent(parent_view, view_, resent_gesture_event);
+  return event_router->BubbleScrollEvent(parent_view, view_,
+                                         resent_gesture_event);
 }
 
 bool CrossProcessFrameConnector::HasFocus() {
@@ -370,8 +371,10 @@ void CrossProcessFrameConnector::OnUpdateViewportIntersection(
   }
 }
 
-void CrossProcessFrameConnector::OnVisibilityChanged(bool visible) {
-  is_hidden_ = !visible;
+void CrossProcessFrameConnector::OnVisibilityChanged(
+    blink::mojom::FrameVisibility visibility) {
+  bool visible = visibility != blink::mojom::FrameVisibility::kNotRendered;
+  visibility_ = visibility;
   if (IsVisible()) {
     // Record metrics if a crashed subframe became visible as a result of this
     // visibility change.
@@ -380,6 +383,10 @@ void CrossProcessFrameConnector::OnVisibilityChanged(bool visible) {
   if (!view_)
     return;
 
+  frame_proxy_in_parent_renderer_->frame_tree_node()
+      ->current_frame_host()
+      ->VisibilityChanged(visibility);
+
   // If there is an inner WebContents, it should be notified of the change in
   // the visibility. The Show/Hide methods will not be called if an inner
   // WebContents exists since the corresponding WebContents will itself call
@@ -387,7 +394,7 @@ void CrossProcessFrameConnector::OnVisibilityChanged(bool visible) {
   if (frame_proxy_in_parent_renderer_->frame_tree_node()
           ->render_manager()
           ->ForInnerDelegate()) {
-    view_->host()->delegate()->OnRenderFrameProxyVisibilityChanged(visible);
+    view_->host()->delegate()->OnRenderFrameProxyVisibilityChanged(visibility_);
     return;
   }
 
@@ -453,7 +460,7 @@ cc::TouchAction CrossProcessFrameConnector::InheritedEffectiveTouchAction()
 }
 
 bool CrossProcessFrameConnector::IsHidden() const {
-  return is_hidden_;
+  return visibility_ == blink::mojom::FrameVisibility::kNotRendered;
 }
 
 #if defined(USE_AURA)
@@ -588,7 +595,7 @@ void CrossProcessFrameConnector::DelegateWasShown() {
 }
 
 bool CrossProcessFrameConnector::IsVisible() {
-  if (is_hidden_)
+  if (visibility_ == blink::mojom::FrameVisibility::kNotRendered)
     return false;
   if (viewport_intersection_rect().IsEmpty())
     return false;

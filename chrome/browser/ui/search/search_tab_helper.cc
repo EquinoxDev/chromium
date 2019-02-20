@@ -14,6 +14,8 @@
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search/search_suggest/search_suggest_service.h"
+#include "chrome/browser/search/search_suggest/search_suggest_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -51,7 +53,7 @@
 namespace {
 
 bool IsCacheableNTP(content::WebContents* contents) {
-  const content::NavigationEntry* entry =
+  content::NavigationEntry* entry =
       contents->GetController().GetLastCommittedEntry();
   return search::NavEntryIsInstantNTP(contents, entry) &&
          entry->GetURL() != chrome::kChromeSearchLocalNtpUrl;
@@ -97,7 +99,7 @@ void RecordNewTabLoadTime(content::WebContents* contents) {
 // their history.
 bool IsHistorySyncEnabled(Profile* profile) {
   syncer::SyncService* sync =
-      ProfileSyncServiceFactory::GetSyncServiceForBrowserContext(profile);
+      ProfileSyncServiceFactory::GetSyncServiceForProfile(profile);
   return sync && sync->IsSyncFeatureEnabled() &&
          sync->GetUserSettings()->GetChosenDataTypes().Has(syncer::TYPED_URLS);
 }
@@ -116,6 +118,9 @@ SearchTabHelper::SearchTabHelper(content::WebContents* web_contents)
   instant_service_ = InstantServiceFactory::GetForProfile(profile());
   if (instant_service_)
     instant_service_->AddObserver(this);
+
+  search_suggest_service_ =
+      SearchSuggestServiceFactory::GetForProfile(profile());
 }
 
 SearchTabHelper::~SearchTabHelper() {
@@ -454,6 +459,34 @@ const OmniboxView* SearchTabHelper::GetOmniboxView() const {
     return nullptr;
 
   return browser->window()->GetLocationBar()->GetOmniboxView();
+}
+
+void SearchTabHelper::OnBlocklistSearchSuggestion(int task_version,
+                                                  long task_id) {
+  if (search_suggest_service_)
+    search_suggest_service_->BlocklistSearchSuggestion(task_version, task_id);
+}
+
+void SearchTabHelper::OnBlocklistSearchSuggestionWithHash(
+    int task_version,
+    long task_id,
+    const uint8_t hash[4]) {
+  if (search_suggest_service_)
+    search_suggest_service_->BlocklistSearchSuggestionWithHash(task_version,
+                                                               task_id, hash);
+}
+
+void SearchTabHelper::OnSearchSuggestionSelected(int task_version,
+                                                 long task_id,
+                                                 const uint8_t hash[4]) {
+  if (search_suggest_service_)
+    search_suggest_service_->SearchSuggestionSelected(task_version, task_id,
+                                                      hash);
+}
+
+void SearchTabHelper::OnOptOutOfSearchSuggestions() {
+  if (search_suggest_service_)
+    search_suggest_service_->OptOutOfSearchSuggestions();
 }
 
 OmniboxView* SearchTabHelper::GetOmniboxView() {

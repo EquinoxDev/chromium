@@ -28,6 +28,12 @@ Polymer({
       observer: 'onUrlQueryChanged_',
     },
 
+    /** @private */
+    searchTerm_: {
+      type: String,
+      value: '',
+    },
+
     /** @private {PageType} */
     currentPageType_: {
       type: Number,
@@ -39,17 +45,22 @@ Polymer({
     },
   },
 
+  urlParsed_: false,
+
   observers: [
     'onUrlChanged_(path_, queryParams_)',
-    'onStateChanged_(currentPageType_, selectedAppId_)',
+    'onStateChanged_(currentPageType_, selectedAppId_, searchTerm_)',
   ],
 
   attached: function() {
-    this.watch('currentPageType_', function(state) {
+    this.watch('currentPageType_', (state) => {
       return state.currentPage.pageType;
     });
-    this.watch('selectedAppId_', function(state) {
+    this.watch('selectedAppId_', (state) => {
       return state.currentPage.selectedAppId;
+    });
+    this.watch('searchTerm_', (state) => {
+      return state.search.term;
     });
     this.updateFromStore();
   },
@@ -72,12 +83,20 @@ Polymer({
 
   /** @private */
   onStateChanged_: function() {
+    if (!this.urlParsed_) {
+      return;
+    }
     this.debounce('publishUrl', this.publishUrl_);
   },
 
   /** @private */
   publishUrl_: function() {
+    // Disable pushing urls into the history stack, so that we only push one
+    // state.
+    this.$['iron-location'].dwellTime = Infinity;
     this.publishQueryParams_();
+    // Re-enable pushing urls into the history stack.
+    this.$['iron-location'].dwellTime = 0;
     this.publishPath_();
   },
 
@@ -89,18 +108,22 @@ Polymer({
     if (!newId) {
       delete this.queryParams_.id;
     }
-
+    const newSearch = this.searchTerm_;
+    this.queryParams_.q = newSearch;
+    if (!newSearch) {
+      delete this.queryParams_.q;
+    }
     this.queryParams_ = Object.assign({}, this.queryParams_);
   },
 
   /** @private */
   publishPath_: function() {
     let path = '';
-
-    if (this.currentPageType_ == PageType.DETAIL) {
+    if (this.currentPageType_ === PageType.DETAIL) {
       path = 'detail';
+    } else if (this.currentPageType_ === PageType.NOTIFICATIONS) {
+      path = 'notifications';
     }
-
     this.path_ = '/' + path;
   },
 
@@ -112,19 +135,25 @@ Polymer({
   /** @private */
   parseUrl_: function() {
     const newId = this.queryParams_.id;
+    const searchTerm = this.queryParams_.q;
 
     const pageFromUrl = this.path_.substr(1).split('/')[0];
     let newPage = PageType.MAIN;
-    if (pageFromUrl == 'detail') {
+    if (pageFromUrl === 'detail') {
       newPage = PageType.DETAIL;
+    } else if (pageFromUrl === 'notifications') {
+      newPage = PageType.NOTIFICATIONS;
     } else {
       newPage = PageType.MAIN;
     }
 
-    if (newPage == PageType.DETAIL) {
+    if (newPage === PageType.DETAIL) {
       this.dispatch(app_management.actions.changePage(PageType.DETAIL, newId));
+    } else if (this.queryParams_.q) {
+      this.dispatch(app_management.actions.setSearchTerm(this.queryParams_.q));
     } else {
       this.dispatch(app_management.actions.changePage(newPage));
     }
+    this.urlParsed_ = true;
   },
 });

@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.vr;
 
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Point;
@@ -31,6 +32,7 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
@@ -43,8 +45,8 @@ import org.chromium.chrome.browser.tab.TabRedirectHandler;
 import org.chromium.chrome.browser.tabmodel.ChromeTabCreator;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager.TabCreator;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabObserver;
@@ -53,6 +55,7 @@ import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.vr.keyboard.VrInputMethodManagerWrapper;
 import org.chromium.content_public.browser.ImeAdapter;
 import org.chromium.content_public.browser.LoadUrlParams;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.ViewEventSink;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.common.BrowserControlsState;
@@ -413,13 +416,11 @@ public class VrShell extends GvrLayout
         // relatively low-res Pixel, and higher-res Pixel XL and other devices.
         boolean lowDensity = dm.densityDpi <= DisplayMetrics.DENSITY_XXHIGH;
 
-        boolean hasOrCanRequestAudioPermission =
-                mActivity.getWindowAndroid().hasPermission(android.Manifest.permission.RECORD_AUDIO)
-                || mActivity.getWindowAndroid().canRequestPermission(
-                           android.Manifest.permission.RECORD_AUDIO);
+        boolean hasOrCanRequestRecordAudioPermission =
+                hasRecordAudioPermission() || canRequestRecordAudioPermission();
         boolean supportsRecognition = FeatureUtilities.isRecognitionIntentPresent(mActivity, false);
         mNativeVrShell = nativeInit(mDelegate, forWebVr, !mVrBrowsingEnabled,
-                hasOrCanRequestAudioPermission && supportsRecognition,
+                hasOrCanRequestRecordAudioPermission && supportsRecognition,
                 getGvrApi().getNativeGvrContext(), mReprojectedRendering, displayWidthMeters,
                 displayHeightMeters, dm.widthPixels, dm.heightPixels, pauseContent, lowDensity,
                 isStandaloneVrDevice);
@@ -534,8 +535,14 @@ public class VrShell extends GvrLayout
 
     // Returns true if Chrome has permission to use audio input.
     @CalledByNative
-    public boolean hasAudioPermission() {
-        return mDelegate.hasAudioPermission();
+    public boolean hasRecordAudioPermission() {
+        return mDelegate.hasRecordAudioPermission();
+    }
+
+    // Returns true if Chrome has not been permanently denied audio input permission.
+    @CalledByNative
+    public boolean canRequestRecordAudioPermission() {
+        return mDelegate.canRequestRecordAudioPermission();
     }
 
     // Exits VR, telling the user to remove their headset, and returning to Chromium.
@@ -564,10 +571,21 @@ public class VrShell extends GvrLayout
                     @Override
                     public void onRequestPermissionsResult(
                             String[] permissions, int[] grantResults) {
-                        ThreadUtils.postOnUiThread(new Runnable() {
+                        PostTask.postTask(UiThreadTaskTraits.DEFAULT, new Runnable() {
                             @Override
                             public void run() {
                                 VrShellDelegate.enterVrIfNecessary();
+
+                                // In SVR, the native VR UI is destroyed when
+                                // exiting VR (mNativeVrShell == 0), so
+                                // permission changes will be detected when the
+                                // VR UI is reconstructed. For AIO devices this
+                                // doesn't happen, so we need to notify native
+                                // UI of the permission change immediately.
+                                if (mNativeVrShell != 0) {
+                                    nativeRequestRecordAudioPermissionResult(mNativeVrShell,
+                                            grantResults[0] == PackageManager.PERMISSION_GRANTED);
+                                }
                             }
                         });
                     }
@@ -1273,7 +1291,7 @@ public class VrShell extends GvrLayout
     }
 
     private native long nativeInit(VrShellDelegate delegate, boolean forWebVR,
-            boolean browsingDisabled, boolean hasOrCanRequestAudioPermission, long gvrApi,
+            boolean browsingDisabled, boolean hasOrCanRequestRecordAudioPermission, long gvrApi,
             boolean reprojectedRendering, float displayWidthMeters, float displayHeightMeters,
             int displayWidthPixels, int displayHeightPixels, boolean pauseContent,
             boolean lowDensity, boolean isStandaloneVrDevice);
@@ -1329,4 +1347,6 @@ public class VrShell extends GvrLayout
             long nativeVrShell, int elementName, int timeoutMs, boolean visibility);
     private native void nativeResumeContentRendering(long nativeVrShell);
     private native void nativeOnOverlayTextureEmptyChanged(long nativeVrShell, boolean empty);
+    private native void nativeRequestRecordAudioPermissionResult(
+            long nativeVrShell, boolean canRecordAudio);
 }

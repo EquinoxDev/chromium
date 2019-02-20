@@ -4,6 +4,7 @@
 
 #include "net/tools/quic/quic_simple_server_packet_writer.h"
 
+#include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -36,7 +37,7 @@ quic::WriteResult QuicSimpleServerPacketWriter::WritePacketWithCallback(
   callback_ = callback;
   quic::WriteResult result =
       WritePacket(buffer, buf_len, self_address, peer_address, options);
-  if (result.status != quic::WRITE_STATUS_BLOCKED) {
+  if (!quic::IsWriteBlockedStatus(result.status)) {
     callback_.Reset();
   }
   return result;
@@ -51,11 +52,6 @@ void QuicSimpleServerPacketWriter::OnWriteComplete(int rv) {
     base::ResetAndReturn(&callback_).Run(result);
   }
   dispatcher_->OnCanWrite();
-}
-
-bool QuicSimpleServerPacketWriter::IsWriteBlockedDataBuffered() const {
-  // UDPServerSocket::SendTo buffers the data until the Write is permitted.
-  return true;
 }
 
 bool QuicSimpleServerPacketWriter::IsWriteBlocked() const {
@@ -91,7 +87,7 @@ quic::WriteResult QuicSimpleServerPacketWriter::WritePacket(
       base::UmaHistogramSparse("Net.quic::QuicSession.WriteError", -rv);
       status = quic::WRITE_STATUS_ERROR;
     } else {
-      status = quic::WRITE_STATUS_BLOCKED;
+      status = quic::WRITE_STATUS_BLOCKED_DATA_BUFFERED;
       write_blocked_ = true;
     }
   }

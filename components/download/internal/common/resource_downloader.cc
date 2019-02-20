@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "components/download/public/common/download_url_loader_factory_getter.h"
 #include "components/download/public/common/stream_handle_input_stream.h"
 #include "components/download/public/common/url_download_request_handle.h"
@@ -225,7 +226,9 @@ void ResourceDownloader::OnResponseStarted(
 }
 
 void ResourceDownloader::OnReceiveRedirect() {
-  url_loader_->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
+  url_loader_->FollowRedirect(std::vector<std::string>() /* removed_headers */,
+                              net::HttpRequestHeaders() /* modified_headers */,
+                              base::nullopt);
 }
 
 void ResourceDownloader::OnResponseCompleted() {

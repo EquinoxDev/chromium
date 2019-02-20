@@ -18,7 +18,7 @@
 #include "base/strings/string_piece.h"
 #include "services/metrics/public/cpp/ukm_decode.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
-#include "services/metrics/public/mojom/ukm_interface.mojom.h"
+#include "services/metrics/public/mojom/ukm_interface.mojom-forward.h"
 
 namespace metrics {
 class UkmBrowserTestBase;
@@ -105,6 +105,7 @@ class UkmRecorderImpl : public UkmRecorder {
   friend ::ukm::debug::UkmDebugDataExtractor;
   friend ::ukm::UkmRecorderImplTest;
   friend ::ukm::UkmUtilsForTest;
+  FRIEND_TEST_ALL_PREFIXES(UkmRecorderImplTest, PageSamplingCondition);
 
   struct MetricAggregate {
     uint64_t total_count = 0;

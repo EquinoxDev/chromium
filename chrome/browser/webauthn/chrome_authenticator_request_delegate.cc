@@ -85,8 +85,7 @@ void ChromeAuthenticatorRequestDelegate::RegisterProfilePrefs(
 
   registry->RegisterStringPref(kWebAuthnLastTransportUsedPrefName,
                                std::string());
-  registry->RegisterListPref(kWebAuthnBlePairedMacAddressesPrefName,
-                             std::make_unique<base::ListValue>());
+  registry->RegisterListPref(kWebAuthnBlePairedMacAddressesPrefName);
 }
 
 ChromeAuthenticatorRequestDelegate::ChromeAuthenticatorRequestDelegate(
@@ -118,10 +117,12 @@ content::BrowserContext* ChromeAuthenticatorRequestDelegate::browser_context()
       ->GetBrowserContext();
 }
 
-void ChromeAuthenticatorRequestDelegate::DidFailWithInterestingReason(
+bool ChromeAuthenticatorRequestDelegate::DoesBlockRequestOnFailure(
     InterestingFailureReason reason) {
+  if (!IsWebAuthnUIEnabled())
+    return false;
   if (!weak_dialog_model_)
-    return;
+    return false;
 
   switch (reason) {
     case InterestingFailureReason::kTimeout:
@@ -134,6 +135,7 @@ void ChromeAuthenticatorRequestDelegate::DidFailWithInterestingReason(
       weak_dialog_model_->OnActivatedKeyAlreadyRegistered();
       break;
   }
+  return true;
 }
 
 void ChromeAuthenticatorRequestDelegate::RegisterActionCallbacks(
@@ -161,9 +163,14 @@ void ChromeAuthenticatorRequestDelegate::RegisterActionCallbacks(
 
 bool ChromeAuthenticatorRequestDelegate::ShouldPermitIndividualAttestation(
     const std::string& relying_party_id) {
-  // If the RP ID is listed in the policy, signal that individual attestation is
-  // permitted.
-  return IsWebauthnRPIDListedInEnterprisePolicy(browser_context(),
+  constexpr char kGoogleCorpAppId[] =
+      "https://www.gstatic.com/securitykey/a/google.com/origins.json";
+
+  // If the RP ID is actually the Google corp App ID (because the request is
+  // actually a U2F request originating from cryptotoken), or is listed in the
+  // enterprise policy, signal that individual attestation is permitted.
+  return relying_party_id == kGoogleCorpAppId ||
+         IsWebauthnRPIDListedInEnterprisePolicy(browser_context(),
                                                 relying_party_id);
 }
 
@@ -280,6 +287,17 @@ void ChromeAuthenticatorRequestDelegate::UpdateLastTransportUsed(
   }
 }
 
+void ChromeAuthenticatorRequestDelegate::DisableUI() {
+  disable_ui_ = true;
+}
+
+bool ChromeAuthenticatorRequestDelegate::IsWebAuthnUIEnabled() {
+  // UI can be disabled via flag or by the request handler for certain
+  // requests (e.g. on Windows, where the native API renders its own UI).
+  return base::FeatureList::IsEnabled(features::kWebAuthenticationUI) &&
+         !disable_ui_;
+}
+
 void ChromeAuthenticatorRequestDelegate::OnTransportAvailabilityEnumerated(
     device::FidoRequestHandlerBase::TransportAvailabilityInfo data) {
 #if !defined(OS_ANDROID)
@@ -288,39 +306,45 @@ void ChromeAuthenticatorRequestDelegate::OnTransportAvailabilityEnumerated(
     return;
   }
 
-  if (!IsWebAuthnUiEnabled())
+  if (!IsWebAuthnUIEnabled())
     return;
 
   DCHECK(weak_dialog_model_);
   weak_dialog_model_->StartFlow(std::move(data), GetLastTransportUsed(),
                                 GetPreviouslyPairedFidoBleDeviceIds());
 
+  if (weak_dialog_model_->should_dialog_be_closed()) {
+    // The model decided to not show the Chrome UI because a different native
+    // UI is shown.
+    //
+    // Disable UI to cause timeout and other errors to bubble up to the caller
+    // immediately rather than waiting for our error dialog to be dismissed.
+    disable_ui_ = true;
+    return;
+  }
+
   DCHECK(transient_dialog_model_holder_);
   ShowAuthenticatorRequestDialog(
       content::WebContents::FromRenderFrameHost(render_frame_host()),
       std::move(transient_dialog_model_holder_));
-#endif
+#endif  // !defined(OS_ANDROID)
 }
 
 bool ChromeAuthenticatorRequestDelegate::EmbedderControlsAuthenticatorDispatch(
     const device::FidoAuthenticator& authenticator) {
-  if (!IsWebAuthnUiEnabled())
-    return false;
-  // On macOS, a native dialog is shown for the Touch ID authenticator
-  // immediately after dispatch to that authenticator. This dialog must not
-  // be triggered before Chrome's WebAuthn UI has advanced accordingly.
-  // Also, connection to Bluetooth authenticators should not be established
-  // before user explicitly chooses to use a BLE device as it can trigger
-  // OS native pairing UI.
-  const auto& transport = authenticator.AuthenticatorTransport();
-  return transport &&
-         (*transport == device::FidoTransportProtocol::kInternal ||
-          *transport == device::FidoTransportProtocol::kBluetoothLowEnergy);
+  // Decide whether the //device/fido code should dispatch the current
+  // request to an authenticator immediately after it has been
+  // discovered, or whether the embedder/UI takes charge of that by
+  // invoking its RequestCallback.
+  return IsWebAuthnUIEnabled() &&
+         (!authenticator.AuthenticatorTransport() ||
+          *authenticator.AuthenticatorTransport() !=
+              device::FidoTransportProtocol::kUsbHumanInterfaceDevice);
 }
 
 void ChromeAuthenticatorRequestDelegate::FidoAuthenticatorAdded(
     const device::FidoAuthenticator& authenticator) {
-  if (!IsWebAuthnUiEnabled())
+  if (!IsWebAuthnUIEnabled())
     return;
 
   if (!weak_dialog_model_)
@@ -331,7 +355,7 @@ void ChromeAuthenticatorRequestDelegate::FidoAuthenticatorAdded(
 
 void ChromeAuthenticatorRequestDelegate::FidoAuthenticatorRemoved(
     base::StringPiece authenticator_id) {
-  if (!IsWebAuthnUiEnabled())
+  if (!IsWebAuthnUIEnabled())
     return;
 
   if (!weak_dialog_model_)
@@ -411,11 +435,4 @@ ChromeAuthenticatorRequestDelegate::GetPreviouslyPairedFidoBleDeviceIds()
   PrefService* prefs =
       Profile::FromBrowserContext(browser_context())->GetPrefs();
   return prefs->GetList(kWebAuthnBlePairedMacAddressesPrefName);
-}
-
-bool ChromeAuthenticatorRequestDelegate::IsWebAuthnUiEnabled() const {
-  // UI can be disabled via flag or by the request handler for certain
-  // requests (e.g. on Windows, where the native API renders its own UI).
-  return base::FeatureList::IsEnabled(features::kWebAuthenticationUI) &&
-         !disable_ui_;
 }

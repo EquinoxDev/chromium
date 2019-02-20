@@ -35,6 +35,7 @@
 #include "net/base/network_change_notifier.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "services/tracing/public/cpp/trace_event_agent.h"
+#include "services/tracing/public/cpp/traced_process_impl.h"
 #include "services/tracing/public/mojom/constants.mojom.h"
 #include "v8/include/v8-version-string.h"
 
@@ -49,6 +50,7 @@
 #endif
 
 #if defined(OS_WIN)
+#include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #endif
 
@@ -108,6 +110,32 @@ std::string GetClockString() {
   return std::string();
 }
 
+#if defined(OS_WIN)
+// The following code detect whether the current session is a remote session.
+// See:
+// https://docs.microsoft.com/en-us/windows/desktop/TermServ/detecting-the-terminal-services-environment
+bool IsCurrentSessionRemote() {
+  static const wchar_t kRdpSettingsKeyName[] =
+      L"SYSTEM\\CurrentControlSet\\Control\\Terminal Server";
+  static const wchar_t kGlassSessionIdValueName[] = L"GlassSessionId";
+
+  if (::GetSystemMetrics(SM_REMOTESESSION))
+    return true;
+
+  DWORD glass_session_id = 0;
+  DWORD current_session_id = 0;
+  base::win::RegKey key(HKEY_LOCAL_MACHINE, kRdpSettingsKeyName, KEY_READ);
+  if (!::ProcessIdToSessionId(::GetCurrentProcessId(), &current_session_id) ||
+      !key.Valid() ||
+      key.ReadValueDW(kGlassSessionIdValueName, &glass_session_id) !=
+          ERROR_SUCCESS) {
+    return false;
+  }
+
+  return current_session_id != glass_session_id;
+}
+#endif
+
 }  // namespace
 
 TracingController* TracingController::GetInstance() {
@@ -115,21 +143,26 @@ TracingController* TracingController::GetInstance() {
 }
 
 TracingControllerImpl::TracingControllerImpl()
-    : delegate_(GetContentClient()->browser()->GetTracingDelegate()) {
+    : delegate_(GetContentClient()->browser()->GetTracingDelegate()),
+      weak_ptr_factory_(this) {
   DCHECK(!g_tracing_controller);
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Deliberately leaked, like this class.
   base::FileTracing::SetProvider(new FileTracingProviderImpl);
   AddAgents();
+  base::trace_event::TraceLog::GetInstance()->AddAsyncEnabledStateObserver(
+      weak_ptr_factory_.GetWeakPtr());
   g_tracing_controller = this;
 }
 
-TracingControllerImpl::~TracingControllerImpl() = default;
+TracingControllerImpl::~TracingControllerImpl() {
+  base::trace_event::TraceLog::GetInstance()->RemoveAsyncEnabledStateObserver(
+      this);
+}
 
 void TracingControllerImpl::AddAgents() {
-  auto* connector =
-      content::ServiceManagerConnection::GetForProcess()->GetConnector();
-  connector->BindInterface(tracing::mojom::kServiceName, &coordinator_);
+  tracing::TracedProcessImpl::GetInstance()->SetTaskRunner(
+      base::SequencedTaskRunnerHandle::Get());
 
 #if defined(OS_CHROMEOS)
   agents_.push_back(std::make_unique<CrOSTracingAgent>());
@@ -137,14 +170,9 @@ void TracingControllerImpl::AddAgents() {
   agents_.push_back(std::make_unique<CastTracingAgent>());
 #endif
 
-  for (auto& agent : agents_)
-    agent->Connect(connector);
-
-  auto* trace_event_agent = tracing::TraceEventAgent::GetInstance();
-  trace_event_agent->Connect(connector);
-
   // For adding general CPU, network, OS, and other system information to the
   // metadata.
+  auto* trace_event_agent = tracing::TraceEventAgent::GetInstance();
   trace_event_agent->AddMetadataGeneratorFunction(base::BindRepeating(
       &TracingControllerImpl::GenerateMetadataDict, base::Unretained(this)));
   if (delegate_) {
@@ -154,6 +182,18 @@ void TracingControllerImpl::AddAgents() {
   }
 }
 
+void TracingControllerImpl::ConnectToServiceIfNeeded() {
+  if (!coordinator_) {
+    ServiceManagerConnection::GetForProcess()->GetConnector()->BindInterface(
+        tracing::mojom::kServiceName, &coordinator_);
+  }
+}
+
+void TracingControllerImpl::DisconnectFromService() {
+  coordinator_ = nullptr;
+}
+
+// Can be called on any thread.
 std::unique_ptr<base::DictionaryValue>
 TracingControllerImpl::GenerateMetadataDict() const {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -206,7 +246,11 @@ TracingControllerImpl::GenerateMetadataDict() const {
       metadata_dict->SetString("os-wow64", "disabled");
     }
   }
+
+  metadata_dict->SetString("os-session",
+                           IsCurrentSessionRemote() ? "remote" : "local");
 #endif
+
   metadata_dict->SetString("os-arch",
                            base::SysInfo::OperatingSystemArchitecture());
 
@@ -284,21 +328,13 @@ TracingControllerImpl* TracingControllerImpl::GetInstance() {
 }
 
 bool TracingControllerImpl::GetCategories(GetCategoriesDoneCallback callback) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  coordinator_->GetCategories(base::BindOnce(
-      [](GetCategoriesDoneCallback callback, bool success,
-         const std::string& categories) {
-        const std::vector<std::string> split = base::SplitString(
-            categories, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-        std::set<std::string> category_set;
-        for (const auto& category : split) {
-          category_set.insert(category);
-        }
-        std::move(callback).Run(category_set);
-      },
-      std::move(callback)));
-  // TODO(chiniforooshan): The actual success value should be sent by the
-  // callback asynchronously.
+  std::set<std::string> category_set;
+
+  tracing::TraceEventAgent::GetInstance()->GetCategories(&category_set);
+  for (auto& agent : agents_)
+    agent->GetCategories(&category_set);
+
+  std::move(callback).Run(category_set);
   return true;
 }
 
@@ -327,18 +363,32 @@ bool TracingControllerImpl::StartTracing(
   }
   trace_config_ =
       std::make_unique<base::trace_event::TraceConfig>(trace_config);
-  coordinator_->StartTracing(
-      trace_config.ToString(),
-      base::BindOnce(
-          [](StartTracingDoneCallback callback, bool success) {
-            if (!callback.is_null())
-              std::move(callback).Run();
-          },
-          std::move(callback)));
+
+  start_tracing_done_ = std::move(callback);
+  ConnectToServiceIfNeeded();
+  coordinator_->StartTracing(trace_config.ToString());
+
+  if (start_tracing_done_ &&
+      (base::trace_event::TraceLog::GetInstance()->IsEnabled() ||
+       !trace_config.process_filter_config().IsEnabled(
+           base::Process::Current().Pid()))) {
+    // If we're already tracing, or if the current process is excluded from the
+    // process filter, we'll never receive a callback from the TraceLog, so then
+    // we just run the callback right away.
+    std::move(start_tracing_done_).Run();
+  }
+
   // TODO(chiniforooshan): The actual success value should be sent by the
   // callback asynchronously.
   return true;
 }
+
+void TracingControllerImpl::OnTraceLogEnabled() {
+  if (start_tracing_done_)
+    std::move(start_tracing_done_).Run();
+}
+
+void TracingControllerImpl::OnTraceLogDisabled() {}
 
 bool TracingControllerImpl::StopTracing(
     const scoped_refptr<TraceDataEndpoint>& trace_data_endpoint) {
@@ -384,6 +434,7 @@ bool TracingControllerImpl::GetTraceBufferUsage(
     GetTraceBufferUsageCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
+  ConnectToServiceIfNeeded();
   coordinator_->RequestBufferUsage(base::BindOnce(
       [](GetTraceBufferUsageCallback callback, bool success, float percent_full,
          uint32_t approximate_count) {

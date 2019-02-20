@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/common/client_hints.mojom.h"
@@ -250,9 +251,7 @@ void ContentSettingsObserver::OnContentSettingsRendererRequest(
   bindings_.AddBinding(this, std::move(request));
 }
 
-bool ContentSettingsObserver::AllowDatabase(const WebString& name,
-                                            const WebString& display_name,
-                                            unsigned estimated_size) {
+bool ContentSettingsObserver::AllowDatabase() {
   WebFrame* frame = render_frame()->GetWebFrame();
   if (IsUniqueFrame(frame))
     return false;
@@ -260,8 +259,7 @@ bool ContentSettingsObserver::AllowDatabase(const WebString& name,
   bool result = false;
   Send(new ChromeViewHostMsg_AllowDatabase(
       routing_id(), url::Origin(frame->GetSecurityOrigin()).GetURL(),
-      url::Origin(frame->Top()->GetSecurityOrigin()).GetURL(), name.Utf16(),
-      display_name.Utf16(), &result));
+      url::Origin(frame->Top()->GetSecurityOrigin()).GetURL(), &result));
   return result;
 }
 

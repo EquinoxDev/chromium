@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
@@ -65,7 +66,8 @@
 #include "content/renderer/storage_util.h"
 #include "content/renderer/web_database_observer_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
-#include "content/renderer/worker_thread_registry.h"
+#include "content/renderer/worker/dedicated_worker_host_factory_client.h"
+#include "content/renderer/worker/worker_thread_registry.h"
 #include "device/gamepad/public/cpp/gamepads.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/config/gpu_info.h"
@@ -387,6 +389,14 @@ blink::WebString RendererBlinkPlatformImpl::UserAgent() {
   if (!render_thread)
     return WebString();
   return render_thread->GetUserAgent();
+}
+
+blink::UserAgentMetadata RendererBlinkPlatformImpl::UserAgentMetadata() {
+  auto* render_thread = RenderThreadImpl::current();
+  // RenderThreadImpl is null in some tests.
+  if (!render_thread)
+    return blink::UserAgentMetadata();
+  return render_thread->GetUserAgentMetadata();
 }
 
 void RendererBlinkPlatformImpl::CacheMetadata(
@@ -732,6 +742,16 @@ RendererBlinkPlatformImpl::CreateWebRtcPortAllocator(
   return rtc_dependency_factory->CreatePortAllocator(frame);
 }
 
+std::unique_ptr<webrtc::AsyncResolverFactory>
+RendererBlinkPlatformImpl::CreateWebRtcAsyncResolverFactory() {
+  RenderThreadImpl* render_thread = RenderThreadImpl::current();
+  DCHECK(render_thread);
+  PeerConnectionDependencyFactory* rtc_dependency_factory =
+      render_thread->GetPeerConnectionDependencyFactory();
+  rtc_dependency_factory->EnsureInitialized();
+  return rtc_dependency_factory->CreateAsyncResolverFactory();
+}
+
 //------------------------------------------------------------------------------
 
 std::unique_ptr<WebCanvasCaptureHandler>
@@ -774,18 +794,23 @@ void RendererBlinkPlatformImpl::CreateHTMLAudioElementCapturer(
                                      track_id, false /* is_remote */);
   web_media_stream_track.Initialize(web_media_stream_source);
 
-  MediaStreamAudioSource* const media_stream_source =
+  blink::MediaStreamAudioSource* const media_stream_source =
       HtmlAudioElementCapturerSource::CreateFromWebMediaPlayerImpl(
           web_media_player);
 
   // Takes ownership of |media_stream_source|.
-  web_media_stream_source.SetExtraData(media_stream_source);
+  web_media_stream_source.SetPlatformSource(
+      base::WrapUnique(media_stream_source));
 
   blink::WebMediaStreamSource::Capabilities capabilities;
   capabilities.device_id = track_id;
   capabilities.echo_cancellation = std::vector<bool>({false});
   capabilities.auto_gain_control = std::vector<bool>({false});
   capabilities.noise_suppression = std::vector<bool>({false});
+  capabilities.sample_size = {
+      media::SampleFormatToBitsPerChannel(media::kSampleFormatS16),  // min
+      media::SampleFormatToBitsPerChannel(media::kSampleFormatS16)   // max
+  };
   web_media_stream_source.SetCapabilities(capabilities);
 
   media_stream_source->ConnectToTrack(web_media_stream_track);
@@ -1021,6 +1046,14 @@ blink::WebPushProvider* RendererBlinkPlatformImpl::PushProvider() {
 
 //------------------------------------------------------------------------------
 
+std::unique_ptr<blink::WebDedicatedWorkerHostFactoryClient>
+RendererBlinkPlatformImpl::CreateDedicatedWorkerHostFactoryClient(
+    blink::WebDedicatedWorker* worker,
+    service_manager::InterfaceProvider* interface_provider) {
+  return std::make_unique<DedicatedWorkerHostFactoryClient>(worker,
+                                                            interface_provider);
+}
+
 void RendererBlinkPlatformImpl::DidStartWorkerThread() {
   WorkerThreadRegistry::Instance()->DidStartCurrentWorkerThread();
 }
@@ -1036,15 +1069,6 @@ void RendererBlinkPlatformImpl::WorkerContextCreated(
 }
 
 //------------------------------------------------------------------------------
-void RendererBlinkPlatformImpl::RequestPurgeMemory() {
-  base::MemoryPressureListener::NotifyMemoryPressure(
-      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
-}
-
-void RendererBlinkPlatformImpl::SetMemoryPressureNotificationsSuppressed(
-    bool suppressed) {
-  base::MemoryPressureListener::SetNotificationsSuppressed(suppressed);
-}
 
 void RendererBlinkPlatformImpl::InitializeWebDatabaseHostIfNeeded() {
   if (!web_database_host_) {

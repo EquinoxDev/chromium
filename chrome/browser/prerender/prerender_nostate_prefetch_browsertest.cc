@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/statistics_recorder.h"
@@ -50,6 +51,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
 
 using prerender::test_utils::DestructionWaiter;
 using prerender::test_utils::RequestCounter;
@@ -423,7 +425,7 @@ IN_PROC_BROWSER_TEST_F(NoStatePrefetchBrowserTest, ResponseHeaderCSP) {
   GURL second_script_url(std::string("http://foo.bar") + kPrefetchScript2);
   GURL prefetch_response_header_csp = GetURLWithReplacement(
       kPrefetchResponseHeaderCSP, "REPLACE_WITH_PORT",
-      base::IntToString(src_server()->host_port_pair().port()));
+      base::NumberToString(src_server()->host_port_pair().port()));
 
   PrefetchFromURL(prefetch_response_header_csp,
                   FINAL_STATUS_NOSTATE_PREFETCH_FINISHED);
@@ -442,7 +444,7 @@ IN_PROC_BROWSER_TEST_F(NoStatePrefetchBrowserTest, MetaTagCSP) {
   GURL second_script_url(std::string("http://foo.bar") + kPrefetchScript2);
   GURL prefetch_meta_tag_csp = GetURLWithReplacement(
       kPrefetchMetaCSP, "REPLACE_WITH_PORT",
-      base::IntToString(src_server()->host_port_pair().port()));
+      base::NumberToString(src_server()->host_port_pair().port()));
 
   PrefetchFromURL(prefetch_meta_tag_csp,
                   FINAL_STATUS_NOSTATE_PREFETCH_FINISHED);

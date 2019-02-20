@@ -11,13 +11,9 @@
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
 #include "net/third_party/quic/tools/quic_backend_response.h"
 #include "net/third_party/quic/tools/quic_simple_server_backend.h"
-#include "net/third_party/spdy/core/spdy_framer.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_framer.h"
 
 namespace quic {
-
-namespace test {
-class QuicSimpleServerStreamPeer;
-}  // namespace test
 
 // All this does right now is aggregate data, and on fin, send an HTTP
 // response.
@@ -93,14 +89,12 @@ class QuicSimpleServerStream : public QuicSpdyServerStreamBase,
 
   const QuicString& body() { return body_; }
 
- private:
-  friend class test::QuicSimpleServerStreamPeer;
-
   // The parsed headers received from the client.
   spdy::SpdyHeaderBlock request_headers_;
   int64_t content_length_;
   QuicString body_;
 
+ private:
   QuicSimpleServerBackend* quic_simple_server_backend_;  // Not owned.
 };
 

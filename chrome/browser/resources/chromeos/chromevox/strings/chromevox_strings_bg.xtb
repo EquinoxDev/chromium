@@ -54,6 +54,7 @@
 <translation id="1346059596910821859">Бакшиш</translation>
 <translation id="1346748346194534595">Надясно</translation>
 <translation id="135978014023467274">Екранният четец ChromeVox бе актуализиран до версия 63!</translation>
+<translation id="1360699455582016846">Кликване върху елемента под ключ за пренасочване <ph name="ROUTING_KEY_NUMBER" /></translation>
 <translation id="136718599399906424">Следващият ред в таблицата</translation>
 <translation id="1377925789329510816">Това е последното заглавие. Натиснете клавиша „търсене“ + H, за да се върнете към първото, или „търсене“ + Shift + H, за да преминете към второто заглавие на тази страница.</translation>
 <translation id="1383876407941801731">Търсене</translation>
@@ -112,6 +113,7 @@
 <translation id="1905379170753160525">Показване на списъка със заглавия</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">#ed</translation>
+<translation id="1914635379910604678">комбинация от <ph name="DOT" /></translation>
 <translation id="1954623340234317532">Контрола за седмицата от годината</translation>
 <translation id="1964135212174907577">Следващият обект</translation>
 <translation id="1969092762068865084">юли</translation>
@@ -266,6 +268,7 @@
 <translation id="316542773973815724">Навигация</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{интервал}other{# интервала}}</translation>
 <translation id="320961988183078793">влязохте в/ъв <ph name="TYPE" /></translation>
+<translation id="3218691001991391708">поставяне на <ph name="TEXT" />.</translation>
 <translation id="3223701887221307104">„<ph name="NAME" />“, раздел</translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">Посетена връзка</translation>
@@ -285,48 +288,6 @@
 <translation id="3322936298410871309">Предишното заглавие от първо ниво</translation>
 <translation id="3323447499041942178">Текстово поле</translation>
 <translation id="3338224621010291843">Плъзгач „<ph name="NAME" />“ – <ph name="VALUE" /></translation>
-<translation id="3353420241558113817">{"en": "английски",
-        "en_CA": "английски (Канада)",
-        "en_GB": "английски (Обединено кралство)",
-        "en_US": "английски (Съединени щати)",
-        "ar": "арабски",
-        "bg": "български",
-        "vi": "виетнамски",
-        "el": "гръцки",
-        "da": "датски",
-        "et": "естонски",
-        "he": "иврит",
-        "is": "исландски",
-        "es": "испански",
-        "it": "италиански",
-        "ca": "каталонски",
-        "zh": "китайски",
-        "zh_TW": "китайски (традиционен хан)",
-        "ko": "корейски",
-        "lv": "латвийски",
-        "lt": "литовски",
-        "de": "немски",
-        "de_DE": "немски (Германия)",
-        "de_CH": "немски (Швейцария)",
-        "nl": "нидерландски",
-        "nb": "норвежки букмол",
-        "pl": "полски",
-        "pt": "португалски",
-        "ro": "румънски",
-        "ru": "руски",
-        "sk": "словашки",
-        "sl": "словенски",
-        "sr": "сръбски",
-        "tr": "турски",
-        "hu": "унгарски",
-        "fi": "финландски",
-        "fr": "френски",
-        "fr_CA": "френски (Канада)",
-        "fr_FR": "френски (Франция)",
-        "hi": "хинди",
-        "hr": "хърватски",
-        "cs": "чешки",
-        "sv": "шведски"}</translation>
 <translation id="335581015389089642">Speech</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{знак плюс}other{# знака плюс}}</translation>
@@ -343,12 +304,14 @@
 <translation id="3468959318854349468">Без заглавие</translation>
 <translation id="3473644018603298796"><ph name="COUNT" /> избрани</translation>
 <translation id="3486232535569802404"><ph name="V1" /> до <ph name="V2" /></translation>
+<translation id="3490765818161916458">Списък/таблица</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{дясна квадратна скоба}other{# десни квадратни скоби}}</translation>
 <translation id="3493915602752813531">Няма следваща котва.</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{въпросителен знак}other{# въпросителни знака}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{карета}other{# карети}}</translation>
 <translation id="352577523970648069">Текстово поле, което може да се редактира</translation>
+<translation id="3549141990712742152">изрязване на <ph name="TEXT" />.</translation>
 <translation id="3549680091535286226">Докоснете с 2 пръста, за да спрете временно говора</translation>
 <translation id="3568702578574425662">„<ph name="NAME" />“, квадратче без отметка</translation>
 <translation id="3589661172894441357">Терминологичен речник</translation>
@@ -380,6 +343,7 @@
 <translation id="3856075812838139784">Само за четене</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">Меню</translation>
+<translation id="3907138069015388678">Спск/тблц</translation>
 <translation id="3909320334364316587">Предишното заглавие от шесто ниво</translation>
 <translation id="3914173277599553213">Задължително</translation>
 <translation id="3914732343065571127">Справочник на командите на ChromeVox</translation>
@@ -514,7 +478,6 @@
 <translation id="4973762002207131920">Превключихте към „<ph name="KEY" />“.</translation>
 <translation id="4975416682604111799">милисекунди</translation>
 <translation id="49787999531187221">ChromeVox вече не е активен.</translation>
-<translation id="4979263087381759787">Опции за програмисти</translation>
 <translation id="4979404613699303341">Предишният бутон</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />, „<ph name="NAME" />“, списъчно поле</translation>
 <translation id="4983588134362688868">Преминаване към началото на страницата</translation>
@@ -529,6 +492,7 @@
 <translation id="5020651427400641814">Активиране на регистрирането за говора</translation>
 <translation id="5041394372352067729">Преместване на брайловия дисплей в горната част на страницата</translation>
 <translation id="5042770794184672516">Увеличаване на силата на звука на говора</translation>
+<translation id="5042992464904238023">Уеб съдържание</translation>
 <translation id="5050015258024679800">Предишното заглавие от четвърто ниво</translation>
 <translation id="5054047268577924192">Предишният списъчен елемент</translation>
 <translation id="5075936896689244141">Клавишни команди в Next</translation>
@@ -673,6 +637,7 @@
 <translation id="6129953537138746214">Интервал</translation>
 <translation id="6132506484792346370">Списъчно поле или разгъващ се списък</translation>
 <translation id="6142308968191113180">Заглавие от четвърто ниво</translation>
+<translation id="6158882249329863701">ред <ph name="TABLECELLROWINDEX" />, колона <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="6164829606128959761">индикатор</translation>
 <translation id="6169420925157477918">Изображение с дълго описание</translation>
 <translation id="6186305613600865047">Преминаване към края на страницата</translation>
@@ -688,6 +653,7 @@
 <translation id="6307969636681130414">Натиснато</translation>
 <translation id="6322856989298155004">Звуци</translation>
 <translation id="6324551002951139333">Открита е граматична грешка</translation>
+<translation id="6325241889020214828">копиране на <ph name="TEXT" />.</translation>
 <translation id="6348657800373377022">Разгъващ се списък</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{водещ символ}other{# водещи символа}}</translation>
 <translation id="6355910664415701303">Няма предишен списъчен елемент.</translation>
@@ -697,6 +663,7 @@
 <translation id="6387719785439924554">странично съдържание</translation>
 <translation id="6411426777058107714">Няма предишен бутон за избор.</translation>
 <translation id="6414968628640960377">Предишният различен елемент.</translation>
+<translation id="6417265370957905582">Google Асистент</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{двоеточие}other{# двоеточия}}</translation>
 <translation id="6438968337250688271">„<ph name="NAME" />“, меню</translation>
 <translation id="6444046323172968959">Диалогов прозорец със сигнал</translation>
@@ -876,6 +843,89 @@
 <translation id="8037651341025652929">Заключение</translation>
 <translation id="8042761080832772327">Поле за въвеждане на заявка за търсене</translation>
 <translation id="8049189770492311300">Таймер</translation>
+<translation id="8056782883599416672">{"ar": "арабски",
+        "as": "асамски",
+        "aw": "авадхи",
+        "be": "бенгалски",
+        "bg": "български",
+        "bh": "бихари",
+        "bo": "тибетски",
+        "br": "брадж",
+        "ca": "каталонски",
+        "ckb": "сорани",
+        "cs": "чешки",
+        "cy": "уелски",
+        "da": "датски",
+        "de": "немски",
+        "de_CH": "немски (Швейцария)",
+        "de_DE": "немски (Германия)",
+        "dra": "дравидски",
+        "el": "гръцки",
+        "en": "английски",
+        "en_CA": "английски (Канада)",
+        "en_GB": "английски (Обединено кралство)",
+        "en_US": "английски (САЩ)",
+        "eo": "есперанто",
+        "es": "испански",
+        "et": "естонски",
+        "fa": "персийски",
+        "fr": "френски",
+        "fr_CA": "френски (Канада)",
+        "fr_FR": "френски (Франция)",
+        "fi": "фински",
+        "ga": "ирландски",
+        "gd": "шотландски келтски",
+        "gon": "гонди",
+        "gu": "гуджарати",
+        "he": "иврит",
+        "hi": "хинди",
+        "hr": "хърватски",
+        "hu": "унгарски",
+        "hy": "арменски",
+        "is": "исландски",
+        "it": "италиански",
+        "iu": "инуктитут",
+        "ka": "каннада",
+        "kh": "кхаси",
+        "ko": "корейски",
+        "kok": "конкани",
+        "kru": "курух",
+        "ks": "кашмирски",
+        "lt": "литовски",
+        "lv": "латвийски",
+        "mao": "маорски",
+        "ml": "малаялам",
+        "mt": "малтийски",
+        "mwr": "марвари",
+        "mn": "монголски",
+        "mun": "мунда",
+        "nb": "норвежки букмол",
+        "ne": "непалски",
+        "nl": "нидерландски",
+        "no": "норвежки",
+        "or": "ория",
+        "pi": "пали",
+        "pl": "полски",
+        "pt": "португалски",
+        "pu": "пенджаби",
+        "ro": "румънски",
+        "ru": "руски",
+        "sa": "санскрит",
+        "si": "синдхи",
+        "sin": "синхалски",
+        "sk": "словашки",
+        "sl": "словенски",
+        "sr": "сръбски",
+        "sv": "шведски",
+        "ta": "тамилски",
+        "te": "телугу",
+        "tr": "турски",
+        "tsn": "африкаанс",
+        "uk": "украински",
+        "ur": "урду",
+        "vi": "виетнамски",
+        "zh": "китайски",
+        "zh_TW": "китайски (традиционен хан)"}</translation>
 <translation id="8065607967589909823">Открояването е</translation>
 <translation id="8066678206530322333">Банер</translation>
 <translation id="8076492880354921740">Раздели</translation>
@@ -885,6 +935,7 @@
 <translation id="8153880621934657047">Не сте в таблицата.</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{долна черта}other{# долни черти}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">Автоматично откриване и превключване на езика на ChromeVox.</translation>
 <translation id="8184828902145951186">ред</translation>
 <translation id="8186185314313222077">превключване на режима на цял екран</translation>
 <translation id="8199231515320852133">Съобщаване на заглавките за текущата клетка</translation>
@@ -959,6 +1010,7 @@
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">Модифициращи клавиши</translation>
 <translation id="8943175951035496220">Няма клетка отдясно.</translation>
+<translation id="8946628535652548639">р <ph name="TABLECELLROWINDEX" />, к <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">Забравяне</translation>
 <translation id="900114243503212879">файл</translation>

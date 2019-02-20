@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/base_switches.h"
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
@@ -143,7 +144,7 @@ std::unique_ptr<net::test_server::HttpResponse> HandleSetHeaderRequest(
   return std::move(http_response);
 }
 
-};  // namespace
+}  // namespace
 
 ExtensionApiTest::ExtensionApiTest() {
   embedded_test_server()->RegisterRequestHandler(

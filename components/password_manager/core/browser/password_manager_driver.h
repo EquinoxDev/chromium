@@ -94,10 +94,6 @@ class PasswordManagerDriver
   // Tells the driver to clear previewed password and username fields.
   virtual void ClearPreviewedForm() = 0;
 
-  // Tells the driver to find the focused password field and to show generation
-  // popup at it.
-  virtual void GeneratePassword() {}
-
   // Returns the PasswordGenerationManager associated with this instance.
   virtual PasswordGenerationManager* GetPasswordGenerationManager() = 0;
 
@@ -116,6 +112,9 @@ class PasswordManagerDriver
 
   // Return true iff the driver corresponds to the main frame.
   virtual bool IsMainFrame() const = 0;
+
+  // Returns the last committed URL of the frame.
+  virtual GURL GetLastCommittedURL() const = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerDriver);

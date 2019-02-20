@@ -380,7 +380,8 @@ void ThemeService::UseDefaultTheme() {
 #endif
   ui::NativeTheme* native_theme = ui::NativeTheme::GetInstanceForNativeUi();
   if (native_theme && native_theme->UsesHighContrastColors())
-    SetCustomDefaultTheme(new IncreasedContrastThemeSupplier);
+    SetCustomDefaultTheme(new IncreasedContrastThemeSupplier(
+        native_theme->SystemDarkModeEnabled()));
   ClearAllThemeData();
   NotifyThemeChanged();
 }
@@ -480,9 +481,10 @@ const ui::ThemeProvider& ThemeService::GetThemeProviderForProfile(
 // static
 const ui::ThemeProvider& ThemeService::GetDefaultThemeProviderForProfile(
     Profile* profile) {
-  DCHECK_NE(profile->GetProfileType(), Profile::INCOGNITO_PROFILE)
-      << "Incognito default theme access not implemented, add if needed.";
-  return ThemeServiceFactory::GetForProfile(profile)->default_theme_provider_;
+  ThemeService* service = ThemeServiceFactory::GetForProfile(profile);
+  bool incognito = profile->GetProfileType() == Profile::INCOGNITO_PROFILE;
+  return incognito ? service->incognito_theme_provider_
+                   : service->default_theme_provider_;
 }
 
 void ThemeService::SetCustomDefaultTheme(
@@ -565,14 +567,14 @@ SkColor ThemeService::GetDefaultColor(int id, bool incognito) const {
     }
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
     case ThemeProperties::COLOR_SUPERVISED_USER_LABEL:
-      return color_utils::GetReadableColor(
-          SK_ColorWHITE, GetColor(kLabelBackground, incognito));
+      return color_utils::GetColorWithMaxContrast(
+          GetColor(kLabelBackground, incognito));
     case ThemeProperties::COLOR_SUPERVISED_USER_LABEL_BACKGROUND:
-      return color_utils::BlendTowardOppositeLuma(
+      return color_utils::BlendTowardMaxContrast(
           GetColor(ThemeProperties::COLOR_FRAME, incognito), 0x80);
     case ThemeProperties::COLOR_SUPERVISED_USER_LABEL_BORDER:
       return color_utils::AlphaBlend(GetColor(kLabelBackground, incognito),
-                                     SK_ColorBLACK, 230);
+                                     SK_ColorBLACK, 0.9f);
 #endif
   }
 
@@ -608,8 +610,8 @@ void ThemeService::ClearAllThemeData() {
   // RemoveUnusedThemes is called on a task because ClearAllThemeData() may
   // be called as a result of OnExtensionUnloaded().
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&ThemeService::RemoveUnusedThemes,
-                            weak_ptr_factory_.GetWeakPtr(), true));
+      FROM_HERE, base::BindOnce(&ThemeService::RemoveUnusedThemes,
+                                weak_ptr_factory_.GetWeakPtr(), true));
 }
 
 void ThemeService::FixInconsistentPreferencesIfNeeded() {}
@@ -691,10 +693,11 @@ SkColor ThemeService::GetSeparatorColor(SkColor tab_color,
   // However, if the frame is already very dark or very light, respectively,
   // this won't contrast sufficiently with the frame color, so we'll need to
   // reverse when we're lightening and darkening.
-  const bool lighten = color_utils::GetRelativeLuminance(tab_color) <
-                       color_utils::GetRelativeLuminance(frame_color);
-  SkColor separator_color =
-      lighten ? SK_ColorWHITE : color_utils::GetDarkestColor();
+  SkColor separator_color = SK_ColorWHITE;
+  if (color_utils::GetRelativeLuminance(tab_color) >=
+      color_utils::GetRelativeLuminance(frame_color)) {
+    separator_color = color_utils::GetColorWithMaxContrast(separator_color);
+  }
 
   SkAlpha alpha = color_utils::FindBlendValueForContrastRatio(
       frame_color, separator_color, frame_color, kContrastRatio, 0);
@@ -704,8 +707,7 @@ SkColor ThemeService::GetSeparatorColor(SkColor tab_color,
     return SkColorSetA(separator_color, alpha);
   }
 
-  separator_color =
-      color_utils::BlendTowardOppositeLuma(separator_color, SK_AlphaOPAQUE);
+  separator_color = color_utils::GetColorWithMaxContrast(separator_color);
 
   // If the above call failed to create sufficient contrast, the frame color is
   // already very dark or very light.  Since separators are only used when the
@@ -843,8 +845,9 @@ void ThemeService::OnExtensionServiceReady() {
 #endif
 
   base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-      FROM_HERE, base::Bind(&ThemeService::RemoveUnusedThemes,
-                            weak_ptr_factory_.GetWeakPtr(), false),
+      FROM_HERE,
+      base::BindOnce(&ThemeService::RemoveUnusedThemes,
+                     weak_ptr_factory_.GetWeakPtr(), false),
       base::TimeDelta::FromSeconds(kRemoveUnusedThemesStartupDelay));
 }
 
@@ -926,8 +929,8 @@ void ThemeService::OnThemeBuiltFromExtension(
 
   // Write the packed file to disk.
   extensions::GetExtensionFileTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&WritePackToDiskCallback, base::RetainedRef(pack),
-                            extension->path()));
+      FROM_HERE, base::BindOnce(&WritePackToDiskCallback,
+                                base::RetainedRef(pack), extension->path()));
 
   const std::string previous_theme_id = GetThemeID();
   const bool previous_using_system_theme = UsingSystemTheme();

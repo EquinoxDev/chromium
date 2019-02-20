@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/containers/unique_ptr_adapters.h"
+#include "base/feature_list.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -206,6 +207,7 @@ class WebRequestAPI : public BrowserContextKeyedAPI,
   // If this returns |true|, |callback| will eventually be invoked on the UI
   // thread.
   bool MaybeProxyAuthRequest(
+      content::BrowserContext* browser_context,
       net::AuthChallengeInfo* auth_info,
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       const content::GlobalRequestID& request_id,
@@ -479,9 +481,14 @@ class ExtensionWebRequestEventRouter {
 
   // Whether there is a listener matching the request that has
   // ExtraInfoSpec::EXTRA_HEADERS set.
-  bool HasExtraHeadersListener(void* browser_context,
-                               const extensions::InfoMap* extension_info_map,
-                               const WebRequestInfo* request);
+  bool HasExtraHeadersListenerForRequest(
+      void* browser_context,
+      const extensions::InfoMap* extension_info_map,
+      const WebRequestInfo* request);
+
+  // Whether there are any listeners for this context that have
+  // ExtraInfoSpec::EXTRA_HEADERS set.
+  bool HasAnyExtraHeadersListener(void* browser_context);
 
  private:
   friend class WebRequestAPI;
@@ -588,6 +595,14 @@ class ExtensionWebRequestEventRouter {
                      const RawListeners& listener_ids,
                      std::unique_ptr<WebRequestEventDetails> event_details);
 
+  void OnFrameDataReceived(
+      void* browser_context,
+      const WebRequestInfo* request,
+      std::unique_ptr<WebRequestEventDetails> event_details,
+      const InfoMap* extension_info_map,
+      std::unique_ptr<ListenerIDs> listener_ids,
+      const ExtensionApiFrameIdMap::FrameData& frame_data);
+
   void DispatchEventToListeners(
       void* browser_context,
       const InfoMap* extension_info_map,
@@ -690,6 +705,9 @@ class ExtensionWebRequestEventRouter {
   // Returns true if |request| was already signaled to some event handlers.
   bool WasSignaled(const WebRequestInfo& request) const;
 
+  // Helper for |HasAnyExtraHeadersListener()|.
+  bool HasAnyExtraHeadersListenerImpl(void* browser_context);
+
   // Get the number of listeners - for testing only.
   size_t GetListenerCountForTesting(void* browser_context,
                                     const std::string& event_name);
@@ -713,6 +731,10 @@ class ExtensionWebRequestEventRouter {
   // Keeps track of time spent waiting on extensions using the blocking
   // webRequest API.
   std::unique_ptr<ExtensionWebRequestTimeTracker> request_time_tracker_;
+
+  // The set of requests for which we are querying the frame data over the UI
+  // thread.
+  std::set<const WebRequestInfo*> pending_requests_for_frame_data_;
 
   CallbacksForPageLoad callbacks_for_page_load_;
 

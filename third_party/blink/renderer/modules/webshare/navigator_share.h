@@ -8,8 +8,8 @@
 #include "third_party/blink/public/platform/modules/webshare/webshare.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/navigator.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -36,6 +36,8 @@ class NavigatorShare final : public GarbageCollectedFinalized<NavigatorShare>,
   static NavigatorShare& From(Navigator&);
 
   // Navigator partial interface
+  bool canShare(ScriptState*, const ShareData*);
+  static bool canShare(ScriptState*, Navigator&, const ShareData*);
   ScriptPromise share(ScriptState*, const ShareData*);
   static ScriptPromise share(ScriptState*, Navigator&, const ShareData*);
 

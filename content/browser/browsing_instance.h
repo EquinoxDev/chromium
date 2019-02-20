@@ -10,18 +10,20 @@
 #include <string>
 #include <unordered_map>
 
-#include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "content/browser/isolation_context.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/render_process_host_observer.h"
 
 class GURL;
 
 namespace content {
+class RenderProcessHost;
 class SiteInstanceImpl;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +65,8 @@ class SiteInstanceImpl;
 //
 ///////////////////////////////////////////////////////////////////////////////
 class CONTENT_EXPORT BrowsingInstance final
-    : public base::RefCounted<BrowsingInstance> {
+    : public base::RefCounted<BrowsingInstance>,
+      public RenderProcessHostObserver {
  private:
   friend class base::RefCounted<BrowsingInstance>;
   friend class SiteInstanceImpl;
@@ -71,13 +74,28 @@ class CONTENT_EXPORT BrowsingInstance final
   FRIEND_TEST_ALL_PREFIXES(SiteInstanceTest,
                            OneSiteInstancePerSiteInBrowserContext);
 
+  // Return an ID of the next BrowsingInstance to be created.  This ID is
+  // guaranteed to be higher than any ID of an existing BrowsingInstance.  This
+  // does *not* increment the global counter used for assigning
+  // BrowsingInstance IDs: that happens only in the BrowsingInstance
+  // constructor.
+  static BrowsingInstanceId NextBrowsingInstanceId();
+
   // Create a new BrowsingInstance.
   explicit BrowsingInstance(BrowserContext* context);
 
-  ~BrowsingInstance();
+  ~BrowsingInstance() final;
+
+  // RenderProcessHostObserver implementation.
+  void RenderProcessHostDestroyed(RenderProcessHost* host) final;
 
   // Get the browser context to which this BrowsingInstance belongs.
   BrowserContext* browser_context() const { return browser_context_; }
+
+  //  Get the IsolationContext associated with this BrowsingInstance.  This can
+  //  be used to track this BrowsingInstance in other areas of the code, along
+  //  with any other state needed to make isolation decisions.
+  const IsolationContext& isolation_context() { return isolation_context_; }
 
   // Returns whether this BrowsingInstance has registered a SiteInstance for
   // the site of the given URL.
@@ -106,13 +124,25 @@ class CONTENT_EXPORT BrowsingInstance final
     active_contents_count_--;
   }
 
+  // Stores the process that should be used if a SiteInstance doesn't need
+  // a dedicated process.
+  void SetDefaultProcess(RenderProcessHost* default_process);
+  RenderProcessHost* default_process() const { return default_process_; }
+
   // Map of site to SiteInstance, to ensure we only have one SiteInstance per
   // site.
   typedef std::unordered_map<std::string, SiteInstanceImpl*> SiteInstanceMap;
 
+  // The next available browser-global BrowsingInstance ID.
+  static int next_browsing_instance_id_;
+
   // Common browser context to which all SiteInstances in this BrowsingInstance
   // must belong.
   BrowserContext* const browser_context_;
+
+  // The IsolationContext associated with this BrowsingInstance.  This will not
+  // change after the BrowsingInstance is constructed.
+  const IsolationContext isolation_context_;
 
   // Map of site to SiteInstance, to ensure we only have one SiteInstance per
   // site.  The site string should be the possibly_invalid_spec() of a GURL
@@ -125,6 +155,10 @@ class CONTENT_EXPORT BrowsingInstance final
 
   // Number of WebContentses currently using this BrowsingInstance.
   size_t active_contents_count_;
+
+  // The process to use for any SiteInstance in this BrowsingInstance that
+  // doesn't require a dedicated process.
+  RenderProcessHost* default_process_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingInstance);
 };

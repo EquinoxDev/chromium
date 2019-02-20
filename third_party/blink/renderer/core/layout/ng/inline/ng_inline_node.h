@@ -13,8 +13,8 @@
 
 namespace blink {
 
+class NGBlockBreakToken;
 class NGConstraintSpace;
-class NGInlineBreakToken;
 class NGInlineChildLayoutContext;
 class NGLayoutResult;
 class NGOffsetMapping;
@@ -64,6 +64,12 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
     return Data().ItemsData(is_first_line);
   }
 
+  // Clear associated fragments for LayoutObjects.
+  // They are associated when NGPaintFragment is constructed, but when clearing,
+  // NGInlineItem provides easier and faster logic.
+  static void ClearAssociatedFragments(const NGPhysicalFragment& fragment,
+                                       const NGBlockBreakToken* break_token);
+
   // Returns the DOM to text content offset mapping of this block. If it is not
   // computed before, compute and store it in NGInlineNodeData.
   // This funciton must be called with clean layout.
@@ -93,6 +99,7 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
     return GetLayoutBlockFlow()->CanContainFirstFormattedLine();
   }
 
+  bool UseFirstLineStyle() const;
   void CheckConsistency() const;
 
   String ToString() const;
@@ -115,8 +122,6 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   void ShapeTextForFirstLineIfNeeded(NGInlineNodeData*);
   void AssociateItemsWithInlines(NGInlineNodeData*);
 
-  void ClearAssociatedFragments(const NGInlineBreakToken*);
-
   bool MarkLineBoxesDirty(LayoutBlockFlow*);
 
   NGInlineNodeData* MutableData() {
@@ -125,6 +130,11 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   const NGInlineNodeData& Data() const {
     DCHECK(IsPrepareLayoutFinished() &&
            !GetLayoutBlockFlow()->NeedsCollectInlines());
+    return *ToLayoutBlockFlow(box_)->GetNGInlineNodeData();
+  }
+  // Same as |Data()| but can access even when |NeedsCollectInlines()| is set.
+  const NGInlineNodeData& MaybeDirtyData() const {
+    DCHECK(IsPrepareLayoutFinished());
     return *ToLayoutBlockFlow(box_)->GetNGInlineNodeData();
   }
   const NGInlineNodeData& EnsureData();

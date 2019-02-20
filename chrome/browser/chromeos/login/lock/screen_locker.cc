@@ -30,7 +30,6 @@
 #include "chrome/browser/chromeos/login/easy_unlock/easy_unlock_service.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/lock/views_screen_locker.h"
-#include "chrome/browser/chromeos/login/lock/webui_screen_locker.h"
 #include "chrome/browser/chromeos/login/login_auth_recorder.h"
 #include "chrome/browser/chromeos/login/quick_unlock/pin_backend.h"
 #include "chrome/browser/chromeos/login/quick_unlock/quick_unlock_factory.h"
@@ -42,11 +41,8 @@
 #include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/ash/login_screen_client.h"
 #include "chrome/browser/ui/ash/session_controller_client.h"
-#include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_provider.h"
-#include "chrome/browser/ui/webui/chromeos/login/screenlock_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/grit/browser_resources.h"
 #include "chrome/grit/generated_resources.h"
@@ -60,7 +56,6 @@
 #include "components/password_manager/core/browser/hash_password_manager.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/session_manager/core/session_manager_observer.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_type.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -200,36 +195,26 @@ void ScreenLocker::Init() {
 
   authenticator_ = UserSessionManager::GetInstance()->CreateAuthenticator(this);
   extended_authenticator_ = ExtendedAuthenticator::Create(this);
-  if (!ash::switches::IsUsingViewsLock()) {
-    web_ui_.reset(new WebUIScreenLocker(this));
-    delegate_ = web_ui_.get();
-    web_ui_->LockScreen();
 
-    // Ownership of |icon_image_source| is passed.
-    screenlock_icon_provider_ = std::make_unique<ScreenlockIconProvider>();
-    content::URLDataSource::Add(web_ui_->web_contents()->GetBrowserContext(),
-                                std::make_unique<ScreenlockIconSource>(
-                                    screenlock_icon_provider_->AsWeakPtr()));
-  } else {
-    // Create delegate that calls into the views-based lock screen via mojo.
-    views_screen_locker_ = std::make_unique<ViewsScreenLocker>(this);
-    delegate_ = views_screen_locker_.get();
+  // Create delegate that calls into the views-based lock screen via mojo.
+  views_screen_locker_ = std::make_unique<ViewsScreenLocker>(this);
+  delegate_ = views_screen_locker_.get();
 
-    // Create and display lock screen.
-    LoginScreenClient::Get()->login_screen()->ShowLockScreen(base::BindOnce(
-        [](ViewsScreenLocker* screen_locker, bool did_show) {
-          CHECK(did_show);
-          screen_locker->OnLockScreenReady();
+  // Create and display lock screen.
+  CHECK(LoginScreenClient::HasInstance());
+  LoginScreenClient::Get()->login_screen()->ShowLockScreen(base::BindOnce(
+      [](ViewsScreenLocker* screen_locker, bool did_show) {
+        CHECK(did_show);
+        screen_locker->OnLockScreenReady();
 
-          content::NotificationService::current()->Notify(
-              chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
-              content::NotificationService::AllSources(),
-              content::NotificationService::NoDetails());
-        },
-        views_screen_locker_.get()));
+        content::NotificationService::current()->Notify(
+            chrome::NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE,
+            content::NotificationService::AllSources(),
+            content::NotificationService::NoDetails());
+      },
+      views_screen_locker_.get()));
 
-    views_screen_locker_->Init();
-  }
+  views_screen_locker_->Init();
 
   // Start locking on ash side.
   SessionControllerClient::Get()->StartLock(base::BindOnce(
@@ -370,7 +355,6 @@ void ScreenLocker::Authenticate(const UserContext& user_context,
   unlock_attempt_type_ = AUTH_PASSWORD;
 
   authentication_start_time_ = base::Time::Now();
-  delegate_->SetPasswordInputEnabled(false);
   if (user_context.IsUsingPin())
     unlock_attempt_type_ = AUTH_PIN;
 
@@ -489,13 +473,12 @@ void ScreenLocker::Signout() {
 }
 
 void ScreenLocker::EnableInput() {
-  delegate_->SetPasswordInputEnabled(true);
+  // TODO(crbug.com/927498): Remove this.
 }
 
 void ScreenLocker::ShowErrorMessage(int error_msg_id,
                                     HelpAppLauncher::HelpTopic help_topic_id,
                                     bool sign_out_only) {
-  delegate_->SetPasswordInputEnabled(!sign_out_only);
   delegate_->ShowErrorMessage(error_msg_id, help_topic_id);
 }
 
@@ -589,6 +572,12 @@ void ScreenLocker::Hide() {
   }));
 }
 
+void ScreenLocker::RefreshPinAndFingerprintTimeout() {
+  MaybeDisablePinAndFingerprintFromTimeout(
+      "RefreshPinAndFingerprintTimeout",
+      user_manager::UserManager::Get()->GetPrimaryUser()->GetAccountId());
+}
+
 // static
 void ScreenLocker::ScheduleDeletion() {
   // Avoid possible multiple calls.
@@ -614,6 +603,10 @@ void ScreenLocker::SaveSyncPasswordHash(const UserContext& user_context) {
   Profile* profile = chromeos::ProfileHelper::Get()->GetProfileByUser(user);
   if (profile)
     login::SaveSyncPasswordDataToProfile(user_context, profile);
+}
+
+bool ScreenLocker::IsAuthEnabledForUser(const AccountId& account_id) {
+  return !base::ContainsKey(users_with_disabled_auth_, account_id);
 }
 
 void ScreenLocker::SetAuthenticatorsForTesting(
@@ -709,6 +702,8 @@ void ScreenLocker::OnEnrollScanDone(device::mojom::ScanResult scan_result,
 void ScreenLocker::OnAuthScanDone(
     device::mojom::ScanResult scan_result,
     const base::flat_map<std::string, std::vector<std::string>>& matches) {
+  RefreshPinAndFingerprintTimeout();
+
   VLOG(1) << "Receive fingerprint auth scan result. scan_result="
           << scan_result;
   unlock_attempt_type_ = AUTH_FINGERPRINT;

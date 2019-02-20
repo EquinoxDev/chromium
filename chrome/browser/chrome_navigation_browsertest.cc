@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_timeouts.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -23,6 +25,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/network_session_configurator/common/network_switches.h"
 #include "components/prefs/pref_service.h"
+#include "components/ukm/test_ukm_recorder.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/public/browser/download_manager_delegate.h"
 #include "content/public/browser/navigation_entry.h"
@@ -45,12 +48,19 @@
 #include "extensions/test/test_extension_dir.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "net/dns/mock_host_resolver.h"
+#include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/network/public/cpp/features.h"
+#include "third_party/blink/public/platform/web_feature.mojom-shared.h"
 
 class ChromeNavigationBrowserTest : public InProcessBrowserTest {
  public:
   ChromeNavigationBrowserTest() {}
   ~ChromeNavigationBrowserTest() override {}
+
+  void SetUp() override {
+    scoped_feature_list_.InitAndEnableFeature(ukm::kUkmFeature);
+    InProcessBrowserTest::SetUp();
+  }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
     // Backgrounded renderer processes run at a lower priority, causing the
@@ -66,6 +76,11 @@ class ChromeNavigationBrowserTest : public InProcessBrowserTest {
     host_resolver()->AddRule("*", "127.0.0.1");
   }
 
+  void PreRunTestOnMainThread() override {
+    InProcessBrowserTest::PreRunTestOnMainThread();
+    test_ukm_recorder_ = std::make_unique<ukm::TestAutoSetUkmRecorder>();
+  }
+
   void StartServerWithExpiredCert() {
     expired_https_server_.reset(
         new net::EmbeddedTestServer(net::EmbeddedTestServer::TYPE_HTTPS));
@@ -79,8 +94,11 @@ class ChromeNavigationBrowserTest : public InProcessBrowserTest {
     return expired_https_server_.get();
   }
 
+  std::unique_ptr<ukm::TestAutoSetUkmRecorder> test_ukm_recorder_;
+
  private:
   std::unique_ptr<net::EmbeddedTestServer> expired_https_server_;
+  base::test::ScopedFeatureList scoped_feature_list_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNavigationBrowserTest);
 };
@@ -419,7 +437,7 @@ class ChromeNavigationPortMappedBrowserTest : public InProcessBrowserTest {
     // the |embedded_test_server| uses. It is required to test with potentially
     // malformed URLs.
     std::string port =
-        base::IntToString(embedded_test_server()->host_port_pair().port());
+        base::NumberToString(embedded_test_server()->host_port_pair().port());
     command_line->AppendSwitchASCII(
         "host-resolver-rules",
         "MAP * 127.0.0.1:" + port + ", EXCLUDE 127.0.0.1*");
@@ -990,7 +1008,7 @@ IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
       browser()->tab_strip_model()->GetActiveWebContents();
   const char* kScriptFormat =
       "window.domAutomationController.send(!!window.open('%s'));";
-  GURL popup_url = embedded_test_server()->GetURL("a.com", "/title1.html");
+  GURL popup_url = embedded_test_server()->GetURL("b.com", "/title1.html");
   content::TestNavigationObserver popup_waiter(nullptr, 1);
   popup_waiter.StartWatchingNewWebContents();
   EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
@@ -1013,12 +1031,10 @@ IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
       popup,
       "window.opener.location ='data:html/text;base64,'+btoa('payload');"));
   observer.WaitForFinished();
-  histograms.ExpectUniqueSample(
-      "Navigation.DownloadPolicy",
-      // TODO(csharrison): Update this to avoid using hardcoded number, since
-      // right now NavigationDownloadPolicy is not exposed publicly through
-      // //content.
-      4 /* NavigationDownloadPolicy::kAllowOpenerNoGesture */, 1);
+  histograms.ExpectBucketCount(
+      "Blink.UseCounter.Features",
+      blink::mojom::WebFeature::kOpenerNavigationDownloadCrossOriginNoGesture,
+      1);
 
   // Delete any pending download.
   std::vector<download::DownloadItem*> download_items;
@@ -1078,6 +1094,71 @@ IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
   EXPECT_NE(main_contents, open_web_contents);
   EXPECT_NE(link_web_contents, open_web_contents);
   EXPECT_TRUE(open_web_contents->GetRenderWidgetHostView()->HasFocus());
+}
+
+// Tests the ukm entry logged when the navigation entry is marked as skippable
+// on back/forward button on doing a renderer initiated navigation without ever
+// getting a user activation.
+IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
+                       NoUserActivationSetSkipOnBackForward) {
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  ui_test_utils::NavigateToURL(browser(), skippable_url);
+
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+
+  // Navigate to a new document from the renderer without a user gesture.
+  content::WebContents* main_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  content::TestNavigationObserver observer(main_contents);
+  EXPECT_TRUE(ExecuteScriptWithoutUserGesture(
+      main_contents, "location = '" + redirected_url.spec() + "';"));
+  observer.Wait();
+  EXPECT_EQ(redirected_url, main_contents->GetLastCommittedURL());
+
+  // Verify UKM.
+  using Entry = ukm::builders::HistoryManipulationIntervention;
+  const auto& ukm_entries =
+      test_ukm_recorder_->GetEntriesByName(Entry::kEntryName);
+  EXPECT_EQ(1u, ukm_entries.size());
+  test_ukm_recorder_->ExpectEntrySourceHasUrl(ukm_entries[0], skippable_url);
+
+  // Verify the metric where user tries to go specifically to a skippable entry
+  // using long press.
+  base::HistogramTester histogram;
+  std::unique_ptr<BackForwardMenuModel> back_model(
+      std::make_unique<BackForwardMenuModel>(
+          browser(), BackForwardMenuModel::ModelType::kBackward));
+  back_model->set_test_web_contents(main_contents);
+  back_model->ActivatedAt(0);
+  histogram.ExpectBucketCount(
+      "Navigation.BackForward.NavigatingToEntryMarkedToBeSkipped", true, 1);
+}
+
+// Same as above except the navigation is cross-site.
+IN_PROC_BROWSER_TEST_F(ChromeNavigationBrowserTest,
+                       NoUserActivationSetSkipOnBackForwardCrossSite) {
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  ui_test_utils::NavigateToURL(browser(), skippable_url);
+
+  GURL redirected_url(
+      embedded_test_server()->GetURL("foo.com", "/title2.html"));
+  {
+    // Navigate to a new document from the renderer without a user gesture.
+    content::WebContents* main_contents =
+        browser()->tab_strip_model()->GetActiveWebContents();
+    content::TestNavigationObserver observer(main_contents);
+    EXPECT_TRUE(ExecuteScriptWithoutUserGesture(
+        main_contents, "location = '" + redirected_url.spec() + "';"));
+    observer.Wait();
+    EXPECT_EQ(redirected_url, main_contents->GetLastCommittedURL());
+  }
+
+  // Verify UKM.
+  using Entry = ukm::builders::HistoryManipulationIntervention;
+  const auto& ukm_entries =
+      test_ukm_recorder_->GetEntriesByName(Entry::kEntryName);
+  EXPECT_EQ(1u, ukm_entries.size());
+  test_ukm_recorder_->ExpectEntrySourceHasUrl(ukm_entries[0], skippable_url);
 }
 
 // TODO(csharrison): These tests should become tentative WPT, once the feature
@@ -1189,4 +1270,79 @@ IN_PROC_BROWSER_TEST_F(NavigationConsumingTest, TargetNavigationFocus) {
     new_tab_observer.Wait();
   }
   EXPECT_EQ(new_contents, browser()->tab_strip_model()->GetActiveWebContents());
+}
+
+class HistoryManipulationInterventionBrowserTest
+    : public ChromeNavigationBrowserTest {
+ protected:
+  void SetUp() override {
+    feature_list_.InitAndEnableFeature(
+        features::kHistoryManipulationIntervention);
+    ChromeNavigationBrowserTest::SetUp();
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+// Tests that chrome::GoBack does nothing if all the previous entries are marked
+// as skippable and the back button is disabled.
+IN_PROC_BROWSER_TEST_F(HistoryManipulationInterventionBrowserTest,
+                       AllEntriesSkippableBackButtonDisabled) {
+  // Create a new tab to avoid confusion from having a NTP navigation entry.
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(), skippable_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
+
+  content::WebContents* main_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Navigate to a new document from the renderer without a user gesture.
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  content::TestNavigationManager manager(main_contents, redirected_url);
+  EXPECT_TRUE(ExecuteScriptWithoutUserGesture(
+      main_contents, "location = '" + redirected_url.spec() + "';"));
+  manager.WaitForNavigationFinished();
+  ASSERT_EQ(redirected_url, main_contents->GetLastCommittedURL());
+  ASSERT_EQ(2, main_contents->GetController().GetEntryCount());
+
+  // Attempting to go back should do nothing.
+  ASSERT_FALSE(chrome::CanGoBack(browser()));
+  chrome::GoBack(browser(), WindowOpenDisposition::CURRENT_TAB);
+  ASSERT_EQ(redirected_url, main_contents->GetLastCommittedURL());
+
+  // Back command should be disabled.
+  EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_BACK));
+}
+
+// Tests that chrome::GoBack is successful if there is at least one entry not
+// marked as skippable and the back button should be enabled.
+IN_PROC_BROWSER_TEST_F(HistoryManipulationInterventionBrowserTest,
+                       AllEntriesNotSkippableBackButtonEnabled) {
+  // Navigate to a URL in the same tab. Note that at the start of the test this
+  // tab already has about:blank.
+  GURL skippable_url(embedded_test_server()->GetURL("/title1.html"));
+  ui_test_utils::NavigateToURL(browser(), skippable_url);
+
+  content::WebContents* main_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Navigate to a new document from the renderer without a user gesture.
+  GURL redirected_url(embedded_test_server()->GetURL("/title2.html"));
+  content::TestNavigationManager manager(main_contents, redirected_url);
+  EXPECT_TRUE(ExecuteScriptWithoutUserGesture(
+      main_contents, "location = '" + redirected_url.spec() + "';"));
+  manager.WaitForNavigationFinished();
+  ASSERT_EQ(redirected_url, main_contents->GetLastCommittedURL());
+  ASSERT_EQ(3, main_contents->GetController().GetEntryCount());
+
+  // Back command should be enabled.
+  EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_BACK));
+
+  // Attempting to go back should skip |skippable_url| and go to about:blank.
+  ASSERT_TRUE(chrome::CanGoBack(browser()));
+  chrome::GoBack(browser(), WindowOpenDisposition::CURRENT_TAB);
+  content::WaitForLoadStop(main_contents);
+  ASSERT_EQ(GURL("about:blank"), main_contents->GetLastCommittedURL());
 }

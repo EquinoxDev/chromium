@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -167,9 +168,9 @@ bool SynchronousLayerTreeFrameSink::BindToClient(
                                    ? synthetic_begin_frame_source_.get()
                                    : external_begin_frame_source_.get());
   client_->SetMemoryPolicy(memory_policy_);
-  client_->SetTreeActivationCallback(
-      base::Bind(&SynchronousLayerTreeFrameSink::DidActivatePendingTree,
-                 base::Unretained(this)));
+  client_->SetTreeActivationCallback(base::BindRepeating(
+      &SynchronousLayerTreeFrameSink::DidActivatePendingTree,
+      base::Unretained(this)));
   registry_->RegisterLayerTreeFrameSink(routing_id_, this);
 
   constexpr bool root_support_is_root = true;
@@ -214,7 +215,7 @@ void SynchronousLayerTreeFrameSink::DetachFromClient() {
   if (sync_client_)
     sync_client_->SinkDestroyed();
   registry_->UnregisterLayerTreeFrameSink(routing_id_, this);
-  client_->SetTreeActivationCallback(base::Closure());
+  client_->SetTreeActivationCallback(base::RepeatingClosure());
   root_support_.reset();
   child_support_.reset();
   software_output_surface_ = nullptr;
@@ -324,7 +325,8 @@ void SynchronousLayerTreeFrameSink::SubmitCompositorFrame(
             viz::SurfaceId(
                 kChildFrameSinkId,
                 child_local_surface_id_allocation_.local_surface_id())),
-        SK_ColorWHITE, false);
+        SK_ColorWHITE, false /* stretch_content_to_fill_bounds */,
+        false /* ignores_input_event */);
 
     child_support_->SubmitCompositorFrame(
         child_local_surface_id_allocation_.local_surface_id(),

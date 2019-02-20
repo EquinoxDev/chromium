@@ -9,8 +9,8 @@
 
 #include "base/barrier_closure.h"
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
-#include "base/containers/hash_tables.h"
 #include "base/containers/queue.h"
 #include "base/json/json_reader.h"
 #include "base/process/process_handle.h"
@@ -190,7 +190,8 @@ class CookieRetriever : public base::RefCountedThreadSafe<CookieRetriever> {
  protected:
   virtual ~CookieRetriever() {}
 
-  void GotCookies(const net::CookieList& cookie_list) {
+  void GotCookies(const net::CookieList& cookie_list,
+                  const net::CookieStatusList& excluded_cookies) {
     DCHECK_CURRENTLY_ON(BrowserThread::IO);
     for (const net::CanonicalCookie& cookie : cookie_list) {
       std::string key = base::StringPrintf(
@@ -333,7 +334,8 @@ void DeleteSelectedCookiesOnIO(net::URLRequestContextGetter* context_getter,
                                const std::string& normalized_domain,
                                const std::string& path,
                                base::OnceClosure callback,
-                               const net::CookieList& cookie_list) {
+                               const net::CookieList& cookie_list,
+                               const net::CookieStatusList& excluded_cookies) {
   DCHECK(!base::FeatureList::IsEnabled(network::features::kNetworkService));
 
   net::URLRequestContext* request_context =
@@ -730,7 +732,7 @@ bool GetPostData(const network::ResourceRequestBody& request_body,
   if (elements->empty())
     return false;
   for (const auto& element : *elements) {
-    if (element.type() != network::DataElement::TYPE_BYTES)
+    if (element.type() != network::mojom::DataElementType::kBytes)
       return false;
     result->append(element.bytes(), element.length());
   }
@@ -1798,7 +1800,6 @@ void NetworkHandler::OnSignedExchangeReceived(
     signed_exchange_info->SetHeader(
         Network::SignedExchangeHeader::Create()
             .SetRequestUrl(envelope->request_url().url.spec())
-            .SetRequestMethod(envelope->request_method())
             .SetResponseCode(envelope->response_code())
             .SetResponseHeaders(Object::fromValue(headers_dict.get(), nullptr))
             .SetSignatures(std::move(signatures))

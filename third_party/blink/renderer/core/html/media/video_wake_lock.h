@@ -28,19 +28,18 @@ class HTMLVideoElement;
 class CORE_EXPORT VideoWakeLock final : public NativeEventListener,
                                         public PageVisibilityObserver,
                                         public RemotePlaybackObserver {
-  USING_GARBAGE_COLLECTED_MIXIN(VideoWakeLock)
+  USING_GARBAGE_COLLECTED_MIXIN(VideoWakeLock);
 
  public:
   explicit VideoWakeLock(HTMLVideoElement&);
 
-  void Trace(blink::Visitor*) final;
+  void Trace(Visitor*) final;
 
   // EventListener implementation.
   void Invoke(ExecutionContext*, Event*) final;
 
   // RemotePlaybackObserver implementation.
   void OnRemotePlaybackStateChanged(WebRemotePlaybackState) final;
-  void OnRemotePlaybackAvailabilityChanged(WebRemotePlaybackAvailability) final;
 
   bool active_for_tests() const { return active_; }
 

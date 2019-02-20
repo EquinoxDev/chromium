@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "content/browser/renderer_host/media/service_launched_video_capture_device.h"
+#include "base/bind.h"
 
 namespace content {
 
@@ -43,6 +44,9 @@ void ServiceLaunchedVideoCaptureDevice::SetPhotoOptions(
 void ServiceLaunchedVideoCaptureDevice::TakePhoto(
     media::VideoCaptureDevice::TakePhotoCallback callback) {
   DCHECK(sequence_checker_.CalledOnValidSequence());
+  TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
+                       "ServiceLaunchedVideoCaptureDevice::TakePhoto",
+                       TRACE_EVENT_SCOPE_PROCESS);
   device_->TakePhoto(
       base::BindOnce(&ServiceLaunchedVideoCaptureDevice::OnTakePhotoResponse,
                      base::Unretained(this), std::move(callback)));
@@ -59,8 +63,7 @@ void ServiceLaunchedVideoCaptureDevice::ResumeDevice() {
 }
 
 void ServiceLaunchedVideoCaptureDevice::RequestRefreshFrame() {
-  DCHECK(sequence_checker_.CalledOnValidSequence());
-  device_->RequestRefreshFrame();
+  // Ignore this call.
 }
 
 void ServiceLaunchedVideoCaptureDevice::SetDesktopCaptureWindowIdAsync(
@@ -75,8 +78,7 @@ void ServiceLaunchedVideoCaptureDevice::SetDesktopCaptureWindowIdAsync(
 void ServiceLaunchedVideoCaptureDevice::OnUtilizationReport(
     int frame_feedback_id,
     double utilization) {
-  DCHECK(sequence_checker_.CalledOnValidSequence());
-  device_->OnReceiverReportingUtilization(frame_feedback_id, utilization);
+  // Ignore this call.
 }
 
 void ServiceLaunchedVideoCaptureDevice::OnLostConnectionToDevice() {

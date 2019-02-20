@@ -7,81 +7,124 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/threading/sequenced_task_runner_handle.h"
 #include "media/learning/impl/extra_trees_trainer.h"
-#include "media/learning/impl/random_tree_trainer.h"
+#include "media/learning/impl/lookup_table_trainer.h"
 
 namespace media {
 namespace learning {
 
-LearningTaskControllerImpl::LearningTaskControllerImpl(const LearningTask& task)
-    : task_(task), training_data_(std::make_unique<TrainingData>()) {
+LearningTaskControllerImpl::LearningTaskControllerImpl(
+    const LearningTask& task,
+    std::unique_ptr<DistributionReporter> reporter,
+    SequenceBoundFeatureProvider feature_provider)
+    : task_(task),
+      training_data_(std::make_unique<TrainingData>()),
+      feature_provider_(std::move(feature_provider)),
+      reporter_(std::move(reporter)),
+      task_runner_(base::SequencedTaskRunnerHandle::Get()) {
   switch (task_.model) {
     case LearningTask::Model::kExtraTrees:
-      training_cb_ = base::BindRepeating(
-          [](const LearningTask& task, TrainingData training_data,
-             TrainedModelCB model_cb) {
-            ExtraTreesTrainer trainer;
-            std::move(model_cb).Run(trainer.Train(task, training_data));
-          },
-          task_);
+      trainer_ = std::make_unique<ExtraTreesTrainer>();
       break;
-    case LearningTask::Model::kRandomForest:
-      // TODO(liberato): forest!
-      training_cb_ = RandomTreeTrainer::GetTrainingAlgorithmCB(task_);
+    case LearningTask::Model::kLookupTable:
+      trainer_ = std::make_unique<LookupTableTrainer>();
       break;
   }
-
-  // TODO(liberato): Record via UMA based on the task name.
-  accuracy_reporting_cb_ =
-      base::BindRepeating([](const LearningTask&, bool is_correct) {});
 }
 
 LearningTaskControllerImpl::~LearningTaskControllerImpl() = default;
 
-void LearningTaskControllerImpl::AddExample(const TrainingExample& example) {
-  // TODO(liberato): do we ever trim older examples?
-  training_data_->push_back(example);
+void LearningTaskControllerImpl::AddExample(const LabelledExample& example) {
+  if (feature_provider_) {
+    // TODO(liberato): SequenceBound should make this easier.
+    feature_provider_.Post(
+        FROM_HERE, &FeatureProvider::AddFeatures, example.features,
+        base::BindOnce(&LearningTaskControllerImpl::OnFeaturesReadyTrampoline,
+                       task_runner_, AsWeakPtr(), example));
+  } else {
+    AddFinishedExample(example);
+  }
+}
 
-  // Once we have a model, see if we'd get |example| correct.
-  if (model_) {
-    TargetDistribution distribution =
-        model_->PredictDistribution(example.features);
-
-    TargetValue predicted_value;
-    const bool is_correct = distribution.FindSingularMax(&predicted_value) &&
-                            predicted_value == example.target_value;
-    accuracy_reporting_cb_.Run(task_, is_correct);
-    // TODO(liberato): record entropy / not representable?
+// static
+void LearningTaskControllerImpl::OnFeaturesReadyTrampoline(
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    base::WeakPtr<LearningTaskControllerImpl> weak_this,
+    LabelledExample example,
+    FeatureVector features) {
+  if (!task_runner->RunsTasksInCurrentSequence()) {
+    task_runner->PostTask(
+        FROM_HERE, base::BindOnce(&LearningTaskControllerImpl::OnFeaturesReady,
+                                  std::move(weak_this), std::move(example),
+                                  std::move(features)));
+    return;
   }
 
-  // Train every time we get a multiple of |data_set_size|.
-  // TODO(liberato): weight might go up by more than one.
-  if ((training_data_->total_weight() % task_.min_data_set_size) != 0)
+  if (weak_this)
+    weak_this->OnFeaturesReady(std::move(example), std::move(features));
+}
+
+void LearningTaskControllerImpl::OnFeaturesReady(LabelledExample example,
+                                                 FeatureVector features) {
+  example.features = std::move(features);
+  AddFinishedExample(example);
+}
+
+void LearningTaskControllerImpl::AddFinishedExample(LabelledExample example) {
+  if (training_data_->size() >= task_.max_data_set_size) {
+    // Replace a random example.  We don't necessarily want to replace the
+    // oldest, since we don't necessarily want to enforce an ad-hoc recency
+    // constraint here.  That's a different issue.
+    (*training_data_)[rng()->Generate(training_data_->size())] = example;
+  } else {
+    training_data_->push_back(example);
+  }
+  // Either way, we have one more example that we haven't used for training yet.
+  num_untrained_examples_++;
+
+  // Once we have a model, see if we'd get |example| correct.
+  if (model_ && reporter_) {
+    TargetDistribution predicted =
+        model_->PredictDistribution(example.features);
+
+    TargetDistribution observed;
+    observed += example.target_value;
+    reporter_->GetPredictionCallback(observed).Run(predicted);
+  }
+
+  // Can't train more than one model concurrently.
+  if (training_is_in_progress_)
     return;
+
+  // Train every time we get enough new examples.  Note that this works even if
+  // we are replacing old examples rather than adding new ones.
+  double frac = ((double)num_untrained_examples_) / training_data_->size();
+  if (frac < task_.min_new_data_fraction)
+    return;
+
+  num_untrained_examples_ = 0;
 
   TrainedModelCB model_cb =
       base::BindOnce(&LearningTaskControllerImpl::OnModelTrained, AsWeakPtr());
-  // TODO(liberato): Post to a background task runner.
-  training_cb_.Run(*training_data_.get(), std::move(model_cb));
-
-  // TODO(liberato): replace |training_data_| and merge them once the model is
-  // trained.  Else, new examples will change the data during training.  For
-  // now, training is synchronous, so it's okay as it is.
+  training_is_in_progress_ = true;
+  // Note that this copies the training data, so it's okay if we add more
+  // examples to our copy before this returns.
+  // TODO(liberato): Post to a background task runner, and bind |model_cb| to
+  // the current one.  Be careful about ownership if we invalidate |trainer_|
+  // on this thread.  Be sure to post destruction to that sequence.
+  trainer_->Train(task_, *training_data_, std::move(model_cb));
 }
 
 void LearningTaskControllerImpl::OnModelTrained(std::unique_ptr<Model> model) {
+  DCHECK(training_is_in_progress_);
+  training_is_in_progress_ = false;
   model_ = std::move(model);
-  // TODO(liberato): record oob results.
 }
 
-void LearningTaskControllerImpl::SetTrainingCBForTesting(
-    TrainingAlgorithmCB cb) {
-  training_cb_ = std::move(cb);
-}
-
-void LearningTaskControllerImpl::SetAccuracyReportingCBForTesting(
-    AccuracyReportingCB cb) {
-  accuracy_reporting_cb_ = std::move(cb);
+void LearningTaskControllerImpl::SetTrainerForTesting(
+    std::unique_ptr<TrainingAlgorithm> trainer) {
+  trainer_ = std::move(trainer);
 }
 
 }  // namespace learning

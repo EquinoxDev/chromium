@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -47,6 +48,7 @@ LocalCardMigrationDialogControllerImpl::
 
 void LocalCardMigrationDialogControllerImpl::ShowOfferDialog(
     std::unique_ptr<base::DictionaryValue> legal_message,
+    const std::string& user_email,
     const std::vector<MigratableCreditCard>& migratable_credit_cards,
     AutofillClient::LocalCardMigrationCallback start_migrating_cards_callback) {
   if (local_card_migration_dialog_)
@@ -67,6 +69,7 @@ void LocalCardMigrationDialogControllerImpl::ShowOfferDialog(
       CreateLocalCardMigrationDialogView(this, web_contents());
   start_migrating_cards_callback_ = std::move(start_migrating_cards_callback);
   migratable_credit_cards_ = migratable_credit_cards;
+  user_email_ = user_email;
   local_card_migration_dialog_->ShowDialog();
   UpdateIcon();
   dialog_is_visible_duration_timer_ = base::ElapsedTimer();
@@ -144,6 +147,11 @@ const base::string16& LocalCardMigrationDialogControllerImpl::GetTipMessage()
   return tip_message_;
 }
 
+const std::string& LocalCardMigrationDialogControllerImpl::GetUserEmail()
+    const {
+  return user_email_;
+}
+
 void LocalCardMigrationDialogControllerImpl::OnSaveButtonClicked(
     const std::vector<std::string>& selected_cards_guids) {
   AutofillMetrics::LogLocalCardMigrationDialogUserSelectionPercentageMetric(
@@ -203,13 +211,9 @@ void LocalCardMigrationDialogControllerImpl::DeleteCard(
   DCHECK(delete_local_card_callback_);
   delete_local_card_callback_.Run(deleted_card_guid);
 
-  migratable_credit_cards_.erase(
-      std::remove_if(migratable_credit_cards_.begin(),
-                     migratable_credit_cards_.end(),
-                     [&](const auto& card) {
-                       return card.credit_card().guid() == deleted_card_guid;
-                     }),
-      migratable_credit_cards_.end());
+  base::EraseIf(migratable_credit_cards_, [&](const auto& card) {
+    return card.credit_card().guid() == deleted_card_guid;
+  });
 
   if (!HasFailedCard()) {
     view_state_ = LocalCardMigrationDialogState::kFinished;

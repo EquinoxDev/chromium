@@ -35,7 +35,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/text_resource_decoder_options.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 
 namespace blink {
@@ -182,9 +181,10 @@ class PLATFORM_EXPORT FetchParameters {
   // Client LoFi preview bit.
   void SetClientLoFiPlaceholder();
 
-  // Configures the request to load an image as a placeholder and sets the
-  // lazy image load bit.
+  // Configures the request to load an image as a placeholder or defers the
+  // image and sets the lazy image load bit.
   void SetLazyImagePlaceholder();
+  void SetLazyImageDeferred();
 
   // Configures the request to load an image placeholder if the request is
   // eligible (e.g. the url's protocol is HTTP, etc.). If this request is

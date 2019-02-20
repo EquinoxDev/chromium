@@ -7,6 +7,7 @@
 #include "ash/media/media_notification_constants.h"
 #include "ash/media/media_notification_view.h"
 #include "ash/public/cpp/notification_utils.h"
+#include "base/bind.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "services/media_session/public/mojom/constants.mojom.h"
@@ -39,9 +40,9 @@ MediaNotificationItem::MediaNotificationItem(
       session_info_(std::move(session_info)) {
   // Bind an observer to the associated media session.
   if (media_controller_ptr_.is_bound()) {
-    media_session::mojom::MediaSessionObserverPtr media_session_observer;
-    observer_binding_.Bind(mojo::MakeRequest(&media_session_observer));
-    media_controller_ptr_->AddObserver(std::move(media_session_observer));
+    media_session::mojom::MediaControllerObserverPtr media_controller_observer;
+    observer_binding_.Bind(mojo::MakeRequest(&media_controller_observer));
+    media_controller_ptr_->AddObserver(std::move(media_controller_observer));
   }
 
   MaybeHideOrShowNotification();
@@ -84,7 +85,6 @@ void MediaNotificationItem::SetView(MediaNotificationView* view) {
   view_ = view;
 
   if (view) {
-    DCHECK(!session_info_.is_null());
     view_->UpdateWithMediaSessionInfo(session_info_);
     view_->UpdateWithMediaMetadata(session_metadata_);
     view_->UpdateWithMediaActions(session_actions_);
@@ -98,7 +98,7 @@ void MediaNotificationItem::FlushForTesting() {
 void MediaNotificationItem::MaybeHideOrShowNotification() {
   // If the |is_controllable| bit is set in MediaSessionInfo then we should show
   // a media notification.
-  if (!session_info_->is_controllable) {
+  if (!session_info_ || !session_info_->is_controllable) {
     HideNotification();
     return;
   }
@@ -157,6 +157,8 @@ void MediaNotificationItem::OnNotificationClicked(
       break;
     case MediaSessionAction::kStop:
       media_controller_ptr_->Stop();
+      break;
+    case MediaSessionAction::kSkipAd:
       break;
   }
 }

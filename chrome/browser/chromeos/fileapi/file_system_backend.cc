@@ -136,7 +136,7 @@ void FileSystemBackend::ResolveURL(const storage::FileSystemURL& url,
     // Not under a mount point, so return an error, since the root is not
     // accessible.
     GURL root_url = GURL(storage::GetExternalFileSystemRootURIString(
-        url.origin(), std::string()));
+        url.origin().GetURL(), std::string()));
     std::move(callback).Run(root_url, std::string(),
                             base::File::FILE_ERROR_SECURITY);
     return;
@@ -145,7 +145,7 @@ void FileSystemBackend::ResolveURL(const storage::FileSystemURL& url,
   std::string name;
   // Construct a URL restricted to the found mount point.
   std::string root_url =
-      storage::GetExternalFileSystemRootURIString(url.origin(), id);
+      storage::GetExternalFileSystemRootURIString(url.origin().GetURL(), id);
 
   // For removable and archives, the file system root is the external mount
   // point plus the inner mount point.
@@ -224,7 +224,7 @@ bool FileSystemBackend::IsAccessAllowed(
     return false;
 
   // If there is no origin set, then it's an internal access.
-  if (url.origin().is_empty())
+  if (url.origin().opaque())
     return true;
 
   const std::string& extension_id = url.origin().host();
@@ -440,10 +440,9 @@ FileSystemBackend::CreateFileStreamWriter(
           url, offset, context);
     case storage::kFileSystemTypeNativeLocal:
     case storage::kFileSystemTypeDriveFs:
-      return std::unique_ptr<storage::FileStreamWriter>(
-          storage::FileStreamWriter::CreateForLocalFile(
-              context->default_file_task_runner(), url.path(), offset,
-              storage::FileStreamWriter::OPEN_EXISTING_FILE));
+      return storage::FileStreamWriter::CreateForLocalFile(
+          context->default_file_task_runner(), url.path(), offset,
+          storage::FileStreamWriter::OPEN_EXISTING_FILE);
     case storage::kFileSystemTypeDeviceMediaAsFileStorage:
       return mtp_delegate_->CreateFileStreamWriter(url, offset, context);
     // Read only file systems.

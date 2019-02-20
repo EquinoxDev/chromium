@@ -5,12 +5,14 @@
 #include "net/quic/quic_chromium_client_session.h"
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
 #include "net/base/test_completion_callback.h"
 #include "net/cert/cert_verify_result.h"
@@ -44,6 +46,7 @@
 #include "net/third_party/quic/core/http/quic_client_promised_info.h"
 #include "net/third_party/quic/core/quic_connection_id.h"
 #include "net/third_party/quic/core/quic_packet_writer.h"
+#include "net/third_party/quic/core/quic_utils.h"
 #include "net/third_party/quic/core/tls_client_handshaker.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_test.h"
@@ -54,7 +57,7 @@
 #include "net/third_party/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quic/test_tools/simple_quic_framer.h"
-#include "net/third_party/spdy/core/spdy_test_utils.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_test_utils.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -113,13 +116,13 @@ class QuicChromiumClientSessionTest
                      SocketTag()),
         destination_(kServerHostname, kServerPort),
         client_maker_(version_,
-                      quic::EmptyQuicConnectionId(),
+                      quic::QuicUtils::CreateRandomConnectionId(&random_),
                       &clock_,
                       kServerHostname,
                       quic::Perspective::IS_CLIENT,
                       client_headers_include_h2_stream_dependency_),
         server_maker_(version_,
-                      quic::EmptyQuicConnectionId(),
+                      quic::QuicUtils::CreateRandomConnectionId(&random_),
                       &clock_,
                       kServerHostname,
                       quic::Perspective::IS_SERVER,
@@ -147,7 +150,7 @@ class QuicChromiumClientSessionTest
     QuicChromiumPacketWriter* writer = new net::QuicChromiumPacketWriter(
         socket.get(), base::ThreadTaskRunnerHandle::Get().get());
     quic::QuicConnection* connection = new quic::QuicConnection(
-        quic::EmptyQuicConnectionId(),
+        quic::QuicUtils::CreateRandomConnectionId(&random_),
         quic::QuicSocketAddress(quic::QuicSocketAddressImpl(kIpEndPoint)),
         &helper_, &alarm_factory_, writer, true, quic::Perspective::IS_CLIENT,
         quic::test::SupportedVersions(
@@ -159,18 +162,20 @@ class QuicChromiumClientSessionTest
         base::WrapUnique(static_cast<QuicServerInfo*>(nullptr)), session_key_,
         /*require_confirmation=*/false, migrate_session_early_v2_,
         /*migrate_session_on_network_change_v2=*/false,
-        /*go_away_on_path_degrading*/ false,
         /*defaulet_network=*/NetworkChangeNotifier::kInvalidNetworkHandle,
+        base::TimeDelta::FromSeconds(kDefaultIdleSessionMigrationPeriodSeconds),
         base::TimeDelta::FromSeconds(kMaxTimeOnNonDefaultNetworkSecs),
         kMaxMigrationsToNonDefaultNetworkOnWriteError,
         kMaxMigrationsToNonDefaultNetworkOnPathDegrading,
         kQuicYieldAfterPacketsRead,
         quic::QuicTime::Delta::FromMilliseconds(
             kQuicYieldAfterDurationMilliseconds),
-        /*cert_verify_flags=*/0, client_headers_include_h2_stream_dependency_,
+        /*cert_verify_flags=*/0, /*go_away_on_path_degrading*/ false,
+        client_headers_include_h2_stream_dependency_,
         quic::test::DefaultQuicConfig(), &crypto_config_, "CONNECTION_UNKNOWN",
         base::TimeTicks::Now(), base::TimeTicks::Now(), &push_promise_index_,
-        &test_push_delegate_, base::ThreadTaskRunnerHandle::Get().get(),
+        &test_push_delegate_, base::DefaultTickClock::GetInstance(),
+        base::ThreadTaskRunnerHandle::Get().get(),
         /*socket_performance_watcher=*/nullptr, &net_log_));
 
     scoped_refptr<X509Certificate> cert(
@@ -250,7 +255,7 @@ class QuicChromiumClientSessionTest
   bool migrate_session_early_v2_;
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     VersionIncludeStreamDependencySequence,
     QuicChromiumClientSessionTest,
     ::testing::Combine(
@@ -523,7 +528,8 @@ TEST_P(QuicChromiumClientSessionTest, AsyncStreamRequest) {
     quic_data.AddWrite(
         SYNCHRONOUS, client_maker_.MakeRstPacket(
                          3, true, GetNthClientInitiatedBidirectionalStreamId(0),
-                         quic::QUIC_RST_ACKNOWLEDGEMENT));
+                         quic::QUIC_STREAM_CANCELLED, 0,
+                         /*include_stop_sending_if_v99=*/false));
     // After the STREAM_ID_BLOCKED is sent, receive a MAX_STREAM_ID to increase
     // the limit.
     quic_data.AddRead(
@@ -563,6 +569,15 @@ TEST_P(QuicChromiumClientSessionTest, AsyncStreamRequest) {
                                GetNthClientInitiatedBidirectionalStreamId(0),
                                quic::QUIC_STREAM_CANCELLED, 0);
   session_->OnRstStream(rst);
+  if (version_ == quic::QUIC_VERSION_99) {
+    // For version99, to close the stream completely, we also must receive a
+    // STOP_SENDING frame:
+    quic::QuicStopSendingFrame stop_sending(
+        quic::kInvalidControlFrameId,
+        GetNthClientInitiatedBidirectionalStreamId(0),
+        quic::QUIC_STREAM_CANCELLED);
+    session_->OnStopSendingFrame(stop_sending);
+  }
   // Pump the message loop to read the max stream id packet.
   base::RunLoop().RunUntilIdle();
 
@@ -651,10 +666,13 @@ TEST_P(QuicChromiumClientSessionTest, CancelPendingStreamRequest) {
         SYNCHRONOUS,
         client_maker_.MakeStreamIdBlockedPacket(
             2, true, GetNthClientInitiatedBidirectionalStreamId(49)));
+    // This node receives the RST_STREAM+STOP_SENDING, it responds
+    // with only a RST_STREAM.
     quic_data.AddWrite(
         SYNCHRONOUS, client_maker_.MakeRstPacket(
                          3, true, GetNthClientInitiatedBidirectionalStreamId(0),
-                         quic::QUIC_RST_ACKNOWLEDGEMENT));
+                         quic::QUIC_STREAM_CANCELLED, 0,
+                         /*include_stop_sending_if_v99=*/false));
   } else {
     quic_data.AddWrite(
         SYNCHRONOUS, client_maker_.MakeRstPacket(
@@ -693,6 +711,15 @@ TEST_P(QuicChromiumClientSessionTest, CancelPendingStreamRequest) {
                                GetNthClientInitiatedBidirectionalStreamId(0),
                                quic::QUIC_STREAM_CANCELLED, 0);
   session_->OnRstStream(rst);
+  if (version_ == quic::QUIC_VERSION_99) {
+    // For version99, we require a STOP_SENDING as well as a RESET_STREAM to
+    // fully close the stream.
+    quic::QuicStopSendingFrame stop_sending(
+        quic::kInvalidControlFrameId,
+        GetNthClientInitiatedBidirectionalStreamId(0),
+        quic::QUIC_STREAM_CANCELLED);
+    session_->OnStopSendingFrame(stop_sending);
+  }
   EXPECT_EQ(kMaxOpenStreams - 1, session_->GetNumOpenOutgoingStreams());
 
   quic_data.Resume();
@@ -730,6 +757,9 @@ TEST_P(QuicChromiumClientSessionTest, ConnectionCloseBeforeStreamRequest) {
 }
 
 TEST_P(QuicChromiumClientSessionTest, ConnectionCloseBeforeHandshakeConfirmed) {
+  // Force the connection close packet to use long headers with connection ID.
+  server_maker_.SetEncryptionLevel(quic::ENCRYPTION_NONE);
+
   MockQuicData quic_data;
   quic_data.AddRead(ASYNC, ERR_IO_PENDING);
   quic_data.AddRead(

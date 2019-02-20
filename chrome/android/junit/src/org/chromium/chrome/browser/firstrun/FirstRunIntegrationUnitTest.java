@@ -32,9 +32,6 @@ import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.ShortcutHelper;
 import org.chromium.chrome.browser.document.ChromeLauncherActivity;
 import org.chromium.chrome.browser.searchwidget.SearchActivity;
-import org.chromium.chrome.browser.webapps.TransparentSplashWebApkActivity;
-import org.chromium.chrome.browser.webapps.WebApkActivity;
-import org.chromium.chrome.browser.webapps.WebApkActivity0;
 import org.chromium.chrome.browser.webapps.WebappLauncherActivity;
 import org.chromium.webapk.lib.client.WebApkValidator;
 import org.chromium.webapk.lib.common.WebApkConstants;
@@ -176,14 +173,13 @@ public final class FirstRunIntegrationUnitTest {
         Intent intent = new Intent();
         intent.putExtra(WebApkConstants.EXTRA_WEBAPK_PACKAGE_NAME, webApkPackageName);
         intent.putExtra(ShortcutHelper.EXTRA_URL, startUrl);
-        intent.putExtra(WebApkConstants.EXTRA_USE_TRANSPARENT_SPLASH, true);
+        intent.putExtra(WebApkConstants.EXTRA_SPLASH_PROVIDED_BY_WEBAPK, true);
 
         Robolectric.buildActivity(WebappLauncherActivity.class, intent).create();
 
         Intent launchedIntent = mShadowApplication.getNextStartedActivity();
-        while (checkIntentComponentClassOneOf(launchedIntent,
-                new Class[] {WebApkActivity.class, WebApkActivity0.class,
-                        TransparentSplashWebApkActivity.class})) {
+        while (checkIntentComponentClassOneOf(
+                launchedIntent, new Class[] {WebappLauncherActivity.class})) {
             buildActivityWithClassNameFromIntent(launchedIntent);
             launchedIntent = mShadowApplication.getNextStartedActivity();
         }

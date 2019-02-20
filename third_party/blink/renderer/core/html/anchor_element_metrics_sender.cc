@@ -51,8 +51,7 @@ AnchorElementMetricsSender* AnchorElementMetricsSender::From(
 bool AnchorElementMetricsSender::HasAnchorElementMetricsSender(
     Document& document) {
   bool is_feature_enabled =
-      base::FeatureList::IsEnabled(features::kRecordAnchorMetricsClicked) ||
-      base::FeatureList::IsEnabled(features::kRecordAnchorMetricsVisible);
+      base::FeatureList::IsEnabled(features::kNavigationPredictor);
   const KURL& url = document.BaseURL();
   return is_feature_enabled && !document.ParentDocument() && url.IsValid() &&
          url.ProtocolIsInHTTPFamily();
@@ -96,7 +95,7 @@ AnchorElementMetricsSender::GetAnchorElements() const {
   return anchor_elements_;
 }
 
-void AnchorElementMetricsSender::Trace(blink::Visitor* visitor) {
+void AnchorElementMetricsSender::Trace(Visitor* visitor) {
   visitor->Trace(anchor_elements_);
   Supplement<Document>::Trace(visitor);
 }

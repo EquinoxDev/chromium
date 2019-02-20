@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/system/sys_info.h"
 #include "base/task/post_task.h"
@@ -13,7 +14,7 @@
 #include "components/feed/core/feed_journal_mutation.h"
 #include "components/feed/core/feed_journal_operation.h"
 #include "components/feed/core/proto/journal_storage.pb.h"
-#include "components/leveldb_proto/proto_database_impl.h"
+#include "components/leveldb_proto/public/proto_database_provider.h"
 
 namespace feed {
 
@@ -46,11 +47,10 @@ void ReportLoadEntriesHistograms(bool success, base::TimeTicks start_time) {
 FeedJournalDatabase::FeedJournalDatabase(const base::FilePath& database_folder)
     : FeedJournalDatabase(
           database_folder,
-          std::make_unique<
-              leveldb_proto::ProtoDatabaseImpl<JournalStorageProto>>(
-              base::CreateSequencedTaskRunnerWithTraits(
-                  {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-                   base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}))) {}
+          leveldb_proto::ProtoDatabaseProvider::CreateUniqueDB<
+              JournalStorageProto>(base::CreateSequencedTaskRunnerWithTraits(
+              {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+               base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}))) {}
 
 FeedJournalDatabase::FeedJournalDatabase(
     const base::FilePath& database_folder,

@@ -189,11 +189,27 @@ TEST_F('ChromeVoxLiveRegionsTest', 'LiveRegionThenFocus', function() {
       </script>
     */},
     function(rootNode) {
+      // Due to the above timing component, the live region can come either
+      // before or after the focus output. This depends on the EventBundle to
+      // which we get the live region. It can either be in its own bundle or
+      // be part of the bundle with the focus change. In either case, the
+      // first event should be flushed; the second should either be queued (in
+      // the case of the focus) or category flushed for the live region.
+      var sawFocus = false;
+      var sawLive = false;
+      var focusOrLive = function(candidate) {
+        sawFocus = candidate.text == 'Focus' || sawFocus;
+        sawLive = candidate.text == 'Live' || sawLive;
+        if (sawFocus && sawLive)
+          return candidate.queueMode != cvox.QueueMode.FLUSH;
+        else if (sawFocus || sawLive)
+          return candidate.queueMode == cvox.QueueMode.FLUSH;
+      };
       var go = rootNode.find({ role: RoleType.BUTTON });
       mockFeedback.call(this.simulateUserInteraction.bind(this))
           .call(go.doDefault.bind(go))
-          .expectFlushingSpeech('Live')
-          .expectQueuedSpeech('Focus');
+          .expectSpeech(focusOrLive)
+          .expectSpeech(focusOrLive);
       mockFeedback.replay();
     });
 });
@@ -314,7 +330,13 @@ TEST_F('ChromeVoxLiveRegionsTest', 'SimulateTreeChanges', function() {
   });
 });
 
-TEST_F('ChromeVoxLiveRegionsTest', 'LiveStatusOff', function() {
+TEST_F_WITH_PREAMBLE(`
+#if defined(MEMORY_SANITIZER)
+#define MAYBE_LiveStatusOff DISABLED_LiveStatusOff
+#else
+#define MAYBE_LiveStatusOff LiveStatusOff
+#endif
+`, 'ChromeVoxLiveRegionsTest', 'MAYBE_LiveStatusOff', function() {
   var mockFeedback = this.createMockFeedback();
   this.runWithLoadedTree(function() {/*!
     <div><input aria-live="off" type="text"></input></div>

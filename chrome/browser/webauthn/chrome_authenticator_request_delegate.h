@@ -69,7 +69,7 @@ class ChromeAuthenticatorRequestDelegate
   content::BrowserContext* browser_context() const;
 
   // content::AuthenticatorRequestClientDelegate:
-  void DidFailWithInterestingReason(InterestingFailureReason reason) override;
+  bool DoesBlockRequestOnFailure(InterestingFailureReason reason) override;
   void RegisterActionCallbacks(
       base::OnceClosure cancel_callback,
       device::FidoRequestHandlerBase::RequestCallback request_callback,
@@ -84,8 +84,10 @@ class ChromeAuthenticatorRequestDelegate
   bool IsFocused() override;
   void UpdateLastTransportUsed(
       device::FidoTransportProtocol transport) override;
+  void DisableUI() override;
+  bool IsWebAuthnUIEnabled() override;
 
-  // device::FidoRequestHandlerBase::TransportAvailabilityObserver:
+  // device::FidoRequestHandlerBase::Observer:
   void OnTransportAvailabilityEnumerated(
       device::FidoRequestHandlerBase::TransportAvailabilityInfo data) override;
   bool EmbedderControlsAuthenticatorDispatch(
@@ -106,7 +108,6 @@ class ChromeAuthenticatorRequestDelegate
   void AddFidoBleDeviceToPairedList(std::string ble_authenticator_id);
   base::Optional<device::FidoTransportProtocol> GetLastTransportUsed() const;
   const base::ListValue* GetPreviouslyPairedFidoBleDeviceIds() const;
-  bool IsWebAuthnUiEnabled() const;
 
   content::RenderFrameHost* const render_frame_host_;
   AuthenticatorRequestDialogModel* weak_dialog_model_ = nullptr;

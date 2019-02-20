@@ -18,10 +18,13 @@ import zipfile
 
 sys.path.append(os.path.join(
     os.path.dirname(__file__), os.pardir, os.pardir, 'build', 'android'))
-import devil_chromium  # pylint: disable=import-error
+import devil_chromium  # pylint: disable=import-error, unused-import
+from devil.android.ndk import abis  # pylint: disable=import-error
 from devil.android.sdk import version_codes  # pylint: disable=import-error
 from devil.android.tools import script_common  # pylint: disable=import-error
 from devil.utils import cmd_helper  # pylint: disable=import-error
+from devil.utils import logging_common  # pylint: disable=import-error
+from pylib.utils import test_filter # pylint: disable=import-error
 
 # cts test archives for all platforms are stored in this bucket
 # contents need to be updated if there is an important fix to any of
@@ -33,8 +36,11 @@ _TEST_RUNNER_PATH = os.path.join(
 
 _EXPECTED_FAILURES_FILE = os.path.join(
     os.path.dirname(__file__), 'cts_config', 'expected_failure_on_bot.json')
+
 _WEBVIEW_CTS_GCS_PATH_FILE = os.path.join(
     os.path.dirname(__file__), 'cts_config', 'webview_cts_gcs_path.json')
+_ARCH_SPECIFIC_CTS_INFO = ["filename", "unzip_dir", "_origin"]
+
 _CTS_ARCHIVE_DIR = os.path.join(os.path.dirname(__file__), 'cts_archive')
 
 _SDK_PLATFORM_DICT = {
@@ -47,6 +53,25 @@ _SDK_PLATFORM_DICT = {
     version_codes.OREO_MR1: 'O'
 }
 
+# The test apks are apparently compatible across all architectures, the
+# arm vs x86 split is to match the current cts releases and in case things
+# start to diverge in the future.  Keeping the arm64 (instead of arm) dict
+# key to avoid breaking the bots that specify --arch arm64 to invoke the tests.
+_SUPPORTED_ARCH_DICT = {
+    # TODO(aluo): Investigate how to force WebView abi on platforms supporting
+    # multiple abis.
+    # The test apks under 'arm64' support both arm and arm64 devices.
+    abis.ARM: 'arm64',
+    abis.ARM_64: 'arm64',
+    # The test apks under 'x86' support both x86 and x86_64 devices.
+    abis.X86: 'x86',
+    abis.X86_64: 'x86'
+}
+
+
+FILE_FILTER_OPT = '--test-launcher-filter-file'
+TEST_FILTER_OPT = '--test-filter'
+ISOLATED_FILTER_OPT = '--isolated-script-test-filter'
 
 def GetCtsInfo(arch, platform, item):
   """Gets contents of CTS Info for arch and platform.
@@ -56,10 +81,19 @@ def GetCtsInfo(arch, platform, item):
   with open(_WEBVIEW_CTS_GCS_PATH_FILE) as f:
     cts_gcs_path_info = json.load(f)
   try:
-    return cts_gcs_path_info[arch][platform][item]
+    if item in _ARCH_SPECIFIC_CTS_INFO:
+      return cts_gcs_path_info[platform]['arch'][arch][item]
+    else:
+      return cts_gcs_path_info[platform][item]
   except KeyError:
     raise Exception('No %s info available for arch:%s, android:%s' %
                     (item, arch, platform))
+
+
+def GetCTSModuleNames(arch, platform):
+  """Gets the module apk name of the arch and platform"""
+  test_runs = GetCtsInfo(arch, platform, 'test_runs')
+  return [os.path.basename(r['apk']) for r in test_runs]
 
 
 def GetExpectedFailures():
@@ -75,9 +109,23 @@ def GetExpectedFailures():
                               for m in methods])
   return expected_failures
 
-def GetTestRunFilterArg(test_run, skip_expected_failures):
+
+def GetTestRunFilterArg(args, test_run):
+  """ Filters specified in args override others """
+  filter_args = []
+
+  if args.test_filter_file:
+    filter_args.append(FILE_FILTER_OPT + '=' + args.test_filter_file)
+  if args.test_filter:
+    filter_args.append(TEST_FILTER_OPT + '=' + args.test_filter)
+  if args.isolated_script_test_filter:
+    filter_args.append(ISOLATED_FILTER_OPT + '='
+                       + args.isolated_script_test_filter)
+  if filter_args:
+    return filter_args
+
   skips = []
-  if skip_expected_failures:
+  if args.skip_expected_failures:
     skips = GetExpectedFailures()
 
   excludes = test_run.get("excludes", [])
@@ -85,37 +133,23 @@ def GetTestRunFilterArg(test_run, skip_expected_failures):
   assert len(excludes) == 0 or len(includes) == 0, \
          "test_runs error, can't have both includes and excludes: %s" % test_run
   if len(includes) > 0:
-    return ['-f=' + ':'.join([i["match"] for i in includes])]
+    return ['--test-filter=' + ':'.join([i["match"] for i in includes])]
   else:
     skips.extend([i["match"] for i in excludes])
     if len(skips) > 0:
-      return ['-f=' + "-" + ':'.join(skips)]
+      return ['--test-filter=' + "-" + ':'.join(skips)]
     return []
 
-def RunCTS(test_runner_args, local_cts_dir, test_run,
-           skip_expected_failures=True, json_results_file=None):
+
+def RunCTS(test_runner_args, local_cts_dir, apk, json_results_file=None):
   """Run tests in apk using test_runner script at _TEST_RUNNER_PATH.
 
-  Returns the script result code,
-  tests expected to fail will be skipped unless skip_expected_failures
-  is set to False, test results will be stored in
-  the json_results_file file if specified
+  Returns the script result code, test results will be stored in
+  the json_results_file file if specified.
   """
-
-  apk = test_run['apk']
 
   local_test_runner_args = test_runner_args + ['--test-apk',
                                                os.path.join(local_cts_dir, apk)]
-
-  # TODO(mikecase): This doesn't work at all with the
-  # --gtest-filter test runner option currently. The
-  # filter options will just override eachother.
-  # The preferred method is to specify test filters per release in
-  # the CTS_GCS path file.  It will override any
-  # previous filters, including ones in expected failures
-  # file.
-  local_test_runner_args.extend(GetTestRunFilterArg(test_run,
-                                                    skip_expected_failures))
 
   if json_results_file:
     local_test_runner_args += ['--json-results-file=%s' %
@@ -145,7 +179,7 @@ def MergeTestResults(existing_results_json, additional_results_json):
             "Can't merge results field %s that is not a list or dict" % v)
 
 
-def ExtractCTSZip(args):
+def ExtractCTSZip(args, arch):
   """Extract the CTS tests for args.platform.
 
   Extract the CTS zip file from _CTS_ARCHIVE_DIR to
@@ -158,7 +192,7 @@ def ExtractCTSZip(args):
   """
   base_cts_dir = None
   delete_cts_dir = False
-  relative_cts_zip_path = GetCtsInfo(args.arch, args.platform, 'filename')
+  relative_cts_zip_path = GetCtsInfo(arch, args.platform, 'filename')
 
   if args.apk_dir:
     base_cts_dir = args.apk_dir
@@ -168,7 +202,7 @@ def ExtractCTSZip(args):
 
   cts_zip_path = os.path.join(_CTS_ARCHIVE_DIR, relative_cts_zip_path)
   local_cts_dir = os.path.join(base_cts_dir,
-                               GetCtsInfo(args.arch, args.platform,
+                               GetCtsInfo(arch, args.platform,
                                           'unzip_dir')
                               )
   zf = zipfile.ZipFile(cts_zip_path, 'r')
@@ -176,7 +210,7 @@ def ExtractCTSZip(args):
   return (local_cts_dir, base_cts_dir, delete_cts_dir)
 
 
-def RunAllCTSTests(args, test_runner_args):
+def RunAllCTSTests(args, arch, test_runner_args):
   """Run CTS tests downloaded from _CTS_BUCKET.
 
   Downloads CTS tests from bucket, runs them for the
@@ -186,27 +220,33 @@ def RunAllCTSTests(args, test_runner_args):
   returns the failure code of the last failing
   test.
   """
-  local_cts_dir, base_cts_dir, delete_cts_dir = ExtractCTSZip(args)
+  local_cts_dir, base_cts_dir, delete_cts_dir = ExtractCTSZip(args, arch)
   cts_result = 0
   json_results_file = args.json_results_file
   try:
-    cts_test_runs = GetCtsInfo(args.arch, args.platform, 'test_runs')
+    cts_test_runs = GetCtsInfo(arch, args.platform, 'test_runs')
     cts_results_json = {}
     for cts_test_run in cts_test_runs:
       iteration_cts_result = 0
+
+      test_apk = cts_test_run['apk']
+      # If --module-apk is specified then skip tests in all other modules
+      if args.module_apk and os.path.basename(test_apk) != args.module_apk:
+        continue
+
+      iter_test_runner_args = test_runner_args + GetTestRunFilterArg(
+          args, cts_test_run)
+
       if json_results_file:
         with tempfile.NamedTemporaryFile() as iteration_json_file:
-          iteration_cts_result = RunCTS(test_runner_args, local_cts_dir,
-                                        cts_test_run,
-                                        args.skip_expected_failures,
-                                        iteration_json_file.name)
+          iteration_cts_result = RunCTS(iter_test_runner_args, local_cts_dir,
+                                        test_apk, iteration_json_file.name)
           with open(iteration_json_file.name) as f:
             additional_results_json = json.load(f)
             MergeTestResults(cts_results_json, additional_results_json)
       else:
-        iteration_cts_result = RunCTS(test_runner_args, local_cts_dir,
-                                      cts_test_run,
-                                      args.skip_expected_failures)
+        iteration_cts_result = RunCTS(iter_test_runner_args, local_cts_dir,
+                                      test_apk)
       if iteration_cts_result:
         cts_result = iteration_cts_result
     if json_results_file:
@@ -228,13 +268,35 @@ def DeterminePlatform(device):
   return _SDK_PLATFORM_DICT.get(device.build_version_sdk)
 
 
+def DetermineArch(device):
+  """Determines which architecture to use based on the device properties
+
+  Args:
+    device: The DeviceUtils instance
+  Returns:
+    The formatted arch string (as expected by CIPD)
+  Raises:
+    Exception: if device architecture is not currently supported by this script.
+  """
+  arch = _SUPPORTED_ARCH_DICT.get(device.product_cpu_abi)
+  if not arch:
+    raise Exception('Could not find CIPD bucket for your device arch (' +
+                    device.product_cpu_abi +
+                    '), please specify with --arch')
+  logging.info('Guessing arch=%s because product.cpu.abi=%s', arch,
+               device.product_cpu_abi)
+  return arch
+
+
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument(
       '--arch',
-      choices=['arm64'],
-      default='arm64',
-      help='Arch for CTS tests.')
+      choices=list(set(_SUPPORTED_ARCH_DICT.values())),
+      default=None,
+      type=str,
+      help=('Architecture to for CTS tests. Will auto-determine based on '
+            'the device ro.product.cpu.abi property.'))
   parser.add_argument(
       '--platform',
       choices=['L', 'M', 'N', 'O'],
@@ -245,7 +307,8 @@ def main():
   parser.add_argument(
       '--skip-expected-failures',
       action='store_true',
-      help='Option to skip all tests that are expected to fail.')
+      help="Option to skip all tests that are expected to fail.  Can't be used "
+           "with test filters.")
   parser.add_argument(
       '--apk-dir',
       help='Directory to extract CTS APKs to. '
@@ -259,24 +322,55 @@ def main():
       help='If set, will dump results in JSON form to the specified file. '
            'Note that this will also trigger saving per-test logcats to '
            'logdog.')
+  parser.add_argument(
+      '-m',
+      '--module-apk',
+      dest='module_apk',
+      help='CTS module apk name in ' + _WEBVIEW_CTS_GCS_PATH_FILE +
+      ' file, without the path prefix.')
+
+  test_filter.AddFilterOptions(parser)
   script_common.AddDeviceArguments(parser)
+  logging_common.AddLoggingArguments(parser)
 
   args, test_runner_args = parser.parse_known_args()
+  logging_common.InitializeLogging(args)
   devil_chromium.Initialize()
 
   devices = script_common.GetDevices(args.devices, args.blacklist_file)
+  device = devices[0]
   if len(devices) > 1:
     logging.warning('Only single device supported, using 1st of %d devices: %s',
-                    len(devices), devices[0].serial)
-  test_runner_args.extend(['-d', devices[0].serial])
+                    len(devices), device.serial)
+  test_runner_args.extend(['-d', device.serial])
 
   if args.platform is None:
-    args.platform = DeterminePlatform(devices[0])
+    args.platform = DeterminePlatform(device)
     if args.platform is None:
       raise Exception('Could not auto-determine device platform, '
                       'please specifiy --platform')
 
-  return RunAllCTSTests(args, test_runner_args)
+  arch = args.arch if args.arch else DetermineArch(device)
+
+  if (args.test_filter_file or args.test_filter
+      or args.isolated_script_test_filter):
+    if args.skip_expected_failures:
+      # TODO(aluo): allow both options to be used together so that expected
+      # failures in the filtered test set can be skipped
+      raise Exception('--skip-expected-failures and test filters are mutually'
+                      ' exclusive')
+    # TODO(aluo): auto-determine the module based on the test filter and the
+    # available tests in each module
+    if not args.module_apk:
+      args.module_apk = 'CtsWebkitTestCases.apk'
+
+  platform_modules = GetCTSModuleNames(arch, args.platform)
+  if args.module_apk and args.module_apk not in platform_modules:
+    raise Exception('--module-apk for arch==' + arch + 'and platform=='
+                    + args.platform + ' must be one of: '
+                    + ', '.join(platform_modules))
+
+  return RunAllCTSTests(args, arch, test_runner_args)
 
 
 if __name__ == '__main__':

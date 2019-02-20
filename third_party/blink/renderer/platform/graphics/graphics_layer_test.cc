@@ -49,10 +49,6 @@ class GraphicsLayerTest : public testing::Test, public PaintTestConfigurations {
   ~GraphicsLayerTest() = default;
 
  protected:
-  bool PaintWithoutCommit(GraphicsLayer& layer, const IntRect* interest_rect) {
-    return layer.PaintWithoutCommit(interest_rect);
-  }
-
   void CommitAndFinishCycle(GraphicsLayer& layer) {
     layer.GetPaintController().CommitNewDisplayItems();
     layer.GetPaintController().FinishCycle();
@@ -75,32 +71,32 @@ class GraphicsLayerTest : public testing::Test, public PaintTestConfigurations {
   ViewportLayersSetup layers_;
 };
 
-INSTANTIATE_TEST_CASE_P(All,
-                        GraphicsLayerTest,
-                        testing::Values(0,
-                                        kBlinkGenPropertyTrees));
+INSTANTIATE_TEST_SUITE_P(All,
+                         GraphicsLayerTest,
+                         testing::Values(0, kBlinkGenPropertyTrees));
 
 TEST_P(GraphicsLayerTest, Paint) {
   IntRect interest_rect(1, 2, 3, 4);
-  EXPECT_TRUE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
-  CommitAndFinishCycle(layers_.graphics_layer());
+  auto& layer = layers_.graphics_layer();
+  EXPECT_TRUE(layer.PaintWithoutCommitForTesting(interest_rect));
+  CommitAndFinishCycle(layer);
 
   layers_.graphics_layer_client().SetNeedsRepaint(true);
-  EXPECT_TRUE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
-  CommitAndFinishCycle(layers_.graphics_layer());
+  EXPECT_TRUE(layer.PaintWithoutCommitForTesting(interest_rect));
+  CommitAndFinishCycle(layer);
 
   layers_.graphics_layer_client().SetNeedsRepaint(false);
-  EXPECT_FALSE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
+  EXPECT_FALSE(layer.PaintWithoutCommitForTesting(interest_rect));
 
   interest_rect.Move(IntSize(10, 20));
-  EXPECT_TRUE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
-  CommitAndFinishCycle(layers_.graphics_layer());
-  EXPECT_FALSE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
+  EXPECT_TRUE(layer.PaintWithoutCommitForTesting(interest_rect));
+  CommitAndFinishCycle(layer);
+  EXPECT_FALSE(layer.PaintWithoutCommitForTesting(interest_rect));
 
   layers_.graphics_layer().SetNeedsDisplay();
-  EXPECT_TRUE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
-  CommitAndFinishCycle(layers_.graphics_layer());
-  EXPECT_FALSE(PaintWithoutCommit(layers_.graphics_layer(), &interest_rect));
+  EXPECT_TRUE(layer.PaintWithoutCommitForTesting(interest_rect));
+  CommitAndFinishCycle(layer);
+  EXPECT_FALSE(layer.PaintWithoutCommitForTesting(interest_rect));
 }
 
 TEST_P(GraphicsLayerTest, PaintRecursively) {
@@ -111,25 +107,24 @@ TEST_P(GraphicsLayerTest, PaintRecursively) {
   auto transform2 =
       CreateTransform(*transform1, TransformationMatrix().Scale(2));
 
-  layers_.graphics_layer_client().SetPainter([&](const GraphicsLayer* layer,
-                                                 GraphicsContext& context,
-                                                 GraphicsLayerPaintingPhase,
-                                                 const IntRect&) {
-    {
-      ScopedPaintChunkProperties properties(context.GetPaintController(),
-                                            transform1.get(), *layer,
-                                            kBackgroundType);
-      PaintControllerTestBase::DrawRect(context, *layer, kBackgroundType,
-                                        interest_rect);
-    }
-    {
-      ScopedPaintChunkProperties properties(context.GetPaintController(),
-                                            transform2.get(), *layer,
-                                            kForegroundType);
-      PaintControllerTestBase::DrawRect(context, *layer, kForegroundType,
-                                        interest_rect);
-    }
-  });
+  layers_.graphics_layer_client().SetPainter(
+      [&](const GraphicsLayer* layer, GraphicsContext& context,
+          GraphicsLayerPaintingPhase, const IntRect&) {
+        {
+          ScopedPaintChunkProperties properties(context.GetPaintController(),
+                                                *transform1, *layer,
+                                                kBackgroundType);
+          PaintControllerTestBase::DrawRect(context, *layer, kBackgroundType,
+                                            interest_rect);
+        }
+        {
+          ScopedPaintChunkProperties properties(context.GetPaintController(),
+                                                *transform2, *layer,
+                                                kForegroundType);
+          PaintControllerTestBase::DrawRect(context, *layer, kForegroundType,
+                                            interest_rect);
+        }
+      });
 
   transform1->Update(transform_root,
                      TransformPaintPropertyNode::State{

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_split.h"
@@ -26,8 +27,8 @@
 #include "net/third_party/quic/core/quic_stream_sequencer.h"
 #include "net/third_party/quic/core/quic_utils.h"
 #include "net/third_party/quic/platform/api/quic_string_piece.h"
-#include "net/third_party/spdy/core/spdy_frame_builder.h"
-#include "net/third_party/spdy/core/spdy_framer.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_frame_builder.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_framer.h"
 
 namespace net {
 
@@ -80,8 +81,6 @@ HttpResponseInfo::ConnectionInfo QuicHttpStream::ConnectionInfoFromQuicVersion(
   switch (quic_version) {
     case quic::QUIC_VERSION_UNSUPPORTED:
       return HttpResponseInfo::CONNECTION_INFO_QUIC_UNKNOWN_VERSION;
-    case quic::QUIC_VERSION_35:
-      return HttpResponseInfo::CONNECTION_INFO_QUIC_35;
     case quic::QUIC_VERSION_39:
       return HttpResponseInfo::CONNECTION_INFO_QUIC_39;
     case quic::QUIC_VERSION_43:
@@ -92,6 +91,8 @@ HttpResponseInfo::ConnectionInfo QuicHttpStream::ConnectionInfoFromQuicVersion(
       return HttpResponseInfo::CONNECTION_INFO_QUIC_45;
     case quic::QUIC_VERSION_46:
       return HttpResponseInfo::CONNECTION_INFO_QUIC_46;
+    case quic::QUIC_VERSION_47:
+      return HttpResponseInfo::CONNECTION_INFO_QUIC_47;
     case quic::QUIC_VERSION_99:
       return HttpResponseInfo::CONNECTION_INFO_QUIC_99;
   }
@@ -405,7 +406,8 @@ void QuicHttpStream::PopulateNetErrorDetails(NetErrorDetails* details) {
   details->connection_info =
       ConnectionInfoFromQuicVersion(quic_session()->GetQuicVersion());
   quic_session()->PopulateNetErrorDetails(details);
-  if (quic_session()->IsCryptoHandshakeConfirmed() && stream_)
+  if (quic_session()->IsCryptoHandshakeConfirmed() && stream_ &&
+      stream_->connection_error() != quic::QUIC_NO_ERROR)
     details->quic_connection_error = stream_->connection_error();
 }
 

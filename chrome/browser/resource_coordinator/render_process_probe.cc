@@ -10,10 +10,10 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/task/post_task.h"
 #include "build/build_config.h"
+#include "chrome/browser/performance_manager/performance_manager.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/common/service_manager_connection.h"
 
 #if defined(OS_MACOSX)
 #include "content/public/browser/browser_child_process_host.h"
@@ -32,7 +32,7 @@ RenderProcessProbe* RenderProcessProbe::GetInstance() {
 // static
 bool RenderProcessProbe::IsEnabled() {
   // Check that service_manager is active and GRC is enabled.
-  return content::ServiceManagerConnection::GetForProcess() != nullptr;
+  return performance_manager::PerformanceManager::GetInstance() != nullptr;
 }
 
 RenderProcessProbeImpl::RenderProcessInfo::RenderProcessInfo() = default;
@@ -254,15 +254,12 @@ base::ProcessId RenderProcessProbeImpl::GetProcessId(
   return info.process.Pid();
 }
 
-SystemResourceCoordinator*
+performance_manager::SystemResourceCoordinator*
 RenderProcessProbeImpl::EnsureSystemResourceCoordinator() {
   if (!system_resource_coordinator_) {
-    content::ServiceManagerConnection* connection =
-        content::ServiceManagerConnection::GetForProcess();
-    if (connection)
-      system_resource_coordinator_ =
-          std::make_unique<SystemResourceCoordinator>(
-              connection->GetConnector());
+    system_resource_coordinator_ =
+        std::make_unique<performance_manager::SystemResourceCoordinator>(
+            performance_manager::PerformanceManager::GetInstance());
   }
 
   return system_resource_coordinator_.get();
@@ -271,7 +268,7 @@ RenderProcessProbeImpl::EnsureSystemResourceCoordinator() {
 void RenderProcessProbeImpl::DispatchMetricsOnUIThread(
     mojom::ProcessResourceMeasurementBatchPtr batch) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  SystemResourceCoordinator* system_resource_coordinator =
+  performance_manager::SystemResourceCoordinator* system_resource_coordinator =
       EnsureSystemResourceCoordinator();
 
   if (system_resource_coordinator && !batch->measurements.empty())

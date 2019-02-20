@@ -23,12 +23,13 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/autofill/core/common/password_form.h"
-#include "components/browser_sync/profile_sync_service.h"
 #include "components/password_manager/core/browser/android_affiliation/affiliation_utils.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/sync/driver/sync_service.h"
+#include "components/sync/driver/sync_user_settings.h"
 #include "components/url_formatter/elide_url.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
@@ -51,6 +52,16 @@ bool SameDomainOrHost(const GURL& gurl1, const GURL& gurl2) {
   return net::registry_controlled_domains::SameDomainOrHost(
       gurl1, gurl2,
       net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+}
+
+bool IsSignedInAndSyncingPasswordsNormally(Profile* profile) {
+  return password_manager_util::IsSyncingWithNormalEncryption(
+      ProfileSyncServiceFactory::GetSyncServiceForProfile(profile));
+}
+
+bool IsGooglePasswordManagerEnabled() {
+  return base::FeatureList::IsEnabled(
+      password_manager::features::kGooglePasswordManager);
 }
 
 }  // namespace
@@ -158,9 +169,10 @@ base::string16 GetDisplayFederation(const autofill::PasswordForm& form) {
 }
 
 bool IsSyncingAutosignSetting(Profile* profile) {
-  const browser_sync::ProfileSyncService* sync_service =
-      ProfileSyncServiceFactory::GetForProfile(profile);
-  return (sync_service && sync_service->IsFirstSetupComplete() &&
+  const syncer::SyncService* sync_service =
+      ProfileSyncServiceFactory::GetSyncServiceForProfile(profile);
+  return (sync_service &&
+          sync_service->GetUserSettings()->IsFirstSetupComplete() &&
           sync_service->IsSyncFeatureActive() &&
           sync_service->GetActiveDataTypes().Has(syncer::PRIORITY_PREFERENCES));
 }
@@ -199,11 +211,11 @@ GURL GetGooglePasswordManagerURL(ManagePasswordsReferrer referrer) {
 }
 
 bool ShouldManagePasswordsinGooglePasswordManager(Profile* profile) {
-  return base::FeatureList::IsEnabled(
-             password_manager::features::kGooglePasswordManager) &&
-         password_manager_util::GetPasswordSyncState(
-             ProfileSyncServiceFactory::GetForProfile(profile)) ==
-             password_manager::SYNCING_NORMAL_ENCRYPTION;
+  // To make sure that the experiment groups contain the same proportions of
+  // signed in and syncing users, we need to check the sync state before
+  // checking the feature flag.
+  return IsSignedInAndSyncingPasswordsNormally(profile) &&
+         IsGooglePasswordManagerEnabled();
 }
 
 // Navigation is handled differently on Android.
@@ -220,10 +232,15 @@ void NavigateToManagePasswordsPage(Browser* browser,
                                    ManagePasswordsReferrer referrer) {
   UMA_HISTOGRAM_ENUMERATION("PasswordManager.ManagePasswordsReferrer",
                             referrer);
-  if (ShouldManagePasswordsinGooglePasswordManager(browser->profile())) {
-    NavigateToGooglePasswordManager(browser->profile(), referrer);
-  } else {
-    chrome::ShowPasswordManager(browser);
+  if (IsSignedInAndSyncingPasswordsNormally(browser->profile())) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "PasswordManager.ManagePasswordsReferrerSignedInAndSyncing", referrer);
+    if (IsGooglePasswordManagerEnabled()) {
+      NavigateToGooglePasswordManager(browser->profile(), referrer);
+      return;
+    }
   }
+
+  chrome::ShowPasswordManager(browser);
 }
 #endif  // !defined(OS_ANDROID)

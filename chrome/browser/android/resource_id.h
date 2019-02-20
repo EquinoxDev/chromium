@@ -26,7 +26,6 @@
 LINK_RESOURCE_ID(0, 0)
 
 // InfoBar resources.
-LINK_RESOURCE_ID(IDR_INFOBAR_3D_BLOCKED, R.drawable.infobar_3d_blocked)
 LINK_RESOURCE_ID(IDR_INFOBAR_AUTOFILL_CC, R.drawable.infobar_autofill_cc)
 
 // Android only infobars.
@@ -40,6 +39,7 @@ DECLARE_RESOURCE_ID(IDR_ANDROID_INFOBAR_FOLDER, R.drawable.ic_folder_blue_24dp)
 DECLARE_RESOURCE_ID(IDR_ANDROID_INFOBAR_FROZEN_TAB, R.drawable.infobar_restore)
 DECLARE_RESOURCE_ID(IDR_ANDROID_INFOBAR_GEOLOCATION,
                     R.drawable.infobar_geolocation)
+DECLARE_RESOURCE_ID(IDR_ANDROID_INFOBAR_LITE_MODE, R.drawable.preview_pin_round)
 DECLARE_RESOURCE_ID(IDR_ANDROID_INFOBAR_MEDIA_STREAM_CAMERA,
                     R.drawable.infobar_camera)
 DECLARE_RESOURCE_ID(IDR_ANDROID_INFOBAR_MEDIA_STREAM_MIC,

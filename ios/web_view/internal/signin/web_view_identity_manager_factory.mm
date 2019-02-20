@@ -8,11 +8,14 @@
 
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/keyed_service/ios/browser_state_dependency_manager.h"
+#include "ios/web_view/internal/signin/web_view_account_fetcher_service_factory.h"
 #include "ios/web_view/internal/signin/web_view_account_tracker_service_factory.h"
 #include "ios/web_view/internal/signin/web_view_gaia_cookie_manager_service_factory.h"
 #include "ios/web_view/internal/signin/web_view_oauth2_token_service_factory.h"
 #include "ios/web_view/internal/signin/web_view_signin_manager_factory.h"
 #include "ios/web_view/internal/web_view_browser_state.h"
+#include "services/identity/public/cpp/accounts_cookie_mutator_impl.h"
+#include "services/identity/public/cpp/accounts_mutator.h"
 #include "services/identity/public/cpp/identity_manager.h"
 #include "services/identity/public/cpp/primary_account_mutator_impl.h"
 
@@ -36,6 +39,8 @@ class IdentityManagerWrapper : public KeyedService,
       : identity::IdentityManager(
             WebViewSigninManagerFactory::GetForBrowserState(browser_state),
             WebViewOAuth2TokenServiceFactory::GetForBrowserState(browser_state),
+            WebViewAccountFetcherServiceFactory::GetForBrowserState(
+                browser_state),
             WebViewAccountTrackerServiceFactory::GetForBrowserState(
                 browser_state),
             WebViewGaiaCookieManagerServiceFactory::GetForBrowserState(
@@ -43,7 +48,10 @@ class IdentityManagerWrapper : public KeyedService,
             std::make_unique<identity::PrimaryAccountMutatorImpl>(
                 WebViewAccountTrackerServiceFactory::GetForBrowserState(
                     browser_state),
-                WebViewSigninManagerFactory::GetForBrowserState(
+                WebViewSigninManagerFactory::GetForBrowserState(browser_state)),
+            nullptr,
+            std::make_unique<identity::AccountsCookieMutatorImpl>(
+                WebViewGaiaCookieManagerServiceFactory::GetForBrowserState(
                     browser_state))) {}
 };
 
@@ -51,6 +59,7 @@ WebViewIdentityManagerFactory::WebViewIdentityManagerFactory()
     : BrowserStateKeyedServiceFactory(
           "IdentityManager",
           BrowserStateDependencyManager::GetInstance()) {
+  DependsOn(WebViewAccountFetcherServiceFactory::GetInstance());
   DependsOn(WebViewAccountTrackerServiceFactory::GetInstance());
   DependsOn(WebViewGaiaCookieManagerServiceFactory::GetInstance());
   DependsOn(WebViewOAuth2TokenServiceFactory::GetInstance());
@@ -68,7 +77,17 @@ identity::IdentityManager* WebViewIdentityManagerFactory::GetForBrowserState(
 
 // static
 WebViewIdentityManagerFactory* WebViewIdentityManagerFactory::GetInstance() {
-  return base::Singleton<WebViewIdentityManagerFactory>::get();
+  static base::NoDestructor<WebViewIdentityManagerFactory> instance;
+  return instance.get();
+}
+
+// static
+void WebViewIdentityManagerFactory::EnsureFactoryAndDependeeFactoriesBuilt() {
+  WebViewIdentityManagerFactory::GetInstance();
+  WebViewAccountTrackerServiceFactory::GetInstance();
+  WebViewGaiaCookieManagerServiceFactory::GetInstance();
+  WebViewOAuth2TokenServiceFactory::GetInstance();
+  WebViewSigninManagerFactory::GetInstance();
 }
 
 std::unique_ptr<KeyedService>

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -221,9 +222,9 @@ class FakeControllerServiceWorker
     // So far this test expects a single element (bytes or data pipe).
     ASSERT_EQ(1u, elements->size());
     network::DataElement& element = elements->front();
-    if (element.type() == network::DataElement::TYPE_BYTES) {
+    if (element.type() == network::mojom::DataElementType::kBytes) {
       *out_string = std::string(element.bytes(), element.length());
-    } else if (element.type() == network::DataElement::TYPE_DATA_PIPE) {
+    } else if (element.type() == network::mojom::DataElementType::kDataPipe) {
       // Read the content into |data_pipe|.
       mojo::DataPipe data_pipe;
       network::mojom::DataPipeGetterPtr ptr(element.ReleaseDataPipeGetter());
@@ -253,7 +254,7 @@ class FakeControllerServiceWorker
       DispatchFetchEventCallback callback) override {
     EXPECT_FALSE(params->request->is_main_resource_load);
     if (params->request->body)
-      request_body_ = params->request->body.value();
+      request_body_ = params->request->body;
 
     fetch_event_count_++;
     fetch_event_request_ = std::move(params->request);
@@ -447,6 +448,7 @@ class FakeServiceWorkerContainerHost
   }
   void Ping(PingCallback callback) override { NOTIMPLEMENTED(); }
   void HintToUpdateServiceWorker() override { NOTIMPLEMENTED(); }
+  void OnExecutionReady() override {}
 
  private:
   int get_controller_service_worker_count_ = 0;
@@ -1028,8 +1030,13 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, BlobResponse) {
   StartRequest(factory, request, &loader, &client);
   client->RunUntilResponseReceived();
 
+  std::unique_ptr<network::ResourceResponseHead> expected_info =
+      CreateResponseInfoFromServiceWorker();
+  // |is_in_cache_storage| should be true because |fake_controller_| sets the
+  // response source as CacheStorage.
+  expected_info->is_in_cache_storage = true;
   const network::ResourceResponseHead& info = client->response_head();
-  ExpectResponseInfo(info, *CreateResponseInfoFromServiceWorker());
+  ExpectResponseInfo(info, *expected_info);
   EXPECT_EQ(33, info.content_length);
 
   // Test the cached metadata.
@@ -1192,7 +1199,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
 
   // Redirect once more.
   fake_controller_.RespondWithRedirect("https://other.example.com/baz.png");
-  loader->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
+  loader->FollowRedirect({}, {}, base::nullopt);
   client->RunUntilRedirectReceived();
 
   EXPECT_EQ(net::OK, client->completion_status().error_code);
@@ -1211,7 +1218,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, RedirectResponse) {
   mojo::DataPipe data_pipe;
   fake_controller_.RespondWithStream(mojo::MakeRequest(&stream_callback),
                                      std::move(data_pipe.consumer_handle));
-  loader->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
+  loader->FollowRedirect({}, {}, base::nullopt);
   client->RunUntilResponseReceived();
 
   const network::ResourceResponseHead& info = client->response_head();
@@ -1248,7 +1255,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, TooManyRedirects) {
   int count = 1;
   std::string redirect_location =
       std::string("https://www.example.com/redirect_") +
-      base::IntToString(count);
+      base::NumberToString(count);
   fake_controller_.RespondWithRedirect(redirect_location);
   network::mojom::URLLoaderFactoryPtr factory =
       CreateSubresourceLoaderFactory();
@@ -1279,9 +1286,9 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, TooManyRedirects) {
 
     // Redirect more.
     redirect_location = std::string("https://www.example.com/redirect_") +
-                        base::IntToString(count);
+                        base::NumberToString(count);
     fake_controller_.RespondWithRedirect(redirect_location);
-    loader->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
+    loader->FollowRedirect({}, {}, base::nullopt);
   }
   client->RunUntilComplete();
 
@@ -1341,6 +1348,8 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, CorsFallbackResponse) {
        url::Origin::Create(GURL("https://other.example.com/")), false}};
 
   for (const auto& test : kTests) {
+    base::HistogramTester histogram_tester;
+
     SCOPED_TRACE(
         ::testing::Message()
         << "fetch_request_mode: " << static_cast<int>(test.fetch_request_mode)
@@ -1355,7 +1364,7 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, CorsFallbackResponse) {
     network::mojom::URLLoaderPtr loader;
     std::unique_ptr<network::TestURLLoaderClient> client;
     StartRequest(factory, request, &loader, &client);
-    client->RunUntilResponseReceived();
+    client->RunUntilComplete();
 
     const network::ResourceResponseHead& info = client->response_head();
     EXPECT_EQ(test.expected_was_fallback_required_by_service_worker,
@@ -1366,6 +1375,10 @@ TEST_F(ServiceWorkerSubresourceLoaderTest, CorsFallbackResponse) {
       EXPECT_EQ("HTTP/1.1 400 Service Worker Fallback Required",
                 info.headers->GetStatusLine());
     }
+    histogram_tester.ExpectTotalCount(
+        "ServiceWorker.LoadTiming.Subresource."
+        "FetchHandlerEndToFallbackNetwork",
+        1);
   }
 }
 

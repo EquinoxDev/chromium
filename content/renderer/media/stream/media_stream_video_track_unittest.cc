@@ -81,14 +81,15 @@ class MediaStreamVideoTrackTest : public ::testing::Test {
                              blink::WebMediaStreamSource::kTypeVideo,
                              blink::WebString::FromASCII("dummy_source_name"),
                              false /* remote */);
-    blink_source_.SetExtraData(mock_source_);
+    blink_source_.SetPlatformSource(base::WrapUnique(mock_source_));
   }
 
   // Create a track that's associated with |mock_source_|.
   blink::WebMediaStreamTrack CreateTrack() {
     const bool enabled = true;
     blink::WebMediaStreamTrack track = MediaStreamVideoTrack::CreateVideoTrack(
-        mock_source_, MediaStreamSource::ConstraintsCallback(), enabled);
+        mock_source_,
+        blink::WebPlatformMediaStreamSource::ConstraintsCallback(), enabled);
     if (!source_started_) {
       mock_source_->StartMockedSource();
       source_started_ = true;
@@ -103,7 +104,7 @@ class MediaStreamVideoTrackTest : public ::testing::Test {
     const bool enabled = true;
     blink::WebMediaStreamTrack track = MediaStreamVideoTrack::CreateVideoTrack(
         mock_source_, adapter_settings, base::Optional<bool>(), false, 0.0,
-        MediaStreamSource::ConstraintsCallback(), enabled);
+        blink::WebPlatformMediaStreamSource::ConstraintsCallback(), enabled);
     if (!source_started_) {
       mock_source_->StartMockedSource();
       source_started_ = true;
@@ -122,7 +123,7 @@ class MediaStreamVideoTrackTest : public ::testing::Test {
                              blink::WebMediaStreamSource::kTypeVideo,
                              blink::WebString::FromASCII("dummy_source_name"),
                              false /* remote */);
-    blink_source_.SetExtraData(mock_source_);
+    blink_source_.SetPlatformSource(base::WrapUnique(mock_source_));
   }
 
   MockMediaStreamVideoSource* mock_source() { return mock_source_; }

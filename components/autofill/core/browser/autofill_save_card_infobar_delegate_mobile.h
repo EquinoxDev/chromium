@@ -32,13 +32,15 @@ class AutofillSaveCardInfoBarDelegateMobile : public ConfirmInfoBarDelegate {
   AutofillSaveCardInfoBarDelegateMobile(
       bool upload,
       bool should_request_name_from_user,
+      bool should_request_expiration_date_from_user,
       const CreditCard& card,
       std::unique_ptr<base::DictionaryValue> legal_message,
       AutofillClient::UploadSaveCardPromptCallback
           upload_save_card_prompt_callback,
       AutofillClient::LocalSaveCardPromptCallback
           local_save_card_prompt_callback,
-      PrefService* pref_service);
+      PrefService* pref_service,
+      bool is_off_the_record);
 
   ~AutofillSaveCardInfoBarDelegateMobile() override;
 
@@ -83,8 +85,13 @@ class AutofillSaveCardInfoBarDelegateMobile : public ConfirmInfoBarDelegate {
   // Whether the action is an upload or a local save.
   bool upload_;
 
-  // Whether the user should enter/confirm cardholder name.
+  // If the cardholder name is missing, request the name from the user before
+  // saving the card.
   bool should_request_name_from_user_;
+
+  // If the expiration date is missing, request the missing data from the user
+  // before saving the card.
+  bool should_request_expiration_date_from_user_;
 
   // The callback to run once the user makes a decision with respect to the
   // credit card upload offer-to-save prompt (if |upload_| is true).
@@ -115,6 +122,9 @@ class AutofillSaveCardInfoBarDelegateMobile : public ConfirmInfoBarDelegate {
 
   // The legal messages to show in the content of the infobar.
   LegalMessageLines legal_messages_;
+
+  // Whether the save is offered while off the record
+  bool is_off_the_record_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillSaveCardInfoBarDelegateMobile);
 };

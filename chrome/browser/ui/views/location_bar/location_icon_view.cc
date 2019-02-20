@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 
+#include "base/bind.h"
 #include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/page_info/page_info_dialog.h"
@@ -19,6 +20,7 @@
 #include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/label.h"
 

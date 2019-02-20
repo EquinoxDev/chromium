@@ -8,6 +8,7 @@
 #include "chrome/browser/web_applications/components/web_app_audio_focus_id_map.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/site_instance.h"
 
 namespace web_app {
 
@@ -18,11 +19,13 @@ WebAppTabHelperBase::WebAppTabHelperBase(content::WebContents* web_contents)
 
 WebAppTabHelperBase::~WebAppTabHelperBase() = default;
 
-void WebAppTabHelperBase::SetAudioFocusIdMap(
-    WebAppAudioFocusIdMap* audio_focus_id_map) {
+void WebAppTabHelperBase::Init(WebAppAudioFocusIdMap* audio_focus_id_map) {
   DCHECK(!audio_focus_id_map_ && audio_focus_id_map);
-
   audio_focus_id_map_ = audio_focus_id_map;
+
+  // Sync app_id with the initial url from WebContents (used in Tab Restore etc)
+  const GURL init_url = web_contents()->GetSiteInstance()->GetSiteURL();
+  SetAppId(GetAppId(init_url));
 }
 
 void WebAppTabHelperBase::SetAppId(const AppId& app_id) {
@@ -30,12 +33,6 @@ void WebAppTabHelperBase::SetAppId(const AppId& app_id) {
     return;
 
   app_id_ = app_id;
-
-  OnAssociatedAppChanged();
-}
-
-void WebAppTabHelperBase::ResetAppId() {
-  app_id_.clear();
 
   OnAssociatedAppChanged();
 }
@@ -59,11 +56,34 @@ void WebAppTabHelperBase::DidCloneToNewWebContents(
   new_tab_helper->SetAppId(app_id());
 }
 
+void WebAppTabHelperBase::OnWebAppInstalled(const AppId& installed_app_id) {
+  // Check if current web_contents url is in scope for the newly installed app.
+  const web_app::AppId app_id = GetAppId(web_contents()->GetURL());
+  if (app_id == installed_app_id)
+    SetAppId(app_id);
+}
+
+void WebAppTabHelperBase::OnWebAppUninstalled(const AppId& uninstalled_app_id) {
+  if (app_id() == uninstalled_app_id)
+    ResetAppId();
+}
+
+void WebAppTabHelperBase::OnWebAppRegistryShutdown() {
+  ResetAppId();
+}
+
+void WebAppTabHelperBase::ResetAppId() {
+  app_id_.clear();
+  OnAssociatedAppChanged();
+}
+
 void WebAppTabHelperBase::OnAssociatedAppChanged() {
   UpdateAudioFocusGroupId();
 }
 
 void WebAppTabHelperBase::UpdateAudioFocusGroupId() {
+  DCHECK(audio_focus_id_map_);
+
   if (!app_id_.empty() && IsInAppWindow()) {
     audio_focus_group_id_ = audio_focus_id_map_->CreateOrGetIdForApp(app_id_);
   } else {

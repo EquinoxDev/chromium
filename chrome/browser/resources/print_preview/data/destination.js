@@ -22,11 +22,24 @@ print_preview.DestinationType = {
 print_preview.DestinationOrigin = {
   LOCAL: 'local',
   COOKIES: 'cookies',
+  // <if expr="chromeos">
   DEVICE: 'device',
+  // </if>
   PRIVET: 'privet',
   EXTENSION: 'extension',
   CROS: 'chrome_os',
 };
+
+/**
+ * Cloud Print origins.
+ * @const {!Array<!print_preview.DestinationOrigin>}
+ */
+print_preview.CloudOrigins = [
+  print_preview.DestinationOrigin.COOKIES,
+  // <if expr="chromeos">
+  print_preview.DestinationOrigin.DEVICE
+  // </if>
+];
 
 /**
  * Enumeration of the connection statuses of printer destinations.
@@ -219,6 +232,28 @@ cr.define('print_preview', function() {
     };
   }
 
+  /**
+   * @param {string} id Destination id.
+   * @param {!print_preview.DestinationOrigin} origin Destination origin.
+   * @param {string} account User account destination is registered for.
+   * @return {string} A key that maps to a destination with the selected |id|,
+   *     |origin|, and |account|.
+   */
+  function createDestinationKey(id, origin, account) {
+    return `${id}/${origin}/${account}`;
+  }
+
+  /**
+   * @param {!print_preview.RecentDestination} recentDestination
+   * @return {string} A key that maps to a destination with parameters matching
+   *     |recentDestination|.
+   */
+  function createRecentDestinationKey(recentDestination) {
+    return print_preview.createDestinationKey(
+        recentDestination.id, recentDestination.origin,
+        recentDestination.account);
+  }
+
   class Destination {
     /**
      * Print destination data object that holds data for both local and cloud
@@ -228,7 +263,6 @@ cr.define('print_preview', function() {
      * @param {!print_preview.DestinationOrigin} origin Origin of the
      *     destination.
      * @param {string} displayName Display name of the destination.
-     * @param {boolean} isRecent Whether the destination has been used recently.
      * @param {!print_preview.DestinationConnectionStatus} connectionStatus
      *     Connection status of the print destination.
      * @param {{tags: (Array<string>|undefined),
@@ -248,8 +282,7 @@ cr.define('print_preview', function() {
      *         }=} opt_params Optional
      *     parameters for the destination.
      */
-    constructor(
-        id, type, origin, displayName, isRecent, connectionStatus, opt_params) {
+    constructor(id, type, origin, displayName, connectionStatus, opt_params) {
       /**
        * ID of the destination.
        * @private {string}
@@ -273,12 +306,6 @@ cr.define('print_preview', function() {
        * @private {string}
        */
       this.displayName_ = displayName || '';
-
-      /**
-       * Whether the destination has been used recently.
-       * @private {boolean}
-       */
-      this.isRecent_ = isRecent;
 
       /**
        * Tags associated with the destination.
@@ -422,18 +449,6 @@ cr.define('print_preview', function() {
     /** @return {string} Display name of the destination. */
     get displayName() {
       return this.displayName_;
-    }
-
-    /** @return {boolean} Whether the destination has been used recently. */
-    get isRecent() {
-      return this.isRecent_;
-    }
-
-    /**
-     * @param {boolean} isRecent Whether the destination has been used recently.
-     */
-    set isRecent(isRecent) {
-      this.isRecent_ = isRecent;
     }
 
     /**
@@ -862,6 +877,11 @@ cr.define('print_preview', function() {
       });
       return defaultOptions.length != 0 ? defaultOptions[0] : null;
     }
+
+    /** @return {string} A unique identifier for this destination. */
+    get key() {
+      return `${this.id_}/${this.origin_}/${this.account_}`;
+    }
   }
 
   /**
@@ -885,5 +905,7 @@ cr.define('print_preview', function() {
   return {
     Destination: Destination,
     makeRecentDestination: makeRecentDestination,
+    createDestinationKey: createDestinationKey,
+    createRecentDestinationKey: createRecentDestinationKey,
   };
 });

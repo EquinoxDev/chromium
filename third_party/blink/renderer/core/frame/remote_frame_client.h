@@ -30,6 +30,8 @@ class RemoteFrameClient : public FrameClient {
 
   virtual void Navigate(const ResourceRequest&,
                         bool should_replace_current_entry,
+                        bool is_opener_navigation,
+                        bool prevent_sandboxed_download,
                         mojom::blink::BlobURLTokenPtr) = 0;
   unsigned BackForwardLength() override = 0;
 
@@ -55,8 +57,6 @@ class RemoteFrameClient : public FrameClient {
       bool occluded_or_obscured) = 0;
 
   virtual void AdvanceFocus(WebFocusType, LocalFrame* source) = 0;
-
-  virtual void VisibilityChanged(bool visible) = 0;
 
   virtual void SetIsInert(bool) = 0;
 

@@ -30,7 +30,6 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/webrtc_ip_handling_policy.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
 #include "content/shell/browser/shell_content_browser_client.h"
@@ -45,6 +44,7 @@
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/common/web_test/web_test_switches.h"
 #include "media/media_buildflags.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "third_party/blink/public/web/web_presentation_receiver_flags.h"
 
 namespace content {
@@ -456,6 +456,7 @@ WebContents* Shell::OpenURLFromTab(WebContents* source,
   load_url_params.should_replace_current_entry =
       params.should_replace_current_entry;
   load_url_params.blob_url_loader_factory = params.blob_url_loader_factory;
+  load_url_params.reload_type = params.reload_type;
 
   if (params.uses_post) {
     load_url_params.load_type = NavigationController::LOAD_TYPE_HTTP_POST;
@@ -565,6 +566,11 @@ bool Shell::DidAddMessageToConsole(WebContents* source,
   return switches::IsRunWebTestsSwitchPresent();
 }
 
+void Shell::PortalWebContentsCreated(WebContents* portal_web_contents) {
+  if (switches::IsRunWebTestsSwitchPresent())
+    SecondaryTestWindowObserver::CreateForWebContents(portal_web_contents);
+}
+
 void Shell::RendererUnresponsive(
     WebContents* source,
     RenderWidgetHost* render_widget_host,
@@ -609,7 +615,8 @@ bool Shell::ShouldAllowRunningInsecureContent(
   return allowed_per_prefs || allowed_by_test;
 }
 
-gfx::Size Shell::EnterPictureInPicture(const viz::SurfaceId& surface_id,
+gfx::Size Shell::EnterPictureInPicture(content::WebContents* web_contents,
+                                       const viz::SurfaceId& surface_id,
                                        const gfx::Size& natural_size) {
   // During tests, returning a fake window size (same aspect ratio) to pretend
   // the window was created and allow tests to run accordingly.

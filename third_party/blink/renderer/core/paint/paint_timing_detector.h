@@ -18,6 +18,7 @@ class PaintLayer;
 class LayoutRect;
 class TextPaintTimingDetector;
 class ImagePaintTimingDetector;
+class PropertyTreeState;
 
 // PaintTimingDetector contains some of paint metric detectors,
 // providing common infrastructure for these detectors.
@@ -32,14 +33,20 @@ class CORE_EXPORT PaintTimingDetector
   PaintTimingDetector(LocalFrameView*);
   void NotifyObjectPrePaint(const LayoutObject& object,
                             const PaintLayer& painting_layer);
+  static void NotifyTextPaint(const Node* node, const PropertyTreeState&);
+  static void NotifyTextPaint(const LayoutObject& object,
+                              const PropertyTreeState&);
   void NotifyNodeRemoved(const LayoutObject& object);
   void NotifyPrePaintFinished();
+  void NotifyPaintFinished();
   void NotifyInputEvent(WebInputEvent::Type);
   bool NeedToNotifyInputOrScroll();
   void NotifyScroll(ScrollType scroll_type);
   void DidChangePerformanceTiming();
   uint64_t CalculateVisualSize(const LayoutRect& invalidated_rect,
                                const PaintLayer& painting_layer) const;
+  uint64_t CalculateVisualSize(const LayoutRect& invalidated_rect,
+                               const PropertyTreeState&) const;
   void Dispose();
 
   TextPaintTimingDetector& GetTextPaintTimingDetector() {

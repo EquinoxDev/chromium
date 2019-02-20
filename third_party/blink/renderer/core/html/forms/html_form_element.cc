@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/radio_node_list_or_element.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_event_listener.h"
+#include "third_party/blink/renderer/bindings/core/v8/usv_string_or_trusted_url.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
@@ -44,6 +45,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/remote_frame.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/html/custom/custom_element.h"
 #include "third_party/blink/renderer/core/html/custom/element_internals.h"
 #include "third_party/blink/renderer/core/html/forms/form_controller.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
@@ -62,6 +64,7 @@
 #include "third_party/blink/renderer/core/loader/form_submission.h"
 #include "third_party/blink/renderer/core/loader/mixed_content_checker.h"
 #include "third_party/blink/renderer/core/loader/navigation_scheduler.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
 namespace blink {
@@ -87,13 +90,19 @@ HTMLFormElement* HTMLFormElement::Create(Document& document) {
 
 HTMLFormElement::~HTMLFormElement() = default;
 
-void HTMLFormElement::Trace(blink::Visitor* visitor) {
+void HTMLFormElement::Trace(Visitor* visitor) {
   visitor->Trace(past_names_map_);
   visitor->Trace(radio_button_group_scope_);
   visitor->Trace(listed_elements_);
   visitor->Trace(image_elements_);
   visitor->Trace(planned_navigation_);
   HTMLElement::Trace(visitor);
+}
+
+const AttrNameToTrustedType& HTMLFormElement::GetCheckedAttributeTypes() const {
+  DEFINE_STATIC_LOCAL(AttrNameToTrustedType, attribute_map,
+                      ({{"action", SpecificTrustedType::kTrustedURL}}));
+  return attribute_map;
 }
 
 bool HTMLFormElement::MatchesValidityPseudoClasses() const {
@@ -345,7 +354,7 @@ void HTMLFormElement::Submit(Event* event,
   if (!view || !frame || !frame->GetPage())
     return;
 
-  // https://html.spec.whatwg.org/multipage/forms.html#form-submission-algorithm
+  // https://html.spec.whatwg.org/C/#form-submission-algorithm
   // 2. If form document is not connected, has no associated browsing context,
   // or its active sandboxing flag set has its sandboxed forms browsing
   // context flag set, then abort these steps without doing anything.
@@ -412,11 +421,13 @@ void HTMLFormElement::Submit(Event* event,
   }
 }
 
-bool HTMLFormElement::ConstructEntryList(HTMLFormControlElement* submit_button,
-                                         FormData& form_data) {
+FormData* HTMLFormElement::ConstructEntryList(
+    HTMLFormControlElement* submit_button,
+    const WTF::TextEncoding& encoding) {
   if (is_constructing_entry_list_) {
-    return false;
+    return nullptr;
   }
+  auto& form_data = *MakeGarbageCollected<FormData>(encoding);
   base::AutoReset<bool> entry_list_scope(&is_constructing_entry_list_, true);
   if (submit_button)
     submit_button->SetActivatedSubmit(true);
@@ -436,7 +447,7 @@ bool HTMLFormElement::ConstructEntryList(HTMLFormControlElement* submit_button,
 
   if (submit_button)
     submit_button->SetActivatedSubmit(false);
-  return true;
+  return &form_data;
 }
 
 void HTMLFormElement::ScheduleFormSubmission(FormSubmission* submission) {
@@ -467,10 +478,8 @@ void HTMLFormElement::ScheduleFormSubmission(FormSubmission* submission) {
       UseCounter::Count(GetDocument(),
                         WebFeature::kFormDisabledAttributePresentAndSubmit);
     }
-    GetDocument()
-        .GetFrame()
-        ->GetScriptController()
-        .ExecuteScriptIfJavaScriptURL(submission->Action(), this);
+    GetDocument().ProcessJavaScriptUrl(submission->Action(),
+                                       kCheckContentSecurityPolicy);
     return;
   }
 
@@ -534,6 +543,8 @@ void HTMLFormElement::reset() {
   for (const auto& element : elements) {
     if (element->IsFormControlElement())
       ToHTMLFormControlElement(element)->Reset();
+    else if (element->IsElementInternals())
+      CustomElement::EnqueueFormResetCallback(*ToHTMLElement(element));
   }
 
   is_in_reset_function_ = false;
@@ -623,16 +634,8 @@ void HTMLFormElement::CollectListedElements(
     ListedElement::List& elements) const {
   elements.clear();
   for (HTMLElement& element : Traversal<HTMLElement>::StartsAfter(root)) {
-    ListedElement* listed_element = nullptr;
-    if (element.IsFormControlElement())
-      listed_element = ToHTMLFormControlElement(&element);
-    else if (element.IsFormAssociatedCustomElement())
-      listed_element = &element.EnsureElementInternals();
-    else if (auto* object = ToHTMLObjectElementOrNull(element))
-      listed_element = object;
-    else
-      continue;
-    if (listed_element->Form() == this)
+    ListedElement* listed_element = ListedElement::From(element);
+    if (listed_element && listed_element->Form() == this)
       elements.push_back(listed_element);
   }
 }
@@ -692,8 +695,13 @@ String HTMLFormElement::action() const {
   return action_url.GetString();
 }
 
-void HTMLFormElement::setAction(const AtomicString& value) {
-  setAttribute(kActionAttr, value);
+void HTMLFormElement::action(USVStringOrTrustedURL& result) const {
+  result.SetUSVString(action());
+}
+
+void HTMLFormElement::setAction(const USVStringOrTrustedURL& value,
+                                ExceptionState& exception_state) {
+  setAttribute(kActionAttr, value, exception_state);
 }
 
 void HTMLFormElement::setEnctype(const AtomicString& value) {

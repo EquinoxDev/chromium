@@ -37,9 +37,9 @@ class TrackListBase : public EventTargetWithInlineData {
     return nullptr;
   }
 
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(change, kChange);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(addtrack, kAddtrack);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(removetrack, kRemovetrack);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(change, kChange)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(addtrack, kAddtrack)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(removetrack, kRemovetrack)
 
   // EventTarget interface
   ExecutionContext* GetExecutionContext() const override {
@@ -79,7 +79,7 @@ class TrackListBase : public EventTargetWithInlineData {
     ScheduleEvent(Event::Create(event_type_names::kChange));
   }
 
-  void Trace(blink::Visitor* visitor) override {
+  void Trace(Visitor* visitor) override {
     visitor->Trace(tracks_);
     visitor->Trace(media_element_);
     EventTargetWithInlineData::Trace(visitor);

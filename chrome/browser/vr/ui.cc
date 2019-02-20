@@ -11,6 +11,7 @@
 
 #include "chrome/browser/vr/ui.h"
 
+#include "base/bind.h"
 #include "base/numerics/math_constants.h"
 #include "base/numerics/ranges.h"
 #include "base/strings/string16.h"
@@ -86,6 +87,12 @@ UiElementName UserFriendlyElementNameToUiElementName(
       return kWebVrHostedUiContent;
     case UserFriendlyElementName::kMicrophonePermissionIndicator:
       return kAudioCaptureIndicator;
+    case UserFriendlyElementName::kWebXrExternalPromptNotification:
+      return kWebXrExternalPromptNotification;
+    case UserFriendlyElementName::kCameraPermissionIndicator:
+      return kVideoCaptureIndicator;
+    case UserFriendlyElementName::kLocationPermissionIndicator:
+      return kLocationAccessIndicator;
     default:
       NOTREACHED();
       return kNone;
@@ -282,13 +289,18 @@ void Ui::SetRecognitionResult(const base::string16& result) {
   model_->speech.recognition_result = result;
 }
 
+void Ui::SetHasOrCanRequestRecordAudioPermission(
+    bool const has_or_can_request_record_audio) {
+  model_->speech.has_or_can_request_record_audio_permission =
+      has_or_can_request_record_audio;
+}
+
 void Ui::OnSpeechRecognitionStateChanged(int new_state) {
   model_->speech.speech_recognition_state = new_state;
 }
 
-void Ui::SetOmniboxSuggestions(
-    std::unique_ptr<OmniboxSuggestions> suggestions) {
-  model_->omnibox_suggestions = suggestions->suggestions;
+void Ui::SetOmniboxSuggestions(std::vector<OmniboxSuggestion> suggestions) {
+  model_->omnibox_suggestions = std::move(suggestions);
 }
 
 void Ui::ShowSoftInput(bool show) {
@@ -576,8 +588,8 @@ void Ui::SetUiInputManagerForTesting(bool enabled) {
 }
 
 void Ui::InitializeModel(const UiInitialState& ui_initial_state) {
-  model_->speech.has_or_can_request_audio_permission =
-      ui_initial_state.has_or_can_request_audio_permission;
+  model_->speech.has_or_can_request_record_audio_permission =
+      ui_initial_state.has_or_can_request_record_audio_permission;
   model_->ui_modes.clear();
   model_->push_mode(kModeBrowsing);
   if (ui_initial_state.in_web_vr) {

@@ -4,25 +4,31 @@
 
 #include "chromecast/browser/cast_web_contents_impl.h"
 
+#include <utility>
+
+#include "base/bind.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "chromecast/browser/cast_browser_process.h"
 #include "chromecast/browser/devtools/remote_debugging_server.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_widget_host_view.h"
+#include "content/public/common/bindings_policy.h"
 #include "net/base/net_errors.h"
+#include "services/service_manager/public/cpp/interface_provider.h"
 #include "url/gurl.h"
 
 namespace chromecast {
 
-CastWebContentsImpl::CastWebContentsImpl(
-    CastWebContentsImpl::Delegate* delegate,
-    content::WebContents* web_contents,
-    bool enabled_for_dev)
-    : delegate_(delegate),
-      web_contents_(web_contents),
+CastWebContentsImpl::CastWebContentsImpl(content::WebContents* web_contents,
+                                         const InitParams& init_params)
+    : web_contents_(web_contents),
+      delegate_(init_params.delegate),
       page_state_(PageState::IDLE),
-      enabled_for_dev_(enabled_for_dev),
+      enabled_for_dev_(init_params.enabled_for_dev),
       remote_debugging_server_(
           shell::CastBrowserProcess::GetInstance()->remote_debugging_server()),
       closing_(false),
@@ -32,7 +38,6 @@ CastWebContentsImpl::CastWebContentsImpl(
       last_error_(net::OK),
       task_runner_(base::SequencedTaskRunnerHandle::Get()),
       weak_factory_(this) {
-  DCHECK(delegate_);
   DCHECK(web_contents_);
   DCHECK(web_contents_->GetController().IsInitialNavigation());
   DCHECK(!web_contents_->IsLoading());
@@ -41,12 +46,15 @@ CastWebContentsImpl::CastWebContentsImpl(
     LOG(INFO) << "Enabling dev console for CastWebContentsImpl";
     remote_debugging_server_->EnableWebContentsForDebugging(web_contents_);
   }
-  delegate_->OnPageStateChanged(this);
 }
 
 CastWebContentsImpl::~CastWebContentsImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DisableDebugging();
+
+  for (auto& observer : observer_list_) {
+    observer.ResetCastWebContents();
+  }
 }
 
 content::WebContents* CastWebContentsImpl::web_contents() const {
@@ -57,6 +65,13 @@ content::WebContents* CastWebContentsImpl::web_contents() const {
 CastWebContents::PageState CastWebContentsImpl::page_state() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return page_state_;
+}
+
+void CastWebContentsImpl::AddRendererFeatures(
+    std::vector<RendererFeature> features) {
+  for (auto& feature : features) {
+    renderer_features_.push_back({feature.name, feature.value.Clone()});
+  }
 }
 
 void CastWebContentsImpl::LoadUrl(const GURL& url) {
@@ -119,6 +134,52 @@ void CastWebContentsImpl::SetDelegate(CastWebContents::Delegate* delegate) {
   delegate_ = delegate;
 }
 
+void CastWebContentsImpl::AllowWebAndMojoWebUiBindings() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  content::RenderViewHost* rvh = web_contents_->GetRenderViewHost();
+  DCHECK(rvh);
+  rvh->GetMainFrame()->AllowBindings(content::BINDINGS_POLICY_WEB_UI |
+                                     content::BINDINGS_POLICY_MOJO_WEB_UI);
+}
+
+// Set background to transparent before making the view visible. This is in
+// case Chrome dev tools was opened and caused background color to be reset.
+// Note: we also have to set color to black first, because
+// RenderWidgetHostViewBase::SetBackgroundColor ignores setting color to
+// current color, and it isn't aware that dev tools has changed the color.
+void CastWebContentsImpl::ClearRenderWidgetHostView() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  content::RenderWidgetHostView* view =
+      web_contents_->GetRenderWidgetHostView();
+  if (view) {
+    view->SetBackgroundColor(SK_ColorBLACK);
+    view->SetBackgroundColor(SK_ColorTRANSPARENT);
+  }
+}
+
+void CastWebContentsImpl::AddObserver(CastWebContents::Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(observer);
+  observer_list_.AddObserver(observer);
+}
+
+void CastWebContentsImpl::RemoveObserver(CastWebContents::Observer* observer) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(observer);
+  observer_list_.RemoveObserver(observer);
+}
+
+service_manager::BinderRegistry* CastWebContentsImpl::binder_registry() {
+  return &binder_registry_;
+}
+
+void CastWebContentsImpl::RegisterInterfaceProvider(
+    const InterfaceSet& interface_set,
+    service_manager::InterfaceProvider* interface_provider) {
+  DCHECK(interface_provider);
+  interface_providers_map_.emplace(interface_set, interface_provider);
+}
+
 void CastWebContentsImpl::OnClosePageTimeout() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!closing_ || stopped_) {
@@ -126,6 +187,58 @@ void CastWebContentsImpl::OnClosePageTimeout() {
   }
   closing_ = false;
   Stop(net::OK);
+}
+
+void CastWebContentsImpl::RenderFrameCreated(
+    content::RenderFrameHost* render_frame_host) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  DCHECK(render_frame_host);
+
+  // New render frame has been created, we need to add it to the app
+  // whitelisting session so URL requests are handled correctly. This must be
+  // done before URL requests are executed within render frame.
+  auto* process = render_frame_host->GetProcess();
+  const int render_process_id = process->GetID();
+  const int render_frame_id = render_frame_host->GetRoutingID();
+
+  for (Observer& observer : observer_list_) {
+    observer.RenderFrameCreated(render_process_id, render_frame_id);
+  }
+
+  chromecast::shell::mojom::FeatureManagerPtr feature_manager_ptr;
+  render_frame_host->GetRemoteInterfaces()->GetInterface(&feature_manager_ptr);
+  feature_manager_ptr->ConfigureFeatures(GetRendererFeatures());
+}
+
+std::vector<chromecast::shell::mojom::FeaturePtr>
+CastWebContentsImpl::GetRendererFeatures() {
+  std::vector<chromecast::shell::mojom::FeaturePtr> features;
+  for (const auto& feature : renderer_features_) {
+    features.push_back(chromecast::shell::mojom::Feature::New(
+        feature.name, feature.value.Clone()));
+  }
+  return features;
+}
+
+void CastWebContentsImpl::OnInterfaceRequestFromFrame(
+    content::RenderFrameHost* /* render_frame_host */,
+    const std::string& interface_name,
+    mojo::ScopedMessagePipeHandle* interface_pipe) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (binder_registry_.TryBindInterface(interface_name, interface_pipe)) {
+    return;
+  }
+  for (auto& entry : interface_providers_map_) {
+    auto const& interface_set = entry.first;
+    // Interface is provided by this InterfaceProvider.
+    if (interface_set.find(interface_name) != interface_set.end()) {
+      auto* interface_provider = entry.second;
+      interface_provider->GetInterfaceByName(interface_name,
+                                             std::move(*interface_pipe));
+      break;
+    }
+  }
 }
 
 void CastWebContentsImpl::RenderProcessGone(base::TerminationStatus status) {
@@ -271,6 +384,14 @@ void CastWebContentsImpl::DidFailLoad(
   TracePageLoadEnd(validated_url);
   Stop(error_code);
   DCHECK_EQ(PageState::ERROR, page_state_);
+}
+
+void CastWebContentsImpl::InnerWebContentsCreated(
+    content::WebContents* inner_web_contents) {
+  auto result = inner_contents_.insert(std::make_unique<CastWebContentsImpl>(
+      inner_web_contents, InitParams{nullptr, enabled_for_dev_}));
+  if (delegate_)
+    delegate_->InnerContentsCreated(result.first->get(), this);
 }
 
 void CastWebContentsImpl::WebContentsDestroyed() {

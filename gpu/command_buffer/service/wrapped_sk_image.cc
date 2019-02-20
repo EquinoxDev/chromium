@@ -12,9 +12,10 @@
 #include "components/viz/common/resources/resource_format_utils.h"
 #include "gpu/command_buffer/common/shared_image_trace_utils.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
-#include "gpu/command_buffer/service/raster_decoder_context_state.h"
+#include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/command_buffer/service/shared_image_backing.h"
 #include "gpu/command_buffer/service/shared_image_representation.h"
+#include "third_party/skia/include/core/SkPromiseImageTexture.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/core/SkSurfaceProps.h"
 #include "third_party/skia/include/gpu/GrBackendSurface.h"
@@ -33,7 +34,7 @@ class WrappedSkImage : public SharedImageBacking {
     DCHECK(context_state_->context_lost() ||
            context_state_->IsCurrent(nullptr));
     if (!context_state_->context_lost())
-      context_state_->need_context_state_reset = true;
+      context_state_->set_need_context_state_reset(true);
   }
 
   // SharedImageBacking implementation.
@@ -77,15 +78,11 @@ class WrappedSkImage : public SharedImageBacking {
         image_->getBackendTexture(/*flushPendingGrContextIO=*/true);
     DCHECK(gr_texture.isValid());
     return SkSurface::MakeFromBackendTextureAsRenderTarget(
-        context_state_->gr_context, gr_texture, kTopLeft_GrSurfaceOrigin,
+        context_state_->gr_context(), gr_texture, kTopLeft_GrSurfaceOrigin,
         final_msaa_count, color_type, /*colorSpace=*/nullptr, &surface_props);
   }
 
-  bool GetGrBackendTexture(GrBackendTexture* gr_texture) const {
-    context_state_->need_context_state_reset = true;
-    *gr_texture = image_->getBackendTexture(/*flushPendingGrContextIO=*/true);
-    return gr_texture->isValid();
-  }
+  sk_sp<SkPromiseImageTexture> promise_texture() { return promise_texture_; }
 
  protected:
   std::unique_ptr<SharedImageRepresentationSkia> ProduceSkia(
@@ -101,7 +98,7 @@ class WrappedSkImage : public SharedImageBacking {
                  const gfx::ColorSpace& color_space,
                  uint32_t usage,
                  size_t estimated_size,
-                 raster::RasterDecoderContextState* context_state)
+                 SharedContextState* context_state)
       : SharedImageBacking(mailbox,
                            format,
                            size,
@@ -117,10 +114,10 @@ class WrappedSkImage : public SharedImageBacking {
       return false;
     DCHECK(context_state_->IsCurrent(nullptr));
 
-    context_state_->need_context_state_reset = true;
+    context_state_->set_need_context_state_reset(true);
 
     if (data.empty()) {
-      auto surface = SkSurface::MakeRenderTarget(context_state_->gr_context,
+      auto surface = SkSurface::MakeRenderTarget(context_state_->gr_context(),
                                                  SkBudgeted::kNo, info);
       if (!surface)
         return false;
@@ -135,7 +132,7 @@ class WrappedSkImage : public SharedImageBacking {
       sk_sp<SkImage> image = SkImage::MakeFromBitmap(bitmap);
       if (!image)
         return false;
-      image_ = image->makeTextureImage(context_state_->gr_context,
+      image_ = image->makeTextureImage(context_state_->gr_context(),
                                        image->colorSpace());
     }
 
@@ -146,6 +143,7 @@ class WrappedSkImage : public SharedImageBacking {
         image_->getBackendTexture(/*flushPendingGrContextIO=*/false);
     if (!gr_texture.isValid())
       return false;
+    promise_texture_ = SkPromiseImageTexture::Make(gr_texture);
 
     switch (gr_texture.backend()) {
       case GrBackendApi::kOpenGL: {
@@ -167,9 +165,11 @@ class WrappedSkImage : public SharedImageBacking {
     return true;
   }
 
-  RasterDecoderContextState* const context_state_;
+  SharedContextState* const context_state_;
 
   sk_sp<SkImage> image_;
+  sk_sp<SkPromiseImageTexture> promise_texture_;
+
   bool cleared_ = false;
 
   uint64_t tracing_id_ = 0;
@@ -205,11 +205,8 @@ class WrappedSkImageRepresentation : public SharedImageRepresentationSkia {
     write_surface_ = nullptr;
   }
 
-  bool BeginReadAccess(SkSurface* sk_surface,
-                       GrBackendTexture* backend_texture) override {
-    if (!wrapped_sk_image()->GetGrBackendTexture(backend_texture))
-      return false;
-    return true;
+  sk_sp<SkPromiseImageTexture> BeginReadAccess(SkSurface* sk_surface) override {
+    return wrapped_sk_image()->promise_texture();
   }
 
   void EndReadAccess() override {
@@ -226,8 +223,7 @@ class WrappedSkImageRepresentation : public SharedImageRepresentationSkia {
 
 }  // namespace
 
-WrappedSkImageFactory::WrappedSkImageFactory(
-    RasterDecoderContextState* context_state)
+WrappedSkImageFactory::WrappedSkImageFactory(SharedContextState* context_state)
     : context_state_(context_state) {}
 
 WrappedSkImageFactory::~WrappedSkImageFactory() = default;

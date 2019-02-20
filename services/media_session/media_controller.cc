@@ -49,13 +49,11 @@ void MediaController::ToggleSuspendResume() {
   }
 }
 
-void MediaController::AddObserver(mojom::MediaSessionObserverPtr observer) {
+void MediaController::AddObserver(mojom::MediaControllerObserverPtr observer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // Flush the new observer with the state. We always flush the metadata as that
-  // is optional so null is a valid value whereas the session info is required.
-  if (!session_info_.is_null())
-    observer->MediaSessionInfoChanged(session_info_.Clone());
+  // Flush the new observer with the current state.
+  observer->MediaSessionInfoChanged(session_info_.Clone());
   observer->MediaSessionMetadataChanged(session_metadata_);
   observer->MediaSessionActionsChanged(session_actions_);
 
@@ -65,7 +63,7 @@ void MediaController::AddObserver(mojom::MediaSessionObserverPtr observer) {
 void MediaController::MediaSessionInfoChanged(mojom::MediaSessionInfoPtr info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  observers_.ForAllPtrs([&info](mojom::MediaSessionObserver* observer) {
+  observers_.ForAllPtrs([&info](mojom::MediaControllerObserver* observer) {
     observer->MediaSessionInfoChanged(info.Clone());
   });
 
@@ -76,7 +74,7 @@ void MediaController::MediaSessionMetadataChanged(
     const base::Optional<MediaMetadata>& metadata) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  observers_.ForAllPtrs([&metadata](mojom::MediaSessionObserver* observer) {
+  observers_.ForAllPtrs([&metadata](mojom::MediaControllerObserver* observer) {
     observer->MediaSessionMetadataChanged(metadata);
   });
 
@@ -87,11 +85,17 @@ void MediaController::MediaSessionActionsChanged(
     const std::vector<mojom::MediaSessionAction>& actions) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  observers_.ForAllPtrs([&actions](mojom::MediaSessionObserver* observer) {
+  observers_.ForAllPtrs([&actions](mojom::MediaControllerObserver* observer) {
     observer->MediaSessionActionsChanged(actions);
   });
 
   session_actions_ = actions;
+}
+
+void MediaController::MediaSessionImagesChanged(
+    const base::flat_map<mojom::MediaSessionImageType, std::vector<MediaImage>>&
+        images) {
+  // TODO(beccahughes): Implement this
 }
 
 void MediaController::PreviousTrack() {
@@ -131,6 +135,15 @@ bool MediaController::SetMediaSession(mojom::MediaSession* session) {
       mojom::MediaSessionObserverPtr observer;
       session_binding_.Bind(mojo::MakeRequest(&observer));
       session->AddObserver(std::move(observer));
+    } else {
+      // If we are no longer bound to a session we should flush the observers
+      // with empty data.
+      observers_.ForAllPtrs([](mojom::MediaControllerObserver* observer) {
+        observer->MediaSessionInfoChanged(nullptr);
+        observer->MediaSessionMetadataChanged(base::nullopt);
+        observer->MediaSessionActionsChanged(
+            std::vector<mojom::MediaSessionAction>());
+      });
     }
   }
 

@@ -15,7 +15,7 @@
 
 namespace blink {
 
-class HTMLImageElement;
+class ImageResourceContent;
 class LayoutImage;
 
 // ImageElementTiming is responsible for tracking the paint timings for <img>
@@ -33,18 +33,19 @@ class CORE_EXPORT ImageElementTiming final
 
   static ImageElementTiming& From(LocalDOMWindow&);
 
-  // Called when the LayoutImage has been painted. This method might queue a
+  // Called when the LayoutObject has been painted. This method might queue a
   // swap promise to compute and report paint timestamps.
-  void NotifyImagePainted(const HTMLImageElement*,
-                          const LayoutImage*,
+  void NotifyImagePainted(const LayoutObject*,
+                          const ImageResourceContent* cached_image,
                           const PaintLayer*);
 
   // Called when the LayoutImage will be destroyed.
-  void NotifyWillBeDestroyed(const LayoutImage*);
+  void NotifyWillBeDestroyed(const LayoutObject*);
 
   void Trace(blink::Visitor*) override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ImageElementTimingTest, ImageInsideSVG);
   // Callback for the swap promise. Reports paint timestamps.
   void ReportImagePaintSwapTime(WebLayerTreeView::SwapResult,
                                 base::TimeTicks timestamp);
@@ -59,8 +60,8 @@ class CORE_EXPORT ImageElementTiming final
   // Vector containing the element timing infos that will be reported during the
   // next swap promise callback.
   WTF::Vector<ElementTimingInfo> element_timings_;
-  // Hashmap of LayoutImage objects for which paint has already been notified.
-  WTF::HashSet<const LayoutImage*> images_notified_;
+  // Hashmap of LayoutObjects for which paint has already been notified.
+  WTF::HashSet<const LayoutObject*> images_notified_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageElementTiming);
 };

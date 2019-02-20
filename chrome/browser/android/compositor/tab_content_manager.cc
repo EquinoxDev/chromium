@@ -10,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/android/callback_android.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
@@ -27,6 +28,7 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "jni/TabContentManager_jni.h"
+#include "skia/ext/image_operations.h"
 #include "ui/android/resources/ui_resource_provider.h"
 #include "ui/android/view_android.h"
 #include "ui/gfx/android/java_bitmap.h"
@@ -297,6 +299,18 @@ void TabContentManager::RemoveTabThumbnail(JNIEnv* env,
   NativeRemoveTabThumbnail(tab_id);
 }
 
+void TabContentManager::GetTabThumbnailWithCallback(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& obj,
+    jint tab_id,
+    const base::android::JavaParamRef<jobject>& j_callback) {
+  thumbnail_cache_->DecompressThumbnailFromFile(
+      tab_id, base::BindRepeating(
+                  &TabContentManager::TabThumbnailAvailableFromDisk,
+                  weak_factory_.GetWeakPtr(),
+                  base::android::ScopedJavaGlobalRef<jobject>(j_callback)));
+}
+
 void TabContentManager::OnUIResourcesWereEvicted() {
   thumbnail_cache_->OnUIResourcesWereEvicted();
 }
@@ -318,6 +332,21 @@ void TabContentManager::PutThumbnailIntoCache(int tab_id,
 
   if (thumbnail_scale > 0 && !bitmap.empty())
     thumbnail_cache_->Put(tab_id, bitmap, thumbnail_scale);
+}
+
+void TabContentManager::TabThumbnailAvailableFromDisk(
+    base::android::ScopedJavaGlobalRef<jobject> j_callback,
+    bool result,
+    SkBitmap bitmap) {
+  ScopedJavaLocalRef<jobject> j_bitmap;
+  if (!bitmap.isNull() && result) {
+    SkIRect dest_subset = {0, 0, bitmap.width() / 2, bitmap.width() / 2};
+    SkBitmap result_bitmap = skia::ImageOperations::Resize(
+        bitmap, skia::ImageOperations::RESIZE_BETTER, bitmap.width() / 2,
+        bitmap.height() / 2, dest_subset);
+    j_bitmap = gfx::ConvertToJavaBitmap(&result_bitmap);
+  }
+  RunObjectCallbackAndroid(j_callback, j_bitmap);
 }
 
 // ----------------------------------------------------------------------------

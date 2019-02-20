@@ -352,6 +352,7 @@ bool UtilityProcessHost::StartProcess() {
       network::switches::kIgnoreUrlFetcherCertRequests,
       network::switches::kLogNetLog,
       network::switches::kNoReferrers,
+      network::switches::kExplicitlyAllowedPorts,
       service_manager::switches::kNoSandbox,
 #if defined(OS_MACOSX)
       service_manager::switches::kEnableSandboxLogging,
@@ -375,6 +376,7 @@ bool UtilityProcessHost::StartProcess() {
       switches::kV,
       switches::kVModule,
 #if defined(OS_ANDROID)
+      switches::kEnableReachedCodeProfiler,
       switches::kOrderfileMemoryOptimization,
 #endif
       // These flags are used by the audio service:

@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/barrier_closure.h"
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
@@ -83,6 +84,10 @@ const uint64_t kPaddingRange = 14431 * 1024;
 //   1: Uniform random 400K.
 //   2: Uniform random 14,431K.
 const int32_t kCachePaddingAlgorithmVersion = 2;
+
+// Maximum number of recursive QueryCacheOpenNextEntry() calls we permit
+// before forcing an asynchronous task.
+const int kMaxQueryCacheRecursiveDepth = 20;
 
 using MetadataCallback =
     base::OnceCallback<void(std::unique_ptr<proto::CacheMetadata>)>;
@@ -215,7 +220,7 @@ bool FindDuplicateOperations(
     // supports multiple operations is addAll() and it does not allow options
     // to be passed.  Therefore we assume we do not need to take any options
     // into account here.
-    DCHECK(!outer_op->match_params);
+    DCHECK(!outer_op->match_options);
 
     // If this entry already matches a duplicate we found, then just skip
     // ahead to find any remaining duplicates.
@@ -349,7 +354,7 @@ blink::mojom::FetchAPIResponsePtr CreateResponse(
       std::vector<std::string>(
           metadata.response().cors_exposed_header_names().begin(),
           metadata.response().cors_exposed_header_names().end()),
-      true /* is_in_cache_storage */, nullptr /* side_data_blob */);
+      nullptr /* side_data_blob */);
 }
 
 // The size of opaque (non-cors) resource responses are padded in order
@@ -427,7 +432,7 @@ struct CacheStorageCache::QueryCacheResult {
 
 struct CacheStorageCache::QueryCacheContext {
   QueryCacheContext(blink::mojom::FetchAPIRequestPtr request,
-                    blink::mojom::QueryParamsPtr options,
+                    blink::mojom::CacheQueryOptionsPtr options,
                     QueryCacheCallback callback,
                     QueryTypes query_types)
       : request(std::move(request)),
@@ -448,7 +453,7 @@ struct CacheStorageCache::QueryCacheContext {
 
   // Input to QueryCache
   blink::mojom::FetchAPIRequestPtr request;
-  blink::mojom::QueryParamsPtr options;
+  blink::mojom::CacheQueryOptionsPtr options;
   QueryCacheCallback callback;
   QueryTypes query_types = 0;
   size_t estimated_out_bytes = 0;
@@ -540,7 +545,7 @@ bool CacheStorageCache::IsUnreferenced() const {
 }
 
 void CacheStorageCache::Match(blink::mojom::FetchAPIRequestPtr request,
-                              blink::mojom::QueryParamsPtr match_params,
+                              blink::mojom::CacheQueryOptionsPtr match_options,
                               ResponseCallback callback) {
   if (backend_state_ == BACKEND_CLOSED) {
     std::move(callback).Run(
@@ -552,13 +557,14 @@ void CacheStorageCache::Match(blink::mojom::FetchAPIRequestPtr request,
       CacheStorageSchedulerOp::kMatch,
       base::BindOnce(&CacheStorageCache::MatchImpl,
                      weak_ptr_factory_.GetWeakPtr(), std::move(request),
-                     std::move(match_params),
+                     std::move(match_options),
                      scheduler_->WrapCallbackToRunNext(std::move(callback))));
 }
 
-void CacheStorageCache::MatchAll(blink::mojom::FetchAPIRequestPtr request,
-                                 blink::mojom::QueryParamsPtr match_params,
-                                 ResponsesCallback callback) {
+void CacheStorageCache::MatchAll(
+    blink::mojom::FetchAPIRequestPtr request,
+    blink::mojom::CacheQueryOptionsPtr match_options,
+    ResponsesCallback callback) {
   if (backend_state_ == BACKEND_CLOSED) {
     std::move(callback).Run(
         MakeErrorStorage(ErrorStorageType::kMatchAllBackendClosed),
@@ -570,7 +576,7 @@ void CacheStorageCache::MatchAll(blink::mojom::FetchAPIRequestPtr request,
       CacheStorageSchedulerOp::kMatchAll,
       base::BindOnce(&CacheStorageCache::MatchAllImpl,
                      weak_ptr_factory_.GetWeakPtr(), std::move(request),
-                     std::move(match_params),
+                     std::move(match_options),
                      scheduler_->WrapCallbackToRunNext(std::move(callback))));
 }
 
@@ -664,8 +670,7 @@ void CacheStorageCache::BatchOperation(
   base::CheckedNumeric<uint64_t> safe_side_data_size = 0;
   for (const auto& operation : operations) {
     if (operation->operation_type == blink::mojom::OperationType::kPut) {
-      safe_space_required +=
-          (operation->response->blob ? operation->response->blob->size : 0);
+      safe_space_required += CalculateRequiredSafeSpaceForPut(operation);
       safe_side_data_size += (operation->response->side_data_blob
                                   ? operation->response->side_data_blob->size
                                   : 0);
@@ -816,7 +821,7 @@ void CacheStorageCache::BatchDidAllOperations(
 }
 
 void CacheStorageCache::Keys(blink::mojom::FetchAPIRequestPtr request,
-                             blink::mojom::QueryParamsPtr options,
+                             blink::mojom::CacheQueryOptionsPtr options,
                              RequestsCallback callback) {
   if (backend_state_ == BACKEND_CLOSED) {
     std::move(callback).Run(
@@ -942,7 +947,7 @@ CacheStorageCache::CacheStorageCache(
 }
 
 void CacheStorageCache::QueryCache(blink::mojom::FetchAPIRequestPtr request,
-                                   blink::mojom::QueryParamsPtr options,
+                                   blink::mojom::CacheQueryOptionsPtr options,
                                    QueryTypes query_types,
                                    QueryCacheCallback callback) {
   DCHECK_NE(
@@ -1008,6 +1013,14 @@ void CacheStorageCache::QueryCacheOpenNextEntry(
     std::unique_ptr<QueryCacheContext> query_cache_context) {
   DCHECK_EQ(nullptr, query_cache_context->enumerated_entry);
 
+  query_cache_recursive_depth_ += 1;
+  auto cleanup = base::ScopedClosureRunner(base::BindOnce(
+      [](CacheStorageCache* self) {
+        DCHECK(self->query_cache_recursive_depth_ > 0);
+        self->query_cache_recursive_depth_ -= 1;
+      },
+      base::Unretained(this)));
+
   if (!query_cache_context->backend_iterator) {
     // Iteration is complete.
     std::sort(query_cache_context->matches->begin(),
@@ -1029,8 +1042,20 @@ void CacheStorageCache::QueryCacheOpenNextEntry(
 
   int rv = iterator.OpenNextEntry(enumerated_entry, open_entry_callback);
 
-  if (rv != net::ERR_IO_PENDING)
+  if (rv == net::ERR_IO_PENDING)
+    return;
+
+  // In most cases we can immediately invoke the callback when there is no
+  // pending IO.  We must be careful, however, to avoid blowing out the stack
+  // when iterating a large cache.  Only invoke the callback synchronously
+  // if we have not recursed past a threshold depth.
+  if (query_cache_recursive_depth_ <= kMaxQueryCacheRecursiveDepth) {
     std::move(open_entry_callback).Run(rv);
+    return;
+  }
+
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(std::move(open_entry_callback), rv));
 }
 
 void CacheStorageCache::QueryCacheFilterEntry(
@@ -1209,11 +1234,12 @@ int32_t CacheStorageCache::GetResponsePaddingVersion() {
   return kCachePaddingAlgorithmVersion;
 }
 
-void CacheStorageCache::MatchImpl(blink::mojom::FetchAPIRequestPtr request,
-                                  blink::mojom::QueryParamsPtr match_params,
-                                  ResponseCallback callback) {
+void CacheStorageCache::MatchImpl(
+    blink::mojom::FetchAPIRequestPtr request,
+    blink::mojom::CacheQueryOptionsPtr match_options,
+    ResponseCallback callback) {
   MatchAllImpl(
-      std::move(request), std::move(match_params),
+      std::move(request), std::move(match_options),
       base::BindOnce(&CacheStorageCache::MatchDidMatchAll,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
 }
@@ -1237,7 +1263,7 @@ void CacheStorageCache::MatchDidMatchAll(
 }
 
 void CacheStorageCache::MatchAllImpl(blink::mojom::FetchAPIRequestPtr request,
-                                     blink::mojom::QueryParamsPtr options,
+                                     blink::mojom::CacheQueryOptionsPtr options,
                                      ResponsesCallback callback) {
   DCHECK_NE(BACKEND_UNINITIALIZED, backend_state_);
   if (backend_state_ != BACKEND_OPEN) {
@@ -1461,7 +1487,8 @@ void CacheStorageCache::PutImpl(std::unique_ptr<PutContext> put_context) {
   delete_request->referrer = blink::mojom::Referrer::New();
   delete_request->headers = {};
 
-  blink::mojom::QueryParamsPtr query_options = blink::mojom::QueryParams::New();
+  blink::mojom::CacheQueryOptionsPtr query_options =
+      blink::mojom::CacheQueryOptions::New();
   query_options->ignore_method = true;
   query_options->ignore_vary = true;
   DeleteImpl(
@@ -1687,7 +1714,8 @@ void CacheStorageCache::CalculateCacheSizePaddingGotSize(
   // necessary.
   DCHECK_EQ(backend_state_, BACKEND_UNINITIALIZED);
   auto request = blink::mojom::FetchAPIRequest::New();
-  blink::mojom::QueryParamsPtr options = blink::mojom::QueryParams::New();
+  blink::mojom::CacheQueryOptionsPtr options =
+      blink::mojom::CacheQueryOptions::New();
   options->ignore_search = true;
   QueryCache(std::move(request), std::move(options),
              QUERY_CACHE_RESPONSES_NO_BODIES,
@@ -1759,7 +1787,7 @@ void CacheStorageCache::UpdateCacheSizeGotSize(
 
 void CacheStorageCache::GetAllMatchedEntries(
     blink::mojom::FetchAPIRequestPtr request,
-    blink::mojom::QueryParamsPtr options,
+    blink::mojom::CacheQueryOptionsPtr options,
     CacheEntriesCallback callback) {
   if (backend_state_ == BACKEND_CLOSED) {
     std::move(callback).Run(
@@ -1777,7 +1805,7 @@ void CacheStorageCache::GetAllMatchedEntries(
 
 void CacheStorageCache::GetAllMatchedEntriesImpl(
     blink::mojom::FetchAPIRequestPtr request,
-    blink::mojom::QueryParamsPtr options,
+    blink::mojom::CacheQueryOptionsPtr options,
     CacheEntriesCallback callback) {
   DCHECK_NE(BACKEND_UNINITIALIZED, backend_state_);
   if (backend_state_ != BACKEND_OPEN) {
@@ -1830,13 +1858,14 @@ void CacheStorageCache::Delete(blink::mojom::BatchOperationPtr operation,
       CacheStorageSchedulerOp::kDelete,
       base::BindOnce(&CacheStorageCache::DeleteImpl,
                      weak_ptr_factory_.GetWeakPtr(), std::move(request),
-                     std::move(operation->match_params),
+                     std::move(operation->match_options),
                      scheduler_->WrapCallbackToRunNext(std::move(callback))));
 }
 
-void CacheStorageCache::DeleteImpl(blink::mojom::FetchAPIRequestPtr request,
-                                   blink::mojom::QueryParamsPtr match_params,
-                                   ErrorCallback callback) {
+void CacheStorageCache::DeleteImpl(
+    blink::mojom::FetchAPIRequestPtr request,
+    blink::mojom::CacheQueryOptionsPtr match_options,
+    ErrorCallback callback) {
   DCHECK_NE(BACKEND_UNINITIALIZED, backend_state_);
   if (backend_state_ != BACKEND_OPEN) {
     std::move(callback).Run(
@@ -1845,7 +1874,7 @@ void CacheStorageCache::DeleteImpl(blink::mojom::FetchAPIRequestPtr request,
   }
 
   QueryCache(
-      std::move(request), std::move(match_params),
+      std::move(request), std::move(match_options),
       QUERY_CACHE_ENTRIES | QUERY_CACHE_RESPONSES_NO_BODIES,
       base::BindOnce(&CacheStorageCache::DeleteDidQueryCache,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)));
@@ -1880,7 +1909,7 @@ void CacheStorageCache::DeleteDidQueryCache(
 }
 
 void CacheStorageCache::KeysImpl(blink::mojom::FetchAPIRequestPtr request,
-                                 blink::mojom::QueryParamsPtr options,
+                                 blink::mojom::CacheQueryOptionsPtr options,
                                  RequestsCallback callback) {
   DCHECK_NE(BACKEND_UNINITIALIZED, backend_state_);
   if (backend_state_ != BACKEND_OPEN) {
@@ -2104,6 +2133,58 @@ int64_t CacheStorageCache::PaddedCacheSize() const {
     return CacheStorage::kSizeUnknown;
   }
   return cache_size_ + cache_padding_;
+}
+
+base::CheckedNumeric<uint64_t>
+CacheStorageCache::CalculateRequiredSafeSpaceForPut(
+    const blink::mojom::BatchOperationPtr& operation) {
+  DCHECK_EQ(blink::mojom::OperationType::kPut, operation->operation_type);
+  base::CheckedNumeric<uint64_t> safe_space_required = 0;
+  safe_space_required +=
+      CalculateRequiredSafeSpaceForResponse(operation->response);
+  safe_space_required +=
+      CalculateRequiredSafeSpaceForRequest(operation->request);
+
+  return safe_space_required;
+}
+
+base::CheckedNumeric<uint64_t>
+CacheStorageCache::CalculateRequiredSafeSpaceForRequest(
+    const blink::mojom::FetchAPIRequestPtr& request) {
+  base::CheckedNumeric<uint64_t> safe_space_required = 0;
+  safe_space_required += request->method.size();
+
+  safe_space_required += request->url.spec().size();
+
+  for (const auto& header : request->headers) {
+    safe_space_required += header.first.size();
+    safe_space_required += header.second.size();
+  }
+
+  return safe_space_required;
+}
+
+base::CheckedNumeric<uint64_t>
+CacheStorageCache::CalculateRequiredSafeSpaceForResponse(
+    const blink::mojom::FetchAPIResponsePtr& response) {
+  base::CheckedNumeric<uint64_t> safe_space_required = 0;
+  safe_space_required += (response->blob ? response->blob->size : 0);
+  safe_space_required += response->status_text.size();
+
+  for (const auto& header : response->headers) {
+    safe_space_required += header.first.size();
+    safe_space_required += header.second.size();
+  }
+
+  for (const auto& header : response->cors_exposed_header_names) {
+    safe_space_required += header.size();
+  }
+
+  for (const auto& url : response->url_list) {
+    safe_space_required += url.spec().size();
+  }
+
+  return safe_space_required;
 }
 
 }  // namespace content

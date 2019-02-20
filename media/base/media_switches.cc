@@ -13,7 +13,7 @@ namespace switches {
 const char kAudioBufferSize[] = "audio-buffer-size";
 
 // Set a timeout (in milliseconds) for the audio service to quit if there are no
-// client connections to it. If the value is zero the service never quits.
+// client connections to it. If the value is negative the service never quits.
 const char kAudioServiceQuitTimeoutMs[] = "audio-service-quit-timeout-ms";
 
 // Command line flag name to set the autoplay policy.
@@ -238,7 +238,7 @@ const base::Feature kUseAndroidOverlayAggressively{
 
 // Let video track be unselected when video is playing in the background.
 const base::Feature kBackgroundSrcVideoTrackOptimization{
-    "BackgroundSrcVideoTrackOptimization", base::FEATURE_DISABLED_BY_DEFAULT};
+    "BackgroundSrcVideoTrackOptimization", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Let video without audio be paused when it is playing in the background.
 const base::Feature kBackgroundVideoPauseOptimization{
@@ -251,30 +251,17 @@ const base::Feature kMemoryPressureBasedSourceBufferGC{
     "MemoryPressureBasedSourceBufferGC", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enable MojoVideoDecoder, replacing GpuVideoDecoder.
-const base::Feature kMojoVideoDecoder {
-  "MojoVideoDecoder",
-#if defined(OS_CHROMEOS)
-      // TODO(posciak): Re-enable once the feature is verified on CrOS.
-      // https://crbug.com/902968.
-      base::FEATURE_DISABLED_BY_DEFAULT
-#else
-      base::FEATURE_ENABLED_BY_DEFAULT
-#endif
-};
+const base::Feature kMojoVideoDecoder{"MojoVideoDecoder",
+                                      base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enable The D3D11 Video decoder. Must also enable MojoVideoDecoder for
 // this to have any effect.
 const base::Feature kD3D11VideoDecoder{"D3D11VideoDecoder",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Allow playback of encrypted media through the D3D11 decoder.  Requires
-// D3D11VideoDecoder to be enabled also.
-const base::Feature kD3D11EncryptedMedia{"D3D11EncryptedMedia",
-                                         base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Enable VP9 decoding in the D3D11VideoDecoder.
-const base::Feature kD3D11VP9Decoder{"D3D11VP9Decoder",
-                                     base::FEATURE_DISABLED_BY_DEFAULT};
+// Enable usage of dav1d for AV1 video decoding.
+const base::Feature kDav1dVideoDecoder{"Dav1dVideoDecoder",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Falls back to other decoders after audio/video decode error happens. The
 // implementation may choose different strategies on when to fallback. See
@@ -295,21 +282,9 @@ const base::Feature kMseBufferByPts{"MseBufferByPts",
 const base::Feature kNewEncodeCpuLoadEstimator{
     "NewEncodeCpuLoadEstimator", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// Use the new Remote Playback / media flinging pipeline.
-const base::Feature kNewRemotePlaybackPipeline{
-    "NewRemotePlaybackPipeline", base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Use the new RTC hardware decode path via RTCVideoDecoderAdapter.
-const base::Feature kRTCVideoDecoderAdapter {
-  "RTCVideoDecoderAdapter",
-#if defined(OS_CHROMEOS)
-      // TODO(posciak): Enable once the feature is verified on CrOS.
-      // https://crbug.com/902968.
-      base::FEATURE_DISABLED_BY_DEFAULT
-#else
-      base::FEATURE_ENABLED_BY_DEFAULT
-#endif
-};
+const base::Feature kRTCVideoDecoderAdapter{"RTCVideoDecoderAdapter",
+                                            base::FEATURE_ENABLED_BY_DEFAULT};
 
 // CanPlayThrough issued according to standard.
 const base::Feature kSpecCompliantCanPlayThrough{
@@ -339,9 +314,9 @@ const base::Feature kUseSurfaceLayerForVideo{"UseSurfaceLayerForVideo",
 const base::Feature kUseSurfaceLayerForVideoPIP{
     "UseSurfaceLayerForVideoPIP", base::FEATURE_ENABLED_BY_DEFAULT};
 
-// Enable VA-API hardware encode acceleration for VP8.
-const base::Feature kVaapiVP8Encoder{"VaapiVP8Encoder",
-                                     base::FEATURE_ENABLED_BY_DEFAULT};
+// Enable VA-API hardware encode acceleration for VP9.
+const base::Feature kVaapiVP9Encoder{"VaapiVP9Encoder",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Inform video blitter of video color space.
 const base::Feature kVideoBlitColorAccuracy{"video-blit-color-accuracy",
@@ -362,7 +337,13 @@ const base::Feature kHardwareSecureDecryption{
 
 // Enables handling of hardware media keys for controlling media.
 const base::Feature kHardwareMediaKeyHandling{
-    "HardwareMediaKeyHandling", base::FEATURE_DISABLED_BY_DEFAULT};
+  "HardwareMediaKeyHandling",
+#if defined(OS_CHROMEOS) || defined(OS_WIN) || defined(OS_MACOSX)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
 
 // Enables low-delay video rendering in media pipeline on "live" stream.
 const base::Feature kLowDelayVideoRenderingOnLiveStream{
@@ -385,6 +366,7 @@ const base::Feature kAutoplayWhitelistSettings{
 
 #if defined(OS_ANDROID)
 // Enable a gesture to make the media controls expaned into the display cutout.
+// TODO(beccahughes): Remove this.
 const base::Feature kMediaControlsExpandGesture{
     "MediaControlsExpandGesture", base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -401,10 +383,6 @@ const base::Feature kVideoRotateToFullscreen{"VideoRotateToFullscreen",
 // TODO(xhwang): Remove this after feature launch. See http://crbug.com/493521
 const base::Feature kMediaDrmPersistentLicense{
     "MediaDrmPersistentLicense", base::FEATURE_ENABLED_BY_DEFAULT};
-
-// Enables the Android MediaRouter implementation using CAF (Cast v3).
-const base::Feature kCafMediaRouterImpl{"CafMediaRouterImpl",
-                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables the Android Image Reader path for Video decoding(for AVDA and MCVD)
 const base::Feature kAImageReaderVideoOutput{"AImageReaderVideoOutput",
@@ -423,7 +401,7 @@ const base::Feature kMediaFoundationH264Encoding{
 
 // Enables MediaFoundation based video capture
 const base::Feature kMediaFoundationVideoCapture{
-    "MediaFoundationVideoCapture", base::FEATURE_DISABLED_BY_DEFAULT};
+    "MediaFoundationVideoCapture", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables DirectShow GetPhotoState implementation
 // Created to act as a kill switch by disabling it, in the case of the
@@ -450,10 +428,12 @@ std::string GetEffectiveAutoplayPolicy(const base::CommandLine& command_line) {
 }
 
 // Adds icons to the overflow menu on the native media controls.
+// TODO(steimel): Remove this.
 const base::Feature kOverflowIconsForMediaControls{
     "OverflowIconsForMediaControls", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables the new redesigned media controls.
+// TODO(steimel): Remove this.
 const base::Feature kUseModernMediaControls{"UseModernMediaControls",
                                             base::FEATURE_ENABLED_BY_DEFAULT};
 
@@ -485,6 +465,26 @@ const base::Feature kPreloadMediaEngagementData{
     "PreloadMediaEngagementData", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
+// Enables experimental local learning for media.  Adds reporting only; does not
+// change media behavior.
+const base::Feature kMediaLearningExperiment{"MediaLearningExperiment",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables flash to be ducked by audio focus.
+const base::Feature kAudioFocusDuckFlash{"AudioFocusDuckFlash",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Enables the internal Media Session logic without enabling the Media Session
+// service.
+const base::Feature kInternalMediaSession {
+  "InternalMediaSession",
+#if defined(OS_ANDROID)
+      base::FEATURE_ENABLED_BY_DEFAULT
+#else
+      base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+};
+
 bool IsVideoCaptureAcceleratedJpegDecodingEnabled() {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableAcceleratedMjpegDecode)) {
@@ -499,16 +499,5 @@ bool IsVideoCaptureAcceleratedJpegDecodingEnabled() {
 #endif
   return false;
 }
-
-// Enable grouped browser audio focus. This means that all browser media
-// sessions will share audio focus. This should only be enabled on Chrome OS.
-const base::Feature kUseGroupedBrowserAudioFocus {
-  "UseGroupedBrowserAudioFocus",
-#if defined(OS_CHROMEOS)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
 
 }  // namespace media

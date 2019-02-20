@@ -1140,10 +1140,10 @@ Element* EnclosingElementWithTag(const Position& p,
     return nullptr;
 
   ContainerNode* root = HighestEditableRoot(p);
-  Element* ancestor = p.AnchorNode()->IsElementNode()
-                          ? ToElement(p.AnchorNode())
-                          : p.AnchorNode()->parentElement();
-  for (; ancestor; ancestor = ancestor->parentElement()) {
+  for (Node& runner : NodeTraversal::InclusiveAncestorsOf(*p.AnchorNode())) {
+    if (!runner.IsElementNode())
+      continue;
+    Element* ancestor = ToElement(&runner);
     if (root && !HasEditableStyle(*ancestor))
       continue;
     if (ancestor->HasTagName(tag_name))
@@ -1705,7 +1705,8 @@ void WriteImageNodeToClipboard(const Node& node, const String& title) {
     return;
   const KURL url_string = node.GetDocument().CompleteURL(
       StripLeadingAndTrailingHTMLSpaces(GetUrlStringFromNode(node)));
-  SystemClipboard::GetInstance().WriteImage(image.get(), url_string, title);
+  SystemClipboard::GetInstance().WriteImageWithTag(image.get(), url_string,
+                                                   title);
 }
 
 Element* FindEventTargetFrom(LocalFrame& frame,

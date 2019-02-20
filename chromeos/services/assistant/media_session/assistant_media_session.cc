@@ -4,7 +4,8 @@
 
 #include "chromeos/services/assistant/media_session/assistant_media_session.h"
 
-#include "services/media_session/public/cpp/switches.h"
+#include "base/bind.h"
+#include "services/media_session/public/cpp/features.h"
 #include "services/media_session/public/mojom/constants.mojom.h"
 #include "services/service_manager/public/cpp/connector.h"
 
@@ -41,8 +42,10 @@ void AssistantMediaSession::GetDebugInfo(GetDebugInfoCallback callback) {
 }
 
 void AssistantMediaSession::RequestAudioFocus(AudioFocusType audio_focus_type) {
-  if (!media_session::IsAudioFocusEnabled())
+  if (!base::FeatureList::IsEnabled(
+          media_session::features::kMediaSessionService)) {
     return;
+  }
 
   if (request_client_ptr_.is_bound()) {
     // We have an existing request so we should request an updated focus type.
@@ -57,6 +60,7 @@ void AssistantMediaSession::RequestAudioFocus(AudioFocusType audio_focus_type) {
 
   // Create a mojo interface pointer to our media session.
   media_session::mojom::MediaSessionPtr media_session;
+  binding_.Close();
   binding_.Bind(mojo::MakeRequest(&media_session));
   audio_focus_ptr_->RequestAudioFocus(
       mojo::MakeRequest(&request_client_ptr_), std::move(media_session),
@@ -66,8 +70,10 @@ void AssistantMediaSession::RequestAudioFocus(AudioFocusType audio_focus_type) {
 }
 
 void AssistantMediaSession::AbandonAudioFocusIfNeeded() {
-  if (!media_session::IsAudioFocusEnabled())
+  if (!base::FeatureList::IsEnabled(
+          media_session::features::kMediaSessionService)) {
     return;
+  }
 
   if (audio_focus_state_ == State::INACTIVE)
     return;
@@ -83,7 +89,8 @@ void AssistantMediaSession::AbandonAudioFocusIfNeeded() {
 }
 
 void AssistantMediaSession::EnsureServiceConnection() {
-  DCHECK(media_session::IsAudioFocusEnabled());
+  DCHECK(base::FeatureList::IsEnabled(
+      media_session::features::kMediaSessionService));
 
   if (audio_focus_ptr_.is_bound() && !audio_focus_ptr_.encountered_error())
     return;

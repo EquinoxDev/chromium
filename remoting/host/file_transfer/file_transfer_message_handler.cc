@@ -5,6 +5,7 @@
 #include "remoting/host/file_transfer/file_transfer_message_handler.h"
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
@@ -82,9 +83,10 @@ void FileTransferMessageHandler::OnIncomingMessage(
       Close();
       break;
     case protocol::FileTransfer::kError:
-      LOG(ERROR) << "File transfer error from client: " << message.error();
-      FALLTHROUGH;
-    case protocol::FileTransfer::kCancel:
+      if (message.error().type() !=
+          protocol::FileTransfer_Error_Type_CANCELED) {
+        LOG(ERROR) << "File transfer error from client: " << message.error();
+      }
       Cancel();
       break;
     default:
@@ -111,12 +113,12 @@ void FileTransferMessageHandler::StartFile(
   // BufferedFileWriter is destroyed, which is in turn owned by this
   // FileTransferMessageHandler.
   buffered_file_writer_.emplace(
+      file_operations_->CreateWriter(),
       base::BindOnce(&FileTransferMessageHandler::OnComplete,
                      base::Unretained(this)),
       base::BindOnce(&FileTransferMessageHandler::OnError,
                      base::Unretained(this)));
   buffered_file_writer_->Start(
-      file_operations_.get(),
       // Ensure filename is safe, and convert from UTF-8 to a FilePath.
       net::GenerateFileName(GURL(), std::string(), std::string(),
                             metadata.filename(), std::string(),
@@ -141,7 +143,7 @@ void FileTransferMessageHandler::Cancel() {
 }
 
 void FileTransferMessageHandler::OnComplete() {
-  SendResult(base::nullopt);  // Success
+  SendResult(kSuccessTag);  // Success
 }
 
 void FileTransferMessageHandler::OnError(protocol::FileTransfer_Error error) {
@@ -149,14 +151,14 @@ void FileTransferMessageHandler::OnError(protocol::FileTransfer_Error error) {
 }
 
 void FileTransferMessageHandler::SendResult(
-    base::Optional<protocol::FileTransfer_Error> error) {
+    protocol::FileTransferResult<Monostate> result) {
   protocol::FileTransfer result_message;
-  if (error) {
-    *result_message.mutable_error() = std::move(*error);
-  } else {
+  if (result) {
     result_message.mutable_success();
+  } else {
+    *result_message.mutable_error() = std::move(result.error());
   }
-  Send(result_message, base::Closure());
+  Send(result_message, base::DoNothing());
 }
 
 void FileTransferMessageHandler::CancelAndSendError(

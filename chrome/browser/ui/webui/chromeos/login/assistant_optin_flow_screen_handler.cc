@@ -4,6 +4,10 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/assistant_optin_flow_screen_handler.h"
 
+#include <utility>
+
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/oobe_screen.h"
@@ -34,8 +38,11 @@ constexpr char kVoiceMatchDone[] = "voice-match-done";
 
 }  // namespace
 
-AssistantOptInFlowScreenHandler::AssistantOptInFlowScreenHandler()
-    : BaseScreenHandler(kScreenId), client_binding_(this), weak_factory_(this) {
+AssistantOptInFlowScreenHandler::AssistantOptInFlowScreenHandler(
+    JSCallsContainer* js_calls_container)
+    : BaseScreenHandler(kScreenId, js_calls_container),
+      client_binding_(this),
+      weak_factory_(this) {
   set_call_js_prefix(kJsScreenPath);
 }
 
@@ -98,35 +105,31 @@ void AssistantOptInFlowScreenHandler::DeclareLocalizedValues(
 }
 
 void AssistantOptInFlowScreenHandler::RegisterMessages() {
-  AddPrefixedCallback(
-      "ValuePropScreen.userActed",
+  AddCallback(
+      "login.AssistantOptInFlowScreen.ValuePropScreen.userActed",
       &AssistantOptInFlowScreenHandler::HandleValuePropScreenUserAction);
-  AddPrefixedCallback(
-      "ThirdPartyScreen.userActed",
+  AddCallback(
+      "login.AssistantOptInFlowScreen.ThirdPartyScreen.userActed",
       &AssistantOptInFlowScreenHandler::HandleThirdPartyScreenUserAction);
-  AddPrefixedCallback(
-      "VoiceMatchScreen.userActed",
+  AddCallback(
+      "login.AssistantOptInFlowScreen.VoiceMatchScreen.userActed",
       &AssistantOptInFlowScreenHandler::HandleVoiceMatchScreenUserAction);
-  AddPrefixedCallback(
-      "GetMoreScreen.userActed",
-      &AssistantOptInFlowScreenHandler::HandleGetMoreScreenUserAction);
-  AddPrefixedCallback(
-      "ValuePropScreen.screenShown",
-      &AssistantOptInFlowScreenHandler::HandleValuePropScreenShown);
-  AddPrefixedCallback(
-      "ThirdPartyScreen.screenShown",
-      &AssistantOptInFlowScreenHandler::HandleThirdPartyScreenShown);
-  AddPrefixedCallback(
-      "GetMoreScreen.screenShown",
-      &AssistantOptInFlowScreenHandler::HandleGetMoreScreenShown);
-  AddPrefixedCallback("LoadingScreen.timeout",
-                      &AssistantOptInFlowScreenHandler::HandleLoadingTimeout);
-  AddPrefixedCallback("hotwordResult",
-                      &AssistantOptInFlowScreenHandler::HandleHotwordResult);
-  AddPrefixedCallback("flowFinished",
-                      &AssistantOptInFlowScreenHandler::HandleFlowFinished);
-  AddPrefixedCallback("initialized",
-                      &AssistantOptInFlowScreenHandler::HandleFlowInitialized);
+  AddCallback("login.AssistantOptInFlowScreen.GetMoreScreen.userActed",
+              &AssistantOptInFlowScreenHandler::HandleGetMoreScreenUserAction);
+  AddCallback("login.AssistantOptInFlowScreen.ValuePropScreen.screenShown",
+              &AssistantOptInFlowScreenHandler::HandleValuePropScreenShown);
+  AddCallback("login.AssistantOptInFlowScreen.ThirdPartyScreen.screenShown",
+              &AssistantOptInFlowScreenHandler::HandleThirdPartyScreenShown);
+  AddCallback("login.AssistantOptInFlowScreen.GetMoreScreen.screenShown",
+              &AssistantOptInFlowScreenHandler::HandleGetMoreScreenShown);
+  AddCallback("login.AssistantOptInFlowScreen.LoadingScreen.timeout",
+              &AssistantOptInFlowScreenHandler::HandleLoadingTimeout);
+  AddCallback("login.AssistantOptInFlowScreen.hotwordResult",
+              &AssistantOptInFlowScreenHandler::HandleHotwordResult);
+  AddCallback("login.AssistantOptInFlowScreen.flowFinished",
+              &AssistantOptInFlowScreenHandler::HandleFlowFinished);
+  AddCallback("login.AssistantOptInFlowScreen.initialized",
+              &AssistantOptInFlowScreenHandler::HandleFlowInitialized);
 }
 
 void AssistantOptInFlowScreenHandler::Bind(AssistantOptInFlowScreen* screen) {
@@ -163,16 +166,19 @@ void AssistantOptInFlowScreenHandler::Initialize() {
 }
 
 void AssistantOptInFlowScreenHandler::OnListeningHotword() {
-  CallJSWithPrefix("onVoiceMatchUpdate", base::Value("listen"));
+  CallJS("login.AssistantOptInFlowScreen.onVoiceMatchUpdate",
+         base::Value("listen"));
 }
 
 void AssistantOptInFlowScreenHandler::OnProcessingHotword() {
-  CallJSWithPrefix("onVoiceMatchUpdate", base::Value("process"));
+  CallJS("login.AssistantOptInFlowScreen.onVoiceMatchUpdate",
+         base::Value("process"));
 }
 
 void AssistantOptInFlowScreenHandler::OnSpeakerIdEnrollmentDone() {
   settings_manager_->StopSpeakerIdEnrollment(base::DoNothing());
-  CallJSWithPrefix("onVoiceMatchUpdate", base::Value("done"));
+  CallJS("login.AssistantOptInFlowScreen.onVoiceMatchUpdate",
+         base::Value("done"));
 }
 
 void AssistantOptInFlowScreenHandler::OnSpeakerIdEnrollmentFailure() {
@@ -194,7 +200,7 @@ void AssistantOptInFlowScreenHandler::SetupAssistantConnection() {
 }
 
 void AssistantOptInFlowScreenHandler::ShowNextScreen() {
-  CallJSWithPrefix("showNextScreen");
+  CallJS("login.AssistantOptInFlowScreen.showNextScreen");
 }
 
 void AssistantOptInFlowScreenHandler::OnActivityControlOptInResult(
@@ -273,12 +279,12 @@ void AssistantOptInFlowScreenHandler::SendGetSettingsRequest() {
 }
 
 void AssistantOptInFlowScreenHandler::ReloadContent(const base::Value& dict) {
-  CallJSWithPrefix("reloadContent", dict);
+  CallJS("login.AssistantOptInFlowScreen.reloadContent", dict);
 }
 
 void AssistantOptInFlowScreenHandler::AddSettingZippy(const std::string& type,
                                                       const base::Value& data) {
-  CallJSWithPrefix("addSettingZippy", type, data);
+  CallJS("login.AssistantOptInFlowScreen.addSettingZippy", type, data);
 }
 
 void AssistantOptInFlowScreenHandler::OnGetSettingsResponse(
@@ -289,7 +295,8 @@ void AssistantOptInFlowScreenHandler::OnGetSettingsResponse(
                       time_since_request_sent);
 
   assistant::SettingsUi settings_ui;
-  settings_ui.ParseFromString(settings);
+  if (!settings_ui.ParseFromString(settings))
+    return;
 
   DCHECK(settings_ui.has_consent_flow_ui());
 
@@ -491,12 +498,15 @@ void AssistantOptInFlowScreenHandler::HandleFlowFinished() {
   if (screen_)
     screen_->OnUserAction(kFlowFinished);
   else
-    CallJSWithPrefix("closeDialog");
+    CallJS("login.AssistantOptInFlowScreen.closeDialog");
 }
 
 void AssistantOptInFlowScreenHandler::HandleFlowInitialized(
     const int flow_type) {
   initialized_ = true;
+
+  if (on_initialized_)
+    std::move(on_initialized_).Run();
 
   if (settings_manager_.is_bound() &&
       flow_type == static_cast<int>(ash::mojom::FlowType::CONSENT_FLOW)) {

@@ -46,7 +46,6 @@ MATCHER_P(IsPolicies, dict, "") {
 class MockPolicyCallback {
  public:
   MockPolicyCallback() = default;
-  ;
 
   // TODO(lukasza): gmock cannot mock a method taking std::unique_ptr<T>...
   MOCK_METHOD1(OnPolicyUpdatePtr, void(const base::DictionaryValue* policies));
@@ -521,7 +520,7 @@ TEST_P(MisspelledPolicyTest, WarningLogged) {
   mock_log.StopCapturingLogs();
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     PolicyWatcherTest,
     MisspelledPolicyTest,
     ::testing::Values("RemoteAccessHostDomainX",

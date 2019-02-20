@@ -13,7 +13,6 @@
 #include "ash/public/interfaces/wallpaper.mojom.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -192,11 +191,11 @@ class SigninScreenHandler
       public ash::mojom::WallpaperObserver {
  public:
   SigninScreenHandler(
+      JSCallsContainer* js_calls_container,
       const scoped_refptr<NetworkStateInformer>& network_state_informer,
       ErrorScreen* error_screen,
       CoreOobeView* core_oobe_view,
-      GaiaScreenHandler* gaia_screen_handler,
-      JSCallsContainer* js_calls_container);
+      GaiaScreenHandler* gaia_screen_handler);
   ~SigninScreenHandler() override;
 
   static std::string GetUserLastInputMethod(const std::string& username);
@@ -349,7 +348,6 @@ class SigninScreenHandler
   void HandleToggleResetScreen();
   void HandleToggleKioskAutolaunchScreen();
   void HandleAccountPickerReady();
-  void HandleWallpaperReady();
   void HandleSignOutUser();
   void HandleOpenInternetDetailDialog();
   void HandleLoginVisible(const std::string& source);

@@ -6,16 +6,13 @@
 
 #include "base/metrics/histogram_macros.h"
 #import "ios/chrome/browser/prerender/preload_controller.h"
-#import "ios/chrome/browser/snapshots/snapshot_tab_helper.h"
-#import "ios/chrome/browser/tabs/legacy_tab_helper.h"
-#import "ios/chrome/browser/tabs/tab.h"
-#import "ios/chrome/browser/tabs/tab_model.h"
+#import "ios/chrome/browser/sessions/session_window_restoring.h"
 #import "ios/chrome/browser/ui/ntp/ntp_util.h"
 #import "ios/chrome/browser/web/load_timing_tab_helper.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/web/public/navigation_manager.h"
 #include "ios/web/public/web_client.h"
-#include "ios/web/public/web_state/web_state.h"
+#import "ios/web/public/web_state/web_state.h"
 #include "ui/base/page_transition_types.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -24,7 +21,8 @@
 
 PrerenderService::PrerenderService(ios::ChromeBrowserState* browser_state)
     : controller_(
-          [[PreloadController alloc] initWithBrowserState:browser_state]) {}
+          [[PreloadController alloc] initWithBrowserState:browser_state]),
+      loading_prerender_(false) {}
 
 PrerenderService::~PrerenderService() {}
 
@@ -54,9 +52,11 @@ void PrerenderService::StartPrerender(const GURL& url,
                 immediately:immediately];
 }
 
-bool PrerenderService::MaybeLoadPrerenderedURL(const GURL& url,
-                                               ui::PageTransition transition,
-                                               TabModel* tab_model) {
+bool PrerenderService::MaybeLoadPrerenderedURL(
+    const GURL& url,
+    ui::PageTransition transition,
+    WebStateList* web_state_list,
+    id<SessionWindowRestoring> restorer) {
   if (!HasPrerenderForUrl(url)) {
     CancelPrerender();
     return false;
@@ -64,8 +64,6 @@ bool PrerenderService::MaybeLoadPrerenderedURL(const GURL& url,
 
   std::unique_ptr<web::WebState> new_web_state =
       [controller_ releasePrerenderContents];
-  DCHECK(new_web_state);
-  WebStateList* web_state_list = tab_model.webStateList;
   DCHECK_NE(WebStateList::kInvalidIndex, web_state_list->active_index());
 
   web::NavigationManager* active_navigation_manager =
@@ -83,18 +81,13 @@ bool PrerenderService::MaybeLoadPrerenderedURL(const GURL& url,
 
   if (new_navigation_manager->CanPruneAllButLastCommittedItem()) {
     new_navigation_manager->CopyStateFromAndPrune(active_navigation_manager);
+    loading_prerender_ = true;
     web_state_list->ReplaceWebStateAt(web_state_list->active_index(),
                                       std::move(new_web_state));
-
+    loading_prerender_ = false;
     // new_web_state is now null after the std::move, so grab a new pointer to
     // it for further updates.
     web::WebState* active_web_state = web_state_list->GetActiveWebState();
-    if (!active_web_state->IsLoading()) {
-      // If the page has finished loading, take a snapshot.  If the page is
-      // still loading, do nothing, as the tab helper will automatically take
-      // a snapshot once the load completes.
-      SnapshotTabHelper::FromWebState(active_web_state)->UpdateSnapshot();
-    }
 
     bool typed_or_generated_transition =
         PageTransitionCoreTypeIs(transition, ui::PAGE_TRANSITION_TYPED) ||
@@ -104,7 +97,7 @@ bool PrerenderService::MaybeLoadPrerenderedURL(const GURL& url,
           ->DidPromotePrerenderTab();
     }
 
-    [tab_model saveSessionImmediately:NO];
+    [restorer saveSessionImmediately:NO];
     return true;
   }
 

@@ -115,7 +115,8 @@ class LazyLoadFramesParamsTest
     settings.SetLazyFrameLoadingDistanceThresholdPx2G(500);
     settings.SetLazyFrameLoadingDistanceThresholdPx3G(600);
     settings.SetLazyFrameLoadingDistanceThresholdPx4G(700);
-    settings.SetLazyLoadEnabled(true);
+    settings.SetLazyLoadEnabled(
+        RuntimeEnabledFeatures::LazyFrameLoadingEnabled());
   }
 
   int GetLoadingDistanceThreshold() const {
@@ -718,11 +719,11 @@ TEST_P(LazyLoadFramesParamsTest, JavascriptStringFrameUrl) {
         </body>)HTML",
       kViewportHeight + GetLoadingDistanceThreshold() + 100));
 
-  EXPECT_TRUE(ConsoleMessages().Contains("main body onload"));
-  EXPECT_TRUE(ConsoleMessages().Contains("child frame element onload"));
-
   Compositor().BeginFrame();
   test::RunPendingTasks();
+
+  EXPECT_TRUE(ConsoleMessages().Contains("main body onload"));
+  EXPECT_TRUE(ConsoleMessages().Contains("child frame element onload"));
 
   ExpectVisibleLoadTimeHistogramSamplesIfApplicable(0, 0);
   histogram_tester()->ExpectTotalCount(
@@ -1084,7 +1085,7 @@ TEST_P(LazyLoadFramesParamsTest,
   EXPECT_TRUE(ConsoleMessages().Contains("child frame element onload"));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     LazyFrameLoading,
     LazyLoadFramesParamsTest,
     ::testing::Combine(
@@ -1250,7 +1251,7 @@ TEST_F(LazyLoadFramesTest, LazyLoadWhenDataSaverDisabledAndRestrictedAttrOn) {
 
   GetNetworkStateNotifier().SetSaveDataEnabled(false);
   WebView().GetPage()->GetSettings().SetDataSaverHoldbackWebApi(false);
-  TestCrossOriginFrameIsLazilyLoaded("lazyload='on'");
+  TestCrossOriginFrameIsImmediatelyLoaded("lazyload='on'");
 }
 
 }  // namespace

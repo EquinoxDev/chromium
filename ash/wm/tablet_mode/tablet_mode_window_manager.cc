@@ -6,12 +6,14 @@
 
 #include <memory>
 
+#include "ash/public/cpp/app_types.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
-#include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/overview/overview_controller.h"
+#include "ash/wm/overview/overview_session.h"
 #include "ash/wm/tablet_mode/scoped_skip_user_session_blocked_check.h"
 #include "ash/wm/tablet_mode/tablet_mode_backdrop_delegate_impl.h"
 #include "ash/wm/tablet_mode/tablet_mode_event_handler.h"
@@ -30,8 +32,7 @@ namespace {
 
 // Exits overview mode if it is currently active.
 void CancelOverview() {
-  WindowSelectorController* controller =
-      Shell::Get()->window_selector_controller();
+  OverviewController* controller = Shell::Get()->overview_controller();
   if (controller->IsSelecting())
     controller->OnSelectionEnded();
 }
@@ -47,6 +48,7 @@ TabletModeWindowManager::~TabletModeWindowManager() {
     window->RemoveObserver(this);
   added_windows_.clear();
   Shell::Get()->RemoveShellObserver(this);
+  Shell::Get()->overview_controller()->RemoveObserver(this);
   display::Screen::GetScreen()->RemoveObserver(this);
   Shell::Get()->split_view_controller()->RemoveObserver(this);
   EnableBackdropBehindTopWindowOnEachDisplay(false);
@@ -61,13 +63,12 @@ int TabletModeWindowManager::GetNumberOfManagedWindows() {
 void TabletModeWindowManager::AddWindow(aura::Window* window) {
   // Only add the window if it is a direct dependent of a container window
   // and not yet tracked.
-  if (!ShouldHandleWindow(window) ||
-      base::ContainsKey(window_state_map_, window) ||
+  if (base::ContainsKey(window_state_map_, window) ||
       !IsContainerWindow(window->parent())) {
     return;
   }
 
-  MaximizeAndTrackWindow(window);
+  TrackWindow(window);
 }
 
 void TabletModeWindowManager::WindowStateDestroyed(aura::Window* window) {
@@ -83,17 +84,51 @@ void TabletModeWindowManager::WindowStateDestroyed(aura::Window* window) {
     window_state_map_.erase(it);
 }
 
-void TabletModeWindowManager::OnOverviewModeStarting() {
-  for (auto& pair : window_state_map_)
-    SetDeferBoundsUpdates(pair.first, /*defer_bounds_updates=*/true);
+void TabletModeWindowManager::OnSplitViewModeEnded() {
+  switch (Shell::Get()->split_view_controller()->end_reason()) {
+    case SplitViewController::EndReason::kNormal:
+    case SplitViewController::EndReason::kUnsnappableWindowActivated:
+      break;
+    case SplitViewController::EndReason::kHomeLauncherPressed:
+    case SplitViewController::EndReason::kActiveUserChanged:
+      // For the case of kHomeLauncherPressed, the home launcher will minimize
+      // the snapped windows after ending splitview, so avoid maximizing them
+      // here. For the case of kActiveUserChanged, the snapped windows will be
+      // used to restore the splitview layout when switching back, and it is
+      // already too late to maximize them anyway (the for loop below would
+      // iterate over windows in the newly activated user session).
+      return;
+  }
+
+  // Maximize all snapped windows upon exiting split view mode. Note the snapped
+  // window might not be tracked in our |window_state_map_|.
+  MruWindowTracker::WindowList windows =
+      Shell::Get()->mru_window_tracker()->BuildWindowListIgnoreModal();
+  for (auto* window : windows) {
+    wm::WindowState* window_state = wm::GetWindowState(window);
+    if (window_state->IsSnapped()) {
+      wm::WMEvent event(wm::WM_EVENT_MAXIMIZE);
+      window_state->OnWMEvent(&event);
+    }
+  }
 }
 
-void TabletModeWindowManager::OnOverviewModeEnding() {
-  WindowSelector* window_selector =
-      Shell::Get()->window_selector_controller()->window_selector();
+void TabletModeWindowManager::OnOverviewModeStarting() {
+  aura::Window* default_snapped_window =
+      Shell::Get()->split_view_controller()->GetDefaultSnappedWindow();
+  for (auto& pair : window_state_map_) {
+    aura::Window* window = pair.first;
+    if (window == default_snapped_window)
+      continue;
+    SetDeferBoundsUpdates(window, /*defer_bounds_updates=*/true);
+  }
+}
+
+void TabletModeWindowManager::OnOverviewModeEnding(
+    OverviewSession* overview_session) {
   exit_overview_by_window_drag_ =
-      window_selector->enter_exit_overview_type() ==
-      WindowSelector::EnterExitOverviewType::kWindowDragged;
+      overview_session->enter_exit_overview_type() ==
+      OverviewSession::EnterExitOverviewType::kWindowDragged;
 }
 
 void TabletModeWindowManager::OnOverviewModeEnded() {
@@ -114,27 +149,6 @@ void TabletModeWindowManager::OnOverviewModeEnded() {
     // flag. Reset the flag here so that it does not affect window bounds
     // update later.
     pair.second->set_use_zero_animation_type(false);
-  }
-}
-
-void TabletModeWindowManager::OnSplitViewModeEnded() {
-  // The home launcher will minimize the snapped windows after ending splitview,
-  // so avoid maximizing them here.
-  if (Shell::Get()->split_view_controller()->end_reason() ==
-      SplitViewController::EndReason::kHomeLauncherPressed) {
-    return;
-  }
-
-  // Maximize all snapped windows upon exiting split view mode. Note the snapped
-  // window might not be tracked in our |window_state_map_|.
-  MruWindowTracker::WindowList windows =
-      Shell::Get()->mru_window_tracker()->BuildWindowListIgnoreModal();
-  for (auto* window : windows) {
-    wm::WindowState* window_state = wm::GetWindowState(window);
-    if (window_state->IsSnapped()) {
-      wm::WMEvent event(wm::WM_EVENT_MAXIMIZE);
-      window_state->OnWMEvent(&event);
-    }
   }
 }
 
@@ -169,7 +183,7 @@ void TabletModeWindowManager::OnWindowHierarchyChanged(
       }
       return;
     }
-    MaximizeAndTrackWindow(params.target);
+    TrackWindow(params.target);
     // When the state got added, the "WM_EVENT_ADDED_TO_WORKSPACE" event got
     // already sent and we have to notify our state again.
     if (base::ContainsKey(window_state_map_, params.target)) {
@@ -196,11 +210,18 @@ void TabletModeWindowManager::OnWindowBoundsChanged(
     ui::PropertyChangeReason reason) {
   if (!IsContainerWindow(window))
     return;
+
+  auto* session = Shell::Get()->overview_controller()->overview_session();
+  if (session)
+    session->SuspendReposition();
+
   // Reposition all non maximizeable windows.
   for (auto& pair : window_state_map_) {
     pair.second->UpdateWindowPosition(wm::GetWindowState(pair.first),
                                       /*animate=*/false);
   }
+  if (session)
+    session->ResumeReposition();
 }
 
 void TabletModeWindowManager::OnWindowVisibilityChanged(aura::Window* window,
@@ -213,7 +234,7 @@ void TabletModeWindowManager::OnWindowVisibilityChanged(aura::Window* window,
       base::ContainsKey(added_windows_, window) && visible) {
     added_windows_.erase(window);
     window->RemoveObserver(this);
-    MaximizeAndTrackWindow(window);
+    TrackWindow(window);
     // When the state got added, the "WM_EVENT_ADDED_TO_WORKSPACE" event got
     // already sent and we have to notify our state again.
     if (base::ContainsKey(window_state_map_, window)) {
@@ -252,7 +273,7 @@ void TabletModeWindowManager::OnSplitViewStateChanged(
   } else {
     // If split view mode is ended when overview mode is still active, defer
     // all bounds change until overview mode is ended.
-    if (Shell::Get()->window_selector_controller()->IsSelecting()) {
+    if (Shell::Get()->overview_controller()->IsSelecting()) {
       for (auto& pair : window_state_map_)
         SetDeferBoundsUpdates(pair.first, true);
     }
@@ -274,6 +295,7 @@ TabletModeWindowManager::TabletModeWindowManager() {
   EnableBackdropBehindTopWindowOnEachDisplay(true);
   display::Screen::GetScreen()->AddObserver(this);
   Shell::Get()->AddShellObserver(this);
+  Shell::Get()->overview_controller()->AddObserver(this);
   Shell::Get()->split_view_controller()->AddObserver(this);
   event_handler_ = std::make_unique<wm::TabletModeEventHandler>();
 }
@@ -293,59 +315,51 @@ void TabletModeWindowManager::ArrangeWindowsForTabletMode() {
   const mojom::WindowStateType active_window_state_type =
       wm::GetWindowState(windows[0])->GetStateType();
 
-  // If the active window is not snapped, then just maximize all windows.
-  if (active_window_state_type != mojom::WindowStateType::LEFT_SNAPPED &&
-      active_window_state_type != mojom::WindowStateType::RIGHT_SNAPPED) {
+  // If the active window is ARC or not snapped, then just maximize all windows.
+  if (static_cast<ash::AppType>(windows[0]->GetProperty(
+          aura::client::kAppType)) == AppType::ARC_APP ||
+      (active_window_state_type != mojom::WindowStateType::LEFT_SNAPPED &&
+       active_window_state_type != mojom::WindowStateType::RIGHT_SNAPPED)) {
     for (auto* window : windows)
-      MaximizeAndTrackWindow(window);
+      TrackWindow(window);
     return;
   }
 
-  // The snapped active window will be represented by split view, which will be
-  // activated after maximizing all windows. The split view layout is decided
-  // here by examining window states before all those states become maximized.
-  SplitViewController::SnapPosition curr_win_snap_pos =
-      SplitViewController::NONE;
-  SplitViewController::SnapPosition prev_win_snap_pos =
-      SplitViewController::NONE;
+  // Carry over the snapped active window to split view, along with the previous
+  // window if it exists, is snapped on the opposite side, and is not ARC.
+  const bool prev_win_not_arc =
+      windows.size() > 1u && static_cast<ash::AppType>(windows[1]->GetProperty(
+                                 aura::client::kAppType)) != AppType::ARC_APP;
+  std::vector<SplitViewController::SnapPosition> snap_positions;
   if (active_window_state_type == mojom::WindowStateType::LEFT_SNAPPED) {
     // The active window snapped on the left shall go there in split view.
-    curr_win_snap_pos = SplitViewController::LEFT;
+    snap_positions.push_back(SplitViewController::LEFT);
 
-    if (windows.size() > 1u && wm::GetWindowState(windows[1])->GetStateType() ==
-                                   mojom::WindowStateType::RIGHT_SNAPPED) {
+    if (prev_win_not_arc && wm::GetWindowState(windows[1])->GetStateType() ==
+                                mojom::WindowStateType::RIGHT_SNAPPED) {
       // The previous window snapped on the right shall go there in split view.
-      prev_win_snap_pos = SplitViewController::RIGHT;
+      snap_positions.push_back(SplitViewController::RIGHT);
     }
   } else {
     DCHECK_EQ(mojom::WindowStateType::RIGHT_SNAPPED, active_window_state_type);
 
     // The active window snapped on the right shall go there in split view.
-    curr_win_snap_pos = SplitViewController::RIGHT;
+    snap_positions.push_back(SplitViewController::RIGHT);
 
-    if (windows.size() > 1u && wm::GetWindowState(windows[1])->GetStateType() ==
-                                   mojom::WindowStateType::LEFT_SNAPPED) {
+    if (prev_win_not_arc && wm::GetWindowState(windows[1])->GetStateType() ==
+                                mojom::WindowStateType::LEFT_SNAPPED) {
       // The previous window snapped on the left shall go there in split view.
-      prev_win_snap_pos = SplitViewController::LEFT;
+      snap_positions.push_back(SplitViewController::LEFT);
     }
   }
-
-  // Use |defer_bounds_update| to suppress the maximizing animation which would
-  // look weird here, especially when overview appears beside the active window.
-  for (auto* window : windows)
-    MaximizeAndTrackWindow(window, /*defer_bounds_update=*/true);
-
-  // Implement the previously decided split view layout.
   SplitViewController* split_view_controller =
       Shell::Get()->split_view_controller();
-  split_view_controller->SnapWindow(windows[0], curr_win_snap_pos);
-  if (prev_win_snap_pos == SplitViewController::NONE)
-    Shell::Get()->window_selector_controller()->ToggleOverview();
-  else
-    split_view_controller->SnapWindow(windows[1], prev_win_snap_pos);
-
-  for (auto* window : windows)
-    SetDeferBoundsUpdates(window, false);
+  for (size_t i = 0u; i < windows.size(); ++i) {
+    const bool snap = i < snap_positions.size();
+    TrackWindow(windows[i], snap, /*animate_bounds_on_attach=*/false);
+    if (snap)
+      split_view_controller->SnapWindow(windows[i], snap_positions[i]);
+  }
 }
 
 void TabletModeWindowManager::ArrangeWindowsForDesktopMode() {
@@ -360,9 +374,9 @@ void TabletModeWindowManager::SetDeferBoundsUpdates(aura::Window* window,
     iter->second->SetDeferBoundsUpdates(defer_bounds_updates);
 }
 
-void TabletModeWindowManager::MaximizeAndTrackWindow(
-    aura::Window* window,
-    bool defer_bounds_updates) {
+void TabletModeWindowManager::TrackWindow(aura::Window* window,
+                                          bool snap,
+                                          bool animate_bounds_on_attach) {
   if (!ShouldHandleWindow(window))
     return;
 
@@ -372,7 +386,7 @@ void TabletModeWindowManager::MaximizeAndTrackWindow(
   // We create and remember a tablet mode state which will attach itself to
   // the provided state object.
   window_state_map_[window] =
-      new TabletModeWindowState(window, this, defer_bounds_updates);
+      new TabletModeWindowState(window, this, snap, animate_bounds_on_attach);
 }
 
 void TabletModeWindowManager::ForgetWindow(aura::Window* window,

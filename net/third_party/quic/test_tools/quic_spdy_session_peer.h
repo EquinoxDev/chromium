@@ -8,7 +8,7 @@
 #include "base/macros.h"
 #include "net/third_party/quic/core/quic_packets.h"
 #include "net/third_party/quic/core/quic_write_blocked_list.h"
-#include "net/third_party/spdy/core/spdy_framer.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_framer.h"
 
 namespace quic {
 
@@ -35,14 +35,12 @@ class QuicSpdySessionPeer {
   static void SetMaxUncompressedHeaderBytes(
       QuicSpdySession* session,
       size_t set_max_uncompressed_header_bytes);
-  static size_t WriteHeadersImpl(
+  static size_t WriteHeadersOnHeadersStream(
       QuicSpdySession* session,
       QuicStreamId id,
       spdy::SpdyHeaderBlock headers,
       bool fin,
-      int weight,
-      QuicStreamId parent_stream_id,
-      bool exclusive,
+      spdy::SpdyPriority priority,
       QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
   // Helper functions for stream ids, to allow test logic to abstract
   // over the HTTP stream numbering scheme (i.e. whether one or

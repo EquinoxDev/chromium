@@ -85,7 +85,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_state.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
 #include "content/public/common/user_agent.h"
@@ -104,8 +103,8 @@
 #include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/settings_api_bubble_helpers.h"
+#include "chrome/browser/ui/web_applications/web_app_dialog_utils.h"
 #include "chrome/browser/web_applications/components/web_app_helpers.h"
-#include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/common/extensions/extension_metrics.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "extensions/browser/extension_registry.h"
@@ -909,6 +908,11 @@ void Translate(Browser* browser) {
   ChromeTranslateClient* chrome_translate_client =
       ChromeTranslateClient::FromWebContents(web_contents);
 
+  std::string source_language;
+  std::string target_language;
+  chrome_translate_client->GetTranslateLanguages(web_contents, &source_language,
+                                                 &target_language);
+
   translate::TranslateStep step = translate::TRANSLATE_STEP_BEFORE_TRANSLATE;
   if (chrome_translate_client) {
     if (chrome_translate_client->GetLanguageState().translation_pending())
@@ -919,7 +923,8 @@ void Translate(Browser* browser) {
       step = translate::TRANSLATE_STEP_AFTER_TRANSLATE;
   }
   ShowTranslateBubbleResult result = browser->window()->ShowTranslateBubble(
-      web_contents, step, translate::TranslateErrors::NONE, true);
+      web_contents, step, source_language, target_language,
+      translate::TranslateErrors::NONE, true);
   if (result != ShowTranslateBubbleResult::SUCCESS)
     translate::ReportUiAction(TranslateBubbleResultToUiEvent(result));
 }
@@ -1099,7 +1104,7 @@ void FocusToolbar(Browser* browser) {
 
 void FocusLocationBar(Browser* browser) {
   base::RecordAction(UserMetricsAction("FocusLocation"));
-  browser->window()->SetFocusToLocationBar(true);
+  browser->window()->SetFocusToLocationBar();
 }
 
 void FocusSearch(Browser* browser) {
@@ -1292,13 +1297,11 @@ bool CanViewSource(const Browser* browser) {
 void CreateBookmarkAppFromCurrentWebContents(Browser* browser,
                                              bool force_shortcut_app) {
   base::RecordAction(UserMetricsAction("CreateHostedApp"));
-  web_app::WebAppProvider::InstallWebApp(
-      browser->tab_strip_model()->GetActiveWebContents(), force_shortcut_app);
+  web_app::CreateWebAppFromCurrentWebContents(browser, force_shortcut_app);
 }
 
 bool CanCreateBookmarkApp(const Browser* browser) {
-  return web_app::WebAppProvider::CanInstallWebApp(
-      browser->tab_strip_model()->GetActiveWebContents());
+  return web_app::CanCreateWebApp(browser);
 }
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 

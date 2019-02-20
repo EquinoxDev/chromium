@@ -10,6 +10,7 @@
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/crash_report/crash_report_helper.h"
 #import "ios/chrome/browser/device_sharing/device_sharing_manager.h"
+#import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/sessions/session_ios.h"
 #import "ios/chrome/browser/sessions/session_service_ios.h"
 #import "ios/chrome/browser/sessions/session_window_ios.h"
@@ -87,6 +88,9 @@
   __weak id<ApplicationCommands> _applicationCommandEndpoint;
   __weak id<BrowserStateStorageSwitching> _storageSwitcher;
   BOOL _isShutdown;
+
+  std::unique_ptr<Browser> _mainBrowser;
+  std::unique_ptr<Browser> _otrBrowser;
 }
 
 @property(nonatomic, strong, readwrite) WrangledBrowser* mainInterface;
@@ -95,37 +99,39 @@
 // Backing objects.
 @property(nonatomic) BrowserCoordinator* mainBrowserCoordinator;
 @property(nonatomic) BrowserCoordinator* incognitoBrowserCoordinator;
-@property(nonatomic) TabModel* mainTabModel;
-@property(nonatomic) TabModel* otrTabModel;
+//@property(nonatomic, readonly) TabModel* mainTabModel;
+//@property(nonatomic, readonly) TabModel* otrTabModel;
+@property(nonatomic, readonly) Browser* mainBrowser;
+@property(nonatomic, readonly) Browser* otrBrowser;
 
 // Responsible for maintaining all state related to sharing to other devices.
 // Redeclared readwrite from the readonly declaration in the Testing interface.
 @property(nonatomic, strong, readwrite)
     DeviceSharingManager* deviceSharingManager;
 
-// Creates a new autoreleased tab model for |browserState|; if |empty| is NO,
+// Sets up the given |tabModel| for use.  If |restorePersistedState| is YES,
 // then any existing tabs that have been saved for |browserState| will be
-// loaded; otherwise, the tab model will be created empty.
-- (TabModel*)tabModelForBrowserState:(ios::ChromeBrowserState*)browserState
-                               empty:(BOOL)empty;
+// loaded; otherwise, the tab model will be left empty.
+- (void)setUpTabModel:(TabModel*)tabModel
+         withBrowserState:(ios::ChromeBrowserState*)browserState
+    restorePersistedState:(BOOL)restorePersistedState;
+
+// Setters for the main and otr Browsers.
+- (void)setMainBrowser:(std::unique_ptr<Browser>)browser;
+- (void)setOtrBrowser:(std::unique_ptr<Browser>)browser;
 
 // Creates a new off-the-record ("incognito") browser state for |_browserState|,
-// then calls -tabModelForBrowserState:empty: and returns the (autoreleased)
-// result.
-- (TabModel*)buildOtrTabModel:(BOOL)empty;
+// then creates and sets up a TabModel and returns a Browser for the result.
+- (std::unique_ptr<Browser>)buildOtrBrowser:(BOOL)restorePersistedState;
 
 // Creates the correct BrowserCoordinator for the corresponding browser state
-// and tab model.
-- (BrowserCoordinator*)coordinatorForBrowserState:
-                           (ios::ChromeBrowserState*)browserState
-                                         tabModel:(TabModel*)tabModel;
+// and Browser.
+- (BrowserCoordinator*)coordinatorForBrowser:(Browser*)browser;
 @end
 
 @implementation BrowserViewWrangler
 
 @synthesize currentInterface = _currentInterface;
-@synthesize mainTabModel = _mainTabModel;
-@synthesize otrTabModel = _otrTabModel;
 
 - (instancetype)initWithBrowserState:(ios::ChromeBrowserState*)browserState
                     tabModelObserver:(id<TabModelObserver>)tabModelObserver
@@ -146,12 +152,27 @@
   DCHECK(_isShutdown) << "-shutdown must be called before -dealloc";
 }
 
-- (void)createMainTabModel {
-  self.mainTabModel = [self tabModelForBrowserState:_browserState empty:NO];
+- (void)createMainBrowser {
+  TabModel* tabModel =
+      [[TabModel alloc] initWithSessionService:[SessionServiceIOS sharedService]
+                                  browserState:_browserState];
+  [self setUpTabModel:tabModel
+           withBrowserState:_browserState
+      restorePersistedState:YES];
+
+  _mainBrowser = Browser::Create(_browserState, tabModel);
   // Follow loaded URLs in the main tab model to send those in case of
   // crashes.
-  breakpad::MonitorURLsForTabModel(_mainTabModel);
-  ios::GetChromeBrowserProvider()->InitializeCastService(_mainTabModel);
+  breakpad::MonitorURLsForTabModel(self.mainBrowser->GetTabModel());
+  ios::GetChromeBrowserProvider()->InitializeCastService(
+      self.mainBrowser->GetTabModel());
+
+  // Create the main coordinator, and thus the main interface.
+  _mainBrowserCoordinator = [self coordinatorForBrowser:self.mainBrowser];
+  [_mainBrowserCoordinator start];
+  DCHECK(_mainBrowserCoordinator.viewController);
+  _mainInterface =
+      [[WrangledBrowser alloc] initWithCoordinator:_mainBrowserCoordinator];
 }
 
 #pragma mark - BrowserViewInformation property implementations
@@ -182,31 +203,16 @@
   [self updateDeviceSharingManager];
 }
 
-- (id<BrowserInterface>)mainInterface {
-  if (!_mainInterface) {
-    // The backing coordinator should not have been created yet.
-    DCHECK(!_mainBrowserCoordinator);
-    _mainBrowserCoordinator =
-        [self coordinatorForBrowserState:_browserState
-                                tabModel:self.mainTabModel];
-    [_mainBrowserCoordinator start];
-    DCHECK(_mainBrowserCoordinator.viewController);
-    _mainInterface =
-        [[WrangledBrowser alloc] initWithCoordinator:_mainBrowserCoordinator];
-  }
-  return _mainInterface;
-}
-
 - (id<BrowserInterface>)incognitoInterface {
+  if (!_mainInterface)
+    return nil;
   if (!_incognitoInterface) {
     // The backing coordinator should not have been created yet.
     DCHECK(!_incognitoBrowserCoordinator);
     ios::ChromeBrowserState* otrBrowserState =
         _browserState->GetOffTheRecordChromeBrowserState();
     DCHECK(otrBrowserState);
-    _incognitoBrowserCoordinator =
-        [self coordinatorForBrowserState:otrBrowserState
-                                tabModel:self.otrTabModel];
+    _incognitoBrowserCoordinator = [self coordinatorForBrowser:self.otrBrowser];
     [_incognitoBrowserCoordinator start];
     DCHECK(_incognitoBrowserCoordinator.viewController);
     _incognitoInterface = [[WrangledBrowser alloc]
@@ -215,57 +221,53 @@
   return _incognitoInterface;
 }
 
-- (TabModel*)mainTabModel {
-  DCHECK(_mainTabModel)
-      << "-createMainTabModel must be called before -mainTabModel is accessed.";
-  return _mainTabModel;
+- (Browser*)mainBrowser {
+  DCHECK(_mainBrowser.get())
+      << "-createMainBrowser must be called before -mainBrowser is accessed.";
+  return _mainBrowser.get();
 }
 
-- (void)setMainTabModel:(TabModel*)mainTabModel {
-  if (_mainTabModel == mainTabModel)
-    return;
+- (Browser*)otrBrowser {
+  if (!_otrBrowser) {
+    _otrBrowser = [self buildOtrBrowser:YES];
+  }
+  return _otrBrowser.get();
+}
 
-  if (_mainTabModel) {
-    breakpad::StopMonitoringTabStateForTabModel(_mainTabModel);
-    breakpad::StopMonitoringURLsForTabModel(_mainTabModel);
-    [_mainTabModel browserStateDestroyed];
+- (void)setMainBrowser:(std::unique_ptr<Browser>)mainBrowser {
+  if (_mainBrowser.get()) {
+    TabModel* tabModel = self.mainBrowser->GetTabModel();
+    breakpad::StopMonitoringTabStateForTabModel(tabModel);
+    breakpad::StopMonitoringURLsForTabModel(tabModel);
+    [tabModel browserStateDestroyed];
     if (_tabModelObserver) {
-      [_mainTabModel removeObserver:_tabModelObserver];
+      [tabModel removeObserver:_tabModelObserver];
     }
-    [_mainTabModel removeObserver:self];
+    [tabModel removeObserver:self];
   }
 
-  _mainTabModel = mainTabModel;
+  _mainBrowser = std::move(mainBrowser);
 }
 
-- (TabModel*)otrTabModel {
-  if (!_otrTabModel) {
-    self.otrTabModel = [self buildOtrTabModel:NO];
-  }
-  return _otrTabModel;
-}
-
-- (void)setOtrTabModel:(TabModel*)otrTabModel {
-  if (_otrTabModel == otrTabModel)
-    return;
-
-  if (_otrTabModel) {
-    breakpad::StopMonitoringTabStateForTabModel(_otrTabModel);
-    [_otrTabModel browserStateDestroyed];
+- (void)setOtrBrowser:(std::unique_ptr<Browser>)otrBrowser {
+  if (_otrBrowser.get()) {
+    TabModel* tabModel = self.otrBrowser->GetTabModel();
+    breakpad::StopMonitoringTabStateForTabModel(tabModel);
+    [tabModel browserStateDestroyed];
     if (_tabModelObserver) {
-      [_otrTabModel removeObserver:_tabModelObserver];
+      [tabModel removeObserver:_tabModelObserver];
     }
-    [_otrTabModel removeObserver:self];
+    [tabModel removeObserver:self];
   }
 
-  _otrTabModel = otrTabModel;
+  _otrBrowser = std::move(otrBrowser);
 }
 
 #pragma mark - BrowserViewInformation methods
 
 - (void)haltAllTabs {
-  [self.mainTabModel haltAllTabs];
-  [self.otrTabModel haltAllTabs];
+  [self.mainBrowser->GetTabModel() haltAllTabs];
+  [self.otrBrowser->GetTabModel() haltAllTabs];
 }
 
 - (void)cleanDeviceSharingManager {
@@ -302,15 +304,15 @@
   [self.deviceSharingManager updateActiveURL:activeURL];
 }
 
-- (void)destroyAndRebuildIncognitoTabModel {
+- (void)destroyAndRebuildIncognitoBrowser {
   // It is theoretically possible that a Tab has been added to |_otrTabModel|
   // since the deletion has been scheduled. It is unlikely to happen for real
   // because it would require superhuman speed.
-  DCHECK(![_otrTabModel count]);
+  DCHECK(![self.otrBrowser->GetTabModel() count]);
   DCHECK(_browserState);
 
   // Stop watching the OTR tab model's state for crashes.
-  breakpad::StopMonitoringTabStateForTabModel(self.otrTabModel);
+  breakpad::StopMonitoringTabStateForTabModel(self.otrBrowser->GetTabModel());
 
   // At this stage, a new incognitoBrowserCoordinator shouldn't be lazily
   // constructed by calling the property getter.
@@ -324,7 +326,7 @@
 
     // There's no guarantee the tab model was ever added to the BVC (or even
     // that the BVC was created), so ensure the tab model gets notified.
-    self.otrTabModel = nil;
+    [self setOtrBrowser:nullptr];
     if (otrBVCIsCurrent) {
       _currentInterface = nil;
     }
@@ -336,8 +338,8 @@
   // possible to prevent the tabChanged notification being sent. Otherwise,
   // when it is created, a notification with no tabs will be sent, and it will
   // be immediately deleted.
-  self.otrTabModel = [self buildOtrTabModel:YES];
-  DCHECK(![self.otrTabModel count]);
+  [self setOtrBrowser:[self buildOtrBrowser:NO]];
+  DCHECK(![self.otrBrowser->GetTabModel() count]);
   DCHECK(_browserState->HasOffTheRecordChromeBrowserState());
 
   if (otrBVCIsCurrent) {
@@ -359,30 +361,37 @@
   [_incognitoBrowserCoordinator stop];
   _incognitoBrowserCoordinator = nil;
 
-  [_mainTabModel closeAllTabs];
-  [_otrTabModel closeAllTabs];
-  // Handles removing observers and stopping breakpad monitoring.
-  [self setMainTabModel:nil];
-  [self setOtrTabModel:nil];
+  // Handles removing observers, stopping breakpad monitoring, and closing all
+  // tabs.
+  [self setMainBrowser:nullptr];
+  [self setOtrBrowser:nullptr];
 
   _browserState = nullptr;
 }
 
 #pragma mark - Internal methods
 
-- (TabModel*)buildOtrTabModel:(BOOL)empty {
+- (std::unique_ptr<Browser>)buildOtrBrowser:(BOOL)restorePersistedState {
   DCHECK(_browserState);
   // Ensure that the OTR ChromeBrowserState is created.
   ios::ChromeBrowserState* otrBrowserState =
       _browserState->GetOffTheRecordChromeBrowserState();
   DCHECK(otrBrowserState);
-  return [self tabModelForBrowserState:otrBrowserState empty:empty];
+  TabModel* tabModel =
+      [[TabModel alloc] initWithSessionService:[SessionServiceIOS sharedService]
+                                  browserState:otrBrowserState];
+  [self setUpTabModel:tabModel
+           withBrowserState:otrBrowserState
+      restorePersistedState:restorePersistedState];
+  return Browser::Create(otrBrowserState, tabModel);
 }
 
-- (TabModel*)tabModelForBrowserState:(ios::ChromeBrowserState*)browserState
-                               empty:(BOOL)empty {
+- (void)setUpTabModel:(TabModel*)tabModel
+         withBrowserState:(ios::ChromeBrowserState*)browserState
+    restorePersistedState:(BOOL)restorePersistedState {
+  DCHECK_EQ(0U, tabModel.count);
   SessionWindowIOS* sessionWindow = nil;
-  if (!empty) {
+  if (restorePersistedState) {
     // Load existing saved tab model state.
     NSString* statePath =
         base::SysUTF8ToNSString(browserState->GetStatePath().AsUTF8Unsafe());
@@ -392,30 +401,22 @@
       DCHECK_EQ(session.sessionWindows.count, 1u);
       sessionWindow = session.sessionWindows[0];
     }
+
+    [tabModel restoreSessionWindow:sessionWindow forInitialRestore:YES];
   }
 
-  // Create tab model from saved session (nil is ok).
-  TabModel* tabModel =
-      [[TabModel alloc] initWithSessionWindow:sessionWindow
-                               sessionService:[SessionServiceIOS sharedService]
-                                 browserState:browserState];
   // Add observers.
   if (_tabModelObserver) {
     [tabModel addObserver:_tabModelObserver];
     [tabModel addObserver:self];
   }
   breakpad::MonitorTabStateForTabModel(tabModel);
-
-  return tabModel;
 }
 
-- (BrowserCoordinator*)coordinatorForBrowserState:
-                           (ios::ChromeBrowserState*)browserState
-                                         tabModel:(TabModel*)tabModel {
+- (BrowserCoordinator*)coordinatorForBrowser:(Browser*)browser {
   BrowserCoordinator* coordinator =
       [[BrowserCoordinator alloc] initWithBaseViewController:nil
-                                                browserState:browserState];
-  coordinator.tabModel = tabModel;
+                                                     browser:browser];
   coordinator.applicationCommandHandler = _applicationCommandEndpoint;
   return coordinator;
 }

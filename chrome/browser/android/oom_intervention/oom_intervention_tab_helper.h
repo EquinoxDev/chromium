@@ -10,6 +10,7 @@
 #include "base/optional.h"
 #include "base/scoped_observer.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/android/oom_intervention/near_oom_monitor.h"
 #include "chrome/browser/ui/interventions/intervention_delegate.h"
 #include "components/crash/content/browser/crash_metrics_reporter_android.h"
@@ -56,8 +57,8 @@ class OomInterventionTabHelper
   void RenderProcessGone(base::TerminationStatus status) override;
   void DidStartNavigation(
       content::NavigationHandle* navigation_handle) override;
-  void DocumentAvailableInMainFrame() override;
   void OnVisibilityChanged(content::Visibility visibility) override;
+  void DocumentOnLoadCompletedInMainFrame() override;
 
   // CrashDumpManager::Observer:
   void OnCrashDumpProcessed(
@@ -84,6 +85,7 @@ class OomInterventionTabHelper
   void ResetInterfaces();
 
   bool navigation_started_ = false;
+  bool load_finished_ = false;
   base::Optional<base::TimeTicks> near_oom_detected_time_;
   std::unique_ptr<NearOomMonitor::Subscription> subscription_;
   base::OneShotTimer renderer_detection_timer_;
@@ -115,6 +117,7 @@ class OomInterventionTabHelper
   base::WritableSharedMemoryMapping metrics_mapping_;
 
   base::TimeTicks last_navigation_timestamp_;
+  base::TimeTicks start_monitor_timestamp_;
 
   ScopedObserver<crash_reporter::CrashMetricsReporter,
                  crash_reporter::CrashMetricsReporter::Observer>

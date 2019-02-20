@@ -87,7 +87,6 @@
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/delay_based_time_source.h"
-#include "components/viz/common/gpu/texture_allocation.h"
 #include "components/viz/common/hit_test/hit_test_region_list.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/compositor_frame_metadata.h"
@@ -219,19 +218,16 @@ void DidVisibilityChange(LayerTreeHostImpl* id, bool visible) {
   TRACE_EVENT_ASYNC_END0("cc", "LayerTreeHostImpl::SetVisible", id);
 }
 
-bool IsWheelBasedScroll(InputHandler::ScrollInputType type) {
-  return type == InputHandler::WHEEL;
-}
-
 enum ScrollThread { MAIN_THREAD, CC_THREAD };
 
 void RecordCompositorSlowScrollMetric(InputHandler::ScrollInputType type,
                                       ScrollThread scroll_thread) {
+  DCHECK_NE(type, InputHandler::SCROLL_INPUT_UNKNOWN);
   bool scroll_on_main_thread = (scroll_thread == MAIN_THREAD);
-  if (IsWheelBasedScroll(type)) {
+  if (type == InputHandler::WHEEL) {
     UMA_HISTOGRAM_BOOLEAN("Renderer4.CompositorWheelScrollUpdateThread",
                           scroll_on_main_thread);
-  } else {
+  } else if (type == InputHandler::TOUCHSCREEN) {
     UMA_HISTOGRAM_BOOLEAN("Renderer4.CompositorTouchScrollUpdateThread",
                           scroll_on_main_thread);
   }
@@ -542,6 +538,9 @@ bool LayerTreeHostImpl::CanDraw() const {
                          TRACE_EVENT_SCOPE_THREAD);
     return false;
   }
+
+  if (waiting_for_local_surface_id_)
+    return false;
 
   if (resourceless_software_draw_)
     return true;
@@ -1328,6 +1327,14 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
     }
   }
 
+  // Tick worklet animations here, just before draw, to give animation worklets
+  // as much time as possible to produce their output for this frame. Note that
+  // an animation worklet is asked to produce its output at the beginning of the
+  // frame along side other animations but its output arrives asynchronously so
+  // we tick worklet animations and apply that output here instead.
+  base::TimeTicks monotonic_time = CurrentBeginFrameArgs().frame_time;
+  mutator_host_->TickWorkletAnimations(monotonic_time);
+
   bool ok = active_tree_->UpdateDrawProperties();
   DCHECK(ok) << "UpdateDrawProperties failed during draw";
 
@@ -1358,7 +1365,7 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
 
   // If we return DRAW_SUCCESS, then we expect DrawLayers() to be called before
   // this function is called again.
-  return draw_result;
+  return DRAW_SUCCESS;
 }
 
 void LayerTreeHostImpl::RemoveRenderPasses(FrameData* frame) {
@@ -1641,22 +1648,18 @@ void LayerTreeHostImpl::NotifyAllTileTasksCompleted() {
 void LayerTreeHostImpl::NotifyTileStateChanged(const Tile* tile) {
   TRACE_EVENT0("cc", "LayerTreeHostImpl::NotifyTileStateChanged");
 
-  if (active_tree_) {
-    LayerImpl* layer_impl =
-        active_tree_->FindActiveTreeLayerById(tile->layer_id());
-    if (layer_impl)
-      layer_impl->NotifyTileStateChanged(tile);
-  }
+  LayerImpl* layer_impl = nullptr;
 
-  if (pending_tree_) {
-    LayerImpl* layer_impl =
-        pending_tree_->FindPendingTreeLayerById(tile->layer_id());
-    if (layer_impl)
-      layer_impl->NotifyTileStateChanged(tile);
-  }
+  // We must have a pending or active tree layer here, since the layer is
+  // guaranteed to outlive its tiles.
+  if (tile->tiling()->tree() == WhichTree::PENDING_TREE)
+    layer_impl = pending_tree_->FindPendingTreeLayerById(tile->layer_id());
+  else
+    layer_impl = active_tree_->FindActiveTreeLayerById(tile->layer_id());
 
-  // Check for a non-null active tree to avoid doing this during shutdown.
-  if (active_tree_ && !client_->IsInsideDraw() && tile->required_for_draw()) {
+  layer_impl->NotifyTileStateChanged(tile);
+
+  if (!client_->IsInsideDraw() && tile->required_for_draw()) {
     // The LayerImpl::NotifyTileStateChanged() should damage the layer, so this
     // redraw will make those tiles be displayed.
     SetNeedsRedraw();
@@ -1687,9 +1690,9 @@ void LayerTreeHostImpl::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {
 }
 
 void LayerTreeHostImpl::SetTreeActivationCallback(
-    const base::Closure& callback) {
+    base::RepeatingClosure callback) {
   DCHECK(task_runner_provider_->IsImplThread());
-  tree_activation_callback_ = callback;
+  tree_activation_callback_ = std::move(callback);
 }
 
 void LayerTreeHostImpl::SetManagedMemoryPolicy(
@@ -1855,9 +1858,8 @@ void LayerTreeHostImpl::OnDraw(const gfx::Transform& transform,
       active_tree_->set_needs_update_draw_properties();
     }
 
-    if (resourceless_software_draw) {
+    if (resourceless_software_draw)
       client_->OnCanDrawStateChanged(CanDraw());
-    }
 
     client_->OnDrawForLayerTreeFrameSink(resourceless_software_draw_,
                                          skip_draw);
@@ -2022,7 +2024,7 @@ RenderFrameMetadata LayerTreeHostImpl::MakeRenderFrameMetadata(
   if (child_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation()
           .IsValid()) {
     if (allocate_new_local_surface_id)
-      child_local_surface_id_allocator_.GenerateId();
+      AllocateLocalSurfaceId();
     metadata.local_surface_id_allocation =
         child_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation();
   }
@@ -2616,7 +2618,7 @@ base::Optional<viz::HitTestRegionList> LayerTreeHostImpl::BuildHitTestData() {
 
   Region overlapping_region;
   for (const auto* layer : base::Reversed(*active_tree())) {
-    if (!layer->should_hit_test())
+    if (!layer->ShouldHitTest())
       continue;
 
     if (layer->is_surface_layer()) {
@@ -2650,13 +2652,19 @@ base::Optional<viz::HitTestRegionList> LayerTreeHostImpl::BuildHitTestData() {
         flag |= viz::HitTestRegionFlags::kHitTestAsk;
         async_hit_test_reasons |= viz::AsyncHitTestReasons::kOverlappedRegion;
       }
-      if (surface_layer->is_clipped()) {
+      bool layer_hit_test_region_is_masked =
+          active_tree()
+              ->property_trees()
+              ->effect_tree.Node(surface_layer->effect_tree_index())
+              ->is_masked;
+      if (surface_layer->is_clipped() || layer_hit_test_region_is_masked) {
         bool layer_hit_test_region_is_rectangle =
+            !layer_hit_test_region_is_masked &&
+            surface_layer->ScreenSpaceTransform().Preserves2dAxisAlignment() &&
             active_tree()
                 ->property_trees()
                 ->effect_tree.ClippedHitTestRegionIsRectangle(
-                    surface_layer->effect_tree_index()) &&
-            surface_layer->ScreenSpaceTransform().Preserves2dAxisAlignment();
+                    surface_layer->effect_tree_index());
         content_rect =
             gfx::ScaleToEnclosingRect(surface_layer->visible_layer_rect(),
                                       device_scale_factor, device_scale_factor);
@@ -2897,7 +2905,7 @@ void LayerTreeHostImpl::ActivateSyncTree() {
     child_local_surface_id_allocator_.UpdateFromParent(
         active_tree()->local_surface_id_allocation_from_parent());
     if (active_tree()->TakeNewLocalSurfaceIdRequest())
-      child_local_surface_id_allocator_.GenerateId();
+      AllocateLocalSurfaceId();
   }
 
   // Dump property trees and layers if run with:
@@ -3142,7 +3150,7 @@ void LayerTreeHostImpl::SetLayerTreeMutator(
 
 void LayerTreeHostImpl::SetPaintWorkletLayerPainter(
     std::unique_ptr<PaintWorkletLayerPainter> painter) {
-  painter_ = std::move(painter);
+  tile_manager_.SetPaintWorkletLayerPainter(std::move(painter));
 }
 
 LayerImpl* LayerTreeHostImpl::ViewportMainScrollLayer() {
@@ -3165,8 +3173,8 @@ void LayerTreeHostImpl::QueueImageDecode(int request_id,
   // Optimistically specify the current raster color space, since we assume that
   // it won't change.
   tile_manager_.decoded_image_tracker().QueueImageDecode(
-      image, base::Bind(&LayerTreeHostImpl::ImageDecodeFinished,
-                        base::Unretained(this), request_id));
+      image, base::BindOnce(&LayerTreeHostImpl::ImageDecodeFinished,
+                            base::Unretained(this), request_id));
   tile_manager_.checker_image_tracker().DisallowCheckeringForImage(image);
 }
 
@@ -3361,7 +3369,7 @@ bool LayerTreeHostImpl::InitializeFrameSink(
     const viz::LocalSurfaceIdAllocation& local_surface_id_allocation =
         child_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation();
     if (local_surface_id_allocation.IsValid())
-      child_local_surface_id_allocator_.GenerateId();
+      AllocateLocalSurfaceId();
   } else {
     layer_tree_frame_sink_->ForceAllocateNewId();
   }
@@ -3600,10 +3608,11 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBeginImpl(
                        TRACE_EVENT_SCOPE_THREAD, "isNull",
                        scrolling_node ? false : true);
   active_tree_->SetCurrentlyScrollingNode(scrolling_node);
-  // TODO(majidvp): get rid of wheel_scrolling_ and set is_direct_manipulation
+  // TODO(majidvp): get rid of touch_scrolling_ and set is_direct_manipulation
   // in input_handler_proxy instead.
-  wheel_scrolling_ = IsWheelBasedScroll(type);
-  scroll_state->set_is_direct_manipulation(!wheel_scrolling_);
+  touch_scrolling_ = type == InputHandler::TOUCHSCREEN;
+  wheel_scrolling_ = type == InputHandler::WHEEL;
+  scroll_state->set_is_direct_manipulation(touch_scrolling_);
   // Invoke |DistributeScrollDelta| even with zero delta and velocity to ensure
   // scroll customization callbacks are invoked.
   DistributeScrollDelta(scroll_state);
@@ -3630,7 +3639,7 @@ InputHandler::ScrollStatus LayerTreeHostImpl::ScrollBeginImpl(
   client_->RenewTreePriority();
   RecordCompositorSlowScrollMetric(type, CC_THREAD);
 
-  UpdateScrollSourceInfo(wheel_scrolling_);
+  UpdateScrollSourceInfo(type);
 
   return scroll_status;
 }
@@ -3817,7 +3826,7 @@ gfx::Vector2dF LayerTreeHostImpl::ComputeScrollDelta(
     const ScrollNode& scroll_node,
     const gfx::Vector2dF& delta) {
   ScrollTree& scroll_tree = active_tree()->property_trees()->scroll_tree;
-  float scale_factor = active_tree()->current_page_scale_factor();
+  float scale_factor = active_tree()->page_scale_factor_for_scroll();
 
   gfx::Vector2dF adjusted_scroll(delta);
   adjusted_scroll.Scale(1.f / scale_factor);
@@ -4152,10 +4161,14 @@ gfx::Vector2dF LayerTreeHostImpl::ScrollSingleNode(
   // can just apply them directly, but the page scale factor is applied to the
   // scroll delta.
   if (is_direct_manipulation) {
+    // For touch-scroll we need to scale the delta here, as the transform tree
+    // won't know anything about the external page scale factors used by OOPIFs.
+    gfx::Vector2dF scaled_delta(delta);
+    scaled_delta.Scale(1 / active_tree()->external_page_scale_factor());
     return ScrollNodeWithViewportSpaceDelta(
-        scroll_node, gfx::PointF(viewport_point), delta, scroll_tree);
+        scroll_node, gfx::PointF(viewport_point), scaled_delta, scroll_tree);
   }
-  float scale_factor = active_tree()->current_page_scale_factor();
+  float scale_factor = active_tree()->page_scale_factor_for_scroll();
   return ScrollNodeWithLocalDelta(scroll_node, delta, scale_factor,
                                   active_tree());
 }
@@ -4383,7 +4396,7 @@ InputHandlerScrollResult LayerTreeHostImpl::ScrollBy(
 
   scroll_state->set_delta_consumed_for_scroll_sequence(
       did_lock_scrolling_layer_);
-  scroll_state->set_is_direct_manipulation(!wheel_scrolling_);
+  scroll_state->set_is_direct_manipulation(touch_scrolling_);
   scroll_state->set_current_native_scrolling_node(scroll_node);
 
   DistributeScrollDelta(scroll_state);
@@ -4413,6 +4426,10 @@ InputHandlerScrollResult LayerTreeHostImpl::ScrollBy(
     client_->SetNeedsCommitOnImplThread();
     SetNeedsRedraw();
     client_->RenewTreePriority();
+  } else {
+    overscroll_delta_for_main_thread_ +=
+        gfx::Vector2dF(scroll_state->delta_x(), scroll_state->delta_y());
+    client_->SetNeedsCommitOnImplThread();
   }
 
   // Scrolling along an axis resets accumulated root overscroll for that axis.
@@ -4461,7 +4478,7 @@ InputHandlerScrollResult LayerTreeHostImpl::ScrollBy(
 
   scroll_result.current_visual_offset =
       ScrollOffsetToVector2dF(GetVisualScrollOffset(*scroll_node));
-  float scale_factor = active_tree()->current_page_scale_factor();
+  float scale_factor = active_tree()->page_scale_factor_for_scroll();
   scroll_result.current_visual_offset.Scale(scale_factor);
 
   // Run animations which need to respond to updated scroll offset.
@@ -4525,7 +4542,7 @@ bool LayerTreeHostImpl::SnapAtScrollEnd() {
         animation_controller->WillUpdateScroll();
     }
     gfx::Vector2dF scaled_delta(delta);
-    scaled_delta.Scale(active_tree()->current_page_scale_factor());
+    scaled_delta.Scale(active_tree()->page_scale_factor_for_scroll());
     viewport()->ScrollAnimated(scaled_delta, base::TimeDelta());
   } else {
     ScrollAnimationCreate(scroll_node, delta, base::TimeDelta());
@@ -4558,7 +4575,7 @@ bool LayerTreeHostImpl::GetSnapFlingInfo(
     return false;
 
   const SnapContainerData& data = scroll_node->snap_container_data.value();
-  float scale_factor = active_tree()->current_page_scale_factor();
+  float scale_factor = active_tree()->page_scale_factor_for_scroll();
   gfx::Vector2dF natural_displacement_in_content =
       gfx::ScaleVector2d(natural_displacement_in_viewport, 1.f / scale_factor);
 
@@ -4600,6 +4617,10 @@ void LayerTreeHostImpl::ScrollEndImpl(ScrollState* scroll_state) {
 
 void LayerTreeHostImpl::ScrollEnd(ScrollState* scroll_state, bool should_snap) {
   scroll_gesture_did_end_ = true;
+  last_scroller_element_id_ = CurrentlyScrollingNode()
+                                  ? CurrentlyScrollingNode()->element_id
+                                  : ElementId();
+  client_->SetNeedsCommitOnImplThread();
 
   if (should_snap && SnapAtScrollEnd())
     return;
@@ -4783,6 +4804,23 @@ std::unique_ptr<ScrollAndScaleSet> LayerTreeHostImpl::ProcessScrollDeltas() {
   scroll_info->scroll_gesture_did_end = scroll_gesture_did_end_;
   has_scrolled_by_wheel_ = has_scrolled_by_touch_ = false;
 
+  // Record and reset overscroll delta.
+  scroll_info->overscroll_delta = overscroll_delta_for_main_thread_;
+  overscroll_delta_for_main_thread_ = gfx::Vector2dF();
+
+  if (scroll_gesture_did_end_) {
+    // When the scrolling has finished send the element id of the last node that
+    // has scrolled.
+    scroll_info->scroll_latched_element_id = last_scroller_element_id_;
+    last_scroller_element_id_ = ElementId();
+  } else {
+    // Send the element id of the currently scrolling node.
+    auto* node =
+        active_tree_->property_trees()->scroll_tree.CurrentlyScrollingNode();
+    scroll_info->scroll_latched_element_id =
+        node ? node->element_id : ElementId();
+  }
+
   if (browser_controls_manager()) {
     scroll_info->browser_controls_constraint =
         browser_controls_manager()->PullConstraintForMainThread(
@@ -4956,9 +4994,9 @@ void LayerTreeHostImpl::FlashAllScrollbars(bool did_scroll) {
 }
 
 void LayerTreeHostImpl::PostDelayedScrollbarAnimationTask(
-    const base::Closure& task,
+    base::OnceClosure task,
     base::TimeDelta delay) {
-  client_->PostDelayedAnimationTaskOnImplThread(task, delay);
+  client_->PostDelayedAnimationTaskOnImplThread(std::move(task), delay);
 }
 
 // TODO(danakj): Make this a return value from the Animate() call instead of an
@@ -5088,6 +5126,8 @@ void LayerTreeHostImpl::SetDebugState(
 
 void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
                                          const UIResourceBitmap& bitmap) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "LayerTreeHostImpl::CreateUIResource");
   DCHECK_GT(uid, 0);
 
   // Allow for multiple creation requests with the same UIResourceId.  The
@@ -5147,12 +5187,13 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   // UIResource will be copied into it.
   std::unique_ptr<base::SharedMemory> shared_memory;
   viz::SharedBitmapId shared_bitmap_id;
+  bool overlay_candidate = false;
 
   if (layer_tree_frame_sink_->context_provider()) {
     viz::ContextProvider* context_provider =
         layer_tree_frame_sink_->context_provider();
     const auto& caps = context_provider->ContextCapabilities();
-    bool overlay_candidate =
+    overlay_candidate =
         settings_.resource_settings.use_gpu_memory_buffer_resources &&
         caps.texture_storage_image &&
         viz::IsGpuMemoryBufferFormatSupported(format);
@@ -5263,7 +5304,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
                                     ->GenUnverifiedSyncToken();
 
     transferable = viz::TransferableResource::MakeGLOverlay(
-        mailbox, GL_LINEAR, texture_target, sync_token, upload_size, false);
+        mailbox, GL_LINEAR, texture_target, sync_token, upload_size,
+        overlay_candidate);
     transferable.format = format;
   } else {
     mojo::ScopedSharedBufferHandle memory_handle =
@@ -5297,6 +5339,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
 }
 
 void LayerTreeHostImpl::DeleteUIResource(UIResourceId uid) {
+  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "LayerTreeHostImpl::DeleteUIResource");
   auto it = ui_resource_map_.find(uid);
   if (it != ui_resource_map_.end()) {
     UIResourceData& data = it->second;
@@ -5446,7 +5490,7 @@ bool LayerTreeHostImpl::ScrollAnimationUpdateTarget(
     ScrollNode* scroll_node,
     const gfx::Vector2dF& scroll_delta,
     base::TimeDelta delayed_by) {
-  float scale_factor = active_tree()->current_page_scale_factor();
+  float scale_factor = active_tree()->page_scale_factor_for_scroll();
   gfx::Vector2dF scaled_delta =
       gfx::ScaleVector2d(scroll_delta, 1.f / scale_factor);
   return mutator_host_->ImplOnlyScrollAnimationUpdateTarget(
@@ -5544,7 +5588,7 @@ void LayerTreeHostImpl::SetElementScrollOffsetMutated(
 }
 
 void LayerTreeHostImpl::ElementIsAnimatingChanged(
-    ElementId element_id,
+    const PropertyToElementIdMap& element_id_map,
     ElementListType list_type,
     const PropertyAnimationState& mask,
     const PropertyAnimationState& state) {
@@ -5552,8 +5596,9 @@ void LayerTreeHostImpl::ElementIsAnimatingChanged(
       list_type == ElementListType::ACTIVE ? active_tree() : pending_tree();
   // TODO(wkorman): Explore enabling DCHECK in ElementIsAnimatingChanged()
   // below. Currently enabling causes batch of unit test failures.
-  if (tree && tree->property_trees()->ElementIsAnimatingChanged(
-                  mutator_host(), element_id, list_type, mask, state, false))
+  if (tree &&
+      tree->property_trees()->ElementIsAnimatingChanged(
+          mutator_host(), element_id_map, list_type, mask, state, false))
     tree->set_needs_update_draw_properties();
 }
 
@@ -5618,10 +5663,11 @@ void LayerTreeHostImpl::SetContextVisibility(bool is_visible) {
   }
 }
 
-void LayerTreeHostImpl::UpdateScrollSourceInfo(bool is_wheel_scroll) {
-  if (is_wheel_scroll)
+void LayerTreeHostImpl::UpdateScrollSourceInfo(
+    InputHandler::ScrollInputType type) {
+  if (type == InputHandler::WHEEL)
     has_scrolled_by_wheel_ = true;
-  else
+  else if (type == InputHandler::TOUCHSCREEN)
     has_scrolled_by_touch_ = true;
 }
 
@@ -5661,6 +5707,41 @@ void LayerTreeHostImpl::SetActiveURL(const GURL& url) {
   // case to occur.
   if (ukm_manager_)
     ukm_manager_->SetSourceURL(url);
+}
+
+void LayerTreeHostImpl::OnLayerTreeLocalSurfaceIdAllocationChanged() {
+  if (!waiting_for_local_surface_id_)
+    return;
+
+  const viz::LocalSurfaceId& current_id =
+      child_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation()
+          .local_surface_id();
+  const viz::LocalSurfaceId& new_id =
+      active_tree()
+          ->local_surface_id_allocation_from_parent()
+          .local_surface_id();
+  if (!current_id.IsNewerThan(new_id)) {
+    waiting_for_local_surface_id_ = false;
+    client_->OnCanDrawStateChanged(CanDraw());
+  }
+}
+
+uint32_t LayerTreeHostImpl::GenerateChildSurfaceSequenceNumberSync() {
+  waiting_for_local_surface_id_ = true;
+  child_local_surface_id_allocator_.GenerateIdOrIncrementChild();
+  client_->OnCanDrawStateChanged(CanDraw());
+  return child_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation()
+      .local_surface_id()
+      .child_sequence_number();
+}
+
+void LayerTreeHostImpl::AllocateLocalSurfaceId() {
+  if (!settings_.automatically_allocate_surface_ids)
+    return;
+
+  child_local_surface_id_allocator_.GenerateId();
+  client_->DidGenerateLocalSurfaceIdAllocationOnImplThread(
+      child_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation());
 }
 
 }  // namespace cc

@@ -174,6 +174,11 @@ bool ShouldHandleChildren(const Node& node,
   // |EntersTextControls| flag is set.
   if (!behavior.EntersTextControls() && IsTextControl(node))
     return false;
+
+  if (node.IsElementNode()) {
+    if (auto* context = ToElement(node).GetDisplayLockContext())
+      return context->IsActivatable();
+  }
   return true;
 }
 
@@ -648,7 +653,7 @@ bool TextIteratorAlgorithm<Strategy>::ShouldEmitNewlineBeforeNode(
 }
 
 static bool ShouldEmitExtraNewlineForNode(const Node* node) {
-  // https://html.spec.whatwg.org/multipage/dom.html#the-innertext-idl-attribute
+  // https://html.spec.whatwg.org/C/#the-innertext-idl-attribute
   // Append two required linebreaks after a P element.
   LayoutObject* r = node->GetLayoutObject();
   if (!r || !r->IsBox())
@@ -745,7 +750,7 @@ void TextIteratorAlgorithm<Strategy>::RepresentNodeOffsetZero() {
   // early-return style.
   // When we haven't been emitting any characters,
   // ShouldRepresentNodeOffsetZero() can create VisiblePositions, which is
-  // expensive. So, we perform the inexpensive checks on m_node to see if it
+  // expensive. So, we perform the inexpensive checks on |node_| to see if it
   // necessitates emitting a character first and will early return before
   // encountering ShouldRepresentNodeOffsetZero()s worse case behavior.
   if (ShouldEmitTabBeforeNode(*node_)) {

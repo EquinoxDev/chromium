@@ -50,9 +50,11 @@ void TestRequestPeer::OnReceivedResponse(
 
 void TestRequestPeer::OnStartLoadingResponseBody(
     mojo::ScopedDataPipeConsumerHandle body) {
+  if (context_->cancelled)
+    return;
   EXPECT_TRUE(context_->received_response);
-  EXPECT_FALSE(context_->cancelled);
   EXPECT_FALSE(context_->complete);
+  context_->body_handle = std::move(body);
 }
 
 void TestRequestPeer::OnReceivedData(std::unique_ptr<ReceivedData> data) {

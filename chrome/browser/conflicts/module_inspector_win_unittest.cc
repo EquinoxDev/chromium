@@ -13,6 +13,7 @@
 #include "base/environment.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
+#include "base/test/scoped_feature_list.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -30,29 +31,21 @@ base::FilePath GetKernel32DllFilePath() {
 }
 
 class ModuleInspectorTest : public testing::Test {
- protected:
-  ModuleInspectorTest()
-      : module_inspector_(base::Bind(&ModuleInspectorTest::OnModuleInspected,
-                                     base::Unretained(this))) {}
-
-  void AddModules(const std::vector<ModuleInfoKey>& modules) {
-    for (const auto& module : modules)
-      module_inspector_.AddModule(module);
-  }
+ public:
+  ModuleInspectorTest() = default;
 
   // Callback for ModuleInspector.
-  void OnModuleInspected(
-      const ModuleInfoKey& module_key,
-      std::unique_ptr<ModuleInspectionResult> inspection_result) {
+  void OnModuleInspected(const ModuleInfoKey& module_key,
+                         ModuleInspectionResult inspection_result) {
     inspected_modules_.push_back(std::move(inspection_result));
   }
 
-  const std::vector<std::unique_ptr<ModuleInspectionResult>>&
-  inspected_modules() {
+  void RunUntilIdle() { test_browser_thread_bundle_.RunUntilIdle(); }
+
+  const std::vector<ModuleInspectionResult>& inspected_modules() {
     return inspected_modules_;
   }
 
- protected:
   // A TestBrowserThreadBundle is required instead of a ScopedTaskEnvironment
   // because of AfterStartupTaskUtils (DCHECK for BrowserThread::UI).
   //
@@ -60,9 +53,7 @@ class ModuleInspectorTest : public testing::Test {
   content::TestBrowserThreadBundle test_browser_thread_bundle_;
 
  private:
-  ModuleInspector module_inspector_;
-
-  std::vector<std::unique_ptr<ModuleInspectionResult>> inspected_modules_;
+  std::vector<ModuleInspectionResult> inspected_modules_;
 
   DISALLOW_COPY_AND_ASSIGN(ModuleInspectorTest);
 };
@@ -70,28 +61,59 @@ class ModuleInspectorTest : public testing::Test {
 }  // namespace
 
 TEST_F(ModuleInspectorTest, OneModule) {
-  AddModules({
-      {GetKernel32DllFilePath(), 0, 0, 1},
-  });
+  ModuleInspector module_inspector(base::Bind(
+      &ModuleInspectorTest::OnModuleInspected, base::Unretained(this)));
 
-  test_browser_thread_bundle_.RunUntilIdle();
+  module_inspector.AddModule({GetKernel32DllFilePath(), 0, 0});
+
+  RunUntilIdle();
 
   ASSERT_EQ(1u, inspected_modules().size());
-  EXPECT_TRUE(inspected_modules().front());
 }
 
 TEST_F(ModuleInspectorTest, MultipleModules) {
-  AddModules({
-      {base::FilePath(), 0, 0, 1},
-      {base::FilePath(), 0, 0, 2},
-      {base::FilePath(), 0, 0, 3},
-      {base::FilePath(), 0, 0, 4},
-      {base::FilePath(), 0, 0, 5},
-  });
+  ModuleInfoKey kTestCases[] = {
+      {base::FilePath(), 0, 0}, {base::FilePath(), 0, 0},
+      {base::FilePath(), 0, 0}, {base::FilePath(), 0, 0},
+      {base::FilePath(), 0, 0},
+  };
 
-  test_browser_thread_bundle_.RunUntilIdle();
+  ModuleInspector module_inspector(base::Bind(
+      &ModuleInspectorTest::OnModuleInspected, base::Unretained(this)));
+
+  for (const auto& module : kTestCases)
+    module_inspector.AddModule(module);
+
+  RunUntilIdle();
 
   EXPECT_EQ(5u, inspected_modules().size());
-  for (const auto& inspection_result : inspected_modules())
-    EXPECT_TRUE(inspection_result);
+}
+
+TEST_F(ModuleInspectorTest, DisableBackgroundInspection) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndDisableFeature(
+      ModuleInspector::kEnableBackgroundModuleInspection);
+
+  ModuleInfoKey kTestCases[] = {
+      {base::FilePath(), 0, 0},
+      {base::FilePath(), 0, 0},
+  };
+
+  ModuleInspector module_inspector(base::Bind(
+      &ModuleInspectorTest::OnModuleInspected, base::Unretained(this)));
+
+  for (const auto& module : kTestCases)
+    module_inspector.AddModule(module);
+
+  RunUntilIdle();
+
+  // No inspected modules yet.
+  EXPECT_EQ(0u, inspected_modules().size());
+
+  // Increasing inspection priority will start the background inspection
+  // process.
+  module_inspector.IncreaseInspectionPriority();
+  RunUntilIdle();
+
+  EXPECT_EQ(2u, inspected_modules().size());
 }

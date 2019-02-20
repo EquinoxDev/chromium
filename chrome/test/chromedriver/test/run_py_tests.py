@@ -76,43 +76,15 @@ _NEGATIVE_FILTER = [
     'ChromeDriverTest.testEmulateNetworkConditionsSpeed',
     # crbug.com/469947
     'ChromeDriverTest.testTouchPinch',
-    'ChromeDriverTest.testReturningAFunctionInJavascript',
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1367
-    'ChromeExtensionsCapabilityTest.testWaitsForExtensionToLoad',
     # TODO: re-enable tests when DevTools supports ScreenOrientation commands.
     'ChromeDriverAndroidTest.testScreenOrientation',
     'ChromeDriverAndroidTest.testMultipleScreenOrientationChanges',
     'ChromeDriverAndroidTest.testDeleteScreenOrientationManual',
     'ChromeDriverAndroidTest.testScreenOrientationAcrossMultipleTabs',
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1503
-    'ChromeDriverTest.testShadowDomHover',
-    'ChromeDriverTest.testMouseMoveTo',
-    'ChromeDriverTest.testHoverOverElement',
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=833
     'ChromeDriverTest.testAlertOnNewWindow',
-]
-
-_VERSION_SPECIFIC_FILTER = {}
-_VERSION_SPECIFIC_FILTER['HEAD'] = [
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
     'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
-]
-
-_VERSION_SPECIFIC_FILTER['72'] = [
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
-    'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
-]
-
-_VERSION_SPECIFIC_FILTER['71'] = [
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
-    'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
-]
-
-_VERSION_SPECIFIC_FILTER['70'] = [
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2532
-    'ChromeDriverPageLoadTimeoutTest.testRefreshWithPageLoadTimeout',
-    # Feature not yet supported in this version
-    'ChromeDriverTest.testGenerateTestReport',
 ]
 
 
@@ -120,26 +92,19 @@ _OS_SPECIFIC_FILTER = {}
 _OS_SPECIFIC_FILTER['win'] = [
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=299
     'ChromeLogPathCapabilityTest.testChromeLogPath',
+    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1367
+    'ChromeExtensionsCapabilityTest.testWaitsForExtensionToLoad',
 ]
 _OS_SPECIFIC_FILTER['linux'] = [
+    # https://bugs.chromium.org/p/chromium/issues/detail?id=932073
+    'ChromeExtensionsCapabilityTest.testWaitsForExtensionToLoad',
 ]
 _OS_SPECIFIC_FILTER['mac'] = [
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1927
     'MobileEmulationCapabilityTest.testTapElement',
-    # crbug.com/827171
-    'ChromeDriverTest.testWindowMinimize',
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=1945
-    'ChromeDriverTest.testWindowFullScreen',
     # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2579
     'ChromeDriverTest.testTakeElementScreenshot',
     'ChromeDriverTest.testTakeElementScreenshotInIframe',
-]
-
-_OS_VERSION_SPECIFIC_FILTER = {}
-
-_OS_VERSION_SPECIFIC_FILTER['mac', 'HEAD'] = [
-    # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2710
-    'ChromeDriverSiteIsolation.testCanClickOOPIF',
 ]
 
 _DESKTOP_NEGATIVE_FILTER = [
@@ -187,22 +152,16 @@ _INTEGRATION_NEGATIVE_FILTER = [
     'RemoteBrowserTest.*',
     # Flaky: https://crbug.com/899919
     'SessionHandlingTest.testGetSessions',
-    # Flaky and affects subsequent tests: https://crbug.com/904061
-    'ChromeDriverSiteIsolation.testCanClickOOPIF',
     # Flaky due to occasional timeout in starting Chrome
     'ZChromeStartRetryCountTest.testChromeStartRetryCount',
 ]
 
 
-def _GetDesktopNegativeFilter(version_name):
+def _GetDesktopNegativeFilter():
   filter = _NEGATIVE_FILTER + _DESKTOP_NEGATIVE_FILTER
   os = util.GetPlatformName()
-  if (os, version_name) in _OS_VERSION_SPECIFIC_FILTER:
-    filter += _OS_VERSION_SPECIFIC_FILTER[os, version_name]
   if os in _OS_SPECIFIC_FILTER:
     filter += _OS_SPECIFIC_FILTER[os]
-  if version_name in _VERSION_SPECIFIC_FILTER:
-    filter += _VERSION_SPECIFIC_FILTER[version_name]
   return filter
 
 _ANDROID_NEGATIVE_FILTER = {}
@@ -245,6 +204,9 @@ _ANDROID_NEGATIVE_FILTER['chrome'] = (
         'HeadlessInvalidCertificateTest.*',
         # Tests of the desktop Chrome launch process.
         'LaunchDesktopTest.*',
+        # https://bugs.chromium.org/p/chromedriver/issues/detail?id=2737
+        'ChromeDriverTest.testTakeElementScreenshot',
+        'ChromeDriverTest.testTakeElementScreenshotInIframe',
     ]
 )
 _ANDROID_NEGATIVE_FILTER['chrome_stable'] = (
@@ -755,14 +717,14 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     self._driver.PerformActions(actions)
     self.assertEquals(1, len(self._driver.FindElements('tag name', 'br')))
 
-  def testActionsTouchStart(self):
+  def testActionsTouchTap(self):
     self._driver.Load(self.GetHttpUrlForFile('/chromedriver/empty.html'))
     div = self._driver.ExecuteScript(
         'document.body.innerHTML = "<div>old</div>";'
         'var div = document.getElementsByTagName("div")[0];'
         'div.style["width"] = "100px";'
         'div.style["height"] = "100px";'
-        'div.addEventListener("touchstart", function() {'
+        'div.addEventListener("click", function() {'
         '  var div = document.getElementsByTagName("div")[0];'
         '  div.innerHTML="new<br>";'
         '});'
@@ -1423,83 +1385,110 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     document = self._driver.SendCommandAndGetResult('DOM.getDocument', params)
     self.assertTrue('root' in document)
 
-  def testShadowDomFindElementWithSlashDeep(self):
-    """Checks that chromedriver can find elements in a shadow DOM using /deep/
-    css selectors."""
+  def _FindElementInShadowDom(self, css_selectors):
+    """Find an element inside shadow DOM using CSS selectors.
+    The last item in css_selectors identify the element to find. All preceding
+    selectors identify the hierarchy of shadow hosts to traverse in order to
+    reach the target shadow DOM."""
+    current = None
+    for selector in css_selectors:
+      if current is None:
+        # First CSS selector, start from root DOM.
+        current = self._driver
+      else:
+        # current is a shadow host selected previously.
+        # Enter the corresponding shadow root.
+        current = self._driver.ExecuteScript(
+            'return arguments[0].shadowRoot', current)
+      current = current.FindElement('css', selector)
+    return current
+
+  def testShadowDomFindElement(self):
+    """Checks that chromedriver can find elements in a shadow DOM."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    self.assertTrue(self._driver.FindElement("css", "* /deep/ #olderTextBox"))
+    self.assertTrue(self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#textBox"]))
 
   def testShadowDomFindChildElement(self):
     """Checks that chromedriver can find child elements from a shadow DOM
     element."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderChildDiv")
-    self.assertTrue(elem.FindElement("id", "olderTextBox"))
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#childDiv"])
+    self.assertTrue(elem.FindElement("id", "textBox"))
 
-  def testShadowDomFindElementFailsFromRootWithoutSlashDeep(self):
-    """Checks that chromedriver can't find elements in a shadow DOM without
-    /deep/."""
+  def testShadowDomFindElementFailsFromRoot(self):
+    """Checks that chromedriver can't find elements in a shadow DOM from
+    root."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
     # can't find element from the root without /deep/
     with self.assertRaises(chromedriver.NoSuchElement):
-      self._driver.FindElement("id", "#olderTextBox")
+      self._driver.FindElement("id", "#textBox")
 
   def testShadowDomText(self):
     """Checks that chromedriver can find extract the text from a shadow DOM
     element."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderHeading")
-    self.assertEqual("Older Child", elem.GetText())
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#heading"])
+    self.assertEqual("Child", elem.GetText())
 
   def testShadowDomSendKeys(self):
     """Checks that chromedriver can call SendKeys on a shadow DOM element."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderTextBox")
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#textBox"])
     elem.SendKeys("bar")
     self.assertEqual("foobar", self._driver.ExecuteScript(
-        'return document.querySelector("* /deep/ #olderTextBox").value;'))
+        'return arguments[0].value;', elem))
 
   def testShadowDomClear(self):
     """Checks that chromedriver can call Clear on a shadow DOM element."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderTextBox")
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#textBox"])
     elem.Clear()
     self.assertEqual("", self._driver.ExecuteScript(
-        'return document.querySelector("* /deep/ #olderTextBox").value;'))
+        'return arguments[0].value;', elem))
 
   def testShadowDomClick(self):
     """Checks that chromedriver can call Click on an element in a shadow DOM."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderButton")
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#button"])
     elem.Click()
     # the button's onClicked handler changes the text box's value
     self.assertEqual("Button Was Clicked", self._driver.ExecuteScript(
-        'return document.querySelector("* /deep/ #olderTextBox").value;'))
+        'return arguments[0].value;',
+        self._FindElementInShadowDom(["#innerDiv", "#parentDiv", "#textBox"])))
 
   def testShadowDomHover(self):
     """Checks that chromedriver can call HoverOver on an element in a
     shadow DOM."""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderButton")
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#button"])
     elem.HoverOver()
     # the button's onMouseOver handler changes the text box's value
     self.assertEqual("Button Was Hovered Over", self._driver.ExecuteScript(
-        'return document.querySelector("* /deep/ #olderTextBox").value;'))
+        'return arguments[0].value;',
+        self._FindElementInShadowDom(["#innerDiv", "#parentDiv", "#textBox"])))
 
   def testShadowDomStaleReference(self):
     """Checks that trying to manipulate shadow DOM elements that are detached
     from the document raises a StaleElementReference exception"""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderButton")
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#button"])
     self._driver.ExecuteScript(
         'document.querySelector("#outerDiv").innerHTML="<div/>";')
     with self.assertRaises(chromedriver.StaleElementReference):
@@ -1510,8 +1499,11 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
     from the document raises a StaleElementReference exception"""
     self._driver.Load(self.GetHttpUrlForFile(
         '/chromedriver/shadow_dom_test.html'))
-    elem = self._driver.FindElement("css", "* /deep/ #olderButton")
+    elem = self._FindElementInShadowDom(
+        ["#innerDiv", "#parentDiv", "#button"])
     self.assertTrue(elem.IsDisplayed())
+    elem2 = self._driver.FindElement("css", "#hostContent")
+    self.assertTrue(elem2.IsDisplayed())
     self._driver.ExecuteScript(
         'document.querySelector("#outerDiv").style.display="None";')
     self.assertFalse(elem.IsDisplayed())
@@ -1655,11 +1647,19 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
 
   def testCanSwitchToPrintPreviewDialog(self):
     old_handles = self._driver.GetWindowHandles()
+    print >> sys.stdout, "Test debug: actual len of old_handles: " \
+                         + str(len(old_handles))
     self.assertEquals(1, len(old_handles))
     self._driver.ExecuteScript('setTimeout(function(){window.print();}, 0);')
     new_window_handle = self.WaitForNewWindow(self._driver, old_handles)
+    if new_window_handle is None:
+      print >> sys.stdout, "Test debug: new_window_handle is None"
+    else:
+      print >> sys.stdout, "Test debug: new_window_handle is not None"
     self.assertNotEqual(None, new_window_handle)
     self._driver.SwitchToWindow(new_window_handle)
+    print >> sys.stdout, "Test debug: actual GetCurrentUrl: " \
+                         + self._driver.GetCurrentUrl()
     self.assertEquals('chrome://print/', self._driver.GetCurrentUrl())
 
   def testCanClickInIframes(self):
@@ -1760,7 +1760,7 @@ class ChromeDriverTest(ChromeDriverBaseTestWithWebServer):
 
   def testThrowErrorWithExecuteScript(self):
     self.assertRaisesRegexp(
-        chromedriver.UnknownError, "some error",
+        chromedriver.JavaScriptError, "some error",
         self._driver.ExecuteScript, 'throw new Error("some error")')
 
   def testDoesntCrashWhenScriptLogsUndefinedValue(self):
@@ -2002,8 +2002,20 @@ class ChromeDriverSiteIsolation(ChromeDriverBaseTestWithWebServer):
     frame = self._driver.FindElement('tag name', 'iframe')
     self._driver.SwitchToFrame(frame)
     a_inner = self._driver.FindElement('tag name', 'a')
-    a_inner.Click()
-    frame_url = self._driver.ExecuteScript('return window.location.href')
+    if util.GetPlatformName() == 'mac':
+      # We are adding a loop for click into an Out of Process I-Frame (OOPIF)
+      # for Mac platform only because on Mac the I-Frame loads with a noticeable delay.
+      # This is a workaround for ChromeDriver bug 2710.
+      for i in range(20):
+        if i > 0:
+          time.sleep(0.5)
+        a_inner.Click()
+        frame_url = self._driver.ExecuteScript('return window.location.href')
+        if frame_url.endswith('#two'):
+          break
+    else:
+      a_inner.Click()
+      frame_url = self._driver.ExecuteScript('return window.location.href')
     self.assertTrue(frame_url.endswith('#two'))
 
 
@@ -3236,9 +3248,6 @@ if __name__ == '__main__':
   parser.add_option(
       '', '--chrome', help='Path to a build of the chrome binary')
   parser.add_option(
-      '', '--chrome-version', default='HEAD',
-      help='Version of chrome. Default is \'HEAD\'.')
-  parser.add_option(
       '', '--filter', type='string', default='',
       help='Filter for specifying what tests to run, \"*\" will run all,'
       'including tests excluded by default. E.g., *testRunMethod')
@@ -3304,7 +3313,7 @@ if __name__ == '__main__':
     if _ANDROID_PACKAGE_KEY:
       negative_filter = _ANDROID_NEGATIVE_FILTER[_ANDROID_PACKAGE_KEY]
     else:
-      negative_filter = _GetDesktopNegativeFilter(options.chrome_version)
+      negative_filter = _GetDesktopNegativeFilter()
 
     if options.test_type is not None:
       if options.test_type == 'integration':
@@ -3313,6 +3322,10 @@ if __name__ == '__main__':
         parser.error('Invalid --test-type. Valid value: integration')
 
     options.filter = '*-' + ':__main__.'.join([''] + negative_filter)
+
+  # Temp code for debugging https://crbug.com/chromedriver/2778.
+  if options.test_type is None and util.GetPlatformName() == 'linux':
+    chromedriver.enable_core_dump = True
 
   all_tests_suite = unittest.defaultTestLoader.loadTestsFromModule(
       sys.modules[__name__])

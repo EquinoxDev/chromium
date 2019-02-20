@@ -9,6 +9,7 @@ cr.define('model_test', function() {
     SetPolicySettings: 'set policy settings',
     GetPrintTicket: 'get print ticket',
     GetCloudPrintTicket: 'get cloud print ticket',
+    UpdateRecentDestinations: 'update recent destinations',
   };
 
   const suiteName = 'ModelTest';
@@ -34,6 +35,7 @@ cr.define('model_test', function() {
         dpi: {},
         mediaSize: {width_microns: 215900, height_microns: 279400},
         marginsType: 0, /* default */
+        customScaling: false,
         scaling: '100',
         isHeaderFooterEnabled: true,
         isCssBackgroundEnabled: false,
@@ -52,6 +54,7 @@ cr.define('model_test', function() {
         dpi: {horizontal_dpi: 1000, vertical_dpi: 500},
         mediaSize: {width_microns: 43180, height_microns: 21590},
         marginsType: 2, /* none */
+        customScaling: true,
         scaling: '85',
         isHeaderFooterEnabled: false,
         isCssBackgroundEnabled: true,
@@ -111,6 +114,7 @@ cr.define('model_test', function() {
           .then(() => testStickySetting('layout', 'isLandscapeEnabled'))
           .then(() => testStickySetting('margins', 'marginsType'))
           .then(() => testStickySetting('mediaSize', 'mediaSize'))
+          .then(() => testStickySetting('customScaling', 'customScaling'))
           .then(() => testStickySetting('scaling', 'scaling'))
           .then(() => testStickySetting('fitToPage', 'isFitToPageEnabled'))
           .then(() => testStickySetting('vendorItems', 'vendorOptions'));
@@ -169,6 +173,7 @@ cr.define('model_test', function() {
           vertical_dpi: 100,
         },
         fitToPage: true,
+        customScaling: true,
         scaling: '90',
         duplex: false,
         cssBackground: true,
@@ -220,7 +225,7 @@ cr.define('model_test', function() {
     test(assert(TestNames.GetPrintTicket), function() {
       const testDestination = new print_preview.Destination(
           'FooDevice', print_preview.DestinationType.LOCAL,
-          print_preview.DestinationOrigin.LOCAL, 'FooName', true /* isRecent */,
+          print_preview.DestinationOrigin.LOCAL, 'FooName',
           print_preview.DestinationConnectionStatus.ONLINE);
       testDestination.capabilities =
           print_preview_test_utils.getCddTemplateWithAdvancedSettings(2)
@@ -314,7 +319,6 @@ cr.define('model_test', function() {
       const testDestination = new print_preview.Destination(
           'FooCloudDevice', print_preview.DestinationType.GOOGLE,
           print_preview.DestinationOrigin.COOKIES, 'FooCloudName',
-          true /* isRecent */,
           print_preview.DestinationConnectionStatus.ONLINE);
       testDestination.capabilities =
           print_preview_test_utils.getCddTemplateWithAdvancedSettings(2)
@@ -375,6 +379,55 @@ cr.define('model_test', function() {
         },
       });
       expectEquals(expectedNewTicket, newTicket);
+    });
+
+    /**
+     * @param {!Array<string>} expectedDestinationIds An array of the expected
+     *     recent destination ids.
+     */
+    function assertRecentDestinations(expectedDestinationIds) {
+      assertEquals(
+          expectedDestinationIds.length, model.recentDestinations.length);
+      expectedDestinationIds.forEach((expectedId, index) => {
+        assertEquals(expectedId, model.recentDestinations[index].id);
+      });
+    }
+
+    /**
+     * Tests that the destination being set correctly updates the recent
+     * destinations array.
+     */
+    test(assert(TestNames.UpdateRecentDestinations), function() {
+      initializeModel();
+      model.applyStickySettings();
+
+      let localDestinations = [];
+      let destinations =
+          print_preview_test_utils.getDestinations(null, localDestinations);
+
+      // Recent destinations start out empty.
+      assertRecentDestinations([]);
+
+      // Simulate setting a destination.
+      model.destination = destinations[0];
+      assertRecentDestinations(['ID1']);
+
+      // Set a new destination
+      model.destination = destinations[1];
+      assertRecentDestinations(['ID2', 'ID1']);
+
+      // Reselect a recent destination. Still 2 destinations, but in a
+      // different order.
+      model.destination = destinations[0];
+      assertRecentDestinations(['ID1', 'ID2']);
+
+      // Select a third destination
+      model.destination = destinations[2];
+      assertRecentDestinations(['ID3', 'ID1', 'ID2']);
+
+      // Select a fourth destination. List does not grow.
+      model.destination = destinations[3];
+      assertRecentDestinations(['ID4', 'ID3', 'ID1']);
     });
   });
 

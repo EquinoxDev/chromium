@@ -61,7 +61,6 @@ class WebHTTPHeaderVisitor;
 class WebSecurityOrigin;
 class WebString;
 class WebURL;
-struct WebContentSecurityPolicyList;
 
 class WebURLRequest {
  public:
@@ -282,9 +281,6 @@ class WebURLRequest {
   BLINK_PLATFORM_EXPORT Priority GetPriority() const;
   BLINK_PLATFORM_EXPORT void SetPriority(Priority);
 
-  BLINK_PLATFORM_EXPORT bool WasDiscarded() const;
-  BLINK_PLATFORM_EXPORT void SetWasDiscarded(bool);
-
   // https://wicg.github.io/cors-rfc1918/#external-request
   BLINK_PLATFORM_EXPORT bool IsExternalRequest() const;
 
@@ -298,11 +294,6 @@ class WebURLRequest {
   // Returns true if this request is tagged as an ad. This is done using various
   // heuristics so it is not expected to be 100% accurate.
   BLINK_PLATFORM_EXPORT bool IsAdResource() const;
-
-  // This is the navigation relevant CSP to be used during request and response
-  // checks.
-  BLINK_PLATFORM_EXPORT const WebContentSecurityPolicyList& GetInitiatorCSP()
-      const;
 
   // Should be set to true if this request (including redirects) should be
   // upgraded to HTTPS due to an Upgrade-Insecure-Requests requirement.
@@ -321,21 +312,11 @@ class WebURLRequest {
   BLINK_PLATFORM_EXPORT const base::Optional<base::UnguessableToken>&
   GetDevToolsToken() const;
 
-  // Set the applicable Origin Policy.
-  BLINK_PLATFORM_EXPORT const WebString GetOriginPolicy() const;
-  BLINK_PLATFORM_EXPORT void SetOriginPolicy(const WebString& policy);
-
   // Remembers 'X-Requested-With' header value. Blink should not set this header
   // value until CORS checks are done to avoid running checks even against
   // headers that are internally set.
   BLINK_PLATFORM_EXPORT const WebString GetRequestedWithHeader() const;
   BLINK_PLATFORM_EXPORT void SetRequestedWithHeader(const WebString&);
-
-  // Remembers 'X-Client-Data' header value. Blink should not set this header
-  // value until CORS checks are done to avoid running checks even against
-  // headers that are internally set.
-  BLINK_PLATFORM_EXPORT const WebString GetClientDataHeader() const;
-  BLINK_PLATFORM_EXPORT void SetClientDataHeader(const WebString&);
 
   // https://fetch.spec.whatwg.org/#concept-request-window
   // See network::ResourceRequest::fetch_window_id for details.

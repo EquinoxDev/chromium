@@ -21,24 +21,6 @@
 
 namespace blink {
 
-namespace {
-
-// Focus the given item in the list if it is displayed. Returns whether it was
-// focused.
-bool FocusListItemIfDisplayed(Node* node) {
-  Element* element = ToElement(node);
-
-  if (!element->InlineStyle() ||
-      !element->InlineStyle()->HasProperty(CSSPropertyDisplay)) {
-    element->focus();
-    return true;
-  }
-
-  return false;
-}
-
-}  // anonymous namespace
-
 class MediaControlPopupMenuElement::EventListener final
     : public NativeEventListener {
  public:
@@ -144,8 +126,10 @@ void MediaControlPopupMenuElement::OnItemSelected() {
 }
 
 void MediaControlPopupMenuElement::DefaultEventHandler(Event& event) {
-  if (event.type() == event_type_names::kPointermove) {
+  if (event.type() == event_type_names::kPointermove &&
+      event.target() != this) {
     ToElement(event.target()->ToNode())->focus();
+    last_focused_element_ = ToElement(event.target()->ToNode());
   } else if (event.type() == event_type_names::kFocusout) {
     GetDocument()
         .GetTaskRunner(TaskType::kMediaElementEvent)
@@ -157,6 +141,11 @@ void MediaControlPopupMenuElement::DefaultEventHandler(Event& event) {
 
     event.stopPropagation();
     event.SetDefaultHandled();
+  } else if (event.type() == event_type_names::kFocus) {
+    // When popup menu gain focus from scrolling, switch focus
+    // back to the last focused item in the menu
+    DCHECK(last_focused_element_);
+    last_focused_element_->focus();
   }
 
   MediaControlDivElement::DefaultEventHandler(event);
@@ -178,6 +167,7 @@ void MediaControlPopupMenuElement::RemovedFrom(ContainerNode& container) {
 void MediaControlPopupMenuElement::Trace(blink::Visitor* visitor) {
   MediaControlDivElement::Trace(visitor);
   visitor->Trace(event_listener_);
+  visitor->Trace(last_focused_element_);
 }
 
 MediaControlPopupMenuElement::MediaControlPopupMenuElement(
@@ -226,9 +216,25 @@ void MediaControlPopupMenuElement::HideIfNotFocused() {
     return;
 
   if (!GetDocument().FocusedElement() ||
-      GetDocument().FocusedElement()->parentElement() != this) {
+      (GetDocument().FocusedElement()->parentElement() != this &&
+       GetDocument().FocusedElement() != this)) {
     SetIsWanted(false);
   }
+}
+
+// Focus the given item in the list if it is displayed. Returns whether it was
+// focused.
+bool MediaControlPopupMenuElement::FocusListItemIfDisplayed(Node* node) {
+  Element* element = ToElement(node);
+
+  if (!element->InlineStyle() ||
+      !element->InlineStyle()->HasProperty(CSSPropertyDisplay)) {
+    element->focus();
+    last_focused_element_ = element;
+    return true;
+  }
+
+  return false;
 }
 
 void MediaControlPopupMenuElement::SelectFirstItem() {

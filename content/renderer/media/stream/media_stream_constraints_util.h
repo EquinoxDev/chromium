@@ -10,20 +10,15 @@
 #include "base/logging.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/stream/media_stream_audio_processor_options.h"
+#include "content/renderer/media/stream/media_stream_constraints_util_sets.h"
 #include "content/renderer/media/stream/video_track_adapter.h"
 #include "media/base/video_facing.h"
 #include "media/capture/video_capture_types.h"
-#include "third_party/blink/public/platform/modules/mediastream/media_devices.mojom.h"
+#include "third_party/blink/public/mojom/mediastream/media_devices.mojom.h"
 #include "third_party/blink/public/platform/web_media_constraints.h"
 #include "third_party/blink/public/platform/web_media_stream_source.h"
 
 namespace content {
-
-namespace media_constraints {
-class ResolutionSet;
-template <typename T>
-class NumericRangeSet;
-}  // namespace media_constraints
 
 extern const double kMinDeviceCaptureFrameRate;
 
@@ -162,7 +157,6 @@ class CONTENT_EXPORT VideoCaptureSettings {
 //     getSettings() for device-related properties such as sampleRate and
 //     channelCount.
 // The following fields are used to control various audio features:
-//   * hotword_enabled
 //   * disable_local_echo
 //   * render_to_associated_sink
 // The audio_properties field is used to control the audio-processing module,
@@ -195,7 +189,6 @@ class CONTENT_EXPORT AudioCaptureSettings {
   // Creates an object with the given values.
   explicit AudioCaptureSettings(
       std::string device_id,
-      bool enable_hotword,
       bool disable_local_echo,
       bool enable_automatic_output_device_selection,
       const AudioProcessingProperties& audio_processing_properties);
@@ -211,10 +204,6 @@ class CONTENT_EXPORT AudioCaptureSettings {
   const std::string& device_id() const {
     DCHECK(HasValue());
     return device_id_;
-  }
-  bool hotword_enabled() const {
-    DCHECK(HasValue());
-    return hotword_enabled_;
   }
   bool disable_local_echo() const {
     DCHECK(HasValue());
@@ -232,7 +221,6 @@ class CONTENT_EXPORT AudioCaptureSettings {
  private:
   const char* failed_constraint_name_;
   std::string device_id_;
-  bool hotword_enabled_;
   bool disable_local_echo_;
   bool render_to_associated_sink_;
   AudioProcessingProperties audio_processing_properties_;
@@ -289,30 +277,6 @@ CONTENT_EXPORT bool GetConstraintValueAsString(
     const blink::WebMediaConstraints& constraints,
     const blink::StringConstraint blink::WebMediaTrackConstraintSet::*picker,
     std::string* value);
-
-template <typename ConstraintType>
-bool ConstraintHasMax(const ConstraintType& constraint) {
-  return constraint.HasMax() || constraint.HasExact();
-}
-
-template <typename ConstraintType>
-bool ConstraintHasMin(const ConstraintType& constraint) {
-  return constraint.HasMin() || constraint.HasExact();
-}
-
-template <typename ConstraintType>
-auto ConstraintMax(const ConstraintType& constraint)
-    -> decltype(constraint.Max()) {
-  DCHECK(ConstraintHasMax(constraint));
-  return constraint.HasExact() ? constraint.Exact() : constraint.Max();
-}
-
-template <typename ConstraintType>
-auto ConstraintMin(const ConstraintType& constraint)
-    -> decltype(constraint.Min()) {
-  DCHECK(ConstraintHasMin(constraint));
-  return constraint.HasExact() ? constraint.Exact() : constraint.Min();
-}
 
 // If |value| is outside the range of |constraint|, returns the name of the
 // failed constraint. Otherwise, returns nullptr. The return value converts to

@@ -18,7 +18,6 @@
 #include "components/password_manager/core/browser/form_fetcher.h"
 #include "components/password_manager/core/browser/form_parsing/form_parser.h"
 #include "components/password_manager/core/browser/form_parsing/password_field_prediction.h"
-#include "components/password_manager/core/browser/password_form_filling.h"
 #include "components/password_manager/core/browser/password_form_manager_for_ui.h"
 #include "components/password_manager/core/browser/password_form_metrics_recorder.h"
 #include "components/password_manager/core/browser/password_form_user_action.h"
@@ -63,6 +62,12 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   bool DoesManage(const autofill::FormData& form,
                   const PasswordManagerDriver* driver) const;
 
+  // Returns whether the form identified by |form_renderer_id| and |driver|
+  // is managed by this password form manager. Don't call this on iOS.
+  bool DoesManageAccordingToRendererId(
+      uint32_t form_renderer_id,
+      const PasswordManagerDriver* driver) const;
+
   // Check that |submitted_form_| is equal to |form| from the user point of
   // view. It is used for detecting that a form is reappeared after navigation
   // for success detection.
@@ -72,8 +77,8 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   // |submitted_form| and |driver|) then saves |submitted_form| to
   // |submitted_form_| field, sets |is_submitted| = true and returns true.
   // Otherwise returns false.
-  bool ProvisionallySaveIfIsManaged(const autofill::FormData& submitted_form,
-                                    const PasswordManagerDriver* driver);
+  bool ProvisionallySave(const autofill::FormData& submitted_form,
+                         const PasswordManagerDriver* driver);
   bool is_submitted() { return is_submitted_; }
   void set_not_submitted() { is_submitted_ = false; }
 
@@ -224,6 +229,11 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
       const autofill::FormData& form,
       FormDataParser::Mode mode);
 
+  // Calculates FillingAssistance metric for |submitted_form|. The metric is
+  // recorded in case when the successful submission is detected.
+  void CalculateFillingAssistanceMetric(
+      const autofill::FormData& submitted_form);
+
   // The client which implements embedder-specific PasswordManager operations.
   PasswordManagerClient* client_;
 
@@ -276,9 +286,6 @@ class NewPasswordFormManager : public PasswordFormManagerInterface,
   const std::unique_ptr<FormSaver> form_saver_;
 
   VotesUploader votes_uploader_;
-
-  // Probable filling mechanism used in the renderer for this password form.
-  LikelyFormFilling likely_form_filling_ = LikelyFormFilling::kNoFilling;
 
   // |is_submitted_| = true means that a submission of the managed form was seen
   // and then |submitted_form_| contains the submitted form.

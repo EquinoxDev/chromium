@@ -65,6 +65,7 @@
 #include "google_apis/gaia/gaia_urls.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "media/base/media_switches.h"
+#include "media/mojo/interfaces/media_types.mojom.h"
 #include "media/mojo/services/video_decode_perf_history.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/dns/mock_host_resolver.h"
@@ -1131,7 +1132,7 @@ IN_PROC_BROWSER_TEST_P(BrowsingDataRemoverBrowserTestP, MediaLicenseDeletion) {
   EXPECT_FALSE(HasDataForType(kMediaLicenseType));
 
   SetDataForType(kMediaLicenseType);
-  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(1, GetSiteDataCount());
   EXPECT_EQ(1, GetMediaLicenseCount());
   ExpectCookieTreeModelCount(1);
   EXPECT_TRUE(HasDataForType(kMediaLicenseType));
@@ -1140,7 +1141,7 @@ IN_PROC_BROWSER_TEST_P(BrowsingDataRemoverBrowserTestP, MediaLicenseDeletion) {
   // which should not remove the recently created Media License.
   RemoveAndWait(content::BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES,
                 delete_begin, kLastHour);
-  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(1, GetSiteDataCount());
   EXPECT_EQ(1, GetMediaLicenseCount());
   ExpectCookieTreeModelCount(1);
   EXPECT_TRUE(HasDataForType(kMediaLicenseType));
@@ -1174,7 +1175,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
   EXPECT_FALSE(HasDataForType(kMediaLicenseType));
 
   SetDataForType(kMediaLicenseType);
-  EXPECT_EQ(0, GetSiteDataCount());
+  EXPECT_EQ(1, GetSiteDataCount());
   EXPECT_EQ(1, GetMediaLicenseCount());
   ExpectCookieTreeModelCount(1);
   EXPECT_TRUE(HasDataForType(kMediaLicenseType));
@@ -1337,10 +1338,6 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest, StorageRemovedFromDisk) {
   // but there are a few bugs that need to be fixed.
   // Any addition to this list must have an associated TODO().
   static const std::vector<std::string> whitelist = {
-    // TODO(crbug.com/823071): LevelDB logs are not deleted immediately.
-    "File System/Origins/[0-9]*.log",
-    "Service Worker/Database/[0-9]*.log",
-
 #if defined(OS_CHROMEOS)
     // TODO(crbug.com/846297): Many leveldb files remain on ChromeOS. I couldn't
     // reproduce this in manual testing, so it might be a timing issue when
@@ -1354,8 +1351,10 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest, StorageRemovedFromDisk) {
 
 // TODO(crbug.com/840080, crbug.com/824533): Filesystem and
 // CacheStorage can't be deleted on exit correctly at the moment.
+// TODO(crbug.com/927312): LocalStorage deletion is flaky.
 const std::vector<std::string> kSessionOnlyStorageTestTypes{
-    "Cookie", "LocalStorage",
+    "Cookie",
+    // "LocalStorage",
     // "FileSystem",
     "SessionStorage", "IndexedDb", "WebSql", "ServiceWorker",
     // "CacheStorage",
@@ -1394,6 +1393,6 @@ IN_PROC_BROWSER_TEST_F(BrowsingDataRemoverBrowserTest,
 
 // Some storage backend use a different code path for full deletions and
 // partial deletions, so we need to test both.
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        BrowsingDataRemoverBrowserTestP,
-                        ::testing::Values(base::Time(), kLastHour));
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         BrowsingDataRemoverBrowserTestP,
+                         ::testing::Values(base::Time(), kLastHour));

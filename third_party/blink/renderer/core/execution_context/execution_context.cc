@@ -31,8 +31,8 @@
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
-#include "third_party/blink/renderer/core/dom/pausable_object.h"
 #include "third_party/blink/renderer/core/events/error_event.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_state_observer.h"
 #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
 #include "third_party/blink/renderer/core/frame/csp/execution_context_csp_delegate.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
@@ -51,7 +51,6 @@ ExecutionContext::ExecutionContext(v8::Isolate* isolate)
     : isolate_(isolate),
       circular_sequential_id_(0),
       in_dispatch_error_event_(false),
-      is_context_paused_(false),
       is_context_destroyed_(false),
       csp_delegate_(MakeGarbageCollected<ExecutionContextCSPDelegate>(*this)),
       window_interaction_tokens_(0),
@@ -78,41 +77,25 @@ ExecutionContext* ExecutionContext::ForRelevantRealm(
   return ToExecutionContext(info.Holder()->CreationContext());
 }
 
-void ExecutionContext::PausePausableObjects() {
-  DCHECK(!is_context_paused_);
-  NotifySuspendingPausableObjects();
-  is_context_paused_ = true;
-}
+void ExecutionContext::SetLifecycleState(mojom::FrameLifecycleState state) {
+  bool was_paused = lifecycle_state_ != mojom::FrameLifecycleState::kRunning;
+  lifecycle_state_ = state;
+  NotifyContextLifecycleStateChanged(state);
+  bool paused = lifecycle_state_ != mojom::FrameLifecycleState::kRunning;
 
-void ExecutionContext::UnpausePausableObjects() {
-  DCHECK(is_context_paused_);
-  is_context_paused_ = false;
-  NotifyResumingPausableObjects();
+  if (was_paused == paused)
+    return;
+
+  if (paused)
+    TasksWerePaused();
+  else
+    TasksWereUnpaused();
 }
 
 void ExecutionContext::NotifyContextDestroyed() {
   is_context_destroyed_ = true;
   invalidator_.reset();
   ContextLifecycleNotifier::NotifyContextDestroyed();
-}
-
-void ExecutionContext::PauseScheduledTasks() {
-  PausePausableObjects();
-  TasksWerePaused();
-}
-
-void ExecutionContext::UnpauseScheduledTasks() {
-  UnpausePausableObjects();
-  TasksWereUnpaused();
-}
-
-void ExecutionContext::PausePausableObjectIfNeeded(PausableObject* object) {
-#if DCHECK_IS_ON()
-  DCHECK(Contains(object));
-#endif
-  // Ensure all PausableObjects are paused also newly created ones.
-  if (is_context_paused_)
-    object->Pause();
 }
 
 void ExecutionContext::DispatchErrorEvent(
@@ -170,6 +153,12 @@ PublicURLManager& ExecutionContext::GetPublicURLManager() {
 ContentSecurityPolicyDelegate&
 ExecutionContext::GetContentSecurityPolicyDelegate() {
   return *csp_delegate_;
+}
+
+ContentSecurityPolicy* ExecutionContext::GetContentSecurityPolicyForWorld() {
+  // Isolated worlds are only relevant for Documents. Hence just return the main
+  // world's content security policy by default.
+  return GetContentSecurityPolicy();
 }
 
 const SecurityOrigin* ExecutionContext::GetSecurityOrigin() {

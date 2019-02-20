@@ -14,6 +14,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/stl_util.h"
 #include "cc/paint/raw_memory_transfer_cache_entry.h"
@@ -70,10 +71,10 @@ class SizedResultHelper {
 class RasterImplementationTest : public testing::Test {
  protected:
   static const uint8_t kInitialValue = 0xBD;
-  static const int32_t kNumCommandEntries = 500;
-  static const int32_t kCommandBufferSizeBytes =
+  static const uint32_t kNumCommandEntries = 500;
+  static const uint32_t kCommandBufferSizeBytes =
       kNumCommandEntries * sizeof(CommandBufferEntry);
-  static const size_t kTransferBufferSize = 512;
+  static const uint32_t kTransferBufferSize = 512;
 
   static const GLint kMaxCombinedTextureImageUnits = 8;
   static const GLint kMaxTextureImageUnits = 8;
@@ -202,13 +203,6 @@ class RasterImplementationTest : public testing::Test {
 
   QueryTracker* GetQueryTracker() { return gl_->query_tracker_.get(); }
 
-  void* MapRasterCHROMIUM(GLsizeiptr size) {
-    return gl_->MapRasterCHROMIUM(size);
-  }
-  void UnmapRasterCHROMIUM(GLsizeiptr written_size) {
-    gl_->UnmapRasterCHROMIUM(written_size, written_size);
-  }
-
   struct ContextInitOptions {
     ContextInitOptions()
         : bind_generates_resource_client(true),
@@ -255,7 +249,7 @@ class RasterImplementationTest : public testing::Test {
     memset(ring_buffer->memory(), kInitialValue, ring_buffer->size());
   }
 
-  size_t MaxTransferBufferSize() {
+  uint32_t MaxTransferBufferSize() {
     return transfer_buffer_->MaxTransferBufferSize();
   }
 
@@ -263,15 +257,15 @@ class RasterImplementationTest : public testing::Test {
     gl_->mapped_memory_->set_max_allocated_bytes(limit);
   }
 
-  ExpectedMemoryInfo GetExpectedMemory(size_t size) {
+  ExpectedMemoryInfo GetExpectedMemory(uint32_t size) {
     return transfer_buffer_->GetExpectedMemory(size);
   }
 
-  ExpectedMemoryInfo GetExpectedResultMemory(size_t size) {
+  ExpectedMemoryInfo GetExpectedResultMemory(uint32_t size) {
     return transfer_buffer_->GetExpectedResultMemory(size);
   }
 
-  ExpectedMemoryInfo GetExpectedMappedMemory(size_t size) {
+  ExpectedMemoryInfo GetExpectedMappedMemory(uint32_t size) {
     ExpectedMemoryInfo mem;
 
     // Temporarily allocate memory and expect that memory block to be reused.
@@ -333,9 +327,9 @@ class RasterImplementationManualInitTest : public RasterImplementationTest {
 // GCC requires these declarations, but MSVC requires they not be present
 #ifndef _MSC_VER
 const uint8_t RasterImplementationTest::kInitialValue;
-const int32_t RasterImplementationTest::kNumCommandEntries;
-const int32_t RasterImplementationTest::kCommandBufferSizeBytes;
-const size_t RasterImplementationTest::kTransferBufferSize;
+const uint32_t RasterImplementationTest::kNumCommandEntries;
+const uint32_t RasterImplementationTest::kCommandBufferSizeBytes;
+const uint32_t RasterImplementationTest::kTransferBufferSize;
 const GLint RasterImplementationTest::kMaxCombinedTextureImageUnits;
 const GLint RasterImplementationTest::kMaxTextureImageUnits;
 const GLint RasterImplementationTest::kMaxTextureSize;
@@ -510,39 +504,6 @@ TEST_F(RasterImplementationManualInitTest, BadQueryTargets) {
   gl_->BeginQueryEXT(0x123, id);
   EXPECT_EQ(GL_INVALID_ENUM, CheckError());
   EXPECT_EQ(nullptr, GetQuery(id));
-}
-
-TEST_F(RasterImplementationTest, GenSyncTokenCHROMIUM) {
-  const CommandBufferNamespace kNamespaceId = CommandBufferNamespace::GPU_IO;
-  const CommandBufferId kCommandBufferId =
-      CommandBufferId::FromUnsafeValue(234u);
-  const GLuint64 kFenceSync = 123u;
-  SyncToken sync_token;
-
-  EXPECT_CALL(*gpu_control_, GetNamespaceID())
-      .WillRepeatedly(Return(kNamespaceId));
-  EXPECT_CALL(*gpu_control_, GetCommandBufferID())
-      .WillRepeatedly(Return(kCommandBufferId));
-
-  gl_->GenSyncTokenCHROMIUM(nullptr);
-  EXPECT_TRUE(NoCommandsWritten());
-  EXPECT_EQ(GL_INVALID_VALUE, CheckError());
-
-  const void* commands = GetPut();
-  cmds::InsertFenceSyncCHROMIUM insert_fence_sync;
-  insert_fence_sync.Init(kFenceSync);
-
-  EXPECT_CALL(*gpu_control_, GenerateFenceSyncRelease())
-      .WillOnce(Return(kFenceSync));
-  EXPECT_CALL(*gpu_control_, EnsureWorkVisible());
-  gl_->GenSyncTokenCHROMIUM(sync_token.GetData());
-  EXPECT_EQ(0, memcmp(&insert_fence_sync, commands, sizeof(insert_fence_sync)));
-  EXPECT_EQ(GL_NO_ERROR, CheckError());
-
-  EXPECT_TRUE(sync_token.verified_flush());
-  EXPECT_EQ(kNamespaceId, sync_token.namespace_id());
-  EXPECT_EQ(kCommandBufferId, sync_token.command_buffer_id());
-  EXPECT_EQ(kFenceSync, sync_token.release_count());
 }
 
 TEST_F(RasterImplementationTest, GenUnverifiedSyncTokenCHROMIUM) {
@@ -722,10 +683,13 @@ TEST_F(RasterImplementationTest, WaitSyncTokenCHROMIUM) {
       .WillOnce(Return(kCommandBufferId));
   EXPECT_CALL(*gpu_control_, GenerateFenceSyncRelease())
       .WillOnce(Return(kFenceSync));
-  EXPECT_CALL(*gpu_control_, EnsureWorkVisible());
-  gl_->GenSyncTokenCHROMIUM(sync_token_data);
+  gl_->GenUnverifiedSyncTokenCHROMIUM(sync_token_data);
 
-  EXPECT_CALL(*gpu_control_, WaitSyncToken(sync_token));
+  EXPECT_CALL(*gpu_control_, CanWaitUnverifiedSyncToken(sync_token))
+      .WillOnce(Return(true));
+  gpu::SyncToken verified_sync_token = sync_token;
+  verified_sync_token.SetVerifyFlush();
+  EXPECT_CALL(*gpu_control_, WaitSyncToken(verified_sync_token));
   gl_->WaitSyncTokenCHROMIUM(sync_token_data);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
@@ -777,9 +741,8 @@ TEST_F(RasterImplementationTest, SignalSyncToken) {
 
   EXPECT_CALL(*gpu_control_, GenerateFenceSyncRelease())
       .WillOnce(Return(kFenceSync));
-  EXPECT_CALL(*gpu_control_, EnsureWorkVisible());
   gpu::SyncToken sync_token;
-  gl_->GenSyncTokenCHROMIUM(sync_token.GetData());
+  gl_->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
 
   int signaled_count = 0;
 
@@ -791,6 +754,8 @@ TEST_F(RasterImplementationTest, SignalSyncToken) {
                                          base::OnceClosure* callback) {
         signal_closure = std::move(*callback);
       }));
+  EXPECT_CALL(*gpu_control_, CanWaitUnverifiedSyncToken(sync_token))
+      .WillOnce(Return(true));
   gl_->SignalSyncToken(sync_token,
                        base::BindOnce(&CountCallback, &signaled_count));
   EXPECT_EQ(0, signaled_count);
@@ -811,9 +776,8 @@ TEST_F(RasterImplementationTest, SignalSyncTokenAfterContextLoss) {
       .WillOnce(Return(kCommandBufferId));
   EXPECT_CALL(*gpu_control_, GenerateFenceSyncRelease())
       .WillOnce(Return(kFenceSync));
-  EXPECT_CALL(*gpu_control_, EnsureWorkVisible());
   gpu::SyncToken sync_token;
-  gl_->GenSyncTokenCHROMIUM(sync_token.GetData());
+  gl_->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
 
   int signaled_count = 0;
 
@@ -825,6 +789,8 @@ TEST_F(RasterImplementationTest, SignalSyncTokenAfterContextLoss) {
                                          base::OnceClosure* callback) {
         signal_closure = std::move(*callback);
       }));
+  EXPECT_CALL(*gpu_control_, CanWaitUnverifiedSyncToken(sync_token))
+      .WillOnce(Return(true));
   gl_->SignalSyncToken(sync_token,
                        base::BindOnce(&CountCallback, &signaled_count));
   EXPECT_EQ(0, signaled_count);
@@ -876,7 +842,7 @@ TEST_F(RasterImplementationManualInitTest, FailInitOnTransferBufferFail) {
 
 TEST_F(RasterImplementationTest, TransferCacheSerialization) {
   gl_->set_max_inlined_entry_size_for_testing(768u);
-  size_t buffer_size = transfer_buffer_->MaxTransferBufferSize();
+  uint32_t buffer_size = transfer_buffer_->MaxTransferBufferSize();
   ScopedTransferBufferPtr buffer(buffer_size, helper_, transfer_buffer_);
   ASSERT_EQ(buffer.size(), buffer_size);
 
@@ -900,7 +866,7 @@ TEST_F(RasterImplementationTest, TransferCacheSerialization) {
 TEST_F(RasterImplementationTest, SetActiveURLCHROMIUM) {
   const uint32_t kURLBucketId = RasterImplementation::kResultBucketId;
   const std::string url = "chrome://test";
-  const size_t kPaddedStringSize =
+  const uint32_t kPaddedStringSize =
       transfer_buffer_->RoundToAlignment(url.size());
 
   gl_->SetActiveURLCHROMIUM(url.c_str());

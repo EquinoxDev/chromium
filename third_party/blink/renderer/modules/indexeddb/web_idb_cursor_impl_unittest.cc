@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -44,8 +45,10 @@ class MockCursorImpl : public mojom::blink::IDBCursor {
   }
 
   void Advance(uint32_t count,
-               mojom::blink::IDBCallbacksAssociatedPtrInfo callbacks) override {
+               mojom::blink::IDBCursor::AdvanceCallback callback) override {
     ++advance_calls_;
+    std::move(callback).Run(mojom::blink::IDBErrorPtr(),
+                            mojom::blink::IDBCursorValuePtr());
   }
 
   void CursorContinue(
@@ -83,13 +86,18 @@ class MockContinueCallbacks : public testing::StrictMock<MockWebIDBCallbacks> {
                         Vector<WebBlobInfo>* blobs = nullptr)
       : key_(key), blobs_(blobs) {}
 
-  void OnSuccess(std::unique_ptr<IDBKey> key,
-                 std::unique_ptr<IDBKey> primaryKey,
-                 std::unique_ptr<IDBValue> value) override {
+  void SetState(base::WeakPtr<WebIDBCursorImpl> cursor,
+                int64_t transaction_id) override {}
+  void SuccessValue(mojom::blink::IDBReturnValuePtr return_value) override {}
+
+  void SuccessCursorContinue(
+      std::unique_ptr<IDBKey> key,
+      std::unique_ptr<IDBKey> primaryKey,
+      base::Optional<std::unique_ptr<IDBValue>> value) override {
     if (key_)
       *key_ = IDBKey::Clone(key);
-    if (blobs_)
-      *blobs_ = value->BlobInfo();
+    if (blobs_ && value.has_value())
+      *blobs_ = value.value()->BlobInfo();
   }
 
  private:
@@ -105,7 +113,9 @@ class WebIDBCursorImplTest : public testing::Test {
     mojom::blink::IDBCursorAssociatedPtr ptr;
     mock_cursor_ = std::make_unique<MockCursorImpl>(
         mojo::MakeRequestAssociatedWithDedicatedPipe(&ptr));
-    cursor_ = std::make_unique<WebIDBCursorImpl>(ptr.PassInterface(), 1);
+    cursor_ = std::make_unique<WebIDBCursorImpl>(
+        ptr.PassInterface(), 1,
+        blink::scheduler::GetSingleThreadTaskRunnerForTesting());
   }
 
  protected:

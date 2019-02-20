@@ -5,6 +5,8 @@
 #include "third_party/blink/renderer/core/workers/global_scope_creation_params.h"
 
 #include <memory>
+#include "base/feature_list.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/platform/network/content_security_policy_parsers.h"
 
 namespace blink {
@@ -12,6 +14,7 @@ namespace blink {
 GlobalScopeCreationParams::GlobalScopeCreationParams(
     const KURL& script_url,
     mojom::ScriptType script_type,
+    OffMainThreadWorkerScriptFetchOption off_main_thread_fetch_option,
     const String& user_agent,
     scoped_refptr<WebWorkerFetchContext> web_worker_fetch_context,
     const Vector<CSPHeaderAndType>& content_security_policy_parsed_headers,
@@ -33,6 +36,7 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
     base::UnguessableToken agent_cluster_id)
     : script_url(script_url.Copy()),
       script_type(script_type),
+      off_main_thread_fetch_option(off_main_thread_fetch_option),
       user_agent(user_agent.IsolatedCopy()),
       web_worker_fetch_context(std::move(web_worker_fetch_context)),
       referrer_policy(referrer_policy),
@@ -54,6 +58,21 @@ GlobalScopeCreationParams::GlobalScopeCreationParams(
           ParsedFeaturePolicy() /* container_policy */,
           starter_origin->ToUrlOrigin())),
       agent_cluster_id(agent_cluster_id) {
+  switch (this->script_type) {
+    case mojom::ScriptType::kClassic:
+      if (this->off_main_thread_fetch_option ==
+          OffMainThreadWorkerScriptFetchOption::kEnabled) {
+        DCHECK(base::FeatureList::IsEnabled(
+                   features::kOffMainThreadDedicatedWorkerScriptFetch) ||
+               features::IsOffMainThreadSharedWorkerScriptFetchEnabled());
+      }
+      break;
+    case mojom::ScriptType::kModule:
+      DCHECK_EQ(this->off_main_thread_fetch_option,
+                OffMainThreadWorkerScriptFetchOption::kEnabled);
+      break;
+  }
+
   this->content_security_policy_parsed_headers.ReserveInitialCapacity(
       content_security_policy_parsed_headers.size());
   for (const auto& header : content_security_policy_parsed_headers) {

@@ -169,8 +169,7 @@ id CreateTextMarker(BrowserAccessibilityPositionInstance position) {
   AXTextMarkerRef text_marker = AXTextMarkerCreate(
       kCFAllocatorDefault, reinterpret_cast<const UInt8*>(position.get()),
       sizeof(BrowserAccessibilityPosition));
-  return static_cast<id>(
-      base::mac::CFTypeRefToNSObjectAutorelease(text_marker));
+  return [static_cast<id>(text_marker) autorelease];
 }
 
 // |range| is destructed at the end of this method. |anchor| and |focus| are
@@ -184,8 +183,7 @@ id CreateTextMarkerRange(const AXPlatformRange range) {
       sizeof(BrowserAccessibilityPosition)));
   AXTextMarkerRangeRef marker_range =
       AXTextMarkerRangeCreate(kCFAllocatorDefault, start_marker, end_marker);
-  return static_cast<id>(
-      base::mac::CFTypeRefToNSObjectAutorelease(marker_range));
+  return [static_cast<id>(marker_range) autorelease];
 }
 
 BrowserAccessibilityPositionInstance CreatePositionFromTextMarker(
@@ -538,6 +536,18 @@ bool InitializeAccessibilityTreeSearch(
   }
 
   return true;
+}
+
+void AppendTextToString(const std::string& extra_text, std::string* string) {
+  if (extra_text.empty())
+    return;
+
+  if (string->empty()) {
+    *string = extra_text;
+    return;
+  }
+
+  *string += std::string(". ") + extra_text;
 }
 
 }  // namespace
@@ -912,6 +922,31 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
       owner_->GetIntAttribute(ax::mojom::IntAttribute::kNameFrom));
   std::string name =
       owner_->GetStringAttribute(ax::mojom::StringAttribute::kName);
+
+  auto status = owner_->GetData().GetImageAnnotationStatus();
+  switch (status) {
+    case ax::mojom::ImageAnnotationStatus::kEligibleForAnnotation:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationPending:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationEmpty:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationAdult:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationProcessFailed: {
+      base::string16 status_string =
+          owner_->GetLocalizedStringForImageAnnotationStatus(status);
+      AppendTextToString(base::UTF16ToUTF8(status_string), &name);
+      break;
+    }
+
+    case ax::mojom::ImageAnnotationStatus::kAnnotationSucceeded:
+      AppendTextToString(owner_->GetStringAttribute(
+                             ax::mojom::StringAttribute::kImageAnnotation),
+                         &name);
+      break;
+
+    case ax::mojom::ImageAnnotationStatus::kNone:
+    case ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation:
+      break;
+  }
+
   if (!name.empty()) {
     // On Mac OS X, the accessible name of an object is exposed as its
     // title if it comes from visible text, and as its description
@@ -948,7 +983,8 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
   }
 
   // If it's focusable but didn't have any other name or value, compute a name
-  // from its descendants.
+  // from its descendants. Note that this is a workaround because VoiceOver
+  // does not always present focus changes if the new focus lacks a name.
   base::string16 value = owner_->GetValue();
   if (owner_->HasState(ax::mojom::State::kFocusable) &&
       !ui::IsControl(owner_->GetRole()) && value.empty() &&
@@ -1198,13 +1234,11 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
   if (![self instanceActive])
     return nil;
   if ([self internalRole] == ax::mojom::Role::kColumn) {
-    int columnIndex =
-        owner_->GetIntAttribute(ax::mojom::IntAttribute::kTableColumnIndex);
-    return [NSNumber numberWithInt:columnIndex];
+    DCHECK(owner_->node());
+    return @(owner_->node()->GetTableColColIndex());
   } else if ([self internalRole] == ax::mojom::Role::kRow) {
-    int rowIndex =
-        owner_->GetIntAttribute(ax::mojom::IntAttribute::kTableRowIndex);
-    return [NSNumber numberWithInt:rowIndex];
+    DCHECK(owner_->node());
+    return @(owner_->node()->GetTableRowRowIndex());
   }
 
   return nil;
@@ -1484,6 +1518,22 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
 }
 
 - (BOOL)shouldExposeNameInDescription {
+  // Image annotations are not visible text, so they should be exposed
+  // as a description and not a title.
+  switch (owner_->GetData().GetImageAnnotationStatus()) {
+    case ax::mojom::ImageAnnotationStatus::kEligibleForAnnotation:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationPending:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationEmpty:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationAdult:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationProcessFailed:
+    case ax::mojom::ImageAnnotationStatus::kAnnotationSucceeded:
+      return true;
+
+    case ax::mojom::ImageAnnotationStatus::kNone:
+    case ax::mojom::ImageAnnotationStatus::kIneligibleForAnnotation:
+      break;
+  }
+
   // VoiceOver will not read the label of a fieldset or radiogroup unless it is
   // exposed in the description instead of the title.
   switch (owner_->GetRole()) {
@@ -1627,6 +1677,12 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
 - (NSString*)roleDescription {
   if (![self instanceActive])
     return nil;
+
+  if (owner_->GetData().GetImageAnnotationStatus() ==
+      ax::mojom::ImageAnnotationStatus::kEligibleForAnnotation) {
+    return base::SysUTF16ToNSString(
+        owner_->GetLocalizedRoleDescriptionForUnlabeledImage());
+  }
 
   if (owner_->HasStringAttribute(
           ax::mojom::StringAttribute::kRoleDescription)) {
@@ -2789,6 +2845,11 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
   return actions;
 }
 
+// TODO(crbug.com/921109): Migrate from the NSObject accessibility interface to
+// the NSAccessibility one, then remove this suppression.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 // Returns a sub-array of values for the given attribute value, starting at
 // index, with up to maxCount items.  If the given index is out of bounds,
 // or there are no values for the given attribute, it will return nil.
@@ -2824,6 +2885,8 @@ NSString* const NSAccessibilityRequiredAttributeChrome = @"AXRequired";
   NSArray* fullArray = [self accessibilityAttributeValue:attribute];
   return [fullArray count];
 }
+
+#pragma clang diagnostic pop
 
 // Returns the list of accessibility attributes that this object supports.
 - (NSArray*)accessibilityAttributeNames {

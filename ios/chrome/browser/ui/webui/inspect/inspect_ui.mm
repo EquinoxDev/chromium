@@ -4,6 +4,10 @@
 
 #include "ios/chrome/browser/ui/webui/inspect/inspect_ui.h"
 
+#include "base/bind.h"
+#include "base/metrics/histogram_macros.h"
+#include "base/metrics/user_metrics.h"
+#include "base/metrics/user_metrics_action.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #include "ios/chrome/browser/chrome_url_constants.h"
 #include "ios/chrome/browser/tabs/tab_model.h"
@@ -16,7 +20,10 @@
 #import "ios/chrome/browser/web_state_list/web_state_list_observer.h"
 #include "ios/chrome/grit/ios_resources.h"
 #include "ios/chrome/grit/ios_strings.h"
-#include "ios/web/public/web_state/web_state.h"
+#include "ios/web/public/web_state/web_frame.h"
+#include "ios/web/public/web_state/web_frame_util.h"
+#import "ios/web/public/web_state/web_frames_manager.h"
+#import "ios/web/public/web_state/web_state.h"
 #include "ios/web/public/web_ui_ios_data_source.h"
 #include "ios/web/public/webui/web_ui_ios.h"
 #include "ios/web/public/webui/web_ui_ios_message_handler.h"
@@ -27,12 +34,33 @@
 
 namespace {
 
+// Used to record when the user loads the inspect page.
+const char kInspectPageVisited[] = "IOSInspectPageVisited";
+
+// The histogram used to record user actions performed on the inspect page.
+const char kInspectConsoleHistogram[] = "IOS.Inspect.Console";
+
+// Actions performed by the user logged to |kInspectConsoleHistogram|.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class InspectConsoleAction {
+  // Recorded when a user pressed the "Start Logging" button to collect logs.
+  kStartLogging = 0,
+  // Recorded when a user pressed the "Stop Logging" button.
+  kStopLogging = 1,
+  kMaxValue = kStopLogging,
+};
+
 web::WebUIIOSDataSource* CreateInspectUIHTMLSource() {
   web::WebUIIOSDataSource* source =
       web::WebUIIOSDataSource::Create(kChromeUIInspectHost);
 
   source->AddLocalizedString("inspectConsoleNotice",
                              IDS_IOS_INSPECT_UI_CONSOLE_NOTICE);
+  source->AddLocalizedString("inspectConsoleStartLogging",
+                             IDS_IOS_INSPECT_UI_CONSOLE_START_LOGGING);
+  source->AddLocalizedString("inspectConsoleStopLogging",
+                             IDS_IOS_INSPECT_UI_CONSOLE_STOP_LOGGING);
   source->SetJsonPath("strings.js");
   source->AddResourcePath("inspect.js", IDR_IOS_INSPECT_JS);
   source->SetDefaultResource(IDR_IOS_INSPECT_HTML);
@@ -54,6 +82,8 @@ class InspectDOMHandler : public web::WebUIIOSMessageHandler,
 
   // JavaScriptConsoleTabHelperDelegate
   void DidReceiveConsoleMessage(
+      web::WebState* web_state,
+      web::WebFrame* sender_frame,
       const JavaScriptConsoleMessage& message) override;
 
   // TabModelListObserver
@@ -69,6 +99,10 @@ class InspectDOMHandler : public web::WebUIIOSMessageHandler,
                           web::WebState* web_state,
                           int index,
                           bool activating) override;
+  void WillCloseWebStateAt(WebStateList* web_state_list,
+                           web::WebState* web_state,
+                           int index,
+                           bool user_action) override;
 
  private:
   // Handles the message from JavaScript to enable or disable console logging.
@@ -103,6 +137,10 @@ void InspectDOMHandler::HandleSetLoggingEnabled(const base::ListValue* args) {
   if (!args->GetBoolean(0, &enabled)) {
     NOTREACHED();
   }
+
+  UMA_HISTOGRAM_ENUMERATION(kInspectConsoleHistogram,
+                            enabled ? InspectConsoleAction::kStartLogging
+                                    : InspectConsoleAction::kStopLogging);
 
   SetLoggingEnabled(enabled);
 }
@@ -145,9 +183,28 @@ void InspectDOMHandler::RegisterMessages() {
 }
 
 void InspectDOMHandler::DidReceiveConsoleMessage(
+    web::WebState* web_state,
+    web::WebFrame* sender_frame,
     const JavaScriptConsoleMessage& message) {
-  DVLOG(0) << message.origin.spec() << " [" << message.level << "] "
-           << message.message->GetString();
+  web::WebFrame* inspect_ui_main_frame =
+      web::GetMainWebFrame(web_ui()->GetWebState());
+  if (!inspect_ui_main_frame) {
+    // Disable logging and drop this message because the main frame no longer
+    // exists.
+    SetLoggingEnabled(false);
+    return;
+  }
+
+  std::vector<base::Value> params;
+  web::WebFrame* main_web_frame = web::GetMainWebFrame(web_state);
+  params.push_back(base::Value(main_web_frame->GetFrameId()));
+  params.push_back(base::Value(sender_frame->GetFrameId()));
+  params.push_back(base::Value(message.url.spec()));
+  params.push_back(base::Value(message.level));
+  params.push_back(message.message->Clone());
+
+  inspect_ui_main_frame->CallJavaScriptFunction(
+      "inspectWebUI.logMessageReceived", params);
 }
 
 void InspectDOMHandler::SetDelegateForWebStatesInTabModel(
@@ -182,9 +239,22 @@ void InspectDOMHandler::WebStateInsertedAt(WebStateList* web_state_list,
   JavaScriptConsoleTabHelper::FromWebState(web_state)->SetDelegate(this);
 }
 
+void InspectDOMHandler::WillCloseWebStateAt(WebStateList* web_state_list,
+                                            web::WebState* web_state,
+                                            int index,
+                                            bool user_action) {
+  std::vector<base::Value> params;
+  params.push_back(base::Value(web::GetMainWebFrameId(web_state)));
+
+  web::GetMainWebFrame(web_ui()->GetWebState())
+      ->CallJavaScriptFunction("inspectWebUI.tabClosed", params);
+}
+
 }  // namespace
 
 InspectUI::InspectUI(web::WebUIIOS* web_ui) : web::WebUIIOSController(web_ui) {
+  base::RecordAction(base::UserMetricsAction(kInspectPageVisited));
+
   web_ui->AddMessageHandler(std::make_unique<InspectDOMHandler>());
 
   web::WebUIIOSDataSource::Add(ios::ChromeBrowserState::FromWebUIIOS(web_ui),

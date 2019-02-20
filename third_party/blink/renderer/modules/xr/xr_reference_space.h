@@ -10,20 +10,29 @@
 
 namespace blink {
 
+class XRRigidTransform;
+
 class XRReferenceSpace : public XRSpace {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  XRReferenceSpace(XRSession*);
+  explicit XRReferenceSpace(XRSession*);
   ~XRReferenceSpace() override;
 
+  virtual std::unique_ptr<TransformationMatrix> DefaultPose();
   virtual std::unique_ptr<TransformationMatrix> TransformBasePose(
-      const TransformationMatrix& base_pose) = 0;
+      const TransformationMatrix& base_pose);
   virtual std::unique_ptr<TransformationMatrix> TransformBaseInputPose(
       const TransformationMatrix& base_input_pose,
-      const TransformationMatrix& base_pose) = 0;
+      const TransformationMatrix& base_pose);
+
+  XRRigidTransform* originOffset() const { return origin_offset_; }
+  void setOriginOffset(XRRigidTransform*);
 
   void Trace(blink::Visitor*) override;
+
+ private:
+  Member<XRRigidTransform> origin_offset_;
 };
 
 }  // namespace blink

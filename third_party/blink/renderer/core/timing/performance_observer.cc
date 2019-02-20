@@ -11,6 +11,8 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
+#include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/performance_entry_names.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 #include "third_party/blink/renderer/core/timing/performance_entry.h"
@@ -49,20 +51,29 @@ PerformanceObserver* PerformanceObserver::Create(
 }
 
 // static
-Vector<AtomicString> PerformanceObserver::supportedEntryTypes() {
+Vector<AtomicString> PerformanceObserver::supportedEntryTypes(
+    ScriptState* script_state) {
+  // The list of supported types, in alphabetical order.
   Vector<AtomicString> supportedEntryTypes;
-  if (RuntimeEnabledFeatures::ElementTimingEnabled())
-    supportedEntryTypes.push_back(performance_entry_names::kElement);
-  // TODO(npm): add "event" and "firstInput" when they ship. Currently, the
-  // support for event timing relies on origin trials, and thus depends on the
-  // execution context. This cannot be queried from a static method. See
-  // https://crbug.com/841224
-  if (RuntimeEnabledFeatures::LayoutJankAPIEnabled())
-    supportedEntryTypes.push_back(performance_entry_names::kLayoutJank);
-  supportedEntryTypes.AppendVector(Vector<AtomicString>(
-      {performance_entry_names::kLongtask, performance_entry_names::kMark,
-       performance_entry_names::kMeasure, performance_entry_names::kNavigation,
-       performance_entry_names::kPaint, performance_entry_names::kResource}));
+  auto* execution_context = ExecutionContext::From(script_state);
+  if (execution_context->IsDocument()) {
+    if (origin_trials::ElementTimingEnabled(execution_context))
+      supportedEntryTypes.push_back(performance_entry_names::kElement);
+    if (origin_trials::EventTimingEnabled(execution_context)) {
+      supportedEntryTypes.push_back(performance_entry_names::kEvent);
+      supportedEntryTypes.push_back(performance_entry_names::kFirstInput);
+    }
+    if (origin_trials::LayoutJankAPIEnabled(execution_context))
+      supportedEntryTypes.push_back(performance_entry_names::kLayoutJank);
+    supportedEntryTypes.push_back(performance_entry_names::kLongtask);
+  }
+  supportedEntryTypes.push_back(performance_entry_names::kMark);
+  supportedEntryTypes.push_back(performance_entry_names::kMeasure);
+  if (execution_context->IsDocument()) {
+    supportedEntryTypes.push_back(performance_entry_names::kNavigation);
+    supportedEntryTypes.push_back(performance_entry_names::kPaint);
+  }
+  supportedEntryTypes.push_back(performance_entry_names::kResource);
   return supportedEntryTypes;
 }
 
@@ -75,6 +86,7 @@ PerformanceObserver::PerformanceObserver(
       callback_(callback),
       performance_(performance),
       filter_options_(PerformanceEntry::kInvalid),
+      type_(PerformanceObserverType::kUnknown),
       is_registered_(false) {
   DCHECK(performance_);
 }
@@ -87,23 +99,68 @@ void PerformanceObserver::observe(const PerformanceObserverInit* observer_init,
     return;
   }
 
-  PerformanceEntryTypeMask entry_types = PerformanceEntry::kInvalid;
-  if (observer_init->hasEntryTypes() && observer_init->entryTypes().size()) {
+  if (observer_init->hasEntryTypes()) {
+    if (observer_init->hasType()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kSyntaxError,
+          "An observe() call MUST NOT include both entryTypes and type.");
+      return;
+    }
+    if (type_ == PerformanceObserverType::kTypeObserver) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidModificationError,
+          "This observer has performed observe({type:...}, therefore it cannot "
+          "perform observe({entryTypes:...})");
+      return;
+    }
+    type_ = PerformanceObserverType::kEntryTypesObserver;
+    PerformanceEntryTypeMask entry_types = PerformanceEntry::kInvalid;
     const Vector<String>& sequence = observer_init->entryTypes();
     for (const auto& entry_type_string : sequence) {
       entry_types |=
           PerformanceEntry::ToEntryTypeEnum(AtomicString(entry_type_string));
     }
+    if (entry_types == PerformanceEntry::kInvalid) {
+      String message =
+          "The Performance Observer MUST have at least one valid entryType in "
+          "its "
+          "entryTypes attribute.";
+      GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
+          kJSMessageSource, kWarningMessageLevel, message));
+      return;
+    }
+    filter_options_ = entry_types;
+  } else {
+    if (!observer_init->hasType()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kSyntaxError,
+          "An observe() call MUST include either entryTypes or type.");
+      return;
+    }
+    if (type_ == PerformanceObserverType::kEntryTypesObserver) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidModificationError,
+          "This observer has performed observe({entryTypes:...}, therefore it "
+          "cannot perform observe({type:...})");
+      return;
+    }
+    type_ = PerformanceObserverType::kTypeObserver;
+    PerformanceEntryType entry_type =
+        PerformanceEntry::ToEntryTypeEnum(AtomicString(observer_init->type()));
+    if (entry_type == PerformanceEntry::kInvalid) {
+      String message =
+          "The Performance Observer MUST have a valid entryType in its "
+          "type attribute.";
+      GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
+          kJSMessageSource, kWarningMessageLevel, message));
+      return;
+    }
+    filter_options_ |= entry_type;
   }
-  if (entry_types == PerformanceEntry::kInvalid) {
-    String message =
-        "A Performance Observer MUST have at least one valid entryType in its "
-        "entryTypes attribute.";
-    GetExecutionContext()->AddConsoleMessage(ConsoleMessage::Create(
-        kJSMessageSource, kWarningMessageLevel, message));
-    return;
+  if (filter_options_ & PerformanceEntry::kLayoutJank) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kLayoutJankExplicitlyRequested);
   }
-  filter_options_ = entry_types;
   if (is_registered_)
     performance_->UpdatePerformanceObserverFilterOptions();
   else

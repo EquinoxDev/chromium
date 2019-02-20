@@ -33,6 +33,7 @@
 #include <memory>
 
 #include "build/build_config.h"
+#include "third_party/blink/public/platform/web_screen_info.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_controller.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_regexp.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_source_code.h"
@@ -202,8 +203,7 @@ static bool HasTextContent(Resource* cached_resource) {
   return type == ResourceType::kCSSStyleSheet ||
          type == ResourceType::kXSLStyleSheet ||
          type == ResourceType::kScript || type == ResourceType::kRaw ||
-         type == ResourceType::kImportResource ||
-         type == ResourceType::kMainResource;
+         type == ResourceType::kImportResource;
 }
 
 static std::unique_ptr<TextResourceDecoder> CreateResourceTextDecoder(
@@ -429,8 +429,6 @@ InspectorPageAgent::ResourceType InspectorPageAgent::ToResourceType(
     case blink::ResourceType::kScript:
       return InspectorPageAgent::kScriptResource;
     case blink::ResourceType::kImportResource:
-    // Fall through.
-    case blink::ResourceType::kMainResource:
       return InspectorPageAgent::kDocumentResource;
     default:
       break;
@@ -843,7 +841,9 @@ void InspectorPageAgent::DidClearDocumentOfWindowObject(LocalFrame* frame) {
     const String source = scripts_to_evaluate_on_load_.Get(key);
     const String world_name = worlds_to_evaluate_on_load_.Get(key);
     if (world_name.IsEmpty()) {
-      frame->GetScriptController().ExecuteScriptInMainWorld(source);
+      frame->GetScriptController().ExecuteScriptInMainWorld(
+          source, ScriptSourceLocationType::kUnknown,
+          ScriptController::kExecuteScriptWhenScriptsDisabled);
       continue;
     }
 
@@ -876,7 +876,8 @@ void InspectorPageAgent::DidClearDocumentOfWindowObject(LocalFrame* frame) {
 
   if (!script_to_evaluate_on_load_once_.IsEmpty()) {
     frame->GetScriptController().ExecuteScriptInMainWorld(
-        script_to_evaluate_on_load_once_);
+        script_to_evaluate_on_load_once_, ScriptSourceLocationType::kUnknown,
+        ScriptController::kExecuteScriptWhenScriptsDisabled);
   }
 }
 
@@ -1156,7 +1157,13 @@ Response InspectorPageAgent::getLayoutMetrics(
 
   LocalFrameView* frame_view = main_frame->View();
   ScrollOffset page_offset = frame_view->GetScrollableArea()->GetScrollOffset();
+  // page_zoom is either CSS-to-DP or CSS-to-DIP depending on
+  // enable-use-zoom-for-dsf flag.
   float page_zoom = main_frame->PageZoomFactor();
+  // page_zoom_factor is CSS to DIP (device independent pixels).
+  float page_zoom_factor =
+      page_zoom /
+      main_frame->GetPage()->GetChromeClient().WindowToViewportScalar(1);
   FloatRect visible_rect = visual_viewport.VisibleRect();
   float scale = visual_viewport.Scale();
 
@@ -1180,6 +1187,7 @@ Response InspectorPageAgent::getLayoutMetrics(
                              .setClientWidth(visible_rect.Width())
                              .setClientHeight(visible_rect.Height())
                              .setScale(scale)
+                             .setZoom(page_zoom_factor)
                              .build();
   return Response::OK();
 }

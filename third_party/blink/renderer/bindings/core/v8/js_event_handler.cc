@@ -13,6 +13,16 @@
 
 namespace blink {
 
+// static
+JSEventHandler* JSEventHandler::CreateOrNull(v8::Local<v8::Value> value,
+                                             HandlerType type) {
+  if (!value->IsObject())
+    return nullptr;
+
+  return MakeGarbageCollected<JSEventHandler>(
+      V8EventHandlerNonNull::Create(value.As<v8::Object>()), type);
+}
+
 v8::Local<v8::Value> JSEventHandler::GetEffectiveFunction(EventTarget& target) {
   v8::Local<v8::Value> v8_listener = GetListenerObject(target);
   if (!v8_listener.IsEmpty() && v8_listener->IsFunction())
@@ -20,13 +30,11 @@ v8::Local<v8::Value> JSEventHandler::GetEffectiveFunction(EventTarget& target) {
   return v8::Undefined(GetIsolate());
 }
 
-void JSEventHandler::SetCompiledHandler(
-    ScriptState* script_state,
-    v8::Local<v8::Function> listener,
-    const V8PrivateProperty::Symbol& property) {
+void JSEventHandler::SetCompiledHandler(ScriptState* incumbent_script_state,
+                                        v8::Local<v8::Function> listener) {
   DCHECK(!HasCompiledHandler());
 
-  // https://html.spec.whatwg.org/multipage/webappapis.html#getting-the-current-value-of-the-event-handler
+  // https://html.spec.whatwg.org/C/#getting-the-current-value-of-the-event-handler
   // Step 12: Set eventHandler's value to the result of creating a Web IDL
   // EventHandler callback function object whose object reference is function
   // and whose callback context is settings object.
@@ -36,9 +44,8 @@ void JSEventHandler::SetCompiledHandler(
   // content attribute gets lazily compiled. This context is the same one of the
   // relevant realm of |listener| and its event target.
   v8::Context::BackupIncumbentScope backup_incumbent_scope(
-      script_state->GetContext());
+      incumbent_script_state->GetContext());
   event_handler_ = V8EventHandlerNonNull::Create(listener);
-  Attach(script_state, listener, property, this);
 }
 
 // https://html.spec.whatwg.org/C/webappapis.html#the-event-handler-processing-algorithm

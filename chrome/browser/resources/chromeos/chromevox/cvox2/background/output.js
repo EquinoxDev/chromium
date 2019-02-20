@@ -27,6 +27,7 @@ goog.require('cvox.TtsCategory');
 goog.require('cvox.ValueSelectionSpan');
 goog.require('cvox.ValueSpan');
 goog.require('goog.i18n.MessageFormat');
+goog.require('LanguageSwitching');
 
 goog.scope(function() {
 var AutomationNode = chrome.automation.AutomationNode;
@@ -530,7 +531,7 @@ Output.RULES = {
           @describe_index($posInSet, $setSize)
           $roleDescription $description $state $restriction`
     },
-    rootWebArea: {enter: `$name`, speak: `$if($name, $name, $docUrl)`},
+    rootWebArea: {enter: `$name`, speak: `$if($name, $name, @web_content)`},
     region: {speak: `$state $nameOrTextContent $description $roleDescription`},
     row: {
       enter: `$node(tableRowHeader)`,
@@ -1245,6 +1246,12 @@ Output.prototype = {
 
           this.append_(buff, node.name || '', options);
           ruleStr.writeTokenWithValue(token, node.name);
+          // Language Switching. Only execute if feature is enabled.
+          if (localStorage['languageSwitching'] === 'true') {
+            speechProps = new Output.SpeechProperties();
+            speechProps['lang'] =
+                LanguageSwitching.updateCurrentLanguageForNode(node);
+          }
         } else if (token == 'description') {
           if (node.name == node.description)
             return;
@@ -1957,7 +1964,7 @@ Output.prototype = {
     /**
      * Use Output.RULES for node.role if exists.
      * If not, use Output.RULES for parentRole if exists.
-     * If not, use Output.RULES for 'defalt'.
+     * If not, use Output.RULES for 'default'.
      */
     if (node.role && (eventBlock[node.role] || {}).speak !== undefined)
       rule.role = node.role;

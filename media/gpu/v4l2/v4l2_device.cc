@@ -40,6 +40,7 @@ class V4L2Buffer {
   ~V4L2Buffer();
 
   void* GetPlaneMapping(const size_t plane);
+  size_t GetMemoryUsage() const;
   const struct v4l2_buffer* v4l2_buffer() const { return &v4l2_buffer_; }
 
  private:
@@ -143,6 +144,14 @@ void* V4L2Buffer::GetPlaneMapping(const size_t plane) {
 
   plane_mappings_[plane] = p;
   return p;
+}
+
+size_t V4L2Buffer::GetMemoryUsage() const {
+  size_t usage = 0;
+  for (size_t i = 0; i < v4l2_buffer_.length; i++) {
+    usage += v4l2_buffer_.m.planes[i].length;
+  }
+  return usage;
 }
 
 // Module-private class that let users query/write V4L2 buffer information.
@@ -382,7 +391,7 @@ void V4L2WritableBufferRef::SetPlaneBytesUsed(const size_t plane,
     return;
   }
 
-  if (bytes_used >= GetPlaneSize(plane)) {
+  if (bytes_used > GetPlaneSize(plane)) {
     VLOGF(1) << "Set bytes used " << bytes_used << " larger than plane size "
              << GetPlaneSize(plane) << ".";
     return;
@@ -485,20 +494,10 @@ V4L2Queue::V4L2Queue(scoped_refptr<V4L2Device> dev,
                      enum v4l2_buf_type type,
                      base::OnceClosure destroy_cb)
     : type_(type), device_(dev), destroy_cb_(std::move(destroy_cb)) {
-  // TODO(acourbot): fix clients - the constructor should be called on the same
-  // sequence as the rest.
-  DETACH_FROM_SEQUENCE(sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
 
 V4L2Queue::~V4L2Queue() {
-  // TODO(acourbot): we do this prior to checking the sequence because we
-  // tolerate queues to be destroyed in the wrong thread if they are properly
-  // cleaned up. But ultimately clients should be fixed.
-  if (!is_streaming_ && buffers_.empty()) {
-    std::move(destroy_cb_).Run();
-    return;
-  }
-
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (is_streaming_) {
@@ -620,6 +619,19 @@ bool V4L2Queue::DeallocateBuffers() {
   DCHECK_EQ(queued_buffers_.size(), 0u);
 
   return true;
+}
+
+size_t V4L2Queue::GetMemoryUsage() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  size_t usage = 0;
+  for (const auto& buf : buffers_) {
+    usage += buf->GetMemoryUsage();
+  }
+  return usage;
+}
+
+v4l2_memory V4L2Queue::GetMemoryType() const {
+  return memory_;
 }
 
 V4L2WritableBufferRef V4L2Queue::GetFreeBuffer() {
@@ -803,9 +815,7 @@ scoped_refptr<V4L2Queue> V4L2Device::GetQueue(enum v4l2_buf_type type) {
     return scoped_refptr<V4L2Queue>(it->second);
 
   scoped_refptr<V4L2Queue> queue = V4L2QueueFactory::CreateQueue(
-      this, type,
-      media::BindToCurrentLoop(
-          base::Bind(&V4L2Device::OnQueueDestroyed, this, type)));
+      this, type, base::BindOnce(&V4L2Device::OnQueueDestroyed, this, type));
 
   queues_[type] = queue.get();
   return queue;
@@ -1104,7 +1114,7 @@ int32_t V4L2Device::H264LevelIdcToV4L2H264Level(uint8_t level_idc) {
 }
 
 // static
-gfx::Size V4L2Device::CodedSizeFromV4L2Format(struct v4l2_format format) {
+gfx::Size V4L2Device::AllocatedSizeFromV4L2Format(struct v4l2_format format) {
   gfx::Size coded_size;
   gfx::Size visible_size;
   VideoPixelFormat frame_format = PIXEL_FORMAT_UNKNOWN;
@@ -1174,6 +1184,22 @@ gfx::Size V4L2Device::CodedSizeFromV4L2Format(struct v4l2_format format) {
   DCHECK_LE(sizeimage, VideoFrame::AllocationSize(frame_format, coded_size));
 
   return coded_size;
+}
+
+// static
+std::string V4L2Device::V4L2MemoryToString(const v4l2_memory memory) {
+  switch (memory) {
+    case V4L2_MEMORY_MMAP:
+      return "V4L2_MEMORY_MMAP";
+    case V4L2_MEMORY_USERPTR:
+      return "V4L2_MEMORY_USERPTR";
+    case V4L2_MEMORY_DMABUF:
+      return "V4L2_MEMORY_DMABUF";
+    case V4L2_MEMORY_OVERLAY:
+      return "V4L2_MEMORY_OVERLAY";
+    default:
+      return "UNKNOWN";
+  }
 }
 
 // static

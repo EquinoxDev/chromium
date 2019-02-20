@@ -43,7 +43,7 @@ const char kCroshBuiltinAppId[] = "nkoccljplnhpfnfiajclkommnmllphnl";
 const char kTextEditorAppId[] = "mmfbcljfglbokpmkimbfghdkjmjhdgbg";
 const char kInAppPaymentsSupportAppId[] = "nmmhkkegccagdldgiimedpiccmgmieda";
 const char kMediaRouterStableExtensionId[] = "pkedcjkdefgpdelpbcmbmeomcjbeemfm";
-const char kCloudReportingExtensionId[] = "kigjhoekjcpdfjpimbdjegmgecmlicaf";
+const char kCloudReportingExtensionId[] = "oempjldejiginopiohodkdoklcjklbaa";
 
 #if defined(OS_CHROMEOS)
 const char kAssessmentAssistantExtensionId[] =
@@ -70,6 +70,9 @@ const char kGoogleSpeechSynthesisExtensionId[] =
 const char kWallpaperManagerId[] = "obklkkbkpaoaejdabbfldmcfplpdgolj";
 const char kZipArchiverExtensionId[] = "dmboannefpncccogfdikhmhpmdnddgoe";
 const char kZipArchiverExtensionPath[] = "chromeos/zip_archiver";
+const char kChromeCameraAppId[] = "hfhhnacclhffhdffklopdkcgdhifgngh";
+const char kChromeCameraAppPath[] = "chromeos/camera";
+const char kContainedHomeAppId[] = "nbaolgedfgoedkjbfmpediclncanmpbc";
 #endif
 
 const char kAppStateNotInstalled[] = "not_installed";

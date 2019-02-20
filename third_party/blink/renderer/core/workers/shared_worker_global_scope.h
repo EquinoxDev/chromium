@@ -60,11 +60,11 @@ class CORE_EXPORT SharedWorkerGlobalScope final : public WorkerGlobalScope {
   // WorkerGlobalScope
   void ImportModuleScript(
       const KURL& module_url_record,
-      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object,
       network::mojom::FetchCredentialsMode) override;
 
   // Setters/Getters for attributes in SharedWorkerGlobalScope.idl
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(connect, kConnect);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(connect, kConnect)
   String name() const { return name_; }
 
   void Connect(MessagePortChannel channel);
@@ -73,6 +73,7 @@ class CORE_EXPORT SharedWorkerGlobalScope final : public WorkerGlobalScope {
 
  private:
   void ExceptionThrown(ErrorEvent*) override;
+  mojom::RequestContextType GetDestinationForMainScript() override;
 
   const String name_;
 };

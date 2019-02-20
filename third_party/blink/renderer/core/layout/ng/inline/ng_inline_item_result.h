@@ -102,7 +102,7 @@ struct CORE_EXPORT NGInlineItemResult {
   // correctly determine that we don't need a line box.
   bool should_create_line_box = false;
 
-  // The field should be initialized and maintained like
+  // This field should be initialized and maintained like
   // |should_create_line_box|. It indicates if there are (at the current
   // position) any unpositioned floats.
   bool has_unpositioned_floats = false;
@@ -121,7 +121,7 @@ struct CORE_EXPORT NGInlineItemResult {
                      bool has_unpositioned_floats);
 
 #if DCHECK_IS_ON()
-  void CheckConsistency(bool during_line_break = false) const;
+  void CheckConsistency(bool allow_null_shape_result = false) const;
 #endif
 };
 
@@ -221,6 +221,10 @@ class CORE_EXPORT NGLineInfo {
     base_direction_ = direction;
   }
 
+  // Whether an accurate end position is needed, typically for end, center, and
+  // justify alignment.
+  bool NeedsAccurateEndPosition() const { return needs_accurate_end_position_; }
+
   // Fragment to append to the line end. Used by 'text-overflow: ellipsis'.
   scoped_refptr<const NGPhysicalTextFragment>& LineEndFragment() {
     return line_end_fragment_;
@@ -228,6 +232,8 @@ class CORE_EXPORT NGLineInfo {
   void SetLineEndFragment(scoped_refptr<const NGPhysicalTextFragment>);
 
  private:
+  bool ComputeNeedsAccurateEndPosition() const;
+
   const NGInlineItemsData* items_data_ = nullptr;
   const ComputedStyle* line_style_ = nullptr;
   NGInlineItemResults results_;
@@ -249,6 +255,7 @@ class CORE_EXPORT NGLineInfo {
   bool is_empty_line_ = false;
   bool has_overflow_ = false;
   bool has_trailing_spaces_ = false;
+  bool needs_accurate_end_position_ = false;
 };
 
 }  // namespace blink

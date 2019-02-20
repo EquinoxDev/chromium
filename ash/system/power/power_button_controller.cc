@@ -24,6 +24,7 @@
 #include "ash/wm/session_state_animator.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/window_util.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/time/default_tick_clock.h"
@@ -161,7 +162,7 @@ PowerButtonController::PowerButtonController(
   power_manager_client->AddObserver(this);
   power_manager_client->GetSwitchStates(base::BindOnce(
       &PowerButtonController::OnGetSwitchStates, weak_factory_.GetWeakPtr()));
-  chromeos::AccelerometerReader::GetInstance()->AddObserver(this);
+  AccelerometerReader::GetInstance()->AddObserver(this);
   Shell::Get()->display_configurator()->AddObserver(this);
   backlights_forced_off_observer_.Add(backlights_forced_off_setter);
   Shell::Get()->tablet_mode_controller()->AddObserver(this);
@@ -173,7 +174,7 @@ PowerButtonController::~PowerButtonController() {
   if (Shell::Get()->tablet_mode_controller())
     Shell::Get()->tablet_mode_controller()->RemoveObserver(this);
   Shell::Get()->display_configurator()->RemoveObserver(this);
-  chromeos::AccelerometerReader::GetInstance()->RemoveObserver(this);
+  AccelerometerReader::GetInstance()->RemoveObserver(this);
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(
       this);
 }
@@ -421,7 +422,7 @@ void PowerButtonController::OnGetSwitchStates(
 }
 
 void PowerButtonController::OnAccelerometerUpdated(
-    scoped_refptr<const chromeos::AccelerometerUpdate> update) {
+    scoped_refptr<const AccelerometerUpdate> update) {
   if (!has_tablet_mode_switch_ && observe_accelerometer_events_)
     InitTabletPowerButtonMembers();
 }
@@ -532,7 +533,7 @@ void PowerButtonController::ParsePowerButtonPositionSwitch() {
     return;
 
   std::unique_ptr<base::DictionaryValue> position_info =
-      base::DictionaryValue::From(base::JSONReader::Read(
+      base::DictionaryValue::From(base::JSONReader::ReadDeprecated(
           cl->GetSwitchValueASCII(switches::kAshPowerButtonPosition)));
   if (!position_info) {
     LOG(ERROR) << switches::kAshPowerButtonPosition << " flag has no value";

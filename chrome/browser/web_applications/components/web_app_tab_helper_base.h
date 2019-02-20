@@ -27,17 +27,16 @@ class WebAppTabHelperBase
  public:
   ~WebAppTabHelperBase() override;
 
-  // This provides a weak reference to the current audio focus id map instance
-  // which is owned by WebAppProvider. This is used to ensure that all web
-  // contents associated with a web app shared the same audio focus group id.
-  void SetAudioFocusIdMap(WebAppAudioFocusIdMap* audio_focus_id_map);
+  // |audio_focus_id_map| is a weak reference to the current audio focus id map
+  // instance which is owned by WebAppProvider. This is used to ensure that all
+  // web contents associated with a web app shared the same audio focus group
+  // id.
+  void Init(WebAppAudioFocusIdMap* audio_focus_id_map);
 
   const AppId& app_id() const { return app_id_; }
 
-  // Set app_id on web app installation or tab restore.
+  // Set associated app_id.
   void SetAppId(const AppId& app_id);
-  // Clear app_id on web app uninstallation.
-  void ResetAppId();
 
   // content::WebContentsObserver:
   void DidFinishNavigation(
@@ -46,18 +45,31 @@ class WebAppTabHelperBase
       content::WebContents* old_web_contents,
       content::WebContents* new_web_contents) override;
 
+  // These methods require an app associated with the tab (valid app_id()).
+  //
+  // Returns true if the app was installed by user, false if default installed.
+  virtual bool IsUserInstalled() const = 0;
+  // For user-installed apps:
+  // Returns true if the app was installed through the install button.
+  // Returns false if the app was installed through the create shortcut button.
+  virtual bool IsFromInstallButton() const = 0;
+
  protected:
   // See documentation in WebContentsUserData class comment.
   explicit WebAppTabHelperBase(content::WebContents* web_contents);
   friend class content::WebContentsUserData<WebAppTabHelperBase>;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 
+  // TODO(loyso): Call these methods for new extension-independent system.
+  void OnWebAppInstalled(const AppId& installed_app_id);
+  void OnWebAppUninstalled(const AppId& uninstalled_app_id);
+  void OnWebAppRegistryShutdown();
+
   // Clone |this| tab helper (preserving a derived type).
   virtual WebAppTabHelperBase* CloneForWebContents(
       content::WebContents* web_contents) const = 0;
 
-  // Gets AppId from derived platform-specific TabHelper and updates
-  // app_id_ with it.
+  // Gets AppId of app whose scope includes |url|.
   virtual AppId GetAppId(const GURL& url) = 0;
 
   // Returns whether the associated web contents belongs to an app window.
@@ -65,6 +77,8 @@ class WebAppTabHelperBase
 
  private:
   friend class WebAppAudioFocusBrowserTest;
+
+  void ResetAppId();
 
   // Runs any logic when the associated app either changes or is removed.
   void OnAssociatedAppChanged();

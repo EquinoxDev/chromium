@@ -67,9 +67,6 @@ public class MediaNotificationManager {
 
     static final int MINIMAL_MEDIA_IMAGE_SIZE_PX = 114;
 
-    @VisibleForTesting
-    static final int CUSTOM_MEDIA_SESSION_ACTION_STOP = MediaSessionAction.MAX_VALUE + 1;
-
     // The media artwork image resolution on high-end devices.
     private static final int HIGH_IMAGE_SIZE_PX = 512;
 
@@ -289,7 +286,8 @@ public class MediaNotificationManager {
         ChromeNotificationBuilder builder =
                 NotificationBuilderFactory.createChromeNotificationBuilder(
                         true /* preferCompat */, ChannelDefinitions.ChannelId.MEDIA);
-        s.startForeground(s.getNotificationId(), builder.build());
+        AppHooks.get().startForeground(
+                s, s.getNotificationId(), builder.build(), 0 /* foregroundServiceType */);
     }
 
     /**
@@ -746,7 +744,7 @@ public class MediaNotificationManager {
         mActionToButtonInfo.put(MediaSessionAction.PAUSE,
                 new MediaButtonInfo(R.drawable.ic_pause_white_36dp, R.string.accessibility_pause,
                         ListenerService.ACTION_PAUSE));
-        mActionToButtonInfo.put(CUSTOM_MEDIA_SESSION_ACTION_STOP,
+        mActionToButtonInfo.put(MediaSessionAction.STOP,
                 new MediaButtonInfo(R.drawable.ic_stop_white_36dp, R.string.accessibility_stop,
                         ListenerService.ACTION_STOP));
         mActionToButtonInfo.put(MediaSessionAction.PREVIOUS_TRACK,
@@ -1110,7 +1108,9 @@ public class MediaNotificationManager {
         }
 
         if (mMediaNotificationInfo.supportsStop()) {
-            actions.add(CUSTOM_MEDIA_SESSION_ACTION_STOP);
+            actions.add(MediaSessionAction.STOP);
+        } else {
+            actions.remove(MediaSessionAction.STOP);
         }
 
         List<Integer> bigViewActions = computeBigViewActions(actions);
@@ -1143,11 +1143,17 @@ public class MediaNotificationManager {
         if (hideUserData) {
             // Notifications in incognito shouldn't show what is playing to avoid leaking
             // information.
-            builder.setContentTitle(
-                    getContext().getResources().getString(R.string.media_notification_incognito));
             if (isRunningAtLeastN()) {
+                builder.setContentTitle(getContext().getResources().getString(
+                        R.string.media_notification_incognito));
                 builder.setSubText(
                         getContext().getResources().getString(R.string.notification_incognito_tab));
+            } else {
+                // App name is automatically added to the title from Android N,
+                // but needs to be added explicitly for prior versions.
+                builder.setContentTitle(getContext().getString(R.string.app_name))
+                        .setContentText(getContext().getResources().getString(
+                                R.string.media_notification_incognito));
             }
             return;
         }
@@ -1180,7 +1186,7 @@ public class MediaNotificationManager {
      */
     private List<Integer> computeBigViewActions(Set<Integer> actions) {
         // STOP cannot coexist with switch track actions and seeking actions.
-        assert !actions.contains(CUSTOM_MEDIA_SESSION_ACTION_STOP)
+        assert !actions.contains(MediaSessionAction.STOP)
                 || !(actions.contains(MediaSessionAction.PREVIOUS_TRACK)
                         && actions.contains(MediaSessionAction.NEXT_TRACK)
                         && actions.contains(MediaSessionAction.SEEK_BACKWARD)
@@ -1188,8 +1194,6 @@ public class MediaNotificationManager {
         // PLAY and PAUSE cannot coexist.
         assert !actions.contains(MediaSessionAction.PLAY)
                 || !actions.contains(MediaSessionAction.PAUSE);
-        // There can't be move actions than BIG_VIEW_ACTIONS_COUNT.
-        assert actions.size() <= BIG_VIEW_ACTIONS_COUNT;
 
         int[] actionByOrder = {
                 MediaSessionAction.PREVIOUS_TRACK,
@@ -1198,7 +1202,7 @@ public class MediaNotificationManager {
                 MediaSessionAction.PAUSE,
                 MediaSessionAction.SEEK_FORWARD,
                 MediaSessionAction.NEXT_TRACK,
-                CUSTOM_MEDIA_SESSION_ACTION_STOP,
+                MediaSessionAction.STOP,
         };
 
         // Sort the actions based on the expected ordering in the UI.
@@ -1206,6 +1210,10 @@ public class MediaNotificationManager {
         for (int action : actionByOrder) {
             if (actions.contains(action)) sortedActions.add(action);
         }
+
+        // There can't be move actions than BIG_VIEW_ACTIONS_COUNT. We do this check after we have
+        // sorted the actions since there may be more actions that we do not support.
+        assert sortedActions.size() <= BIG_VIEW_ACTIONS_COUNT;
 
         return sortedActions;
     }
@@ -1221,7 +1229,7 @@ public class MediaNotificationManager {
     @VisibleForTesting
     static int[] computeCompactViewActionIndices(List<Integer> actions) {
         // STOP cannot coexist with switch track actions and seeking actions.
-        assert !actions.contains(CUSTOM_MEDIA_SESSION_ACTION_STOP)
+        assert !actions.contains(MediaSessionAction.STOP)
                 || !(actions.contains(MediaSessionAction.PREVIOUS_TRACK)
                         && actions.contains(MediaSessionAction.NEXT_TRACK)
                         && actions.contains(MediaSessionAction.SEEK_BACKWARD)
@@ -1238,12 +1246,12 @@ public class MediaNotificationManager {
             return actionsArray;
         }
 
-        if (actions.contains(CUSTOM_MEDIA_SESSION_ACTION_STOP)) {
+        if (actions.contains(MediaSessionAction.STOP)) {
             List<Integer> compactActions = new ArrayList<>();
             if (actions.contains(MediaSessionAction.PLAY)) {
                 compactActions.add(actions.indexOf(MediaSessionAction.PLAY));
             }
-            compactActions.add(actions.indexOf(CUSTOM_MEDIA_SESSION_ACTION_STOP));
+            compactActions.add(actions.indexOf(MediaSessionAction.STOP));
             return CollectionUtil.integerListToIntArray(compactActions);
         }
 

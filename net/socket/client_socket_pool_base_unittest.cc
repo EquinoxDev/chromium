@@ -63,6 +63,8 @@ namespace {
 
 const int kDefaultMaxSockets = 4;
 const int kDefaultMaxSocketsPerGroup = 2;
+constexpr base::TimeDelta kUnusedIdleSocketTimeout =
+    base::TimeDelta::FromSeconds(10);
 
 // Make sure |handle| sets load times correctly when it has been assigned a
 // reused socket.
@@ -240,21 +242,47 @@ class MockClientSocketFactory : public ClientSocketFactory {
     NOTIMPLEMENTED();
     return std::unique_ptr<SSLClientSocket>();
   }
+
+  std::unique_ptr<SSLClientSocket> CreateSSLClientSocket(
+      std::unique_ptr<StreamSocket> nested_socket,
+      const HostPortPair& host_and_port,
+      const SSLConfig& ssl_config,
+      const SSLClientSocketContext& context) override {
+    NOTIMPLEMENTED();
+    return std::unique_ptr<SSLClientSocket>();
+  }
+
   std::unique_ptr<ProxyClientSocket> CreateProxyClientSocket(
       std::unique_ptr<ClientSocketHandle> transport_socket,
       const std::string& user_agent,
       const HostPortPair& endpoint,
+      const ProxyServer& proxy_server,
       HttpAuthController* http_auth_controller,
       bool tunnel,
       bool using_spdy,
       NextProto negotiated_protocol,
+      ProxyDelegate* proxy_delegate,
       bool is_https_proxy,
       const NetworkTrafficAnnotationTag& traffic_annotation) override {
     NOTIMPLEMENTED();
     return nullptr;
   }
 
-  void ClearSSLSessionCache() override { NOTIMPLEMENTED(); }
+  std::unique_ptr<ProxyClientSocket> CreateProxyClientSocket(
+      std::unique_ptr<StreamSocket> stream_socket,
+      const std::string& user_agent,
+      const HostPortPair& endpoint,
+      const ProxyServer& proxy_server,
+      HttpAuthController* http_auth_controller,
+      bool tunnel,
+      bool using_spdy,
+      NextProto negotiated_protocol,
+      ProxyDelegate* proxy_delegate,
+      bool is_https_proxy,
+      const NetworkTrafficAnnotationTag& traffic_annotation) override {
+    NOTIMPLEMENTED();
+    return nullptr;
+  }
 
   void WaitForSignal(TestConnectJob* job) { waiting_jobs_.push_back(job); }
 
@@ -263,6 +291,10 @@ class MockClientSocketFactory : public ClientSocketFactory {
   void SignalJob(size_t job);
 
   void SetJobLoadState(size_t job, LoadState load_state);
+
+  // Sets the HasConnectionEstablished value of the specified job to true,
+  // without invoking the callback.
+  void SetJobHasEstablishedConnection(size_t job);
 
   int allocation_count() const { return allocation_count_; }
 
@@ -298,17 +330,29 @@ class TestConnectJob : public ConnectJob {
                  MockClientSocketFactory* client_socket_factory,
                  NetLog* net_log)
       : ConnectJob(
-            group_name,
-            timeout_duration,
             request.priority(),
-            request.socket_tag(),
-            request.respect_limits(),
+            timeout_duration,
+            CommonConnectJobParams(
+                group_name,
+                request.socket_tag(),
+                request.respect_limits() ==
+                    ClientSocketPool::RespectLimits::ENABLED,
+                nullptr /* client_socket_factory */,
+                nullptr /* host_resolver */,
+                nullptr /* proxy_delegate */,
+                SSLClientSocketContext(),
+                SSLClientSocketContext(),
+                nullptr /* socket_performance_watcher_factory */,
+                nullptr /* network_quality_estimator */,
+                net_log,
+                nullptr /* websocket_endpoint_lock_manager */),
             delegate,
             NetLogWithSource::Make(net_log,
                                    NetLogSourceType::TRANSPORT_CONNECT_JOB)),
         job_type_(job_type),
         client_socket_factory_(client_socket_factory),
         load_state_(LOAD_STATE_IDLE),
+        has_established_connection_(false),
         store_additional_error_state_(false),
         weak_factory_(this) {}
 
@@ -318,9 +362,18 @@ class TestConnectJob : public ConnectJob {
 
   void set_load_state(LoadState load_state) { load_state_ = load_state; }
 
+  void set_has_established_connection() {
+    DCHECK(!has_established_connection_);
+    has_established_connection_ = true;
+  }
+
   // From ConnectJob:
 
   LoadState GetLoadState() const override { return load_state_; }
+
+  bool HasEstablishedConnection() const override {
+    return has_established_connection_;
+  }
 
   void GetAdditionalErrorState(ClientSocketHandle* handle) override {
     if (store_additional_error_state_) {
@@ -364,18 +417,18 @@ class TestConnectJob : public ConnectJob {
         // time functions, so this change would be rather invasive.
         base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
-            base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(), true /* successful */,
-                       true /* async */, false /* recoverable */),
+            base::BindOnce(base::IgnoreResult(&TestConnectJob::DoConnect),
+                           weak_factory_.GetWeakPtr(), true /* successful */,
+                           true /* async */, false /* recoverable */),
             base::TimeDelta::FromMilliseconds(kPendingConnectDelay));
         return ERR_IO_PENDING;
       case kMockPendingFailingJob:
         set_load_state(LOAD_STATE_CONNECTING);
         base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
-            base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(), false /* error */,
-                       true /* async */, false /* recoverable */),
+            base::BindOnce(base::IgnoreResult(&TestConnectJob::DoConnect),
+                           weak_factory_.GetWeakPtr(), false /* error */,
+                           true /* async */, false /* recoverable */),
             base::TimeDelta::FromMilliseconds(2));
         return ERR_IO_PENDING;
       case kMockWaitingJob:
@@ -390,9 +443,9 @@ class TestConnectJob : public ConnectJob {
         set_load_state(LOAD_STATE_CONNECTING);
         base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
-            base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(), false /* error */,
-                       true /* async */, true /* recoverable */),
+            base::BindOnce(base::IgnoreResult(&TestConnectJob::DoConnect),
+                           weak_factory_.GetWeakPtr(), false /* error */,
+                           true /* async */, true /* recoverable */),
             base::TimeDelta::FromMilliseconds(2));
         return ERR_IO_PENDING;
       case kMockAdditionalErrorStateJob:
@@ -404,9 +457,9 @@ class TestConnectJob : public ConnectJob {
         store_additional_error_state_ = true;
         base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
             FROM_HERE,
-            base::Bind(base::IgnoreResult(&TestConnectJob::DoConnect),
-                       weak_factory_.GetWeakPtr(), false /* error */,
-                       true /* async */, false /* recoverable */),
+            base::BindOnce(base::IgnoreResult(&TestConnectJob::DoConnect),
+                           weak_factory_.GetWeakPtr(), false /* error */,
+                           true /* async */, false /* recoverable */),
             base::TimeDelta::FromMilliseconds(2));
         return ERR_IO_PENDING;
       case kMockUnreadDataJob: {
@@ -426,6 +479,7 @@ class TestConnectJob : public ConnectJob {
 
   int DoConnect(bool succeed, bool was_async, bool recoverable) {
     int result = OK;
+    has_established_connection_ = true;
     if (succeed) {
       socket()->Connect(CompletionOnceCallback());
     } else if (recoverable) {
@@ -444,6 +498,7 @@ class TestConnectJob : public ConnectJob {
   const JobType job_type_;
   MockClientSocketFactory* const client_socket_factory_;
   LoadState load_state_;
+  bool has_established_connection_;
   bool store_additional_error_state_;
 
   base::WeakPtrFactory<TestConnectJob> weak_factory_;
@@ -490,10 +545,6 @@ class TestConnectJobFactory
     return std::unique_ptr<ConnectJob>(
         new TestConnectJob(job_type, group_name, request, timeout_duration_,
                            delegate, client_socket_factory_, net_log_));
-  }
-
-  base::TimeDelta ConnectionTimeout() const override {
-    return timeout_duration_;
   }
 
  private:
@@ -603,10 +654,6 @@ class TestClientSocketPool : public ClientSocketPool {
     return base_.GetInfoAsValue(name, type);
   }
 
-  base::TimeDelta ConnectionTimeout() const override {
-    return base_.ConnectionTimeout();
-  }
-
   const TestClientSocketPoolBase* base() const { return &base_; }
 
   int NumNeverAssignedConnectJobsInGroup(const std::string& group_name) const {
@@ -672,38 +719,10 @@ void MockClientSocketFactory::SetJobLoadState(size_t job,
   waiting_jobs_[job]->set_load_state(load_state);
 }
 
-class TestConnectJobDelegate : public ConnectJob::Delegate {
- public:
-  TestConnectJobDelegate() : have_result_(false), result_(OK) {}
-  ~TestConnectJobDelegate() override = default;
-
-  void OnConnectJobComplete(int result, ConnectJob* job) override {
-    result_ = result;
-    std::unique_ptr<ConnectJob> owned_job(job);
-    std::unique_ptr<StreamSocket> socket = owned_job->PassSocket();
-    // socket.get() should be NULL iff result != OK
-    EXPECT_EQ(socket == NULL, result != OK);
-    have_result_ = true;
-    if (quit_wait_on_result_)
-      std::move(quit_wait_on_result_).Run();
-  }
-
-  int WaitForResult() {
-    DCHECK(!quit_wait_on_result_);
-    while (!have_result_) {
-      base::RunLoop run_loop;
-      quit_wait_on_result_ = run_loop.QuitClosure();
-      run_loop.Run();
-    }
-    have_result_ = false;  // auto-reset for next callback
-    return result_;
-  }
-
- private:
-  bool have_result_;
-  base::OnceClosure quit_wait_on_result_;
-  int result_;
-};
+void MockClientSocketFactory::SetJobHasEstablishedConnection(size_t job) {
+  ASSERT_LT(job, waiting_jobs_.size());
+  waiting_jobs_[job]->set_has_established_connection();
+}
 
 class ClientSocketPoolBaseTest : public TestWithScopedTaskEnvironment {
  protected:
@@ -722,11 +741,9 @@ class ClientSocketPoolBaseTest : public TestWithScopedTaskEnvironment {
   }
 
   void CreatePool(int max_sockets, int max_sockets_per_group) {
-    CreatePoolWithIdleTimeouts(
-        max_sockets,
-        max_sockets_per_group,
-        ClientSocketPool::unused_idle_socket_timeout(),
-        ClientSocketPool::used_idle_socket_timeout());
+    CreatePoolWithIdleTimeouts(max_sockets, max_sockets_per_group,
+                               kUnusedIdleSocketTimeout,
+                               ClientSocketPool::used_idle_socket_timeout());
   }
 
   void CreatePoolWithIdleTimeouts(
@@ -785,66 +802,6 @@ class ClientSocketPoolBaseTest : public TestWithScopedTaskEnvironment {
   std::unique_ptr<TestClientSocketPool> pool_;
   ClientSocketPoolTest test_base_;
 };
-
-// Even though a timeout is specified, it doesn't time out on a synchronous
-// completion.
-TEST_F(ClientSocketPoolBaseTest, ConnectJob_NoTimeoutOnSynchronousCompletion) {
-  TestConnectJobDelegate delegate;
-  ClientSocketHandle ignored;
-  TestClientSocketPoolBase::Request request(
-      &ignored, CompletionOnceCallback(), DEFAULT_PRIORITY, SocketTag(),
-      ClientSocketPool::RespectLimits::ENABLED,
-      internal::ClientSocketPoolBaseHelper::NORMAL, params_,
-      NetLogWithSource());
-  std::unique_ptr<TestConnectJob> job(
-      new TestConnectJob(TestConnectJob::kMockJob, "a", request,
-                         base::TimeDelta::FromMicroseconds(1), &delegate,
-                         &client_socket_factory_, NULL));
-  EXPECT_THAT(job->Connect(), IsOk());
-}
-
-TEST_F(ClientSocketPoolBaseTest, ConnectJob_TimedOut) {
-  TestConnectJobDelegate delegate;
-  ClientSocketHandle ignored;
-  TestNetLog log;
-
-  TestClientSocketPoolBase::Request request(
-      &ignored, CompletionOnceCallback(), DEFAULT_PRIORITY, SocketTag(),
-      ClientSocketPool::RespectLimits::ENABLED,
-      internal::ClientSocketPoolBaseHelper::NORMAL, params_,
-      NetLogWithSource());
-  // Deleted by TestConnectJobDelegate.
-  TestConnectJob* job =
-      new TestConnectJob(TestConnectJob::kMockPendingJob,
-                         "a",
-                         request,
-                         base::TimeDelta::FromMicroseconds(1),
-                         &delegate,
-                         &client_socket_factory_,
-                         &log);
-  ASSERT_THAT(job->Connect(), IsError(ERR_IO_PENDING));
-  FastForwardBy(base::TimeDelta::FromMilliseconds(1));
-  EXPECT_THAT(delegate.WaitForResult(), IsError(ERR_TIMED_OUT));
-
-  TestNetLogEntry::List entries;
-  log.GetEntries(&entries);
-
-  EXPECT_EQ(6u, entries.size());
-  EXPECT_TRUE(LogContainsBeginEvent(entries, 0,
-                                    NetLogEventType::SOCKET_POOL_CONNECT_JOB));
-  EXPECT_TRUE(LogContainsBeginEvent(
-      entries, 1, NetLogEventType::SOCKET_POOL_CONNECT_JOB_CONNECT));
-  EXPECT_TRUE(LogContainsEvent(entries, 2,
-                               NetLogEventType::CONNECT_JOB_SET_SOCKET,
-                               NetLogEventPhase::NONE));
-  EXPECT_TRUE(LogContainsEvent(
-      entries, 3, NetLogEventType::SOCKET_POOL_CONNECT_JOB_TIMED_OUT,
-      NetLogEventPhase::NONE));
-  EXPECT_TRUE(LogContainsEndEvent(
-      entries, 4, NetLogEventType::SOCKET_POOL_CONNECT_JOB_CONNECT));
-  EXPECT_TRUE(LogContainsEndEvent(entries, 5,
-                                  NetLogEventType::SOCKET_POOL_CONNECT_JOB));
-}
 
 TEST_F(ClientSocketPoolBaseTest, BasicSynchronous) {
   CreatePool(kDefaultMaxSockets, kDefaultMaxSocketsPerGroup);
@@ -1256,7 +1213,7 @@ TEST_F(ClientSocketPoolBaseTest, CancelStalledSocketAtSocketLimit) {
     ClientSocketHandle handles[kDefaultMaxSockets];
     TestCompletionCallback callbacks[kDefaultMaxSockets];
     for (int i = 0; i < kDefaultMaxSockets; ++i) {
-      EXPECT_EQ(OK, handles[i].Init(base::IntToString(i), params_,
+      EXPECT_EQ(OK, handles[i].Init(base::NumberToString(i), params_,
                                     DEFAULT_PRIORITY, SocketTag(),
                                     ClientSocketPool::RespectLimits::ENABLED,
                                     callbacks[i].callback(), pool_.get(),
@@ -1295,7 +1252,7 @@ TEST_F(ClientSocketPoolBaseTest, CancelPendingSocketAtSocketLimit) {
       TestCompletionCallback callback;
       EXPECT_EQ(ERR_IO_PENDING,
                 handles[i].Init(
-                    base::IntToString(i), params_, DEFAULT_PRIORITY,
+                    base::NumberToString(i), params_, DEFAULT_PRIORITY,
                     SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
                     callback.callback(), pool_.get(), NetLogWithSource()));
     }
@@ -1390,7 +1347,7 @@ TEST_F(ClientSocketPoolBaseTest, CloseIdleSocketAtSocketLimitDeleteGroup) {
     ClientSocketHandle handle;
     TestCompletionCallback callback;
     EXPECT_EQ(
-        OK, handle.Init(base::IntToString(i), params_, DEFAULT_PRIORITY,
+        OK, handle.Init(base::NumberToString(i), params_, DEFAULT_PRIORITY,
                         SocketTag(), ClientSocketPool::RespectLimits::ENABLED,
                         callback.callback(), pool_.get(), NetLogWithSource()));
   }
@@ -2744,6 +2701,59 @@ TEST_F(ClientSocketPoolBaseTest, AbortAllRequestsOnFlush) {
   pool_->FlushWithError(ERR_NETWORK_CHANGED);
   EXPECT_THAT(callback.WaitForResult(), IsError(ERR_NETWORK_CHANGED));
   EXPECT_THAT(callback.WaitForNestedResult(), IsOk());
+}
+
+TEST_F(ClientSocketPoolBaseTest, BackupSocketWaitsForHostResolution) {
+  CreatePool(kDefaultMaxSockets, kDefaultMaxSockets);
+  pool_->EnableConnectBackupJobs();
+
+  connect_job_factory_->set_job_type(TestConnectJob::kMockWaitingJob);
+  ClientSocketHandle handle;
+  TestCompletionCallback callback;
+  EXPECT_EQ(ERR_IO_PENDING,
+            handle.Init("bar", params_, DEFAULT_PRIORITY, SocketTag(),
+                        ClientSocketPool::RespectLimits::ENABLED,
+                        callback.callback(), pool_.get(), NetLogWithSource()));
+  // The backup timer fires but doesn't start a new ConnectJob while resolving
+  // the hostname.
+  client_socket_factory_.SetJobLoadState(0, LOAD_STATE_RESOLVING_HOST);
+  FastForwardBy(base::TimeDelta::FromMilliseconds(
+      ClientSocketPool::kMaxConnectRetryIntervalMs * 100));
+  EXPECT_EQ(1, client_socket_factory_.allocation_count());
+
+  // Once the ConnectJob has finished resolving the hostname, the backup timer
+  // will create a ConnectJob when it fires.
+  client_socket_factory_.SetJobLoadState(0, LOAD_STATE_CONNECTING);
+  FastForwardBy(base::TimeDelta::FromMilliseconds(
+      ClientSocketPool::kMaxConnectRetryIntervalMs));
+  EXPECT_EQ(2, client_socket_factory_.allocation_count());
+}
+
+// Test that no backup socket is created when a ConnectJob connects before it
+// completes.
+TEST_F(ClientSocketPoolBaseTest, NoBackupSocketWhenConnected) {
+  CreatePool(kDefaultMaxSockets, kDefaultMaxSockets);
+  pool_->EnableConnectBackupJobs();
+
+  connect_job_factory_->set_job_type(TestConnectJob::kMockWaitingJob);
+  ClientSocketHandle handle;
+  TestCompletionCallback callback;
+  EXPECT_EQ(ERR_IO_PENDING,
+            handle.Init("bar", params_, DEFAULT_PRIORITY, SocketTag(),
+                        ClientSocketPool::RespectLimits::ENABLED,
+                        callback.callback(), pool_.get(), NetLogWithSource()));
+  // The backup timer fires but doesn't start a new ConnectJob while resolving
+  // the hostname.
+  client_socket_factory_.SetJobLoadState(0, LOAD_STATE_RESOLVING_HOST);
+  FastForwardBy(base::TimeDelta::FromMilliseconds(
+      ClientSocketPool::kMaxConnectRetryIntervalMs * 100));
+  EXPECT_EQ(1, client_socket_factory_.allocation_count());
+
+  client_socket_factory_.SetJobLoadState(0, LOAD_STATE_SSL_HANDSHAKE);
+  client_socket_factory_.SetJobHasEstablishedConnection(0);
+  FastForwardBy(base::TimeDelta::FromMilliseconds(
+      ClientSocketPool::kMaxConnectRetryIntervalMs * 100));
+  EXPECT_EQ(1, client_socket_factory_.allocation_count());
 }
 
 // Cancel a pending socket request while we're at max sockets,

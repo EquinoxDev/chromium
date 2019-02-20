@@ -38,12 +38,12 @@ import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeSwitches;
-import org.chromium.chrome.browser.modelutil.PropertyModelChangeProcessor;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.RenderTestRule;
 import org.chromium.ui.modaldialog.ModalDialogProperties;
 import org.chromium.ui.modelutil.PropertyModel;
+import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -79,10 +79,10 @@ public class ModalDialogViewTest {
             mModelBuilder = new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS);
 
             mContentView = new FrameLayout(activity);
-            mModalDialogView =
-                    (ModalDialogView) LayoutInflater
-                            .from(new ContextThemeWrapper(activity, R.style.ModalDialogTheme))
-                            .inflate(R.layout.modal_dialog_view, null);
+            mModalDialogView = (ModalDialogView) LayoutInflater
+                                       .from(new ContextThemeWrapper(
+                                               activity, R.style.Theme_Chromium_ModalDialog))
+                                       .inflate(R.layout.modal_dialog_view, null);
             activity.setContentView(mContentView);
             mContentView.addView(mModalDialogView, MATCH_PARENT, WRAP_CONTENT);
 

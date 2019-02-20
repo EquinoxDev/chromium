@@ -16,7 +16,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/completion_repeating_callback.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
+#include "net/base/request_priority.h"
 #include "net/log/net_log_capture_mode.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source_type.h"
@@ -57,7 +59,7 @@ bool LooksLikePacScript(const base::string16& script) {
 namespace {
 const char kWpadUrl[] = "http://wpad/wpad.dat";
 const int kQuickCheckDelayMs = 1000;
-};  // namespace
+}  // namespace
 
 std::unique_ptr<base::Value> PacFileDecider::PacSource::NetLogCallback(
     const GURL* effective_pac_url,
@@ -264,10 +266,21 @@ int PacFileDecider::DoQuickCheck() {
     return OK;
   }
 
-  quick_check_start_time_ = base::Time::Now();
   std::string host = current_pac_source().url.host();
-  HostResolver::RequestInfo reqinfo(HostPortPair(host, 80));
-  reqinfo.set_host_resolver_flags(HOST_RESOLVER_SYSTEM_ONLY);
+
+  HostResolver::ResolveHostParameters parameters;
+  // We use HIGHEST here because proxy decision blocks doing any other requests.
+  parameters.initial_priority = HIGHEST;
+  // Only resolve via the system resolver for maximum compatibility with DNS
+  // suffix search paths, because for security, we are relying on suffix search
+  // paths rather than WPAD-standard DNS devolution.
+  parameters.source = HostResolverSource::SYSTEM;
+
+  HostResolver* host_resolver =
+      pac_file_fetcher_->GetRequestContext()->host_resolver();
+  resolve_request_ = host_resolver->CreateRequest(HostPortPair(host, 80),
+                                                  net_log_, parameters);
+
   CompletionRepeatingCallback callback = base::BindRepeating(
       &PacFileDecider::OnIOCompletion, base::Unretained(this));
 
@@ -276,22 +289,12 @@ int PacFileDecider::DoQuickCheck() {
       FROM_HERE, base::TimeDelta::FromMilliseconds(kQuickCheckDelayMs),
       base::BindRepeating(callback, ERR_NAME_NOT_RESOLVED));
 
-  HostResolver* host_resolver =
-      pac_file_fetcher_->GetRequestContext()->host_resolver();
-
-  // We use HIGHEST here because proxy decision blocks doing any other requests.
-  return host_resolver->Resolve(reqinfo, HIGHEST, &wpad_addresses_, callback,
-                                &request_, net_log_);
+  return resolve_request_->Start(callback);
 }
 
 int PacFileDecider::DoQuickCheckComplete(int result) {
   DCHECK(quick_check_enabled_);
-  base::TimeDelta delta = base::Time::Now() - quick_check_start_time_;
-  if (result == OK)
-    UMA_HISTOGRAM_TIMES("Net.WpadQuickCheckSuccess", delta);
-  else
-    UMA_HISTOGRAM_TIMES("Net.WpadQuickCheckFailure", delta);
-  request_.reset();
+  resolve_request_.reset();
   quick_check_timer_.Stop();
   if (result != OK)
     return TryToFallbackPacSource(result);
@@ -473,7 +476,7 @@ void PacFileDecider::Cancel() {
 
   switch (next_state_) {
     case STATE_QUICK_CHECK_COMPLETE:
-      request_.reset();
+      resolve_request_.reset();
       break;
     case STATE_WAIT_COMPLETE:
       wait_timer_.Stop();
@@ -491,7 +494,7 @@ void PacFileDecider::Cancel() {
   if (dhcp_pac_file_fetcher_)
     dhcp_pac_file_fetcher_->Cancel();
 
-  DCHECK(!request_);
+  DCHECK(!resolve_request_);
 
   DidComplete();
 }

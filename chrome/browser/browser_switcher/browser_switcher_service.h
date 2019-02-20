@@ -5,26 +5,53 @@
 #ifndef CHROME_BROWSER_BROWSER_SWITCHER_BROWSER_SWITCHER_SERVICE_H_
 #define CHROME_BROWSER_BROWSER_SWITCHER_BROWSER_SWITCHER_SERVICE_H_
 
+#include <memory>
+#include <string>
+
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "chrome/browser/browser_switcher/browser_switcher_prefs.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
 #include "url/gurl.h"
 
-#include <memory>
-
-class PrefService;
 class Profile;
 
 namespace browser_switcher {
 
-class AlternativeBrowserLauncher;
+class AlternativeBrowserDriver;
 class BrowserSwitcherSitelist;
 class ParsedXml;
-class XmlDownloader;
+
+class XmlDownloader {
+ public:
+  // Posts a task to start downloading+parsing the rules after |delay|. Calls
+  // |done_callback| when done, so the caller can apply the parsed rules and
+  // clean up this object.
+  XmlDownloader(Profile* profile,
+                GURL url,
+                base::TimeDelta delay,
+                base::OnceCallback<void(ParsedXml)> done_callback);
+  virtual ~XmlDownloader();
+
+ private:
+  void FetchXml();
+  void ParseXml(std::unique_ptr<std::string> bytes);
+  void DoneParsing(ParsedXml xml);
+
+  GURL url_;
+  scoped_refptr<network::SharedURLLoaderFactory> factory_;
+
+  std::unique_ptr<network::SimpleURLLoader> url_loader_;
+  base::OnceCallback<void(ParsedXml)> done_callback_;
+
+  base::WeakPtrFactory<XmlDownloader> weak_ptr_factory_;
+};
 
 // Manages per-profile resources for BrowserSwitcher.
 class BrowserSwitcherService : public KeyedService {
@@ -32,49 +59,36 @@ class BrowserSwitcherService : public KeyedService {
   explicit BrowserSwitcherService(Profile* profile);
   ~BrowserSwitcherService() override;
 
-  AlternativeBrowserLauncher* launcher();
-  BrowserSwitcherSitelist* sitelist();
+  // KeyedService:
+  void Shutdown() override;
 
-  void SetLauncherForTesting(
-      std::unique_ptr<AlternativeBrowserLauncher> launcher);
+  AlternativeBrowserDriver* driver();
+  BrowserSwitcherSitelist* sitelist();
+  const BrowserSwitcherPrefs& prefs() const;
+
+  void SetDriverForTesting(std::unique_ptr<AlternativeBrowserDriver> driver);
   void SetSitelistForTesting(std::unique_ptr<BrowserSwitcherSitelist> sitelist);
 
   static void SetFetchDelayForTesting(base::TimeDelta delay);
 
-#if defined(OS_WIN)
-  static void SetIeemSitelistUrlForTesting(const std::string& url);
-#endif
-
- private:
-#if defined(OS_WIN)
-  // Returns the URL to fetch to get Internet Explorer's Enterprise Mode
-  // sitelist, based on policy. Returns an empty (invalid) URL if IE's SiteList
-  // policy is unset.
-  static GURL GetIeemSitelistUrl();
-
-  void OnIeemSitelistParsed(ParsedXml xml);
-
-  std::unique_ptr<XmlDownloader> ieem_downloader_;
-
-  // URL to fetch the IEEM sitelist from. Only used for testing.
-  static base::Optional<std::string> ieem_sitelist_url_for_testing_;
-#endif
-
-  void OnExternalSitelistParsed(ParsedXml xml);
+ protected:
+  BrowserSwitcherPrefs prefs_;
 
   // Delay for the IEEM/external XML fetch tasks, launched from the constructor.
   static base::TimeDelta fetch_delay_;
 
+ private:
+  void OnExternalSitelistParsed(ParsedXml xml);
+
   std::unique_ptr<XmlDownloader> external_sitelist_downloader_;
 
   // Per-profile helpers.
-  std::unique_ptr<AlternativeBrowserLauncher> launcher_;
+  std::unique_ptr<AlternativeBrowserDriver> driver_;
   std::unique_ptr<BrowserSwitcherSitelist> sitelist_;
-
-  PrefService* const prefs_;
 
   base::WeakPtrFactory<BrowserSwitcherService> weak_ptr_factory_;
 
+ private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(BrowserSwitcherService);
 };
 

@@ -9,7 +9,7 @@
 namespace chromeos {
 
 namespace {
-const char kChromeVoxEnabledMessage[] = "chrome vox spoken feedback is ready";
+const char kChromeVoxEnabledMessage[] = "ChromeVox spoken feedback is ready";
 const char kChromeVoxAlertMessage[] = "Alert";
 const char kChromeVoxUpdate1[] = "chrome vox Updated Press chrome vox o,";
 const char kChromeVoxUpdate2[] = "n to learn more about chrome vox Next.";
@@ -78,7 +78,7 @@ bool SpeechMonitor::Speak(
     const content::UtteranceContinuousParameters& params) {
   content::TtsController::GetInstance()->OnTtsEvent(
       utterance_id, content::TTS_EVENT_END, static_cast<int>(utterance.size()),
-      std::string());
+      0, std::string());
   return true;
 }
 

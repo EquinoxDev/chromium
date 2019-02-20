@@ -7,11 +7,19 @@
  */
 
 /**
- * TODO(rekanorman): Remove permissions field once backend permissions are
- *   implemented.
- * @typedef {appManagement.mojom.App | {permissions: PermissionMap}}
+ * @typedef {appManagement.mojom.App}
  */
 let App;
+
+/**
+ * @typedef {appManagement.mojom.ExtensionAppPermissionMessage}
+ */
+let ExtensionAppPermissionMessage;
+
+/**
+ * @typedef {apps.mojom.Permission}
+ */
+let Permission;
 
 /**
  * Maps app ids to Apps.
@@ -29,33 +37,26 @@ let Page;
 
 /**
  * @typedef {{
- *   apps: AppMap,
- *   currentPage: Page,
+ *   term: ?string,
+ *   results: ?Array<App>,
+ * }}
+ */
+let SearchState;
+
+/**
+ * @typedef {{
+ *   allowedIds: !Set<string>,
+ *   blockedIds: !Set<string>,
+ * }}
+ */
+let NotificationsState;
+
+/**
+ * @typedef {{
+ *   apps: !AppMap,
+ *   currentPage: !Page,
+ *   search: !SearchState,
+ *   notifications: !NotificationsState,
  * }}
  */
 let AppManagementPageState;
-
-/**
- * TODO(rekanorman): Remove once backend permissions are implemented.
- * @typedef {appManagement.mojom.TestPermissionType}
- */
-let TestPermissionType;
-
-/**
- * TODO(rekanorman): Remove once backend permissions are implemented.
- * @typedef {boolean}
- */
-let PermissionValue;
-
-/**
- * TODO(rekanorman): Remove once backend permissions are implemented.
- * @typedef {Object<TestPermissionType, PermissionValue>}
- */
-let PermissionMap;
-
-/**
- * TODO(rekanorman): Remove once backend permissions are implemented.
- * @typedef {appManagement.mojom.PageHandlerInterface |
- * app_management.FakePageHandler}
- */
-let PageHandlerInterface;

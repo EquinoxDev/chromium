@@ -16,8 +16,10 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
+#include "base/single_thread_task_runner.h"
 #include "base/system/sys_info.h"
 #include "base/system/system_monitor.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "chromeos/audio/audio_devices_pref_handler_stub.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 
@@ -1387,15 +1389,10 @@ void CrasAudioHandler::UpdateDevicesAndSwitchActive(
     AudioDevice device(nodes[i]);
     audio_devices_[device.id] = device;
     if (!has_alternative_input_ && device.is_input &&
-        device.type != AUDIO_TYPE_INTERNAL_MIC &&
-        device.type != AUDIO_TYPE_KEYBOARD_MIC &&
-        device.type != AUDIO_TYPE_HOTWORD &&
-        device.type != AUDIO_TYPE_POST_MIX_LOOPBACK &&
-        device.type != AUDIO_TYPE_POST_DSP_LOOPBACK) {
+        device.IsExternalDevice()) {
       has_alternative_input_ = true;
-    } else if (!has_alternative_output_ &&
-               !device.is_input &&
-               device.type != AUDIO_TYPE_INTERNAL_SPEAKER) {
+    } else if (!has_alternative_output_ && !device.is_input &&
+               device.IsExternalDevice()) {
       has_alternative_output_ = true;
     }
 

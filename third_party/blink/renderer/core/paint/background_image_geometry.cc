@@ -83,8 +83,26 @@ IntPoint AccumulatedScrollOffsetForFixedBackground(
 
 }  // anonymous namespace
 
-void BackgroundImageGeometry::SetNoRepeatX(LayoutUnit x_offset,
+bool NeedsFullSizeDestination(const FillLayer& fill_layer) {
+  // When dealing with a mask, the dest rect needs to maintain the full size
+  // and the mask should be expanded to fill it out. This allows the mask to
+  // correctly mask the entire area it is meant to. This is unnecessary on the
+  // last layer, so the normal background path is taken for efficiency when
+  // creating the paint shader later on.
+  return fill_layer.GetType() == EFillLayerType::kMask && fill_layer.Next() &&
+         fill_layer.Composite() != kCompositeSourceOver;
+}
+
+void BackgroundImageGeometry::SetNoRepeatX(const FillLayer& fill_layer,
+                                           LayoutUnit x_offset,
                                            LayoutUnit snapped_x_offset) {
+  if (NeedsFullSizeDestination(fill_layer)) {
+    SetPhaseX(-x_offset.ToFloat());
+    SetSpaceSize(
+        LayoutSize(unsnapped_dest_rect_.Width(), SpaceSize().Height()));
+    return;
+  }
+
   // The snapped offset may not yet be snapped, so make sure it is an integer.
   snapped_x_offset = LayoutUnit(RoundToInt(snapped_x_offset));
 
@@ -110,6 +128,8 @@ void BackgroundImageGeometry::SetNoRepeatX(LayoutUnit x_offset,
 
     // Reduce the width of the dest rect to draw only the portion of the
     // tile that remains visible after offsetting the image.
+    // TODO(schenney): This might grow the dest rect if the dest rect has
+    // been adjusted for opaque borders.
     unsnapped_dest_rect_.SetWidth(tile_size_.Width() + x_offset);
     snapped_dest_rect_.SetWidth(tile_size_.Width() + snapped_x_offset);
   }
@@ -118,8 +138,16 @@ void BackgroundImageGeometry::SetNoRepeatX(LayoutUnit x_offset,
   SetSpaceSize(LayoutSize(LayoutUnit(), SpaceSize().Height()));
 }
 
-void BackgroundImageGeometry::SetNoRepeatY(LayoutUnit y_offset,
+void BackgroundImageGeometry::SetNoRepeatY(const FillLayer& fill_layer,
+                                           LayoutUnit y_offset,
                                            LayoutUnit snapped_y_offset) {
+  if (NeedsFullSizeDestination(fill_layer)) {
+    SetPhaseY(-y_offset.ToFloat());
+    SetSpaceSize(
+        LayoutSize(SpaceSize().Width(), unsnapped_dest_rect_.Height()));
+    return;
+  }
+
   // The snapped offset may not yet be snapped, so make sure it is an integer.
   snapped_y_offset = LayoutUnit(RoundToInt(snapped_y_offset));
 
@@ -145,6 +173,8 @@ void BackgroundImageGeometry::SetNoRepeatY(LayoutUnit y_offset,
 
     // Reduce the height of the dest rect to draw only the portion of the
     // tile that remains visible after offsetting the image.
+    // TODO(schenney): This might grow the dest rect if the dest rect has
+    // been adjusted for opaque borders.
     unsnapped_dest_rect_.SetHeight(tile_size_.Height() + y_offset);
     snapped_dest_rect_.SetHeight(tile_size_.Height() + snapped_y_offset);
   }
@@ -696,7 +726,6 @@ void BackgroundImageGeometry::ComputePositioningArea(
     snapped_box_offset =
         LayoutPoint(snapped_box_outset.Left() - snapped_dest_adjust.Left(),
                     snapped_box_outset.Top() - snapped_dest_adjust.Top());
-
     // For view backgrounds, the input paint rect is specified in root element
     // local coordinate (i.e. a transform is applied on the context for
     // painting), and is expanded to cover the whole canvas. Since left/top is
@@ -753,12 +782,12 @@ void BackgroundImageGeometry::CalculateFillTileSize(
           // an intrinsic ratio or size.
           tile_size_.SetWidth(positioning_area_size.Width());
         } else if (image_intrinsic_size.Height()) {
-          LayoutUnit adjusted_width = image_intrinsic_size.Width() *
-                                      tile_size_.Height() /
-                                      image_intrinsic_size.Height();
+          float adjusted_width = image_intrinsic_size.Width().ToFloat() /
+                                 image_intrinsic_size.Height().ToFloat() *
+                                 tile_size_.Height().ToFloat();
           if (image_intrinsic_size.Width() >= 1 && adjusted_width < 1)
-            adjusted_width = LayoutUnit(1);
-          tile_size_.SetWidth(adjusted_width);
+            adjusted_width = 1;
+          tile_size_.SetWidth(LayoutUnit(adjusted_width));
         }
       } else if (!layer_width.IsAuto() && layer_height.IsAuto()) {
         if (image->ImageHasRelativeSize()) {
@@ -766,12 +795,12 @@ void BackgroundImageGeometry::CalculateFillTileSize(
           // an intrinsic ratio or size.
           tile_size_.SetHeight(positioning_area_size.Height());
         } else if (image_intrinsic_size.Width()) {
-          LayoutUnit adjusted_height = image_intrinsic_size.Height() *
-                                       tile_size_.Width() /
-                                       image_intrinsic_size.Width();
+          float adjusted_height = image_intrinsic_size.Height().ToFloat() /
+                                  image_intrinsic_size.Width().ToFloat() *
+                                  tile_size_.Width().ToFloat();
           if (image_intrinsic_size.Height() >= 1 && adjusted_height < 1)
-            adjusted_height = LayoutUnit(1);
-          tile_size_.SetHeight(adjusted_height);
+            adjusted_height = 1;
+          tile_size_.SetHeight(LayoutUnit(adjusted_height));
         }
       } else if (layer_width.IsAuto() && layer_height.IsAuto()) {
         // If both width and height are auto, use the image's intrinsic size.
@@ -975,7 +1004,7 @@ void BackgroundImageGeometry::Calculate(const LayoutBoxModelObject* container,
         fill_layer.BackgroundXOrigin() == BackgroundEdgeOrigin::kRight
             ? snapped_available_width - computed_x_position
             : computed_x_position;
-    SetNoRepeatX(unsnapped_box_offset.X() + x_offset,
+    SetNoRepeatX(fill_layer, unsnapped_box_offset.X() + x_offset,
                  snapped_box_offset.X() + snapped_x_offset);
     if (offset_in_background_.X() > tile_size_.Width())
       unsnapped_dest_rect_ = snapped_dest_rect_ = LayoutRect();
@@ -1006,7 +1035,7 @@ void BackgroundImageGeometry::Calculate(const LayoutBoxModelObject* container,
         fill_layer.BackgroundYOrigin() == BackgroundEdgeOrigin::kBottom
             ? snapped_available_height - computed_y_position
             : computed_y_position;
-    SetNoRepeatY(unsnapped_box_offset.Y() + y_offset,
+    SetNoRepeatY(fill_layer, unsnapped_box_offset.Y() + y_offset,
                  snapped_box_offset.Y() + snapped_y_offset);
     if (offset_in_background_.Y() > tile_size_.Height())
       unsnapped_dest_rect_ = snapped_dest_rect_ = LayoutRect();

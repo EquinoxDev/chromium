@@ -31,7 +31,7 @@ namespace captured_sites_test_utils {
 //    user action.
 const base::TimeDelta default_action_timeout = base::TimeDelta::FromSeconds(30);
 // The amount of time to wait for a page to trigger a paint in response to a
-// an ation. The Captured Site Automation Framework uses this timeout to
+// an action. The Captured Site Automation Framework uses this timeout to
 // break out of a wait loop after a hover action.
 const base::TimeDelta visual_update_timeout = base::TimeDelta::FromSeconds(20);
 
@@ -152,10 +152,10 @@ class TestRecipeReplayChromeFeatureActionExecutor {
   // Chrome Autofill feature methods.
   // Triggers Chrome Autofill in the specified input element on the specified
   // document.
-  virtual bool AutofillForm(content::RenderFrameHost* frame,
-                            const std::string& focus_element_css_selector,
-                            const int attempts = 1,
-                            const gfx::Point& offset = gfx::Point(0, 0));
+  virtual bool AutofillForm(const std::string& focus_element_css_selector,
+                            const std::vector<std::string> iframe_path,
+                            const int attempts,
+                            content::RenderFrameHost* frame);
   virtual bool AddAutofillProfileInfo(const std::string& field_type,
                                       const std::string& field_value);
   virtual bool SetupAutofillProfile();
@@ -212,21 +212,32 @@ class TestRecipeReplayer {
                   const base::FilePath recipe_file_path);
 
   static void SetUpCommandLine(base::CommandLine* command_line);
-  static bool PlaceFocusOnElement(content::RenderFrameHost* frame,
-                                  const std::string& element_xpath,
-                                  const gfx::Point& offset);
-  static bool GetCenterCoordinateOfTargetElement(
-      content::RenderFrameHost* frame,
+  static bool ScrollElementIntoView(const std::string& element_xpath,
+                                    content::RenderFrameHost* frame);
+  static bool PlaceFocusOnElement(const std::string& element_xpath,
+                                  const std::vector<std::string> iframe_path,
+                                  content::RenderFrameHost* frame);
+  static bool GetBoundingRectOfTargetElement(
       const std::string& target_element_xpath,
-      int& x,
-      int& y);
+      const std::vector<std::string> iframe_path,
+      content::RenderFrameHost* frame,
+      gfx::Rect* output_rect);
   static bool SimulateLeftMouseClickAt(
-      content::RenderFrameHost* render_frame_host,
-      const gfx::Point& point);
+      const gfx::Point& point,
+      content::RenderFrameHost* render_frame_host);
   static bool SimulateMouseHoverAt(content::RenderFrameHost* render_frame_host,
                                    const gfx::Point& point);
 
  private:
+  static bool GetIFrameOffsetFromIFramePath(
+      const std::vector<std::string>& iframe_path,
+      content::RenderFrameHost* frame,
+      gfx::Vector2d* offset);
+  static bool GetBoundingRectOfTargetElement(
+      const std::string& target_element_xpath,
+      content::RenderFrameHost* frame,
+      gfx::Rect* output_rect);
+
   Browser* browser();
   TestRecipeReplayChromeFeatureActionExecutor* feature_action_executor();
   content::WebContents* GetWebContents();
@@ -264,14 +275,14 @@ class TestRecipeReplayer {
                                            std::string* xpath);
   bool GetTargetFrameFromAction(const base::DictionaryValue& action,
                                 content::RenderFrameHost** frame);
-  bool GetTargetFrameCoordOffsetFromAction(const base::DictionaryValue& action,
-                                           gfx::Point* point);
+  bool GetIFramePathFromAction(const base::DictionaryValue& action,
+                               std::vector<std::string>* iframe_path);
   bool GetTargetHTMLElementVisibilityEnumFromAction(
       const base::DictionaryValue& action,
       int* visibility_enum_val);
-  bool WaitForElementToBeReady(content::RenderFrameHost* frame,
-                               const std::string& xpath,
-                               const int visibility_enum_val);
+  bool WaitForElementToBeReady(const std::string& xpath,
+                               const int visibility_enum_val,
+                               content::RenderFrameHost* frame);
   bool WaitForStateChange(
       content::RenderFrameHost* frame,
       const std::vector<std::string>& state_assertions,
@@ -283,6 +294,10 @@ class TestRecipeReplayer {
       const std::string& element_xpath,
       const std::string& execute_function_body,
       const base::TimeDelta& time_to_wait_for_element = default_action_timeout);
+  bool GetElementProperty(const content::ToRenderFrameHost& frame,
+                          const std::string& element_xpath,
+                          const std::string& get_property_function_body,
+                          std::string* property);
   bool ExpectElementPropertyEquals(
       const content::ToRenderFrameHost& frame,
       const std::string& element_xpath,

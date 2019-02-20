@@ -46,7 +46,7 @@ class ModulePendingScriptTreeClient final : public ModuleTreeClient {
 };
 
 // PendingScript for a module script
-// https://html.spec.whatwg.org/multipage/webappapis.html#module-script.
+// https://html.spec.whatwg.org/C/#module-script.
 class CORE_EXPORT ModulePendingScript : public PendingScript {
  public:
   static ModulePendingScript* Create(ScriptElementBase* element,
@@ -79,8 +79,7 @@ class CORE_EXPORT ModulePendingScript : public PendingScript {
   bool IsExternal() const override { return is_external_; }
   bool WasCanceled() const override { return false; }
 
-  bool StartStreamingIfPossible(base::OnceClosure) override { return false; }
-  bool IsCurrentlyStreaming() const override { return false; }
+  void StartStreamingIfPossible() override {}
 
   KURL UrlForTracing() const override { return NullURL(); }
 

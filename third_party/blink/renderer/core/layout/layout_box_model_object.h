@@ -46,12 +46,6 @@ enum PaintLayerType {
   kForcedPaintLayer
 };
 
-enum : uint32_t {
-  kBackgroundPaintInGraphicsLayer = 1 << 0,
-  kBackgroundPaintInScrollingContents = 1 << 1
-};
-using BackgroundPaintLocation = uint32_t;
-
 // Modes for some of the line-related functions.
 enum LinePositionMode {
   kPositionOnContainingLine,
@@ -497,7 +491,7 @@ class CORE_EXPORT LayoutBoxModelObject : public LayoutObject {
   bool HasAutoHeightOrContainingBlockWithAutoHeight(
       RegisterPercentageDescendant = kRegisterPercentageDescendant) const;
   LayoutBlock* ContainingBlockForAutoHeightDetection(
-      Length logical_height) const;
+      const Length& logical_height) const;
 
   void AddOutlineRectsForNormalChildren(Vector<LayoutRect>&,
                                         const LayoutPoint& additional_offset,

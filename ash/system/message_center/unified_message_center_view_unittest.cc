@@ -45,14 +45,15 @@ class TestUnifiedMessageCenterView : public UnifiedMessageCenterView {
 
   ~TestUnifiedMessageCenterView() override = default;
 
-  void SetNotificationHeightBelowScroll(int height_below_scroll) override {
-    height_below_scroll_ = height_below_scroll;
+  void SetNotificationRectBelowScroll(
+      const gfx::Rect& rect_below_scroll) override {
+    rect_below_scroll_ = rect_below_scroll;
   }
 
-  int height_below_scroll() const { return height_below_scroll_; }
+  const gfx::Rect& rect_below_scroll() const { return rect_below_scroll_; }
 
  private:
-  int height_below_scroll_ = -1;
+  gfx::Rect rect_below_scroll_;
 
   DISALLOW_COPY_AND_ASSIGN(TestUnifiedMessageCenterView);
 };
@@ -89,7 +90,7 @@ class UnifiedMessageCenterViewTest : public AshTestBase,
 
  protected:
   std::string AddNotification() {
-    std::string id = base::IntToString(id_++);
+    std::string id = base::NumberToString(id_++);
     MessageCenter::Get()->AddNotification(std::make_unique<Notification>(
         message_center::NOTIFICATION_TYPE_BASE_FORMAT, id,
         base::UTF8ToUTF16("test title"), base::UTF8ToUTF16("test message"),
@@ -422,7 +423,7 @@ TEST_F(UnifiedMessageCenterViewTest, StackingCounterRemovedWithNotifications) {
   EXPECT_FALSE(GetStackingCounter()->visible());
 }
 
-TEST_F(UnifiedMessageCenterViewTest, HeightBelowScroll) {
+TEST_F(UnifiedMessageCenterViewTest, RectBelowScroll) {
   for (size_t i = 0; i < 6; ++i)
     AddNotification();
   CreateMessageCenterView();
@@ -433,15 +434,15 @@ TEST_F(UnifiedMessageCenterViewTest, HeightBelowScroll) {
             message_center_view()->bounds().height());
   message_center_view()->OnMessageCenterScrolled();
 
-  EXPECT_EQ(0, message_center_view()->height_below_scroll());
+  EXPECT_EQ(0, message_center_view()->rect_below_scroll().height());
 
   GetScroller()->ScrollToPosition(GetScrollBar(), 0);
   message_center_view()->OnMessageCenterScrolled();
-  EXPECT_LT(0, message_center_view()->height_below_scroll());
+  EXPECT_LT(0, message_center_view()->rect_below_scroll().height());
 }
 
 TEST_F(UnifiedMessageCenterViewTest,
-       HeightBelowScrollWithTargetingFirstNotification) {
+       RectBelowScrollWithTargetingFirstNotification) {
   std::vector<std::string> ids;
   for (size_t i = 0; i < 10; ++i)
     ids.push_back(AddNotification());
@@ -458,11 +459,10 @@ TEST_F(UnifiedMessageCenterViewTest,
   EXPECT_EQ(0, GetScroller()->GetVisibleRect().y());
   EXPECT_EQ(
       GetMessageListView()->height() - GetScroller()->GetVisibleRect().height(),
-      message_center_view()->height_below_scroll());
+      message_center_view()->rect_below_scroll().height());
 }
 
-TEST_F(UnifiedMessageCenterViewTest,
-       HeightBelowScrollWithTargetingNotification) {
+TEST_F(UnifiedMessageCenterViewTest, RectBelowScrollWithTargetingNotification) {
   std::vector<std::string> ids;
   for (size_t i = 0; i < 10; ++i)
     ids.push_back(AddNotification());
@@ -477,11 +477,11 @@ TEST_F(UnifiedMessageCenterViewTest,
   message_center_view()->OnMessageCenterScrolled();
 
   EXPECT_EQ(GetMessageListView()->GetLastNotificationBounds().height(),
-            message_center_view()->height_below_scroll());
+            message_center_view()->rect_below_scroll().height());
 }
 
 TEST_F(UnifiedMessageCenterViewTest,
-       HeightBelowScrollWithTargetingLastNotification) {
+       RectBelowScrollWithTargetingLastNotification) {
   std::vector<std::string> ids;
   for (size_t i = 0; i < 10; ++i)
     ids.push_back(AddNotification());
@@ -495,11 +495,11 @@ TEST_F(UnifiedMessageCenterViewTest,
             message_center_view()->bounds().height());
   message_center_view()->OnMessageCenterScrolled();
 
-  EXPECT_EQ(0, message_center_view()->height_below_scroll());
+  EXPECT_EQ(0, message_center_view()->rect_below_scroll().height());
 }
 
 TEST_F(UnifiedMessageCenterViewTest,
-       HeightBelowScrollWithTargetingInvalidNotification) {
+       RectBelowScrollWithTargetingInvalidNotification) {
   std::vector<std::string> ids;
   for (size_t i = 0; i < 10; ++i)
     ids.push_back(AddNotification());
@@ -513,7 +513,7 @@ TEST_F(UnifiedMessageCenterViewTest,
             message_center_view()->bounds().height());
   message_center_view()->OnMessageCenterScrolled();
 
-  EXPECT_EQ(0, message_center_view()->height_below_scroll());
+  EXPECT_EQ(0, message_center_view()->rect_below_scroll().height());
 }
 
 }  // namespace ash

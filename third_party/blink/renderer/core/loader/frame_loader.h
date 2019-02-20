@@ -34,6 +34,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LOADER_FRAME_LOADER_H_
 
 #include "base/macros.h"
+#include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/platform/web_scoped_virtual_time_pauser.h"
 #include "third_party/blink/public/web/web_document_loader.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
@@ -61,7 +62,6 @@ class LocalFrame;
 class Frame;
 class LocalFrameClient;
 class ProgressTracker;
-class ResourceError;
 class ResourceRequest;
 class SerializedScriptValue;
 class TracedValue;
@@ -153,18 +153,12 @@ class CORE_EXPORT FrameLoader final {
     return provisional_document_loader_.Get();
   }
 
-  void LoadFailed(DocumentLoader*, const ResourceError&);
-
-  bool IsLoadingMainFrame() const;
-
-  bool ShouldTreatURLAsSameAsCurrent(const KURL&) const;
-  bool ShouldTreatURLAsSrcdocDocument(const KURL&) const;
-
   void SetDefersLoading(bool);
 
   void DidExplicitOpen();
 
   String UserAgent() const;
+  blink::UserAgentMetadata UserAgentMetadata() const;
 
   void DispatchDidClearWindowObjectInMainWorld();
   void DispatchDidClearDocumentOfWindowObject();
@@ -212,7 +206,6 @@ class CORE_EXPORT FrameLoader final {
                                        WebFrameLoadType,
                                        Document*);
 
-  bool ShouldSerializeScrollAnchor();
   void SaveScrollAnchor();
   void SaveScrollState();
   void RestoreScrollPositionAndViewState();
@@ -240,11 +233,11 @@ class CORE_EXPORT FrameLoader final {
 
  private:
   bool PrepareRequestForThisFrame(FrameLoadRequest&);
-  WebFrameLoadType DetermineFrameLoadType(
-      const ResourceRequest& resource_request,
-      Document* origin_document,
-      const KURL& failing_url,
-      WebFrameLoadType);
+  WebFrameLoadType DetermineFrameLoadType(const KURL& url,
+                                          const AtomicString& http_method,
+                                          Document* origin_document,
+                                          const KURL& failing_url,
+                                          WebFrameLoadType);
 
   bool ShouldPerformFragmentNavigation(bool is_form_submission,
                                        const String& http_method,
@@ -254,9 +247,8 @@ class CORE_EXPORT FrameLoader final {
 
   // Returns whether we should continue with new navigation.
   bool CancelProvisionalLoaderForNewNavigation(
-      bool cancel_scheduled_navigations);
-
-  void ClearInitialScrollState();
+      bool cancel_scheduled_navigations,
+      bool is_starting_blank_navigation);
 
   void LoadInSameDocument(const KURL&,
                           scoped_refptr<SerializedScriptValue> state_object,
@@ -267,21 +259,14 @@ class CORE_EXPORT FrameLoader final {
                           std::unique_ptr<WebDocumentLoader::ExtraData>);
   void RestoreScrollPositionAndViewState(WebFrameLoadType,
                                          bool is_same_document,
-                                         HistoryItem::ViewState*,
+                                         const HistoryItem::ViewState&,
                                          HistoryScrollRestorationType);
-
-  void ScheduleCheckCompleted();
 
   void DetachDocumentLoader(Member<DocumentLoader>&,
                             bool flush_microtask_queue = false);
 
   std::unique_ptr<TracedValue> ToTracedValue() const;
   void TakeObjectSnapshot() const;
-
-  DocumentLoader* CreateDocumentLoader(
-      WebNavigationType,
-      std::unique_ptr<WebNavigationParams>,
-      std::unique_ptr<WebDocumentLoader::ExtraData>);
 
   LocalFrameClient* Client() const;
 

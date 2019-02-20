@@ -5,11 +5,14 @@
 #include <queue>
 
 #include "ash/accelerators/accelerator_controller.h"
+#include "ash/app_list/views/app_list_view.h"
 #include "ash/public/cpp/accelerators.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/unified/unified_system_tray.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/macros.h"
 #include "base/strings/pattern.h"
@@ -74,6 +77,9 @@ class LoggedInSpokenFeedbackTest : public InProcessBrowserTest {
 
   void TearDownOnMainThread() override {
     AccessibilityManager::SetBrailleControllerForTest(nullptr);
+    // Unload the ChromeVox extension so the browser doesn't try to respond to
+    // in-flight requests during test shutdown. https://crbug.com/923090
+    AccessibilityManager::Get()->EnableSpokenFeedback(false);
     AutomationManagerAura::GetInstance()->Disable();
   }
 
@@ -308,9 +314,10 @@ class SpokenFeedbackTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(TestAsNormalAndGuestUser,
-                        SpokenFeedbackTest,
-                        ::testing::Values(kTestAsNormalUser, kTestAsGuestUser));
+INSTANTIATE_TEST_SUITE_P(TestAsNormalAndGuestUser,
+                         SpokenFeedbackTest,
+                         ::testing::Values(kTestAsNormalUser,
+                                           kTestAsGuestUser));
 
 // TODO(tommi): Flakily hitting HasOneRef DCHECK in
 // AudioOutputResampler::Shutdown, see crbug.com/630031.
@@ -341,6 +348,90 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, DISABLED_TypeInOmnibox) {
 
   SendKeyPress(ui::VKEY_BACK);
   EXPECT_EQ("z", speech_monitor_.GetNextUtterance());
+}
+
+IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, DISABLED_LauncherStateTransition) {
+  // Do not running expand arrow hinting animation to avoid msan test crash.
+  // (See https://crbug.com/926038)
+  app_list::AppListView::SetShortAnimationForTesting(true);
+  EnableChromeVox();
+
+  EXPECT_TRUE(PerformAcceleratorAction(ash::FOCUS_SHELF));
+
+  while (true) {
+    std::string utterance = speech_monitor_.GetNextUtterance();
+    if (base::MatchPattern(utterance, "Launcher"))
+      break;
+  }
+
+  EXPECT_EQ("Button", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ("Shelf", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ("Tool bar", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ(", window", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ("Press Search plus Space to activate.",
+            speech_monitor_.GetNextUtterance());
+
+  // Press space on the launcher button in shelf, this opens peeking launcher.
+  SendKeyPressWithSearch(ui::VKEY_SPACE);
+  EXPECT_EQ("Edit text", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ(", window", speech_monitor_.GetNextUtterance());
+
+  // Check that Launcher, partial view state is announced.
+  EXPECT_EQ("Launcher, partial view", speech_monitor_.GetNextUtterance());
+
+  // Move focus to expand all apps button;
+  SendKeyPressWithSearchAndShift(ui::VKEY_TAB);
+  EXPECT_EQ("Expand to all apps", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ("Button", speech_monitor_.GetNextUtterance());
+  EXPECT_EQ("Press Search plus Space to activate.",
+            speech_monitor_.GetNextUtterance());
+
+  // Press space on expand arrow to go to fullscreen launcher.
+  SendKeyPressWithSearch(ui::VKEY_SPACE);
+  EXPECT_EQ("Edit text", speech_monitor_.GetNextUtterance());
+
+  // Check that Launcher, all apps state is announced.
+  EXPECT_EQ("Launcher, all apps", speech_monitor_.GetNextUtterance());
+  app_list::AppListView::SetShortAnimationForTesting(false);
+}
+
+IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest,
+                       DISABLED_DisabledFullscreenExpandButton) {
+  // Do not running expand arrow hinting animation to avoid msan test crash.
+  // (See https://crbug.com/926038)
+  app_list::AppListView::SetShortAnimationForTesting(true);
+  EnableChromeVox();
+
+  EXPECT_TRUE(PerformAcceleratorAction(ash::FOCUS_SHELF));
+
+  while (speech_monitor_.GetNextUtterance() !=
+         "Press Search plus Space to activate.") {
+  }
+
+  // Press space on the launcher button in shelf, this opens peeking launcher.
+  SendKeyPressWithSearch(ui::VKEY_SPACE);
+  while (speech_monitor_.GetNextUtterance() != "Launcher, partial view") {
+  }
+
+  // Move focus to expand all apps button.
+  SendKeyPressWithSearchAndShift(ui::VKEY_TAB);
+  while (speech_monitor_.GetNextUtterance() !=
+         "Press Search plus Space to activate.") {
+  }
+
+  // Press space on expand arrow to go to fullscreen launcher.
+  SendKeyPressWithSearch(ui::VKEY_SPACE);
+  while (speech_monitor_.GetNextUtterance() != "Launcher, all apps") {
+  }
+
+  // Make sure the first traversal left is not the expand arrow button.
+  SendKeyPressWithSearch(ui::VKEY_LEFT);
+  EXPECT_NE("Expand to all apps", speech_monitor_.GetNextUtterance());
+
+  // Make sure the second traversal left is not the expand arrow button.
+  SendKeyPressWithSearch(ui::VKEY_LEFT);
+  EXPECT_NE("Expand to all apps", speech_monitor_.GetNextUtterance());
+  app_list::AppListView::SetShortAnimationForTesting(false);
 }
 
 IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, FocusShelf) {
@@ -529,12 +620,6 @@ IN_PROC_BROWSER_TEST_P(SpokenFeedbackTest, OverviewMode) {
   EnableChromeVox();
 
   EXPECT_TRUE(PerformAcceleratorAction(ash::TOGGLE_OVERVIEW));
-  while (true) {
-    std::string utterance = speech_monitor_.GetNextUtterance();
-    if (base::MatchPattern(utterance, "Edit text"))
-      break;
-  }
-
   while (true) {
     std::string utterance = speech_monitor_.GetNextUtterance();
     if (utterance == "Entered window overview mode")

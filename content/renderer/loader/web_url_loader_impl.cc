@@ -14,9 +14,11 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/optional.h"
+#include "base/sequence_checker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -24,6 +26,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/child/child_thread_impl.h"
+#include "content/common/content_constants_internal.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/navigation_policy.h"
@@ -35,6 +38,7 @@
 #include "content/renderer/loader/resource_dispatcher.h"
 #include "content/renderer/loader/shared_memory_data_consumer_handle.h"
 #include "content/renderer/loader/sync_load_response.h"
+#include "content/renderer/loader/url_response_body_consumer.h"
 #include "content/renderer/loader/web_url_request_util.h"
 #include "net/base/data_url.h"
 #include "net/base/filename_util.h"
@@ -53,6 +57,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/mime_util/mime_util.h"
 #include "third_party/blink/public/platform/file_path_conversion.h"
 #include "third_party/blink/public/platform/interface_provider.h"
@@ -169,37 +174,6 @@ net::RequestPriority ConvertWebKitPriorityToNetPriority(
       NOTREACHED();
       return net::LOW;
   }
-}
-
-// Extracts info from a data scheme URL |url| into |info| and |data|. Returns
-// net::OK if successful. Returns a net error code otherwise.
-int GetInfoFromDataURL(const GURL& url,
-                       network::ResourceResponseInfo* info,
-                       std::string* data) {
-  // Assure same time for all time fields of data: URLs.
-  Time now = Time::Now();
-  info->load_timing.request_start = TimeTicks::Now();
-  info->load_timing.request_start_time = now;
-  info->request_time = now;
-  info->response_time = now;
-
-  std::string mime_type;
-  std::string charset;
-  scoped_refptr<net::HttpResponseHeaders> headers(
-      new net::HttpResponseHeaders(std::string()));
-  int result = net::URLRequestDataJob::BuildResponse(
-      url, &mime_type, &charset, data, headers.get());
-  if (result != net::OK)
-    return result;
-
-  info->headers = headers;
-  info->mime_type.swap(mime_type);
-  info->charset.swap(charset);
-  info->content_length = data->length();
-  info->encoded_data_length = 0;
-  info->encoded_body_length = 0;
-
-  return net::OK;
 }
 
 // Convert a net::SignedCertificateTimestampAndStatus object to a
@@ -420,11 +394,37 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   friend class base::RefCounted<Context>;
   ~Context();
 
+  class ReceivedDataImpl : public ReceivedData {
+   public:
+    ReceivedDataImpl(const char* payload,
+                     int length,
+                     scoped_refptr<Context> context)
+        : payload_(payload), length_(length), context_(std::move(context)) {}
+
+    ~ReceivedDataImpl() override {
+      DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+      context_->OnBodyHasBeenRead(length_);
+    }
+
+    const char* payload() override { return payload_; }
+    int length() override { return length_; }
+
+   private:
+    SEQUENCE_CHECKER(sequence_checker_);
+    const char* const payload_;
+    const int length_;
+    scoped_refptr<Context> context_;
+  };
+
   // Called when the body data stream is detached from the reader side.
   void CancelBodyStreaming();
   // We can optimize the handling of data URLs in most cases.
   bool CanHandleDataURLRequestLocally(const WebURLRequest& request) const;
-  void HandleDataURL();
+
+  void OnBodyAvailable(MojoResult, const mojo::HandleSignalsState&);
+  void OnBodyHasBeenRead(uint32_t read_bytes);
+
+  void MaybeCompleteRequest();
 
   static net::NetworkTrafficAnnotationTag GetTrafficAnnotationTag(
       const blink::WebURLRequest& request);
@@ -441,15 +441,25 @@ class WebURLLoaderImpl::Context : public base::RefCounted<Context> {
   // TODO(tyoshino): Investigate whether it's worth propagating the new value.
   bool report_raw_headers_;
 
+  // ResponseLoadViaDataPipe: Consume the data in Context when it's set to
+  // false.
+  bool pass_response_pipe_to_client_ = false;
+
   WebURLLoaderClient* client_;
   ResourceDispatcher* resource_dispatcher_;
   std::unique_ptr<WebResourceLoadingTaskRunnerHandle> task_runner_handle_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   std::unique_ptr<SharedMemoryDataConsumerHandle::Writer> body_stream_writer_;
   mojom::KeepAliveHandlePtr keep_alive_handle_;
-  enum DeferState {NOT_DEFERRING, SHOULD_DEFER, DEFERRED_DATA};
+  enum DeferState { NOT_DEFERRING, SHOULD_DEFER };
   DeferState defers_loading_;
   int request_id_;
+
+  // Used when ResponseLoadViaDataPipe is enabled and
+  // |pass_response_pipe_to_client_| is false.
+  mojo::ScopedDataPipeConsumerHandle body_handle_;
+  mojo::SimpleWatcher body_watcher_;
+  base::Optional<network::URLLoaderCompletionStatus> completion_status_;
 
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
 };
@@ -534,6 +544,9 @@ WebURLLoaderImpl::Context::Context(
       keep_alive_handle_(std::move(keep_alive_handle_ptr)),
       defers_loading_(NOT_DEFERRING),
       request_id_(-1),
+      body_watcher_(FROM_HERE,
+                    mojo::SimpleWatcher::ArmingPolicy::MANUAL,
+                    task_runner_),
       url_loader_factory_(std::move(url_loader_factory)) {
   DCHECK(url_loader_factory_ || !resource_dispatcher);
 }
@@ -561,11 +574,13 @@ void WebURLLoaderImpl::Context::SetDefersLoading(bool value) {
   if (value && defers_loading_ == NOT_DEFERRING) {
     defers_loading_ = SHOULD_DEFER;
   } else if (!value && defers_loading_ != NOT_DEFERRING) {
-    if (defers_loading_ == DEFERRED_DATA) {
-      task_runner_->PostTask(FROM_HERE,
-                             base::BindOnce(&Context::HandleDataURL, this));
-    }
     defers_loading_ = NOT_DEFERRING;
+
+    if (body_watcher_.IsWatching()) {
+      DCHECK(base::FeatureList::IsEnabled(
+          blink::features::kResourceLoadViaDataPipe));
+      body_watcher_.ArmOrNotify();
+    }
   }
 }
 
@@ -591,20 +606,11 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   url_ = request.Url();
   use_stream_on_response_ = request.UseStreamOnResponse();
   report_raw_headers_ = request.ReportRawHeaders();
+  pass_response_pipe_to_client_ = request.PassResponsePipeToClient();
 
-  if (CanHandleDataURLRequestLocally(request)) {
-    if (sync_load_response) {
-      // This is a sync load. Do the work now.
-      sync_load_response->url = url_;
-      sync_load_response->error_code =
-          GetInfoFromDataURL(sync_load_response->url, &sync_load_response->info,
-                             &sync_load_response->data);
-    } else {
-      task_runner_->PostTask(FROM_HERE,
-                             base::BindOnce(&Context::HandleDataURL, this));
-    }
-    return;
-  }
+  // TODO(https://crbug.com/923779): Remove this once after we can confirm it's
+  // working well.
+  CHECK(!CanHandleDataURLRequestLocally(request));
 
   std::unique_ptr<NavigationResponseOverrideParameters> response_override;
   if (request.GetExtraData()) {
@@ -674,10 +680,13 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
     resource_request->headers.SetHeaderIfMissing(network::kAcceptHeader,
                                                  network::kDefaultAcceptHeader);
   }
-  resource_request->requested_with_header =
-      WebString(request.GetRequestedWithHeader()).Utf8();
-  resource_request->client_data_header =
-      WebString(request.GetClientDataHeader()).Utf8();
+  // Set X-Requested-With header to cors_exempt_headers rather than headers to
+  // be exempted from CORS checks.
+  if (!request.GetRequestedWithHeader().IsEmpty()) {
+    resource_request->cors_exempt_headers.SetHeader(
+        kCorsExemptRequestedWithHeaderName,
+        WebString(request.GetRequestedWithHeader()).Utf8());
+  }
 
   if (resource_request->resource_type == RESOURCE_TYPE_PREFETCH ||
       resource_request->resource_type == RESOURCE_TYPE_FAVICON) {
@@ -782,17 +791,11 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
 
   TRACE_EVENT_WITH_FLOW0("loading", "WebURLLoaderImpl::Context::Start", this,
                          TRACE_EVENT_FLAG_FLOW_OUT);
-  base::OnceClosure continue_navigation_function;
   request_id_ = resource_dispatcher_->StartAsync(
       std::move(resource_request), request.RequestorID(), task_runner_,
       GetTrafficAnnotationTag(request), false /* is_sync */,
       request.PassResponsePipeToClient(), std::move(peer), url_loader_factory_,
-      std::move(throttles), std::move(response_override),
-      &continue_navigation_function);
-  if (client_) {
-    client_->SetContinueNavigationRequestCallback(
-        std::move(continue_navigation_function));
-  }
+      std::move(throttles), std::move(response_override));
 
   if (defers_loading_ != NOT_DEFERRING)
     resource_dispatcher_->SetDefersLoading(request_id_, true);
@@ -865,6 +868,20 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
 
 void WebURLLoaderImpl::Context::OnStartLoadingResponseBody(
     mojo::ScopedDataPipeConsumerHandle body) {
+  if (!pass_response_pipe_to_client_) {
+    DCHECK(base::FeatureList::IsEnabled(
+        blink::features::kResourceLoadViaDataPipe));
+    body_handle_ = std::move(body);
+    body_watcher_.Watch(
+        body_handle_.get(),
+        MOJO_HANDLE_SIGNAL_READABLE | MOJO_HANDLE_SIGNAL_PEER_CLOSED,
+        MOJO_TRIGGER_CONDITION_SIGNALS_SATISFIED,
+        base::BindRepeating(&WebURLLoaderImpl::Context::OnBodyAvailable, this));
+    if (defers_loading_ == NOT_DEFERRING)
+      OnBodyAvailable(MOJO_RESULT_OK, {});
+    return;
+  }
+
   if (client_)
     client_->DidStartLoadingResponseBody(std::move(body));
 }
@@ -880,12 +897,10 @@ void WebURLLoaderImpl::Context::OnReceivedData(
       "loading", "WebURLLoaderImpl::Context::OnReceivedData",
       this, TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
 
-  // We dispatch the data even when |useStreamOnResponse()| is set, in order
-  // to make Devtools work.
-  client_->DidReceiveData(payload, data_length);
-
   if (use_stream_on_response_) {
     body_stream_writer_->AddData(std::move(data));
+  } else {
+    client_->DidReceiveData(payload, data_length);
   }
 }
 
@@ -905,36 +920,13 @@ void WebURLLoaderImpl::Context::OnReceivedCachedMetadata(
 
 void WebURLLoaderImpl::Context::OnCompletedRequest(
     const network::URLLoaderCompletionStatus& status) {
-  int64_t total_transfer_size = status.encoded_data_length;
-  int64_t encoded_body_size = status.encoded_body_length;
-
-  if (body_stream_writer_ && status.error_code != net::OK)
-    body_stream_writer_->Fail();
-  body_stream_writer_.reset();
-
-  if (client_) {
-    TRACE_EVENT_WITH_FLOW0(
-        "loading", "WebURLLoaderImpl::Context::OnCompletedRequest",
-        this, TRACE_EVENT_FLAG_FLOW_IN);
-
-    if (status.error_code != net::OK) {
-      const WebURLError::HasCopyInCache has_copy_in_cache =
-          status.exists_in_cache ? WebURLError::HasCopyInCache::kTrue
-                                 : WebURLError::HasCopyInCache::kFalse;
-      client_->DidFail(
-          status.cors_error_status
-              ? WebURLError(*status.cors_error_status, has_copy_in_cache, url_)
-              : WebURLError(status.error_code, status.extended_error_code,
-                            has_copy_in_cache,
-                            WebURLError::IsWebSecurityViolation::kFalse, url_),
-          total_transfer_size, encoded_body_size, status.decoded_body_length);
-    } else {
-      client_->DidFinishLoading(status.completion_time, total_transfer_size,
-                                encoded_body_size, status.decoded_body_length,
-                                status.should_report_corb_blocking,
-                                status.cors_preflight_timing_info);
-    }
+  if (completion_status_.has_value()) {
+    // |completion_status_| could be set before OnCompletedRequest() is called
+    // when Mojo error happens during reading the body.
+    return;
   }
+  completion_status_ = status;
+  MaybeCompleteRequest();
 }
 
 WebURLLoaderImpl::Context::~Context() {
@@ -996,29 +988,99 @@ bool WebURLLoaderImpl::Context::CanHandleDataURLRequestLocally(
   return false;
 }
 
-void WebURLLoaderImpl::Context::HandleDataURL() {
-  DCHECK_NE(defers_loading_, DEFERRED_DATA);
-  if (defers_loading_ == SHOULD_DEFER) {
-      defers_loading_ = DEFERRED_DATA;
+void WebURLLoaderImpl::Context::OnBodyAvailable(
+    MojoResult,
+    const mojo::HandleSignalsState&) {
+  // Cancel may happen so that we need to protect |this|.
+  scoped_refptr<Context> protect(this);
+  uint32_t read_bytes = 0;
+  // |client_| is nullptr when the request is canceled.
+  while (client_ && defers_loading_ == NOT_DEFERRING) {
+    const void* buffer = nullptr;
+    uint32_t available_bytes = 0;
+    MojoResult rv = body_handle_->BeginReadData(&buffer, &available_bytes,
+                                                MOJO_READ_DATA_FLAG_NONE);
+    if (rv == MOJO_RESULT_SHOULD_WAIT) {
+      body_watcher_.ArmOrNotify();
       return;
+    }
+    if (rv == MOJO_RESULT_FAILED_PRECONDITION) {
+      body_handle_.reset();
+      body_watcher_.Cancel();
+      MaybeCompleteRequest();
+      return;
+    }
+    if (rv == MOJO_RESULT_BUSY) {
+      // It's in the two phase read. It means that the ReceivedData hasn't been
+      // consumed yet.
+      return;
+    }
+    if (rv != MOJO_RESULT_OK) {
+      body_handle_.reset();
+      body_watcher_.Cancel();
+      completion_status_ = network::URLLoaderCompletionStatus(net::ERR_FAILED);
+      MaybeCompleteRequest();
+      return;
+    }
+    DCHECK_EQ(MOJO_RESULT_OK, rv);
+    DCHECK_LE(read_bytes, URLResponseBodyConsumer::kMaxNumConsumedBytesInTask);
+    available_bytes = std::min(
+        available_bytes,
+        URLResponseBodyConsumer::kMaxNumConsumedBytesInTask - read_bytes);
+    if (available_bytes == 0) {
+      // We've already read kMaxNumConsumedBytesInTask bytes of the body in this
+      // task. Defer the remaining to the next task.
+      rv = body_handle_->EndReadData(0);
+      DCHECK_EQ(MOJO_RESULT_OK, rv);
+      body_watcher_.ArmOrNotify();
+      return;
+    }
+    read_bytes += available_bytes;
+    OnReceivedData(std::make_unique<ReceivedDataImpl>(
+        static_cast<const char*>(buffer), available_bytes, this));
+  }
+}
+
+void WebURLLoaderImpl::Context::OnBodyHasBeenRead(uint32_t read_bytes) {
+  MojoResult rv = body_handle_->EndReadData(read_bytes);
+  DCHECK_EQ(MOJO_RESULT_OK, rv);
+  if (defers_loading_ == NOT_DEFERRING)
+    body_watcher_.ArmOrNotify();
+}
+
+void WebURLLoaderImpl::Context::MaybeCompleteRequest() {
+  if (!completion_status_.has_value() || body_handle_.is_valid()) {
+    DCHECK(base::FeatureList::IsEnabled(
+        blink::features::kResourceLoadViaDataPipe));
+    // OnCompletedRequest() hasn't been called yet or the body didn't reach to
+    // the end.
+    return;
   }
 
-  network::ResourceResponseInfo info;
-  std::string data;
+  int64_t total_transfer_size = completion_status_->encoded_data_length;
+  int64_t encoded_body_size = completion_status_->encoded_body_length;
 
-  int error_code = GetInfoFromDataURL(url_, &info, &data);
+  if (body_stream_writer_ && completion_status_->error_code != net::OK)
+    body_stream_writer_->Fail();
+  body_stream_writer_.reset();
 
-  if (error_code == net::OK) {
-    OnReceivedResponse(info);
-    auto size = data.size();
-    if (size != 0)
-      OnReceivedData(std::make_unique<FixedReceivedData>(data.data(), size));
+  if (client_) {
+    TRACE_EVENT_WITH_FLOW0("loading",
+                           "WebURLLoaderImpl::Context::OnCompletedRequest",
+                           this, TRACE_EVENT_FLAG_FLOW_IN);
+
+    if (completion_status_->error_code != net::OK) {
+      client_->DidFail(PopulateURLError(*completion_status_, url_),
+                       total_transfer_size, encoded_body_size,
+                       completion_status_->decoded_body_length);
+    } else {
+      client_->DidFinishLoading(completion_status_->completion_time,
+                                total_transfer_size, encoded_body_size,
+                                completion_status_->decoded_body_length,
+                                completion_status_->should_report_corb_blocking,
+                                completion_status_->cors_preflight_timing_info);
+    }
   }
-
-  network::URLLoaderCompletionStatus status(error_code);
-  status.encoded_body_length = data.size();
-  status.decoded_body_length = data.size();
-  OnCompletedRequest(status);
 }
 
 // WebURLLoaderImpl::RequestPeerImpl ------------------------------------------
@@ -1114,7 +1176,6 @@ void WebURLLoaderImpl::PopulateURLResponse(
       net::IsCertStatusError(info.cert_status) &&
       !net::IsCertStatusMinorError(info.cert_status));
   response->SetCTPolicyCompliance(info.ct_policy_compliance);
-  response->SetIsLegacySymantecCert(info.is_legacy_symantec_cert);
   response->SetIsLegacyTLSVersion(info.is_legacy_tls_version);
   response->SetAppCacheID(info.appcache_id);
   response->SetAppCacheManifestURL(info.appcache_manifest_url);
@@ -1221,6 +1282,21 @@ void WebURLLoaderImpl::PopulateURLResponse(
     response->AddHTTPHeaderField(WebString::FromLatin1(name),
                                  WebString::FromLatin1(value));
   }
+}
+
+// static
+WebURLError WebURLLoaderImpl::PopulateURLError(
+    const network::URLLoaderCompletionStatus& status,
+    const GURL& url) {
+  DCHECK_NE(net::OK, status.error_code);
+  const WebURLError::HasCopyInCache has_copy_in_cache =
+      status.exists_in_cache ? WebURLError::HasCopyInCache::kTrue
+                             : WebURLError::HasCopyInCache::kFalse;
+  if (status.cors_error_status)
+    return WebURLError(*status.cors_error_status, has_copy_in_cache, url);
+  return WebURLError(status.error_code, status.extended_error_code,
+                     has_copy_in_cache,
+                     WebURLError::IsWebSecurityViolation::kFalse, url);
 }
 
 void WebURLLoaderImpl::LoadSynchronously(

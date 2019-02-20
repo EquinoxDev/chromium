@@ -204,6 +204,13 @@ class MEDIA_GPU_EXPORT V4L2Queue
   // released, or this call will fail.
   bool DeallocateBuffers();
 
+  // Returns the memory usage of v4l2 buffers owned by this V4L2Queue which are
+  // mapped in user space memory.
+  size_t GetMemoryUsage() const;
+
+  // Returns |memory_|, memory type of last buffers allocated by this V4L2Queue.
+  v4l2_memory GetMemoryType() const;
+
   // Return a unique pointer to a free buffer for the caller to prepare and
   // submit, or an empty pointer if no buffer is currently free.
   //
@@ -300,12 +307,15 @@ class MEDIA_GPU_EXPORT V4L2Device
       uint32_t pix_fmt,
       bool is_encoder);
   static uint32_t V4L2PixFmtToDrmFormat(uint32_t format);
-  // Convert format requirements requested by a V4L2 device to gfx::Size.
-  static gfx::Size CodedSizeFromV4L2Format(struct v4l2_format format);
+  // Calculates the largest plane's allocation size requested by a V4L2 device.
+  static gfx::Size AllocatedSizeFromV4L2Format(struct v4l2_format format);
 
   // Convert required H264 profile and level to V4L2 enums.
   static int32_t VideoCodecProfileToV4L2H264Profile(VideoCodecProfile profile);
   static int32_t H264LevelIdcToV4L2H264Level(uint8_t level_idc);
+
+  // Converts v4l2_memory to a string.
+  static std::string V4L2MemoryToString(const v4l2_memory memory);
 
   // Composes human readable string of v4l2_format.
   static std::string V4L2FormatToString(const struct v4l2_format& format);

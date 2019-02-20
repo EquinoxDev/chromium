@@ -14,10 +14,13 @@
 #include "components/autofill_assistant/browser/client.h"
 #include "components/autofill_assistant/browser/client_memory.h"
 #include "components/autofill_assistant/browser/element_area.h"
+#include "components/autofill_assistant/browser/metrics.h"
+#include "components/autofill_assistant/browser/payment_request.h"
 #include "components/autofill_assistant/browser/script.h"
 #include "components/autofill_assistant/browser/script_executor_delegate.h"
 #include "components/autofill_assistant/browser/script_tracker.h"
 #include "components/autofill_assistant/browser/service.h"
+#include "components/autofill_assistant/browser/state.h"
 #include "components/autofill_assistant/browser/ui_delegate.h"
 #include "components/autofill_assistant/browser/web_controller.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -40,12 +43,28 @@ class Controller : public ScriptExecutorDelegate,
                    private content::WebContentsObserver,
                    private content::WebContentsDelegate {
  public:
-  static void CreateForWebContents(
-      content::WebContents* web_contents,
-      std::unique_ptr<Client> client,
-      std::unique_ptr<std::map<std::string, std::string>> parameters,
-      const std::string& locale,
-      const std::string& country_code);
+  // |web_contents| and |client| must remain valid for the lifetime of the
+  // instance.
+  Controller(content::WebContents* web_contents, Client* client);
+  ~Controller() override;
+
+  // Called when autofill assistant can start executing scripts.
+  void Start(const GURL& initialUrl,
+             const std::map<std::string, std::string>& parameters);
+
+  // Initiates a clean shutdown.
+  //
+  // This function returns false when it needs more time to properly shut down
+  // the script tracker. In that case, the controller is responsible for calling
+  // Client::Shutdown at the right time for the given reason.
+  //
+  // A caller is expected to try again later when this function returns false. A
+  // return value of true means that the scrip tracker can safely be destroyed.
+  //
+  // TODO(crbug.com/806868): Instead of this safety net, the proper fix is to
+  // switch to weak pointers everywhere so that dangling callbacks are not an
+  // issue.
+  bool Terminate(Metrics::DropOutReason reason);
 
   // Overrides ScriptExecutorDelegate:
   Service* GetService() override;
@@ -55,19 +74,44 @@ class Controller : public ScriptExecutorDelegate,
   const std::map<std::string, std::string>& GetParameters() override;
   autofill::PersonalDataManager* GetPersonalDataManager() override;
   content::WebContents* GetWebContents() override;
-  void SetTouchableElementArea(const std::vector<Selector>& elements) override;
+  void SetTouchableElementArea(const ElementAreaProto& area) override;
+  void SetStatusMessage(const std::string& message) override;
+  std::string GetStatusMessage() const override;
+  void SetDetails(const Details& details) override;
+  void ClearDetails() override;
+  void SetProgress(int progress) override;
+  void SetChips(std::unique_ptr<std::vector<Chip>> chips) override;
 
+  // Stops the controller with |reason| and destroys this. The current status
+  // message must contain the error message.
+  void StopAndShutdown(Metrics::DropOutReason reason);
+  void EnterState(AutofillAssistantState state) override;
   bool IsCookieExperimentEnabled() const;
+  void SetPaymentRequestOptions(
+      std::unique_ptr<PaymentRequestOptions> options) override;
+
+  // Overrides autofill_assistant::UiDelegate:
+  AutofillAssistantState GetState() override;
+  void UpdateTouchableArea() override;
+  void OnUserInteractionInsideTouchableArea() override;
+  const Details* GetDetails() const override;
+  int GetProgress() const override;
+  const std::vector<Chip>& GetChips() const override;
+  void SelectChip(int chip_index) override;
+  std::string GetDebugContext() override;
+  const PaymentRequestOptions* GetPaymentRequestOptions() const override;
+  void SetPaymentInformation(
+      std::unique_ptr<PaymentInformation> payment_information) override;
+  void GetTouchableArea(std::vector<RectF>* area) const override;
+  void OnFatalError(const std::string& error_message,
+                    Metrics::DropOutReason reason) override;
 
  private:
   friend ControllerTest;
 
-  Controller(content::WebContents* web_contents,
-             std::unique_ptr<Client> client,
-             std::unique_ptr<WebController> web_controller,
-             std::unique_ptr<Service> service,
-             std::unique_ptr<std::map<std::string, std::string>> parameters);
-  ~Controller() override;
+  void SetWebControllerAndServiceForTest(
+      std::unique_ptr<WebController> web_controller,
+      std::unique_ptr<Service> service);
 
   void GetOrCheckScripts(const GURL& url);
   void OnGetScripts(const GURL& url, bool result, const std::string& response);
@@ -83,7 +127,6 @@ class Controller : public ScriptExecutorDelegate,
   void StartPeriodicScriptChecks();
   void StopPeriodicScriptChecks();
   void OnPeriodicScriptCheck();
-  void GiveUp();
 
   // Runs autostart scripts from |runnable_scripts|, if the conditions are
   // right. Returns true if a script was auto-started.
@@ -98,16 +141,10 @@ class Controller : public ScriptExecutorDelegate,
   void OnGetCookie(const GURL& initial_url, bool has_cookie);
   void OnSetCookie(const GURL& initial_url, bool result);
   void FinishStart(const GURL& initial_url);
+  void MaybeSetInitialDetails();
 
-  // Overrides autofill_assistant::UiDelegate:
-  void Start(const GURL& initialUrl) override;
-  void OnClickOverlay() override;
-  void OnDestroy() override;
-  void UpdateTouchableArea() override;
-  void OnUserInteractionInsideTouchableArea() override;
-  void OnScriptSelected(const std::string& script_path) override;
-  std::string GetDebugContext() override;
-  bool Terminate() override;
+  // Called when a script is selected.
+  void OnScriptSelected(const std::string& script_path);
 
   // Overrides ScriptTracker::Listener:
   void OnNoRunnableScriptsAnymore() override;
@@ -122,17 +159,30 @@ class Controller : public ScriptExecutorDelegate,
       content::NavigationHandle* navigation_handle) override;
   void DocumentAvailableInMainFrame() override;
   void RenderProcessGone(base::TerminationStatus status) override;
-  void WebContentsDestroyed() override;
+  void OnWebContentsFocused(
+      content::RenderWidgetHost* render_widget_host) override;
 
   // Overrides content::WebContentsDelegate:
   void LoadProgressChanged(content::WebContents* source,
                            double progress) override;
+  void OnTouchableAreaChanged(const std::vector<RectF>& areas);
 
-  std::unique_ptr<Client> client_;
+  ElementArea* touchable_element_area();
+  ScriptTracker* script_tracker();
+
+  Client* const client_;
+
+  // Lazily instantiate in GetWebController().
   std::unique_ptr<WebController> web_controller_;
+
+  // Lazily instantiate in GetService().
   std::unique_ptr<Service> service_;
-  std::unique_ptr<std::map<std::string, std::string>> parameters_;
+  std::map<std::string, std::string> parameters_;
+
+  // Lazily instantiate in GetClientMemory().
   std::unique_ptr<ClientMemory> memory_;
+
+  AutofillAssistantState state_ = AutofillAssistantState::INACTIVE;
 
   // Domain of the last URL the controller requested scripts from.
   std::string script_domain_;
@@ -155,14 +205,37 @@ class Controller : public ScriptExecutorDelegate,
 
   // Area of the screen that corresponds to the current set of touchable
   // elements.
-  ElementArea touchable_element_area_;
+  // Lazily instantiate in touchable_element_area().
+  std::unique_ptr<ElementArea> touchable_element_area_;
+
+  // Current status message, may be empty.
+  std::string status_message_;
+
+  // Current details, may be null.
+  std::unique_ptr<Details> details_;
+
+  // Current progress.
+  int progress_ = 0;
+
+  // Current set of chips. May be null, but never empty.
+  std::unique_ptr<std::vector<Chip>> chips_;
 
   // Flag indicates whether it is ready to fetch and execute scripts.
   bool started_ = false;
 
+  // A reason passed previously to Terminate(). SAFETY_NET_TERMINATE is a
+  // placeholder.
+  Metrics::DropOutReason terminate_reason_ = Metrics::SAFETY_NET_TERMINATE;
+
+  // True once UiController::WillShutdown has been called.
+  bool will_shutdown_ = false;
+
+  std::unique_ptr<PaymentRequestOptions> payment_request_options_;
+
   // Tracks scripts and script execution. It's kept at the end, as it tend to
   // depend on everything the controller support, through script and script
   // actions.
+  // Lazily instantiate in script_tracker().
   std::unique_ptr<ScriptTracker> script_tracker_;
 
   base::WeakPtrFactory<Controller> weak_ptr_factory_;

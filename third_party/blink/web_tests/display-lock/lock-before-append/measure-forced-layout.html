@@ -8,7 +8,7 @@ post-final-layout values.
 
 <style>
 #container {
-  contain: content;
+  contain: style layout;
   width: 100px;
   height: 100px;
   background: lightgreen;
@@ -74,19 +74,21 @@ async_test((t) => {
   async function runTest() {
     let container = document.createElement("div");
     container.id = "container";
-    await container.getDisplayLock().acquire({ timeout: Infinity });
+    await container.displayLock.acquire({ timeout: Infinity });
 
     document.getElementById("parent").appendChild(container);
     construct(container);
     measureForced();
 
-    container.getDisplayLock().commit().then(() => {
+    container.displayLock.commit().then(() => {
       measureInCommit();
       t.done();
     });
   }
 
-  runTest();
+  window.onload = function() {
+    requestAnimationFrame(() => requestAnimationFrame(runTest));
+  };
 }, "Measure Forced Layout");
 </script>
 

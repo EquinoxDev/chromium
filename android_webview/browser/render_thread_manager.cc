@@ -32,19 +32,31 @@ RenderThreadManager::RenderThreadManager(
 }
 
 RenderThreadManager::~RenderThreadManager() {
-  DCHECK(ui_loop_->BelongsToCurrentThread());
   DCHECK(!hardware_renderer_.get());
   DCHECK(child_frames_.empty());
 }
 
 void RenderThreadManager::UpdateParentDrawConstraintsOnUI() {
   DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   if (producer_weak_ptr_) {
     producer_weak_ptr_->OnParentDrawConstraintsUpdated(this);
   }
 }
 
+void RenderThreadManager::ViewTreeForceDarkStateChangedOnUI(
+    bool view_tree_force_dark_state) {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
+  if (producer_weak_ptr_) {
+    producer_weak_ptr_->OnViewTreeForceDarkStateChanged(
+        view_tree_force_dark_state);
+  }
+}
+
 void RenderThreadManager::SetScrollOffsetOnUI(gfx::Vector2d scroll_offset) {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   base::AutoLock lock(lock_);
   scroll_offset_ = scroll_offset;
 }
@@ -56,6 +68,8 @@ gfx::Vector2d RenderThreadManager::GetScrollOffsetOnRT() {
 
 std::unique_ptr<ChildFrame> RenderThreadManager::SetFrameOnUI(
     std::unique_ptr<ChildFrame> new_frame) {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   DCHECK(new_frame);
 
   base::AutoLock lock(lock_);
@@ -82,6 +96,8 @@ ChildFrameQueue RenderThreadManager::PassFramesOnRT() {
 }
 
 ChildFrameQueue RenderThreadManager::PassUncommittedFrameOnUI() {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   base::AutoLock lock(lock_);
   for (auto& frame_ptr : child_frames_)
     frame_ptr->WaitOnFutureIfNeeded();
@@ -106,6 +122,8 @@ void RenderThreadManager::PostExternalDrawConstraintsToChildCompositorOnRT(
 
 ParentCompositorDrawConstraints
 RenderThreadManager::GetParentDrawConstraintsOnUI() const {
+  DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   base::AutoLock lock(lock_);
   return parent_draw_constraints_;
 }
@@ -137,6 +155,17 @@ void RenderThreadManager::CommitFrameOnRT() {
     hardware_renderer_->CommitFrame();
 }
 
+void RenderThreadManager::UpdateViewTreeForceDarkStateOnRT(
+    bool view_tree_force_dark_state) {
+  if (view_tree_force_dark_state_ == view_tree_force_dark_state)
+    return;
+  view_tree_force_dark_state_ = view_tree_force_dark_state;
+  ui_loop_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&RenderThreadManager::ViewTreeForceDarkStateChangedOnUI,
+                     ui_thread_weak_ptr_, view_tree_force_dark_state_));
+}
+
 void RenderThreadManager::DrawOnRT(bool save_restore,
                                    HardwareRendererDrawParams* params) {
   // Force GL binding init if it's not yet initialized.
@@ -164,13 +193,19 @@ void RenderThreadManager::DestroyHardwareRendererOnRT(bool save_restore) {
 
 void RenderThreadManager::RemoveFromCompositorFrameProducerOnUI() {
   DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   if (producer_weak_ptr_)
     producer_weak_ptr_->RemoveCompositorFrameConsumer(this);
+  weak_factory_on_ui_thread_.InvalidateWeakPtrs();
+#if DCHECK_IS_ON()
+  ui_calls_allowed_ = false;
+#endif  // DCHECK_IS_ON()
 }
 
 void RenderThreadManager::SetCompositorFrameProducer(
     CompositorFrameProducer* compositor_frame_producer) {
   DCHECK(ui_loop_->BelongsToCurrentThread());
+  CheckUiCallsAllowed();
   producer_weak_ptr_ = compositor_frame_producer->GetWeakPtr();
 }
 

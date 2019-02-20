@@ -100,7 +100,7 @@ SessionClientBinding::SessionClientBinding(
     : display_(display),
       is_immersive_(immersive ==
                     SessionClientBinding::SessionBindingType::kImmersive),
-      client_binding_(this, std::move(request)){};
+      client_binding_(this, std::move(request)) {}
 
 SessionClientBinding::~SessionClientBinding() = default;
 
@@ -111,29 +111,27 @@ void SessionClientBinding::Close() {
 void SessionClientBinding::OnChanged(
     device::mojom::blink::VRDisplayInfoPtr ptr) {
   display_->OnChanged(std::move(ptr), is_immersive_);
-};
+}
 void SessionClientBinding::OnExitPresent() {
   display_->OnExitPresent(is_immersive_);
-};
+}
 void SessionClientBinding::OnBlur() {
   display_->OnBlur(is_immersive_);
-};
+}
 void SessionClientBinding::OnFocus() {
   display_->OnFocus(is_immersive_);
-};
+}
 void SessionClientBinding::Trace(blink::Visitor* visitor) {
   visitor->Trace(display_);
 }
 
 VRDisplay::VRDisplay(NavigatorVR* navigator_vr,
                      device::mojom::blink::XRDevicePtr device)
-    : PausableObject(navigator_vr->GetDocument()),
+    : ContextLifecycleStateObserver(navigator_vr->GetDocument()),
       navigator_vr_(navigator_vr),
       capabilities_(MakeGarbageCollected<VRDisplayCapabilities>()),
       device_ptr_(std::move(device)),
       display_client_binding_(this) {
-  PauseIfNeeded();  // Initialize SuspendabaleObject.
-
   // Request a non-immersive session immediately as WebVR 1.1 expects to be able
   // to get non-immersive poses as soon as the display is returned.
   device::mojom::blink::XRSessionOptionsPtr options =
@@ -151,10 +149,9 @@ VRDisplay::VRDisplay(NavigatorVR* navigator_vr,
 
 VRDisplay::~VRDisplay() = default;
 
-void VRDisplay::Pause() {}
-
-void VRDisplay::Unpause() {
-  RequestVSync();
+void VRDisplay::ContextLifecycleStateChanged(mojom::FrameLifecycleState state) {
+  if (state == mojom::FrameLifecycleState::kRunning)
+    RequestVSync();
 }
 
 VRController* VRDisplay::Controller() {
@@ -1066,6 +1063,16 @@ void VRDisplay::OnPresentingVSync(
   if (!doc)
     return;
 
+  if (frame_data->left_eye) {
+    eye_parameters_left_ =
+        MakeGarbageCollected<VREyeParameters>(frame_data->left_eye, 1);
+  }
+
+  if (frame_data->right_eye) {
+    eye_parameters_right_ =
+        MakeGarbageCollected<VREyeParameters>(frame_data->right_eye, 1);
+  }
+
   // Post a task to handle scheduled animations after the current
   // execution context finishes, so that we yield to non-mojo tasks in
   // between frames. Executing mojo tasks back to back within the same
@@ -1162,7 +1169,7 @@ const AtomicString& VRDisplay::InterfaceName() const {
 }
 
 void VRDisplay::ContextDestroyed(ExecutionContext* context) {
-  PausableObject::ContextDestroyed(context);
+  ContextLifecycleStateObserver::ContextDestroyed(context);
   ForceExitPresent();
   scripted_animation_controller_.Clear();
 }

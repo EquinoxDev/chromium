@@ -6,7 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TRUSTEDTYPES_TRUSTED_TYPE_POLICY_FACTORY_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -46,13 +46,20 @@ class CORE_EXPORT TrustedTypePolicyFactory final : public ScriptWrappable,
   bool isScriptURL(ScriptState*, const ScriptValue&);
   bool isURL(ScriptState*, const ScriptValue&);
 
+  // Count whether a Trusted Type error occured during DOM operations.
+  // (We aggregate this here to get a count per document, so that we can
+  //  relate it to the total number of TT enabled documents.)
+  void CountTrustedTypeAssignmentError();
+
   void Trace(blink::Visitor*) override;
 
  private:
   const WrapperTypeInfo* GetWrapperTypeInfoFromScriptValue(ScriptState*,
                                                            const ScriptValue&);
 
-  HeapHashMap<String, Member<TrustedTypePolicy>> policy_map_;
+  HeapHashMap<String, TraceWrapperMember<TrustedTypePolicy>> policy_map_;
+
+  bool hadAssignmentError = false;
 };
 
 }  // namespace blink

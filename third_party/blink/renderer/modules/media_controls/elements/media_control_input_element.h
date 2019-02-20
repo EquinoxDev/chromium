@@ -58,7 +58,7 @@ class MODULES_EXPORT MediaControlInputElement : public HTMLInputElement,
   void DefaultEventHandler(Event&) override;
 
   // Implements MediaControlElementBase.
-  void UpdateShownState() override;
+  void UpdateShownState() final;
 
   // Updates the value of the Text string shown in the overflow menu.
   void UpdateOverflowString();
@@ -74,6 +74,9 @@ class MODULES_EXPORT MediaControlInputElement : public HTMLInputElement,
   void SetClass(const AtomicString& class_name, bool should_have_class);
 
   virtual void UpdateDisplayType();
+
+  // Returns whether element is a button on the control panel.
+  virtual bool IsControlPanelButton() const { return false; }
 
  private:
   friend class MediaControlInputElementTest;

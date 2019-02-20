@@ -8,7 +8,9 @@
 #include <map>
 
 #include "base/component_export.h"
+#include "base/threading/sequence_bound.h"
 #include "media/learning/common/learning_session.h"
+#include "media/learning/impl/feature_provider.h"
 #include "media/learning/impl/learning_task_controller.h"
 
 namespace media {
@@ -19,22 +21,25 @@ namespace learning {
 class COMPONENT_EXPORT(LEARNING_IMPL) LearningSessionImpl
     : public LearningSession {
  public:
-  explicit LearningSessionImpl();
+  LearningSessionImpl();
   ~LearningSessionImpl() override;
 
   using CreateTaskControllerCB =
       base::RepeatingCallback<std::unique_ptr<LearningTaskController>(
-          const LearningTask&)>;
+          const LearningTask&,
+          SequenceBoundFeatureProvider)>;
 
   void SetTaskControllerFactoryCBForTesting(CreateTaskControllerCB cb);
 
   // LearningSession
   void AddExample(const std::string& task_name,
-                  const TrainingExample& example) override;
+                  const LabelledExample& example) override;
 
   // Registers |task|, so that calls to AddExample with |task.name| will work.
   // This will create a new controller for the task.
-  void RegisterTask(const LearningTask& task);
+  void RegisterTask(const LearningTask& task,
+                    SequenceBoundFeatureProvider feature_provider =
+                        SequenceBoundFeatureProvider());
 
  private:
   // [task_name] = task controller.

@@ -53,6 +53,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/fallback_theme.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/core/style/computed_style_initial_values.h"
 #include "third_party/blink/renderer/platform/file_metadata.h"
 #include "third_party/blink/renderer/platform/fonts/font_selector.h"
 #include "third_party/blink/renderer/platform/fonts/string_truncator.h"
@@ -837,6 +838,22 @@ void LayoutTheme::SetCustomFocusRingColor(const Color& c) {
   has_custom_focus_ring_color_ = true;
 }
 
+bool LayoutTheme::IsFocusRingOutset() const {
+  return is_focus_ring_outset_;
+}
+
+void LayoutTheme::SetIsFocusRingOutset(bool is_outset) {
+  is_focus_ring_outset_ = is_outset;
+}
+
+float LayoutTheme::MinimumStrokeWidthForFocusRing() const {
+  return minimum_width_for_focus_ring_;
+}
+
+void LayoutTheme::SetMinimumStrokeWidthForFocusRing(float stroke_width) {
+  minimum_width_for_focus_ring_ = stroke_width;
+}
+
 Color LayoutTheme::FocusRingColor() const {
   return has_custom_focus_ring_color_ ? custom_focus_ring_color_
                                       : GetTheme().PlatformFocusRingColor();
@@ -897,9 +914,9 @@ void LayoutTheme::AdjustStyleUsingFallbackTheme(ComputedStyle& style) {
 // static
 void LayoutTheme::SetSizeIfAuto(ComputedStyle& style, const IntSize& size) {
   if (style.Width().IsIntrinsicOrAuto())
-    style.SetWidth(Length(size.Width(), kFixed));
+    style.SetWidth(Length::Fixed(size.Width()));
   if (style.Height().IsIntrinsicOrAuto())
-    style.SetHeight(Length(size.Height(), kFixed));
+    style.SetHeight(Length::Fixed(size.Height()));
 }
 
 // static
@@ -924,8 +941,8 @@ void LayoutTheme::SetMinimumSize(ComputedStyle& style,
 // static
 void LayoutTheme::SetMinimumSizeIfAuto(ComputedStyle& style,
                                        const IntSize& size) {
-  LengthSize length_size(Length(size.Width(), kFixed),
-                         Length(size.Height(), kFixed));
+  LengthSize length_size(Length::Fixed(size.Width()),
+                         Length::Fixed(size.Height()));
   SetMinimumSize(style, &length_size);
 }
 
@@ -975,6 +992,12 @@ void LayoutTheme::AdjustRadioStyleUsingFallbackTheme(
   // box and turns off the Windows XP theme)
   // for now, we will not honor it.
   style.ResetBorder();
+}
+
+Color LayoutTheme::RootElementColor(ColorScheme color_scheme) const {
+  if (color_scheme == ColorScheme::kDark)
+    return Color::kWhite;
+  return ComputedStyleInitialValues::InitialColor();
 }
 
 }  // namespace blink

@@ -17,17 +17,9 @@ const base::Feature kAndroidMessagesIntegration{
 const base::Feature kAutoScreenBrightness{"AutoScreenBrightness",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
-// If enabled, auto-screen-brightness model will continue to adapt brightness
-// (based on ambient light)
-// after user changes brightness. Otherwise, the model will be disabled until
-// Chrome restarts.
-const base::Feature kAutoScreenBrightnessContinuedAdjustment{
-    "AutoScreenBrightnessContinuedAdjustment",
-    base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Enables or disables Crostini Files.
-const base::Feature kCrostiniFiles{"CrostiniFiles",
-                                   base::FEATURE_ENABLED_BY_DEFAULT};
+// Enables or disables Crostini Backup.
+const base::Feature kCrostiniBackup{"CrostiniBackup",
+                                    base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables or disables Crostini support for usb mounting.
 const base::Feature kCrostiniUsbSupport{"CrostiniUsbSupport",
@@ -40,15 +32,20 @@ const base::Feature kCryptAuthV2Enrollment{"CryptAuthV2Enrollment",
 // Enables or disables Discover Application on Chrome OS.
 // If enabled, Discover App will be shown in launcher.
 const base::Feature kDiscoverApp{"DiscoverApp",
-                                 base::FEATURE_ENABLED_BY_DEFAULT};
+                                 base::FEATURE_DISABLED_BY_DEFAULT};
 
 // If enabled, DriveFS will be used for Drive sync.
-const base::Feature kDriveFs{"DriveFS", base::FEATURE_DISABLED_BY_DEFAULT};
+const base::Feature kDriveFs{"DriveFS", base::FEATURE_ENABLED_BY_DEFAULT};
+
+// Enables or disables web push for background notifications in
+// Android Messages Integration on Chrome OS.
+const base::Feature kEnableMessagesWebPush{"EnableMessagesWebPush",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
 // If enabled, MyFiles will be a root/volume and user can create other
 // sub-folders and files in addition to the Downloads folder inside MyFiles.
 const base::Feature kMyFilesVolume{"MyFilesVolume",
-                                   base::FEATURE_DISABLED_BY_DEFAULT};
+                                   base::FEATURE_ENABLED_BY_DEFAULT};
 
 // If enabled, will display blocking screens during re-authentication after a
 // supervision transition occurred.
@@ -70,12 +67,17 @@ const base::Feature kInstantTethering{"InstantTethering",
 
 // Enable or disable native controls in video player on Chrome OS.
 const base::Feature kVideoPlayerNativeControls{
-    "VideoPlayerNativeControls", base::FEATURE_DISABLED_BY_DEFAULT};
+    "VideoPlayerNativeControls", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Use the messages.google.com domain as part of the "Messages" feature under
 // "Connected Devices" settings.
 const base::Feature kUseMessagesGoogleComDomain{
     "UseMessagesGoogleComDomain", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Use the staging URL as part of the "Messages" feature under "Connected
+// Devices" settings.
+const base::Feature kUseMessagesStagingUrl{"UseMessagesStagingUrl",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Enables or disables user activity prediction for power management on
 // Chrome OS.

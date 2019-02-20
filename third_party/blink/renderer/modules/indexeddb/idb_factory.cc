@@ -92,7 +92,10 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
     }
   }
 
-  void OnError(const IDBDatabaseError& error) override {
+  void SetState(base::WeakPtr<WebIDBCursorImpl> cursor,
+                int64_t transaction_id) override {}
+
+  void Error(int32_t code, const String& message) override {
     if (!promise_resolver_)
       return;
 
@@ -105,18 +108,23 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
     promise_resolver_.Clear();
   }
 
-  void OnSuccess(
-      const Vector<IDBNameAndVersion>& idb_name_and_version_list) override {
+  void SuccessNamesAndVersionsList(
+      Vector<mojom::blink::IDBNameAndVersionPtr> names_and_versions) override {
     if (!promise_resolver_)
       return;
 
     HeapVector<Member<IDBDatabaseInfo>> name_and_version_list;
-    for (const auto& item : idb_name_and_version_list) {
+    name_and_version_list.ReserveInitialCapacity(name_and_version_list.size());
+    for (const mojom::blink::IDBNameAndVersionPtr& name_version :
+         names_and_versions) {
+      const IDBNameAndVersion idb_name_and_version(name_version->name,
+                                                   name_version->version);
       IDBDatabaseInfo* idb_info = IDBDatabaseInfo::Create();
-      idb_info->setName(item.name);
-      idb_info->setVersion(item.version);
+      idb_info->setName(name_version->name);
+      idb_info->setVersion(name_version->version);
       name_and_version_list.push_back(idb_info);
     }
+
     probe::AsyncTask async_task(
         ExecutionContext::From(promise_resolver_->GetScriptState()), this,
         "success");
@@ -124,49 +132,60 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
     promise_resolver_.Clear();
   }
 
-  void OnSuccess(const Vector<String>&) override { NOTREACHED(); }
+  void SuccessStringList(const Vector<String>&) override { NOTREACHED(); }
 
-  void OnSuccess(WebIDBCursor* cursor,
-                 std::unique_ptr<IDBKey> key,
-                 std::unique_ptr<IDBKey> primary_key,
-                 std::unique_ptr<IDBValue> value) override {
+  void SuccessCursor(
+      mojom::blink::IDBCursorAssociatedPtrInfo cursor_info,
+      std::unique_ptr<IDBKey> key,
+      std::unique_ptr<IDBKey> primary_key,
+      base::Optional<std::unique_ptr<IDBValue>> optional_value) override {
     NOTREACHED();
   }
 
-  void OnSuccess(WebIDBDatabase* backend,
-                 const IDBDatabaseMetadata& metadata) override {
+  void SuccessCursorPrefetch(
+      Vector<std::unique_ptr<IDBKey>> keys,
+      Vector<std::unique_ptr<IDBKey>> primary_keys,
+      Vector<std::unique_ptr<IDBValue>> values) override {
     NOTREACHED();
   }
 
-  void OnSuccess(std::unique_ptr<IDBKey> key) override { NOTREACHED(); }
-
-  void OnSuccess(std::unique_ptr<IDBValue> value) override { NOTREACHED(); }
-
-  void OnSuccess(Vector<std::unique_ptr<IDBValue>> values) override {
+  void SuccessDatabase(mojom::blink::IDBDatabaseAssociatedPtrInfo backend,
+                       const IDBDatabaseMetadata& metadata) override {
     NOTREACHED();
   }
 
-  void OnSuccess(long long value) override { NOTREACHED(); }
+  void SuccessKey(std::unique_ptr<IDBKey> key) override { NOTREACHED(); }
 
-  void OnSuccess() override { NOTREACHED(); }
-
-  void OnSuccess(std::unique_ptr<IDBKey> key,
-                 std::unique_ptr<IDBKey> primary_key,
-                 std::unique_ptr<IDBValue> value) override {
+  void SuccessValue(mojom::blink::IDBReturnValuePtr return_value) override {
     NOTREACHED();
   }
 
-  void OnBlocked(long long old_version) override { NOTREACHED(); }
-
-  void OnUpgradeNeeded(long long old_version,
-                       WebIDBDatabase* database,
-                       const IDBDatabaseMetadata& metadata,
-                       mojom::IDBDataLoss data_loss,
-                       String data_loss_message) override {
+  void SuccessArray(Vector<mojom::blink::IDBReturnValuePtr> values) override {
     NOTREACHED();
   }
 
-  void Detach() override { NOTREACHED(); }
+  void SuccessInteger(int64_t value) override { NOTREACHED(); }
+
+  void Success() override { NOTREACHED(); }
+
+  void SuccessCursorContinue(
+      std::unique_ptr<IDBKey> key,
+      std::unique_ptr<IDBKey> primary_key,
+      base::Optional<std::unique_ptr<IDBValue>> value) override {
+    NOTREACHED();
+  }
+
+  void Blocked(int64_t old_version) override { NOTREACHED(); }
+
+  void UpgradeNeeded(mojom::blink::IDBDatabaseAssociatedPtrInfo database,
+                     int64_t old_version,
+                     mojom::IDBDataLoss data_loss,
+                     const String& data_loss_message,
+                     const IDBDatabaseMetadata& metadata) override {
+    NOTREACHED();
+  }
+
+  void DetachRequestFromCallback() override { NOTREACHED(); }
 
  private:
   Persistent<ScriptPromiseResolver> promise_resolver_;
@@ -199,7 +218,8 @@ WebIDBFactory* IDBFactory::GetFactory(ExecutionContext* execution_context) {
     interface_provider->GetInterface(
         mojo::MakeRequest(&web_idb_factory_host_info));
     web_idb_factory_ = std::make_unique<WebIDBFactoryImpl>(
-        std::move(web_idb_factory_host_info));
+        std::move(web_idb_factory_host_info),
+        execution_context->GetTaskRunner(TaskType::kDatabaseAccess));
   }
   return web_idb_factory_.get();
 }
@@ -224,9 +244,7 @@ ScriptPromise IDBFactory::GetDatabaseInfo(ScriptState* script_state,
     resolver->Reject();
     return resolver->Promise();
   }
-  factory->GetDatabaseInfo(
-      WebIDBGetDBNamesCallbacksImpl::Create(resolver).release(),
-      execution_context->GetTaskRunner(TaskType::kInternalIndexedDB));
+  factory->GetDatabaseInfo(WebIDBGetDBNamesCallbacksImpl::Create(resolver));
   ScriptPromise promise = resolver->Promise();
   return promise;
 }
@@ -266,15 +284,13 @@ IDBRequest* IDBFactory::GetDatabaseNames(ScriptState* script_state,
     exception_state.ThrowSecurityError("An internal error occurred.");
     return nullptr;
   }
-  factory->GetDatabaseNames(
-      request->CreateWebCallbacks().release(),
-      execution_context->GetTaskRunner(TaskType::kInternalIndexedDB));
+  factory->GetDatabaseNames(request->CreateWebCallbacks());
   return request;
 }
 
 IDBOpenDBRequest* IDBFactory::open(ScriptState* script_state,
                                    const String& name,
-                                   unsigned long long version,
+                                   uint64_t version,
                                    ExceptionState& exception_state) {
   if (!version) {
     exception_state.ThrowTypeError("The version provided must not be 0.");
@@ -324,10 +340,8 @@ IDBOpenDBRequest* IDBFactory::OpenInternal(ScriptState* script_state,
     exception_state.ThrowSecurityError("An internal error occurred.");
     return nullptr;
   }
-  factory->Open(name, version, transaction_id,
-                request->CreateWebCallbacks().release(),
-                database_callbacks->CreateWebCallbacks().release(),
-                execution_context->GetTaskRunner(TaskType::kInternalIndexedDB));
+  factory->Open(name, version, transaction_id, request->CreateWebCallbacks(),
+                database_callbacks->CreateWebCallbacks());
   return request;
 }
 
@@ -393,9 +407,7 @@ IDBOpenDBRequest* IDBFactory::DeleteDatabaseInternal(
     exception_state.ThrowSecurityError("An internal error occurred.");
     return nullptr;
   }
-  factory->DeleteDatabase(
-      name, request->CreateWebCallbacks().release(), force_close,
-      execution_context->GetTaskRunner(TaskType::kInternalIndexedDB));
+  factory->DeleteDatabase(name, request->CreateWebCallbacks(), force_close);
   return request;
 }
 

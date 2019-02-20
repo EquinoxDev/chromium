@@ -60,7 +60,7 @@ namespace arc {
 
 namespace {
 
-// Weak pointer.  This class is owned by ArcServiceManager.
+// Weak pointer.  This class is owned by ArcServiceLauncher.
 ArcSessionManager* g_arc_session_manager = nullptr;
 
 // Allows the session manager to skip creating UI in unit tests.
@@ -684,7 +684,7 @@ bool ArcSessionManager::RequestEnableImpl() {
   // the initial request.
   // |prefs::kArcProvisioningInitiatedFromOobe| is reset when provisioning is
   // done or ARC is opted out.
-  if (IsArcOobeOptInActive() || IsArcOptInWizardForAssistantActive())
+  if (IsArcOobeOptInActive())
     prefs->SetBoolean(prefs::kArcProvisioningInitiatedFromOobe, true);
 
   // If it is marked that sign in has been successfully done or if Play Store is
@@ -708,10 +708,8 @@ bool ArcSessionManager::RequestEnableImpl() {
     return false;
   }
 
-  if (!pai_starter_ && IsPlayStoreAvailable()) {
-    pai_starter_ =
-        ArcPaiStarter::CreateIfNeeded(profile_, profile_->GetPrefs());
-  }
+  if (!pai_starter_ && IsPlayStoreAvailable())
+    pai_starter_ = ArcPaiStarter::CreateIfNeeded(profile_);
 
   if (!fast_app_reinstall_starter_ && IsPlayStoreAvailable()) {
     fast_app_reinstall_starter_ = ArcFastAppReinstallStarter::CreateIfNeeded(
@@ -828,7 +826,7 @@ void ArcSessionManager::MaybeStartTermsOfServiceNegotiation() {
     return;
   }
 
-  if (IsArcOobeOptInActive() || IsArcOptInWizardForAssistantActive()) {
+  if (IsArcOobeOptInActive()) {
     VLOG(1) << "Use OOBE negotiator.";
     terms_of_service_negotiator_ =
         std::make_unique<ArcTermsOfServiceOobeNegotiator>();

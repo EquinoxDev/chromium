@@ -54,6 +54,9 @@ Polymer({
     showAndroidApps_: Boolean,
 
     /** @private */
+    showContainedShell_: Boolean,
+
+    /** @private */
     showCrostini_: Boolean,
 
     /** @private */
@@ -136,6 +139,8 @@ Polymer({
 
     this.showAndroidApps_ = loadTimeData.valueExists('androidAppsVisible') &&
         loadTimeData.getBoolean('androidAppsVisible');
+    this.showContainedShell_ = loadTimeData.valueExists('showContainedShell') &&
+        loadTimeData.getBoolean('showContainedShell');
     this.showCrostini_ = loadTimeData.valueExists('showCrostini') &&
         loadTimeData.getBoolean('showCrostini');
     this.havePlayStoreApp_ = loadTimeData.valueExists('havePlayStoreApp') &&
@@ -227,12 +232,11 @@ Polymer({
   },
 
   /**
-   * @param {!CustomEvent} e
+   * @param {!CustomEvent<string>} e
    * @private
    */
   onRefreshPref_: function(e) {
-    const prefName = /** @type {string} */ (e.detail);
-    return /** @type {SettingsPrefsElement} */ (this.$.prefs).refresh(prefName);
+    return /** @type {SettingsPrefsElement} */ (this.$.prefs).refresh(e.detail);
   },
 
   /**

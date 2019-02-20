@@ -8,6 +8,7 @@ import static org.chromium.ui.base.LocalizationUtils.isLayoutRtl;
 
 import android.content.Context;
 import android.graphics.Rect;
+import android.support.v4.view.ViewCompat;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
@@ -17,24 +18,36 @@ import android.widget.LinearLayout;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.ChromeFeatureList;
 
 /**
  * The Accessory sitting above the keyboard and below the content area. It is used for autofill
  * suggestions and manual entry points assisting the user in filling forms.
  */
 class KeyboardAccessoryView extends LinearLayout {
-    protected RecyclerView mActionsView;
-    private KeyboardAccessoryTabLayoutView mTabLayout;
+    protected RecyclerView mBarItemsView;
+    protected KeyboardAccessoryTabLayoutView mTabLayout;
 
-    private static class HorizontalDividerItemDecoration extends RecyclerView.ItemDecoration {
+    protected static class HorizontalDividerItemDecoration extends RecyclerView.ItemDecoration {
         private final int mHorizontalMargin;
+
         HorizontalDividerItemDecoration(int horizontalMargin) {
             this.mHorizontalMargin = horizontalMargin;
         }
+
         @Override
         public void getItemOffsets(
                 Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
-            outRect.right = mHorizontalMargin;
+            if (isLayoutRtl()) {
+                outRect.right = getItemOffsetInternal(view, parent, state);
+            } else {
+                outRect.left = getItemOffsetInternal(view, parent, state);
+            }
+        }
+
+        protected int getItemOffsetInternal(
+                final View view, final RecyclerView parent, RecyclerView.State state) {
+            return mHorizontalMargin;
         }
     }
 
@@ -50,15 +63,13 @@ class KeyboardAccessoryView extends LinearLayout {
         super.onFinishInflate();
         sendAccessibilityEvent(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED);
 
-        mActionsView = findViewById(R.id.actions_view);
-        initializeHorizontalRecyclerView(mActionsView);
-
-        mTabLayout = findViewById(R.id.tabs);
+        mBarItemsView = findViewById(R.id.bar_items_view);
+        initializeHorizontalRecyclerView(mBarItemsView);
 
         // Apply RTL layout changes to the view's children:
         ApiCompatibilityUtils.setLayoutDirection(findViewById(R.id.accessory_bar_contents),
                 isLayoutRtl() ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
-        ApiCompatibilityUtils.setLayoutDirection(mActionsView,
+        ApiCompatibilityUtils.setLayoutDirection(mBarItemsView,
                 isLayoutRtl() ? View.LAYOUT_DIRECTION_RTL : View.LAYOUT_DIRECTION_LTR);
 
         // Set listener's to touch/click events so they are not propagated to the page below.
@@ -72,10 +83,14 @@ class KeyboardAccessoryView extends LinearLayout {
     }
 
     KeyboardAccessoryTabLayoutView getTabLayout() {
+        if (mTabLayout == null) {
+            mTabLayout = findViewById(R.id.tabs);
+        }
         return mTabLayout;
     }
 
     void setVisible(boolean visible) {
+        if (!visible || getVisibility() != VISIBLE) mBarItemsView.scrollToPosition(0);
         if (visible) {
             show();
         } else {
@@ -89,8 +104,8 @@ class KeyboardAccessoryView extends LinearLayout {
         setLayoutParams(params);
     }
 
-    void setActionsAdapter(RecyclerView.Adapter adapter) {
-        mActionsView.setAdapter(adapter);
+    void setBarItemsAdapter(RecyclerView.Adapter adapter) {
+        mBarItemsView.setAdapter(adapter);
     }
 
     private void show() {
@@ -108,13 +123,15 @@ class KeyboardAccessoryView extends LinearLayout {
         recyclerView.setLayoutManager(
                 new LinearLayoutManager(getContext(), LinearLayoutManager.HORIZONTAL, false));
 
-        int pad = getResources().getDimensionPixelSize(R.dimen.keyboard_accessory_padding);
+        int pad = getResources().getDimensionPixelSize(R.dimen.keyboard_accessory_half_padding);
         // Create margins between every element.
-        recyclerView.addItemDecoration(new HorizontalDividerItemDecoration(pad));
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.AUTOFILL_KEYBOARD_ACCESSORY)) {
+            recyclerView.addItemDecoration(new HorizontalDividerItemDecoration(pad));
+        }
 
         // Remove all animations - the accessory shouldn't be visibly built anyway.
         recyclerView.setItemAnimator(null);
 
-        recyclerView.setPadding(isLayoutRtl() ? 0 : pad, 0, isLayoutRtl() ? pad : 0, 0);
+        ViewCompat.setPaddingRelative(recyclerView, pad, 0, 0, 0);
     }
 }

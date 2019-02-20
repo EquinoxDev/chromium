@@ -15,6 +15,7 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/i18n/encoding_detection.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/logging.h"
@@ -536,7 +537,6 @@ void SetUpV8() {
   const char* recommended = FPDF_GetRecommendedV8Flags();
   v8::V8::SetFlagsFromString(recommended, strlen(recommended));
   gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode,
-                                 gin::IsolateHolder::kStableV8Extras,
                                  gin::ArrayBufferAllocator::SharedInstance());
   DCHECK(!g_isolate_holder);
   g_isolate_holder = new gin::IsolateHolder(
@@ -645,7 +645,7 @@ wchar_t SimplifyForSearch(wchar_t c) {
       return L'\"';
     case kHebrewPunctuationGereshCharacter:
     case kLeftSingleQuotationMarkCharacter:
-    case kRightSingleQuotationMarkCharacter:;
+    case kRightSingleQuotationMarkCharacter:
       return L'\'';
     default:
       return c;
@@ -2646,12 +2646,9 @@ bool PDFiumEngine::TryLoadingDoc(const std::string& password,
     return true;
   }
 
-  const char* password_cstr = nullptr;
-  if (!password.empty()) {
-    password_cstr = password.c_str();
+  if (!password.empty())
     password_tries_remaining_--;
-  }
-  document_->LoadDocument(password_cstr);
+  document_->LoadDocument(password);
   if (!doc()) {
     if (FPDF_GetLastError() == FPDF_ERR_PASSWORD)
       *needs_password = true;
@@ -3039,8 +3036,6 @@ void PDFiumEngine::FinishPaint(int progressive_index,
 
   FPDF_RenderPage_Close(pages_[page_index]->GetPage());
   progressive_paints_.erase(progressive_paints_.begin() + progressive_index);
-
-  client_->DocumentPaintOccurred();
 }
 
 void PDFiumEngine::CancelPaints() {
@@ -3625,7 +3620,7 @@ bool PDFiumEngine::IsPointInEditableFormTextArea(FPDF_PAGE page,
   if (!annot)
     return false;
 
-  int flags = FPDFAnnot_GetFormFieldFlags(page, annot.get());
+  int flags = FPDFAnnot_GetFormFieldFlags(form(), page, annot.get());
   return CheckIfEditableFormTextArea(flags, form_type);
 }
 

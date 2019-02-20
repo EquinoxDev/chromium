@@ -13,7 +13,6 @@
 
 namespace web {
 
-struct LoadCommittedDetails;
 enum class NavigationInitiationType;
 class NavigationItem;
 class WebState;
@@ -41,10 +40,10 @@ class NavigationManagerDelegate {
   virtual void WillChangeUserAgentType() = 0;
 
   // Instructs the delegate to load the current navigation item.
-  virtual void LoadCurrentItem() = 0;
+  virtual void LoadCurrentItem(NavigationInitiationType type) = 0;
 
   // Instructs the delegate to load the current navigation item if the current
-  // page has not loaded yet.
+  // page has not loaded yet. The navigation should be browser-initiated.
   virtual void LoadIfNecessary() = 0;
 
   // Instructs the delegate to reload.
@@ -54,8 +53,7 @@ class NavigationManagerDelegate {
   virtual void OnNavigationItemsPruned(size_t pruned_item_count) = 0;
 
   // Informs the delegate that a navigation item has been committed.
-  virtual void OnNavigationItemCommitted(
-      const LoadCommittedDetails& load_details) = 0;
+  virtual void OnNavigationItemCommitted(NavigationItem* item) = 0;
 
   // Returns the WebState associated with this delegate.
   virtual WebState* GetWebState() = 0;

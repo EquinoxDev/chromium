@@ -101,8 +101,8 @@ Function annotations should precede the return type:
 ```c++
 class FooSingleton {
   FOO_EXPORT Foo& GetFoo();
-  FOO_EXPORT Foo& SetFooForTesting(Foo& foo);
-  void SetFoo(Foo& foo);
+  FOO_EXPORT Foo& SetFooForTesting(Foo* foo);
+  void SetFoo(Foo* foo);
 };
 ```
 
@@ -126,9 +126,8 @@ suffix). Consider whether composition could solve the problem instead.
 
 Simple accessors should generally be the only inline functions. These should be
 named `unix_hacker_style()`. Virtual functions should never be declared this way.
-For more detail, consult the [C++ Dos and
-Don'ts](https://www.chromium.org/developers/coding-style/cpp-dos-and-donts)
-section on inlining.
+For more detail, consult the [C++ Dos and Don'ts](c++-dos-and-donts.md) section
+on inlining.
 
 ## Logging
 
@@ -248,9 +247,14 @@ following conventions. Here we refer to the parameter type as `T` and name as
     pointers, and there should rarely be a need to pass smart pointers by const
     ref.
 
-Conventions for return values are similar: return raw pointers when the caller
-does not take ownership, and return smart pointers by value otherwise,
-potentially in conjunction with `std::move()`.
+Conventions for return values are similar with an important distinction:
+  * Return raw pointers if-and-only-if the caller does not take ownership.
+  * Return `std::unique_ptr<T>` or `scoped_refptr<T>` by value when the impl is
+    handing off ownership.
+  * **Distinction**: Return `const scoped_refptr<T>&` when the impl retains
+    ownership so the caller isn't required to take a ref: this avoids bumping
+    the reference count if the caller doesn't need ownership and also
+    [helps binary size](https://crrev.com/c/1435627)).
 
 A great deal of Chromium code predates the above rules. In particular, some
 functions take ownership of params passed as `T*`, or take `const
@@ -355,6 +359,5 @@ these:
   * Unit tests and performance tests should be placed in the same directory as
     the functionality they're testing.
 
-  * The [C++ do's and
-    don'ts](https://sites.google.com/a/chromium.org/dev/developers/coding-style/cpp-dos-and-donts)
-    page has more helpful information.
+  * The [C++ Dos and Don'ts](c++-dos-and-donts.md) page has more helpful
+    information.

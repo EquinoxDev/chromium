@@ -16,6 +16,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/fake_cws.h"
@@ -44,7 +45,7 @@
 #include "chrome/browser/profiles/profile_impl.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ui/ash/wallpaper_controller_client.h"
 #include "chrome/browser/ui/webui/chromeos/login/kiosk_app_menu_handler.h"
 #include "chrome/common/chrome_constants.h"
@@ -55,8 +56,6 @@
 #include "chromeos/disks/disk_mount_manager.h"
 #include "chromeos/settings/cros_settings_provider.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/signin_manager.h"
-#include "components/signin/core/browser/signin_pref_names.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -81,6 +80,7 @@
 #include "mojo/public/cpp/bindings/associated_binding.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/audio/public/cpp/fake_system_info.h"
+#include "services/identity/public/cpp/identity_manager.h"
 #include "ui/aura/window.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/keyboard/public/keyboard_switches.h"
@@ -876,7 +876,7 @@ IN_PROC_BROWSER_TEST_F(KioskTest, NotSignedInWithGAIAAccount) {
   Profile* app_profile = ProfileManager::GetPrimaryUserProfile();
   ASSERT_TRUE(app_profile);
   EXPECT_FALSE(
-      SigninManagerFactory::GetForProfile(app_profile)->IsAuthenticated());
+      IdentityManagerFactory::GetForProfile(app_profile)->HasPrimaryAccount());
 }
 
 IN_PROC_BROWSER_TEST_F(KioskTest, PRE_LaunchAppNetworkDown) {
@@ -1346,7 +1346,8 @@ class KioskUpdateTest : public KioskTest {
 
   void PreCacheApp(const std::string& app_id,
                    const std::string& version,
-                   const std::string& crx_file) {
+                   const std::string& crx_file,
+                   bool wait_for_app_data) {
     set_test_app_id(app_id);
     set_test_app_version(version);
     set_test_crx_file(crx_file);
@@ -1354,7 +1355,10 @@ class KioskUpdateTest : public KioskTest {
     KioskAppManager* manager = KioskAppManager::Get();
     AppDataLoadWaiter waiter(manager, app_id, version);
     ReloadKioskApps();
-    waiter.Wait();
+    if (wait_for_app_data)
+      waiter.WaitForAppData();
+    else
+      waiter.Wait();
     EXPECT_TRUE(waiter.loaded());
     std::string cached_version;
     base::FilePath file_path;
@@ -1416,7 +1420,8 @@ class KioskUpdateTest : public KioskTest {
       const TestAppInfo& primary_app,
       const std::vector<TestAppInfo>& secondary_apps) {
     // Pre-cache the primary app.
-    PreCacheApp(primary_app.id, primary_app.version, primary_app.crx_filename);
+    PreCacheApp(primary_app.id, primary_app.version, primary_app.crx_filename,
+                /*wait_for_app_data=*/false);
 
     set_test_app_id(primary_app.id);
     fake_cws()->SetNoUpdate(primary_app.id);
@@ -1594,7 +1599,8 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, LaunchOfflineEnabledAppNoNetwork) {
 IN_PROC_BROWSER_TEST_F(KioskUpdateTest,
                        PRE_LaunchCachedOfflineEnabledAppNoNetwork) {
   PreCacheApp(kTestOfflineEnabledKioskApp, "1.0.0",
-              std::string(kTestOfflineEnabledKioskApp) + "_v1.crx");
+              std::string(kTestOfflineEnabledKioskApp) + "_v1.crx",
+              /*wait_for_app_data=*/true);
 }
 
 IN_PROC_BROWSER_TEST_F(KioskUpdateTest,
@@ -1681,7 +1687,8 @@ IN_PROC_BROWSER_TEST_F(KioskUpdateTest, LaunchOfflineEnabledAppHasUpdate) {
 // plug in usb stick with a v2 app for offline updating.
 IN_PROC_BROWSER_TEST_F(KioskUpdateTest, PRE_UsbStickUpdateAppNoNetwork) {
   PreCacheApp(kTestOfflineEnabledKioskApp, "1.0.0",
-              std::string(kTestOfflineEnabledKioskApp) + "_v1.crx");
+              std::string(kTestOfflineEnabledKioskApp) + "_v1.crx",
+              /*wait_for_app_data=*/true);
 
   set_test_app_id(kTestOfflineEnabledKioskApp);
   StartUIForAppLaunch();
@@ -2226,7 +2233,7 @@ IN_PROC_BROWSER_TEST_F(KioskEnterpriseTest, EnterpriseKioskApp) {
   Profile* app_profile = ProfileManager::GetPrimaryUserProfile();
   ASSERT_TRUE(app_profile);
   EXPECT_FALSE(
-      SigninManagerFactory::GetForProfile(app_profile)->IsAuthenticated());
+      IdentityManagerFactory::GetForProfile(app_profile)->HasPrimaryAccount());
 
   // Terminate the app.
   window->GetBaseWindow()->Close();

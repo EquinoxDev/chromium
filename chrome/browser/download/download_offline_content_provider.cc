@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/time/time.h"
 #include "chrome/browser/download/image_thumbnail_request.h"
@@ -32,7 +33,8 @@ namespace {
 const int kThumbnailSizeInDP = 64;
 
 bool ShouldShowDownloadItem(const download::DownloadItem* item) {
-  return !item->IsTemporary() && !item->IsTransient() && !item->IsDangerous();
+  return !item->IsTemporary() && !item->IsTransient() && !item->IsDangerous() &&
+         !item->GetTargetFilePath().empty();
 }
 
 }  // namespace

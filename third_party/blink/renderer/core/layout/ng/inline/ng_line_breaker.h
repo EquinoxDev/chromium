@@ -40,6 +40,8 @@ class CORE_EXPORT NGLineBreaker {
                 unsigned handled_leading_floats_index,
                 const NGInlineBreakToken*,
                 NGExclusionSpace*,
+                LayoutUnit percentage_resolution_block_size_for_min_max =
+                    NGSizeIndefinite,
                 Vector<LayoutObject*>* out_floats_for_min_max = nullptr);
   ~NGLineBreaker();
 
@@ -102,9 +104,17 @@ class CORE_EXPORT NGLineBreaker {
   };
 
   void HandleText(const NGInlineItem&);
+  void HandleText(const NGInlineItem&, const ShapeResult& shape_result);
   void BreakText(NGInlineItemResult*,
                  const NGInlineItem&,
                  LayoutUnit available_width);
+  void BreakText(NGInlineItemResult*,
+                 const NGInlineItem&,
+                 const ShapeResult& shape_result,
+                 LayoutUnit available_width);
+  bool HandleTextForFastMinContent(NGInlineItemResult* item_result,
+                                   const NGInlineItem& item,
+                                   const ShapeResult& shape_result);
 
   scoped_refptr<ShapeResultView> TruncateLineEndResult(
       const NGInlineItemResult& item_result,
@@ -114,7 +124,8 @@ class CORE_EXPORT NGLineBreaker {
                                        unsigned start,
                                        unsigned end);
 
-  void HandleTrailingSpaces(const NGInlineItem&);
+  void HandleTrailingSpaces(const NGInlineItem&,
+                            const ShapeResult& shape_result);
   void RemoveTrailingCollapsibleSpace();
   LayoutUnit TrailingCollapsibleSpaceWidth();
   void ComputeTrailingCollapsibleSpace();
@@ -125,6 +136,8 @@ class CORE_EXPORT NGLineBreaker {
   void HandleBidiControlItem(const NGInlineItem&);
   void HandleAtomicInline(const NGInlineItem&);
   void HandleFloat(const NGInlineItem&);
+
+  LayoutUnit ComputeFloatAncestorInlineEndSize() const;
 
   void HandleOpenTag(const NGInlineItem&);
   void HandleCloseTag(const NGInlineItem&);
@@ -202,6 +215,10 @@ class CORE_EXPORT NGLineBreaker {
 
   bool ignore_floats_ = false;
 
+  // Set in quirks mode when we're not supposed to break inside table cells
+  // between images, and between text and images.
+  bool sticky_images_quirk_ = false;
+
   const NGInlineItemsData& items_data_;
 
   NGLineBreakerMode mode_;
@@ -228,12 +245,19 @@ class CORE_EXPORT NGLineBreaker {
   unsigned leading_floats_index_ = 0u;
   unsigned handled_leading_floats_index_;
 
-  Vector<LayoutObject*>* out_floats_for_min_max_;
+  // Keep the last item |HandleTextForFastMinContent()| has handled. This is
+  // used to fallback the last word to |HandleText()|.
+  const NGInlineItem* fast_min_content_item_ = nullptr;
 
   // The current base direction for the bidi algorithm.
   // This is copied from NGInlineNode, then updated after each forced line break
   // if 'unicode-bidi: plaintext'.
   TextDirection base_direction_;
+
+  // During the min/max size calculation we need a special percentage
+  // resolution block-size to pass to children/pass to children.
+  LayoutUnit percentage_resolution_block_size_for_min_max_;
+  Vector<LayoutObject*>* out_floats_for_min_max_;
 };
 
 }  // namespace blink

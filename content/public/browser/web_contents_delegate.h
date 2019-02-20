@@ -18,12 +18,14 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/bluetooth_chooser.h"
 #include "content/public/browser/invalidate_type.h"
+#include "content/public/browser/media_stream_request.h"
+#include "content/public/browser/serial_chooser.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/public/common/previews_state.h"
-#include "content/public/common/window_container_type.mojom.h"
+#include "content/public/common/window_container_type.mojom-forward.h"
 #include "third_party/blink/public/common/manifest/web_display_mode.h"
-#include "third_party/blink/public/mojom/color_chooser/color_chooser.mojom.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
+#include "third_party/blink/public/mojom/color_chooser/color_chooser.mojom-forward.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_security_style.h"
 #include "third_party/blink/public/web/web_fullscreen_options.h"
@@ -217,7 +219,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Sets focus to the location bar or some other place that is appropriate.
   // This is called when the tab wants to encourage user input, like for the
   // new tab page.
-  virtual void SetFocusToLocationBar(bool select_all) {}
+  virtual void SetFocusToLocationBar() {}
 
   // Returns whether the page should be focused when transitioning from crashed
   // to live. Default is true.
@@ -488,22 +490,23 @@ class CONTENT_EXPORT WebContentsDelegate {
   // request is denied, a call should be made to |callback| with an empty list
   // of devices. |request| has the details of the request (e.g. which of audio
   // and/or video devices are requested, and lists of available devices).
-  virtual void RequestMediaAccessPermission(WebContents* web_contents,
-                                            const MediaStreamRequest& request,
-                                            MediaResponseCallback callback);
+  virtual void RequestMediaAccessPermission(
+      WebContents* web_contents,
+      const MediaStreamRequest& request,
+      content::MediaResponseCallback callback);
 
   // Checks if we have permission to access the microphone or camera. Note that
   // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
   // or MEDIA_DEVICE_VIDEO_CAPTURE.
   virtual bool CheckMediaAccessPermission(RenderFrameHost* render_frame_host,
                                           const GURL& security_origin,
-                                          MediaStreamType type);
+                                          blink::MediaStreamType type);
 
   // Returns the ID of the default device for the given media device |type|.
   // If the returned value is an empty string, it means that there is no
   // default device for the given |type|.
   virtual std::string GetDefaultMediaDeviceID(WebContents* web_contents,
-                                              MediaStreamType type);
+                                              blink::MediaStreamType type);
 
 #if defined(OS_ANDROID)
   // Returns true if the given media should be blocked to load.
@@ -535,6 +538,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Returns true if the WebContents is never visible.
   virtual bool IsNeverVisible(WebContents* web_contents);
 
+  // Askss |guest_web_contents| to perform the same. If this returns true, the
+  // default behavior is suppressed.
+  virtual bool GuestSaveFrame(WebContents* guest_web_contents);
+
   // Called in response to a request to save a frame. If this returns true, the
   // default behavior is suppressed.
   virtual bool SaveFrame(const GURL& url, const Referrer& referrer);
@@ -546,9 +553,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual blink::WebSecurityStyle GetSecurityStyle(
       WebContents* web_contents,
       SecurityStyleExplanations* security_style_explanations);
-
-  // Requests the app banner. This method is called from the DevTools.
-  virtual void RequestAppBannerFromDevTools(WebContents* web_contents) {}
 
   // Called when a suspicious navigation of the main frame has been blocked.
   // Allows the delegate to provide some UI to let the user know about the
@@ -605,7 +609,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Notifies the Picture-in-Picture controller that there is a new player
   // entering Picture-in-Picture.
   // Returns the size of the Picture-in-Picture window.
-  virtual gfx::Size EnterPictureInPicture(const viz::SurfaceId&,
+  virtual gfx::Size EnterPictureInPicture(WebContents* web_contents,
+                                          const viz::SurfaceId&,
                                           const gfx::Size& natural_size);
 
   // Updates the Picture-in-Picture controller with a signal that
@@ -634,6 +639,11 @@ class CONTENT_EXPORT WebContentsDelegate {
       std::unique_ptr<WebContents> new_contents,
       bool did_start_load,
       bool did_finish_load);
+
+  // Returns true if the widget's frame content needs to be stored before
+  // eviction and displayed until a new frame is generated. If false, a white
+  // solid color is displayed instead.
+  virtual bool ShouldShowStaleContentOnEviction(WebContents* source);
 
  protected:
   virtual ~WebContentsDelegate();

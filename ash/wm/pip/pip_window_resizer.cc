@@ -174,9 +174,7 @@ void PipWindowResizer::CompleteDrag() {
   if (should_dismiss) {
     // Close the widget. This will trigger an animation dismissing the PIP
     // window.
-    auto* widget = GetInternalWidgetForWindow(window_state()->window());
-    if (widget)
-      widget->Close();
+    wm::CloseWidgetForWindow(window_state()->window());
   } else {
     // Animate the PIP window to its resting position.
     gfx::Rect bounds;
@@ -210,7 +208,7 @@ void PipWindowResizer::CompleteDrag() {
     // TODO(edcourtney): This may not be the best place for this. Consider
     // doing this a different way or saving these bounds at a later point when
     // the work area changes.
-    window_state()->SaveCurrentBoundsForRestore();
+    window_state()->SetRestoreBoundsInParent(bounds);
   }
 }
 

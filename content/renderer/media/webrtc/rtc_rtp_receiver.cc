@@ -4,10 +4,11 @@
 
 #include "content/renderer/media/webrtc/rtc_rtp_receiver.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
-#include "content/renderer/media/webrtc/rtc_rtp_contributing_source.h"
+#include "content/renderer/media/webrtc/rtc_rtp_source.h"
 #include "content/renderer/media/webrtc/rtc_stats.h"
-#include "third_party/webrtc/rtc_base/scoped_ref_ptr.h"
+#include "third_party/webrtc/api/scoped_refptr.h"
 
 namespace content {
 
@@ -132,16 +133,14 @@ class RTCRtpReceiver::RTCRtpReceiverInternal
     state_ = std::move(state);
   }
 
-  blink::WebVector<std::unique_ptr<blink::WebRTCRtpContributingSource>>
-  GetSources() {
+  blink::WebVector<std::unique_ptr<blink::WebRTCRtpSource>> GetSources() {
     // The webrtc_recever_ is a proxy, so this is a blocking call to the webrtc
     // signalling thread.
     auto webrtc_sources = webrtc_receiver_->GetSources();
-    blink::WebVector<std::unique_ptr<blink::WebRTCRtpContributingSource>>
-        sources(webrtc_sources.size());
+    blink::WebVector<std::unique_ptr<blink::WebRTCRtpSource>> sources(
+        webrtc_sources.size());
     for (size_t i = 0; i < webrtc_sources.size(); ++i) {
-      sources[i] =
-          std::make_unique<RTCRtpContributingSource>(webrtc_sources[i]);
+      sources[i] = std::make_unique<RTCRtpSource>(webrtc_sources[i]);
     }
     return sources;
   }
@@ -254,7 +253,7 @@ blink::WebVector<blink::WebString> RTCRtpReceiver::StreamIds() const {
   return web_stream_ids;
 }
 
-blink::WebVector<std::unique_ptr<blink::WebRTCRtpContributingSource>>
+blink::WebVector<std::unique_ptr<blink::WebRTCRtpSource>>
 RTCRtpReceiver::GetSources() {
   return internal_->GetSources();
 }

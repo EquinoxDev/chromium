@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/credential_provider/common/gcp_strings.h"
 #include "chrome/credential_provider/gaiacp/gaia_credential_base.h"
 #include "chrome/credential_provider/gaiacp/reg_utils.h"
-#include "chrome/credential_provider/test/fake_gls_run_helper.h"
+#include "chrome/credential_provider/test/gls_runner_test_base.h"
 #include "chrome/credential_provider/test/test_credential.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -15,9 +16,6 @@ namespace testing {
 
 // This class is used to implement a test credential based off only
 // CGaiaCredentialBase which requires certain functions be implemented.
-
-// This class is used to implement a test credential based off only
-// CGaiaCredentialBase which requires certain
 class ATL_NO_VTABLE CTestCredentialForBase
     : public CTestCredentialBase<CGaiaCredentialBase>,
       public CComObjectRootEx<CComMultiThreadModel> {
@@ -47,9 +45,9 @@ CTestCredentialForBase::~CTestCredentialForBase() = default;
 namespace {
 
 HRESULT CreateCredential(ICredentialProviderCredential** credential) {
-  return CComCreator<CComObject<testing::CTestCredentialForBase>>::
-      CreateInstance(nullptr, IID_ICredentialProviderCredential,
-                     reinterpret_cast<void**>(credential));
+  return CComCreator<CComObject<CTestCredentialForBase>>::CreateInstance(
+      nullptr, IID_ICredentialProviderCredential,
+      reinterpret_cast<void**>(credential));
 }
 
 HRESULT CreateCredentialWithProvider(
@@ -69,23 +67,7 @@ HRESULT CreateCredentialWithProvider(
 
 }  // namespace
 
-class GcpGaiaCredentialBaseTest : public ::testing::Test {
- protected:
-  ~GcpGaiaCredentialBaseTest() override;
-
-  void SetUp() override;
-
-  FakeGlsRunHelper* run_helper() { return &run_helper_; }
-
- private:
-  FakeGlsRunHelper run_helper_;
-};
-
-GcpGaiaCredentialBaseTest::~GcpGaiaCredentialBaseTest() = default;
-
-void GcpGaiaCredentialBaseTest::SetUp() {
-  run_helper_.SetUp();
-}
+class GcpGaiaCredentialBaseTest : public GlsRunnerTestBase {};
 
 TEST_F(GcpGaiaCredentialBaseTest, Advise) {
   CComPtr<ICredentialProviderCredential> cred;
@@ -114,7 +96,7 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_NoInternet) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcess(cred, /*succeeds=*/false));
@@ -129,7 +111,7 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_Start) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
@@ -145,7 +127,66 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_Finish) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
+
+  // Now finish the logon.
+  CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE cpgsr;
+  CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION cpcs;
+  wchar_t* status_text;
+  CREDENTIAL_PROVIDER_STATUS_ICON status_icon;
+  ASSERT_EQ(S_OK,
+            cred->GetSerialization(&cpgsr, &cpcs, &status_text, &status_icon));
+  EXPECT_EQ(nullptr, status_text);
+  EXPECT_EQ(CPSI_SUCCESS, status_icon);
+  EXPECT_EQ(CPGSR_RETURN_CREDENTIAL_FINISHED, cpgsr);
+  EXPECT_LT(0u, cpcs.cbSerialization);
+  EXPECT_NE(nullptr, cpcs.rgbSerialization);
+
+  CComPtr<ITestCredential> test;
+  ASSERT_EQ(S_OK, cred.QueryInterface(&test));
+
+  // State was not reset.
+  EXPECT_TRUE(test->AreCredentialsValid());
+
+  // Make sure a "foo" user was created.
+  PSID sid;
+  EXPECT_EQ(S_OK, fake_os_user_manager()->GetUserSID(
+                      OSUserManager::GetLocalDomain().c_str(), kDefaultUsername,
+                      &sid));
+  ::LocalFree(sid);
+  EXPECT_EQ(test->GetFinalEmail(), kDefaultEmail);
+
+  wchar_t* report_status_text = nullptr;
+  CREDENTIAL_PROVIDER_STATUS_ICON report_icon;
+  EXPECT_EQ(S_OK, cred->ReportResult(0, 0, &report_status_text, &report_icon));
+  // State was reset.
+  EXPECT_FALSE(test->AreCredentialsValid());
+
+  EXPECT_EQ(S_OK, gaia_cred->Terminate());
+
+  // New user should be created.
+  EXPECT_EQ(2ul, fake_os_user_manager()->GetUserCount());
+}
+
+TEST_F(GcpGaiaCredentialBaseTest,
+       GetSerialization_AssociateToMatchingAssociatedUser) {
+  USES_CONVERSION;
+  // Create a fake user that has the same gaia id as the test gaia id.
+  CComBSTR first_sid;
+  base::string16 username(L"foo");
+  ASSERT_EQ(S_OK, fake_os_user_manager()->CreateTestOSUser(
+                      username, L"password", L"name", L"comment",
+                      base::UTF8ToUTF16(kDefaultGaiaId), base::string16(),
+                      &first_sid));
+  ASSERT_EQ(2ul, fake_os_user_manager()->GetUserCount());
+  FakeGaiaCredentialProvider provider;
+
+  // Start logon.
+  CComPtr<IGaiaCredential> gaia_cred;
+  CComPtr<ICredentialProviderCredential> cred;
+  ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
@@ -157,22 +198,30 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_Finish) {
   CREDENTIAL_PROVIDER_STATUS_ICON status_icon;
   ASSERT_EQ(S_OK,
             cred->GetSerialization(&cpgsr, &cpcs, &status_text, &status_icon));
-  ASSERT_EQ(nullptr, status_text);
-  ASSERT_EQ(CPSI_NONE, status_icon);
-  ASSERT_EQ(CPGSR_RETURN_CREDENTIAL_FINISHED, cpgsr);
-  ASSERT_LT(0u, cpcs.cbSerialization);
-  ASSERT_NE(nullptr, cpcs.rgbSerialization);
+  EXPECT_EQ(nullptr, status_text);
+  EXPECT_EQ(CPSI_SUCCESS, status_icon);
+  EXPECT_EQ(CPGSR_RETURN_CREDENTIAL_FINISHED, cpgsr);
+  EXPECT_LT(0u, cpcs.cbSerialization);
+  EXPECT_NE(nullptr, cpcs.rgbSerialization);
 
+  // State was not reset.
+  EXPECT_TRUE(test->AreCredentialsValid());
+
+  // User should have been associated.
+  EXPECT_EQ(test->GetFinalUsername(), username);
+  // Email should be the same as the default one.
+  EXPECT_EQ(test->GetFinalEmail(), kDefaultEmail);
+
+  wchar_t* report_status_text = nullptr;
+  CREDENTIAL_PROVIDER_STATUS_ICON report_icon;
+  EXPECT_EQ(S_OK, cred->ReportResult(0, 0, &report_status_text, &report_icon));
   // State was reset.
-  ASSERT_FALSE(test->AreCredentialsValid());
+  EXPECT_FALSE(test->AreCredentialsValid());
 
-  // Make sure a "foo" user was created.
-  PSID sid;
-  ASSERT_EQ(S_OK, run_helper()->fake_os_user_manager()->GetUserSID(
-                      testing::kDefaultUsername, &sid));
-  ::LocalFree(sid);
+  EXPECT_EQ(S_OK, gaia_cred->Terminate());
 
-  ASSERT_EQ(S_OK, gaia_cred->Terminate());
+  // No new user should be created.
+  EXPECT_EQ(2ul, fake_os_user_manager()->GetUserCount());
 }
 
 TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_MultipleCalls) {
@@ -182,7 +231,7 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_MultipleCalls) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
 
   constexpr wchar_t kStartGlsEventName[] =
@@ -215,29 +264,32 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_MultipleCalls) {
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
 
-TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_PasswordChanged) {
+TEST_F(GcpGaiaCredentialBaseTest,
+       GetSerialization_PasswordChangedForAssociatedUser) {
+  USES_CONVERSION;
   FakeGaiaCredentialProvider provider;
 
   // Create a fake user for which the windows password does not match the gaia
   // password supplied by the test gls process.
-  OSUserManager* manager = OSUserManager::Get();
   CComBSTR sid;
-  DWORD error;
   CComBSTR windows_password = L"password2";
-  ASSERT_EQ(S_OK, manager->AddUser(L"foo", (BSTR)windows_password, L"Full Name",
-                                   L"comment", true, &sid, &error));
+  ASSERT_EQ(S_OK,
+            fake_os_user_manager()->CreateTestOSUser(
+                L"foo", (BSTR)windows_password, L"Full Name", L"comment",
+                base::UTF8ToUTF16(kDefaultGaiaId), base::string16(), &sid));
 
   // Start logon.
   CComPtr<IGaiaCredential> gaia_cred;
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
-  ASSERT_TRUE(test->AreWindowsCredentialsAvailable());
+  EXPECT_TRUE(test->CanAttemptWindowsLogon());
+  EXPECT_FALSE(test->IsWindowsPasswordValidForStoredUser());
 
   // Check that the process has not finished yet.
   CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE cpgsr;
@@ -246,41 +298,49 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_PasswordChanged) {
   CREDENTIAL_PROVIDER_STATUS_ICON status_icon;
   ASSERT_EQ(S_OK,
             cred->GetSerialization(&cpgsr, &cpcs, &status_text, &status_icon));
-  ASSERT_EQ(nullptr, status_text);
-  ASSERT_EQ(CPGSR_NO_CREDENTIAL_NOT_FINISHED, cpgsr);
+  EXPECT_EQ(nullptr, status_text);
+  EXPECT_EQ(CPGSR_NO_CREDENTIAL_NOT_FINISHED, cpgsr);
 
   // Credentials should still be available.
-  ASSERT_TRUE(test->AreWindowsCredentialsAvailable());
+  EXPECT_TRUE(test->CanAttemptWindowsLogon());
+  EXPECT_FALSE(test->IsWindowsPasswordValidForStoredUser());
 
   // Set an invalid password and try to get serialization again. Credentials
   // should still be valid but serialization is not complete.
   CComBSTR invalid_windows_password = L"a";
   test->SetWindowsPassword(invalid_windows_password);
-  ASSERT_EQ(nullptr, status_text);
+  EXPECT_EQ(nullptr, status_text);
   ASSERT_EQ(S_OK,
             cred->GetSerialization(&cpgsr, &cpcs, &status_text, &status_icon));
-  ASSERT_EQ(CPGSR_NO_CREDENTIAL_NOT_FINISHED, cpgsr);
+  EXPECT_EQ(CPGSR_NO_CREDENTIAL_NOT_FINISHED, cpgsr);
 
   // Update the Windows password to be the real password created for the user.
   test->SetWindowsPassword(windows_password);
+  // Sign in information should still be available.
+  EXPECT_TRUE(test->GetFinalEmail().length());
 
   // Both Windows and Gaia credentials should be valid now
-  ASSERT_TRUE(test->AreWindowsCredentialsAvailable());
-  ASSERT_TRUE(test->AreWindowsCredentialsValid());
+  EXPECT_TRUE(test->CanAttemptWindowsLogon());
+  EXPECT_TRUE(test->IsWindowsPasswordValidForStoredUser());
 
   // Serialization should complete without any errors.
   ASSERT_EQ(S_OK,
             cred->GetSerialization(&cpgsr, &cpcs, &status_text, &status_icon));
-  ASSERT_EQ(nullptr, status_text);
-  ASSERT_EQ(CPSI_NONE, status_icon);
-  ASSERT_EQ(CPGSR_RETURN_CREDENTIAL_FINISHED, cpgsr);
-  ASSERT_LT(0u, cpcs.cbSerialization);
-  ASSERT_NE(nullptr, cpcs.rgbSerialization);
+  EXPECT_EQ(nullptr, status_text);
+  EXPECT_EQ(CPSI_SUCCESS, status_icon);
+  EXPECT_EQ(CPGSR_RETURN_CREDENTIAL_FINISHED, cpgsr);
+  EXPECT_LT(0u, cpcs.cbSerialization);
+  EXPECT_NE(nullptr, cpcs.rgbSerialization);
 
+  // State was not reset.
+  EXPECT_TRUE(test->AreCredentialsValid());
+  wchar_t* report_status_text = nullptr;
+  CREDENTIAL_PROVIDER_STATUS_ICON report_icon;
+  EXPECT_EQ(S_OK, cred->ReportResult(0, 0, &report_status_text, &report_icon));
   // State was reset.
-  ASSERT_FALSE(test->AreCredentialsValid());
+  EXPECT_FALSE(test->AreCredentialsValid());
 
-  ASSERT_EQ(S_OK, gaia_cred->Terminate());
+  EXPECT_EQ(S_OK, gaia_cred->Terminate());
 }
 
 TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_Cancel) {
@@ -290,7 +350,7 @@ TEST_F(GcpGaiaCredentialBaseTest, GetSerialization_Cancel) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
 
   // This event is merely used to keep the gls running while it is cancelled
@@ -320,13 +380,16 @@ TEST_F(GcpGaiaCredentialBaseTest, StripEmailTLD) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "foo@imfl.info";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("foo@imfl.info"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"foo_imfl"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -339,13 +402,16 @@ TEST_F(GcpGaiaCredentialBaseTest, StripEmailTLD_Gmail) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "bar@gmail.com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("bar@gmail.com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"bar"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -358,13 +424,16 @@ TEST_F(GcpGaiaCredentialBaseTest, StripEmailTLD_Googlemail) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "toto@googlemail.com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("toto@googlemail.com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"toto"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -377,13 +446,16 @@ TEST_F(GcpGaiaCredentialBaseTest, InvalidUsernameCharacters) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "a\\[]:|<>+=;?*z@gmail.com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("a\\[]:|<>+=;?*z@gmail.com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"a____________z"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -396,14 +468,16 @@ TEST_F(GcpGaiaCredentialBaseTest, EmailTooLong) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "areallylongemailadressdude@gmail.com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK,
-            test->SetGlsEmailAddress("areallylongemailadressdude@gmail.com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"areallylongemailadre"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -416,13 +490,16 @@ TEST_F(GcpGaiaCredentialBaseTest, EmailTooLong2) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "foo@areallylongdomaindude.com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("foo@areallylongdomaindude.com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"foo_areallylongdomai"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -435,13 +512,16 @@ TEST_F(GcpGaiaCredentialBaseTest, EmailIsNoAt) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "foo";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("foo"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"foo_gmail"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -454,13 +534,16 @@ TEST_F(GcpGaiaCredentialBaseTest, EmailIsAtCom) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "@com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("@com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"_com"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }
@@ -473,13 +556,16 @@ TEST_F(GcpGaiaCredentialBaseTest, EmailIsAtDotCom) {
   CComPtr<ICredentialProviderCredential> cred;
   ASSERT_EQ(S_OK, CreateCredentialWithProvider(&provider, &gaia_cred, &cred));
 
-  CComPtr<testing::ITestCredential> test;
+  constexpr char email[] = "@.com";
+
+  CComPtr<ITestCredential> test;
   ASSERT_EQ(S_OK, cred.QueryInterface(&test));
-  ASSERT_EQ(S_OK, test->SetGlsEmailAddress("@.com"));
+  ASSERT_EQ(S_OK, test->SetGlsEmailAddress(email));
 
   ASSERT_EQ(S_OK, run_helper()->StartLogonProcessAndWait(cred));
 
   ASSERT_STREQ(W2COLE(L"_.com"), test->GetFinalUsername());
+  EXPECT_EQ(test->GetFinalEmail(), email);
 
   ASSERT_EQ(S_OK, gaia_cred->Terminate());
 }

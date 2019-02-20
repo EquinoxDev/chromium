@@ -4,6 +4,7 @@
 
 #include "ash/magnifier/magnification_controller.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -13,7 +14,7 @@
 #include "ash/display/root_window_transformers.h"
 #include "ash/host/ash_window_tree_host.h"
 #include "ash/host/root_window_transformer.h"
-#include "ash/magnifier/magnifier_scale_utils.h"
+#include "ash/magnifier/magnifier_utils.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
@@ -83,18 +84,6 @@ void MoveCursorTo(aura::WindowTreeHost* host, const gfx::Point& root_location) {
       gfx::ToCeiledPoint(host_location_3f.AsPointF()));
 }
 
-ui::InputMethod* GetInputMethod(aura::Window* root_window) {
-  ui::IMEBridge* bridge = ui::IMEBridge::Get();
-  if (bridge && bridge->GetInputContextHandler())
-    return bridge->GetInputContextHandler()->GetInputMethod();
-
-  if (root_window->GetHost())
-    return root_window->GetHost()->GetInputMethod();
-
-  // Needed by a handful of browser tests that use MockInputMethod.
-  return Shell::GetRootWindowForNewWindows()->GetHost()->GetInputMethod();
-}
-
 }  // namespace
 
 class MagnificationController::GestureProviderClient
@@ -154,7 +143,7 @@ MagnificationController::~MagnificationController() {
 void MagnificationController::SetEnabled(bool enabled) {
   if (enabled) {
     if (!is_enabled_) {
-      input_method_ = GetInputMethod(root_window_);
+      input_method_ = magnifier_utils::GetInputMethod(root_window_);
       if (input_method_)
         input_method_->AddObserver(this);
     }
@@ -217,7 +206,7 @@ void MagnificationController::SetScale(float scale, bool animate) {
 }
 
 void MagnificationController::StepToNextScaleValue(int delta_index) {
-  SetScale(magnifier_scale_utils::GetNextMagnifierScaleValue(
+  SetScale(magnifier_utils::GetNextMagnifierScaleValue(
                delta_index, GetScale(), kNonMagnifiedScale, kMaxMagnifiedScale),
            true /* animate */);
 }
@@ -315,8 +304,11 @@ gfx::Transform MagnificationController::GetMagnifierTransform() const {
 }
 
 void MagnificationController::OnInputContextHandlerChanged() {
-  auto* new_input_method = GetInputMethod(root_window_);
-  if (!is_enabled_ || new_input_method == input_method_)
+  if (!is_enabled_)
+    return;
+
+  auto* new_input_method = magnifier_utils::GetInputMethod(root_window_);
+  if (new_input_method == input_method_)
     return;
 
   if (input_method_)
@@ -475,7 +467,7 @@ void MagnificationController::OnScrollEvent(ui::ScrollEvent* event) {
     }
 
     if (event->type() == ui::ET_SCROLL) {
-      SetScale(magnifier_scale_utils::GetScaleFromScroll(
+      SetScale(magnifier_utils::GetScaleFromScroll(
                    event->y_offset() * kScrollScaleChangeFactor, GetScale(),
                    kMaxMagnifiedScale, kNonMagnifiedScale),
                false /* animate */);
@@ -499,14 +491,14 @@ void MagnificationController::OnTouchEvent(ui::TouchEvent* event) {
     SwitchTargetRootWindow(current_root, true);
 }
 
-ui::EventRewriteStatus MagnificationController::RewriteEvent(
+ui::EventDispatchDetails MagnificationController::RewriteEvent(
     const ui::Event& event,
-    std::unique_ptr<ui::Event>* rewritten_event) {
+    const Continuation continuation) {
   if (!IsEnabled())
-    return ui::EVENT_REWRITE_CONTINUE;
+    return SendEvent(continuation, &event);
 
   if (!event.IsTouchEvent())
-    return ui::EVENT_REWRITE_CONTINUE;
+    return SendEvent(continuation, &event);
 
   const ui::TouchEvent* touch_event = event.AsTouchEvent();
 
@@ -525,7 +517,7 @@ ui::EventRewriteStatus MagnificationController::RewriteEvent(
         touch_event_copy.unique_event_id(), false /* event_consumed */,
         false /* is_source_touch_event_set_non_blocking */);
   } else {
-    return ui::EVENT_REWRITE_DISCARD;
+    return DiscardEvent(continuation);
   }
 
   // User can change zoom level with two fingers pinch and pan around with two
@@ -556,12 +548,13 @@ ui::EventRewriteStatus MagnificationController::RewriteEvent(
       // TouchExplorationController confused. Send cancelled event for recorded
       // touch events to the next event rewriter here instead of rewriting an
       // event in the stream.
-      SendEventToEventSource(root_window_->GetHost()->GetEventSource(),
-                             &touch_cancel_event);
+      ui::EventDispatchDetails details =
+          SendEvent(continuation, &touch_cancel_event);
+      if (details.dispatcher_destroyed || details.target_destroyed)
+        return details;
     }
     press_event_map_.clear();
   }
-
   bool discard = consume_touch_event_;
 
   // Reset state once no point is touched on the screen.
@@ -579,16 +572,9 @@ ui::EventRewriteStatus MagnificationController::RewriteEvent(
   }
 
   if (discard)
-    return ui::EVENT_REWRITE_DISCARD;
+    return DiscardEvent(continuation);
 
-  return ui::EVENT_REWRITE_CONTINUE;
-}
-
-ui::EventRewriteStatus MagnificationController::NextDispatchEvent(
-    const ui::Event& last_event,
-    std::unique_ptr<ui::Event>* new_event) {
-  NOTREACHED();
-  return ui::EVENT_REWRITE_CONTINUE;
+  return SendEvent(continuation, &event);
 }
 
 bool MagnificationController::Redraw(const gfx::PointF& position,

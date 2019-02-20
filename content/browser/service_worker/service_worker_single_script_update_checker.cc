@@ -4,6 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_single_script_update_checker.h"
 
+#include "base/bind.h"
 #include "content/browser/appcache/appcache_response.h"
 #include "content/browser/service_worker/service_worker_cache_writer.h"
 #include "content/public/common/resource_type.h"
@@ -69,7 +70,8 @@ ServiceWorkerSingleScriptUpdateChecker::ServiceWorkerSingleScriptUpdateChecker(
     std::unique_ptr<ServiceWorkerResponseReader> copy_reader,
     std::unique_ptr<ServiceWorkerResponseWriter> writer,
     ResultCallback callback)
-    : network_client_binding_(this),
+    : script_url_(url),
+      network_client_binding_(this),
       network_watcher_(FROM_HERE,
                        mojo::SimpleWatcher::ArmingPolicy::MANUAL,
                        base::SequencedTaskRunnerHandle::Get()),
@@ -85,10 +87,7 @@ ServiceWorkerSingleScriptUpdateChecker::ServiceWorkerSingleScriptUpdateChecker(
 
   // TODO(momohatt): Handle cases where force_bypass_cache is enabled.
 
-  // |compare_reader| shouldn't be a nullptr, which forces
-  // ServiceWorkerCacheWriter to do the comparison.
-  DCHECK(compare_reader);
-  cache_writer_ = std::make_unique<ServiceWorkerCacheWriter>(
+  cache_writer_ = ServiceWorkerCacheWriter::CreateForComparison(
       std::move(compare_reader), std::move(copy_reader), std::move(writer),
       true /* pause_when_not_identical */);
 
@@ -154,9 +153,7 @@ void ServiceWorkerSingleScriptUpdateChecker::OnReceiveCachedMetadata(
     const std::vector<uint8_t>& data) {}
 
 void ServiceWorkerSingleScriptUpdateChecker::OnTransferSizeUpdated(
-    int32_t transfer_size_diff) {
-  NOTIMPLEMENTED();
-}
+    int32_t transfer_size_diff) {}
 
 void ServiceWorkerSingleScriptUpdateChecker::OnStartLoadingResponseBody(
     mojo::ScopedDataPipeConsumerHandle consumer) {
@@ -172,7 +169,7 @@ void ServiceWorkerSingleScriptUpdateChecker::OnComplete(
   NetworkLoaderState previous_loader_state = network_loader_state_;
   network_loader_state_ = NetworkLoaderState::kCompleted;
   if (status.error_code != net::OK) {
-    Finish(false /* is_script_changed */);
+    Finish(Result::kFailed);
     return;
   }
 
@@ -212,7 +209,7 @@ void ServiceWorkerSingleScriptUpdateChecker::OnComplete(
         return;
       case CacheWriterState::kCompleted:
         DCHECK_EQ(CacheWriterState::kCompleted, header_writer_state_);
-        Finish(false /* is_script_changed */);
+        Finish(Result::kIdentical);
         return;
     }
   }
@@ -246,9 +243,8 @@ void ServiceWorkerSingleScriptUpdateChecker::OnWriteHeadersComplete(
   DCHECK_EQ(CacheWriterState::kWriting, header_writer_state_);
   DCHECK_NE(net::ERR_IO_PENDING, error);
   header_writer_state_ = CacheWriterState::kCompleted;
-
   if (error != net::OK) {
-    Finish(false /* is_script_changed */);
+    Finish(Result::kFailed);
     return;
   }
 
@@ -355,31 +351,46 @@ void ServiceWorkerSingleScriptUpdateChecker::OnCompareDataComplete(
     // |cache_writer_| can be pausing only when it finds difference between
     // stored body and network body.
     DCHECK_EQ(net::ERR_IO_PENDING, error);
-    Finish(true /* is_script_changed */);
+    Finish(Result::kDifferent);
     return;
   }
   if (!pending_buffer || error != net::OK) {
-    Finish(false /* is_script_changed */);
+    Finish(Result::kIdentical);
     return;
   }
   DCHECK(pending_buffer);
   network_watcher_.ArmOrNotify();
 }
 
-void ServiceWorkerSingleScriptUpdateChecker::Finish(bool is_script_changed) {
-  if (is_script_changed) {
-    // TODO(momohatt): pass the necessary information to the version to update.
-  } else {
-    network_loader_.reset();
-    network_client_binding_.Close();
-    network_consumer_.reset();
-  }
+void ServiceWorkerSingleScriptUpdateChecker::Finish(Result result) {
   network_watcher_.Cancel();
   network_loader_state_ = NetworkLoaderState::kCompleted;
   header_writer_state_ = CacheWriterState::kCompleted;
   body_writer_state_ = CacheWriterState::kCompleted;
 
-  std::move(callback_).Run(is_script_changed);
+  if (Result::kDifferent == result) {
+    auto paused_state = std::make_unique<PausedState>(
+        std::move(cache_writer_), std::move(network_loader_),
+        network_client_binding_.Unbind(), std::move(network_consumer_));
+    std::move(callback_).Run(script_url_, result, std::move(paused_state));
+    return;
+  }
+  network_loader_.reset();
+  network_client_binding_.Close();
+  network_consumer_.reset();
+  std::move(callback_).Run(script_url_, result, nullptr);
 }
+
+ServiceWorkerSingleScriptUpdateChecker::PausedState::PausedState(
+    std::unique_ptr<ServiceWorkerCacheWriter> cache_writer,
+    network::mojom::URLLoaderPtr network_loader,
+    network::mojom::URLLoaderClientRequest network_client_request,
+    mojo::ScopedDataPipeConsumerHandle network_consumer)
+    : cache_writer(std::move(cache_writer)),
+      network_loader(std::move(network_loader)),
+      network_client_request(std::move(network_client_request)),
+      network_consumer(std::move(network_consumer)) {}
+
+ServiceWorkerSingleScriptUpdateChecker::PausedState::~PausedState() = default;
 
 }  // namespace content

@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
@@ -28,6 +29,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/previews/content/previews_user_data.h"
 #include "components/previews/core/previews_experiments.h"
+#include "components/previews/core/previews_features.h"
 #include "components/previews/core/previews_switches.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_entry.h"
@@ -175,8 +177,7 @@ PreviewsLitePageDecider::~PreviewsLitePageDecider() = default;
 void PreviewsLitePageDecider::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(kUserNeedsNotification, true);
-  registry->RegisterDictionaryPref(kHostBlacklist,
-                                   std::make_unique<base::DictionaryValue>());
+  registry->RegisterDictionaryPref(kHostBlacklist);
 }
 
 // static
@@ -187,6 +188,11 @@ PreviewsLitePageDecider::MaybeCreateThrottleFor(
   DCHECK(handle->GetWebContents());
   DCHECK(handle->GetWebContents()->GetBrowserContext());
 
+  if (base::FeatureList::IsEnabled(
+          previews::features::kHTTPSServerPreviewsUsingURLLoader)) {
+    return nullptr;
+  }
+
   content::BrowserContext* browser_context =
       handle->GetWebContents()->GetBrowserContext();
 
@@ -196,20 +202,19 @@ PreviewsLitePageDecider::MaybeCreateThrottleFor(
     return nullptr;
   DCHECK(!browser_context->IsOffTheRecord());
 
-  PreviewsUITabHelper* tab_helper =
-      PreviewsUITabHelper::FromWebContents(handle->GetWebContents());
-  if (!tab_helper)
-    return nullptr;
+  PreviewsLitePageDecider* decider =
+      previews_service->previews_lite_page_decider();
+  DCHECK(decider);
 
-  previews::PreviewsUserData* previews_data =
-      tab_helper->GetPreviewsUserData(handle);
-  if (!previews_data)
-    return nullptr;
+  bool drp_enabled = decider->drp_settings_->IsDataReductionProxyEnabled();
+  bool preview_enabled = previews::params::ArePreviewsAllowed() &&
+                         previews::params::IsLitePageServerPreviewsEnabled();
 
-  if (previews_data->allowed_previews_state() &
-      content::LITE_PAGE_REDIRECT_ON) {
-    return std::make_unique<PreviewsLitePageNavigationThrottle>(
-        handle, previews_service->previews_lite_page_decider());
+  // Always create a navigation throttle if the feature is enabled. The throttle
+  // itself will check the PreviewsState bit for triggering.
+  if (drp_enabled && preview_enabled) {
+    return std::make_unique<PreviewsLitePageNavigationThrottle>(handle,
+                                                                decider);
   }
 
   return nullptr;

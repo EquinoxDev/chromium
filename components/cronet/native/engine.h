@@ -35,6 +35,11 @@ class Cronet_EngineImpl : public Cronet_Engine {
   Cronet_String GetVersionString() override;
   Cronet_String GetDefaultUserAgent() override;
   Cronet_RESULT Shutdown() override;
+  void AddRequestFinishedListener(
+      Cronet_RequestFinishedInfoListenerPtr listener,
+      Cronet_ExecutorPtr executor) override;
+  void RemoveRequestFinishedListener(
+      Cronet_RequestFinishedInfoListenerPtr listener) override;
 
   // Check |result| and aborts if result is not SUCCESS and enableCheckResult
   // is true.
@@ -83,6 +88,6 @@ class Cronet_EngineImpl : public Cronet_Engine {
   DISALLOW_COPY_AND_ASSIGN(Cronet_EngineImpl);
 };
 
-};  // namespace cronet
+}  // namespace cronet
 
 #endif  // COMPONENTS_CRONET_NATIVE_ENGINE_H_

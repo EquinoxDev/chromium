@@ -23,14 +23,15 @@ class MockVisitor : public HttpDecoder::Visitor {
   MOCK_METHOD1(OnMaxPushIdFrame, void(const MaxPushIdFrame& frame));
   MOCK_METHOD1(OnGoAwayFrame, void(const GoAwayFrame& frame));
   MOCK_METHOD1(OnSettingsFrame, void(const SettingsFrame& frame));
+  MOCK_METHOD1(OnDuplicatePushFrame, void(const DuplicatePushFrame& frame));
 
-  MOCK_METHOD0(OnDataFrameStart, void());
+  MOCK_METHOD1(OnDataFrameStart, void(Http3FrameLengths frame_lengths));
   MOCK_METHOD1(OnDataFramePayload, void(QuicStringPiece payload));
   MOCK_METHOD0(OnDataFrameEnd, void());
 
   MOCK_METHOD0(OnHeadersFrameStart, void());
   MOCK_METHOD1(OnHeadersFramePayload, void(QuicStringPiece payload));
-  MOCK_METHOD0(OnHeadersFrameEnd, void());
+  MOCK_METHOD1(OnHeadersFrameEnd, void(QuicByteCount frame_len));
 
   MOCK_METHOD1(OnPushPromiseFrameStart, void(PushId push_id));
   MOCK_METHOD1(OnPushPromiseFramePayload, void(QuicStringPiece payload));
@@ -83,7 +84,7 @@ TEST_F(HttpDecoderTest, ReservedFramesSmallPayload) {
 TEST_F(HttpDecoderTest, ReservedFramesLargePayload) {
   for (int n = 0; n < 8; ++n) {
     const uint8_t type = 0xB + 0x1F * n;
-    const size_t payload_size = 256;
+    const QuicByteCount payload_size = 256;
     char input[payload_size + 3] = {// length
                                     0x40 + 0x01, 0x00,
                                     // type
@@ -182,6 +183,29 @@ TEST_F(HttpDecoderTest, MaxPushId) {
   EXPECT_EQ("", decoder_.error_detail());
 }
 
+TEST_F(HttpDecoderTest, DuplicatePush) {
+  char input[] = {// length
+                  0x1,
+                  // type (DUPLICATE_PUSH)
+                  0x0E,
+                  // Push Id
+                  0x01};
+  // Process the full frame.
+  EXPECT_CALL(visitor_, OnDuplicatePushFrame(DuplicatePushFrame({1})));
+  EXPECT_EQ(QUIC_ARRAYSIZE(input),
+            decoder_.ProcessInput(input, QUIC_ARRAYSIZE(input)));
+  EXPECT_EQ(QUIC_NO_ERROR, decoder_.error());
+  EXPECT_EQ("", decoder_.error_detail());
+
+  // Process the frame incremently.
+  EXPECT_CALL(visitor_, OnDuplicatePushFrame(DuplicatePushFrame({1})));
+  for (char c : input) {
+    EXPECT_EQ(1u, decoder_.ProcessInput(&c, 1));
+  }
+  EXPECT_EQ(QUIC_NO_ERROR, decoder_.error());
+  EXPECT_EQ("", decoder_.error_detail());
+}
+
 TEST_F(HttpDecoderTest, PriorityFrame) {
   char input[] = {// length
                   0x4,
@@ -272,7 +296,7 @@ TEST_F(HttpDecoderTest, DataFrame) {
 
   // Process the full frame.
   InSequence s;
-  EXPECT_CALL(visitor_, OnDataFrameStart());
+  EXPECT_CALL(visitor_, OnDataFrameStart(Http3FrameLengths(2, 5)));
   EXPECT_CALL(visitor_, OnDataFramePayload(QuicStringPiece("Data!")));
   EXPECT_CALL(visitor_, OnDataFrameEnd());
   EXPECT_EQ(QUIC_ARRAYSIZE(input),
@@ -281,7 +305,7 @@ TEST_F(HttpDecoderTest, DataFrame) {
   EXPECT_EQ("", decoder_.error_detail());
 
   // Process the frame incremently.
-  EXPECT_CALL(visitor_, OnDataFrameStart());
+  EXPECT_CALL(visitor_, OnDataFrameStart(Http3FrameLengths(2, 5)));
   EXPECT_CALL(visitor_, OnDataFramePayload(QuicStringPiece("D")));
   EXPECT_CALL(visitor_, OnDataFramePayload(QuicStringPiece("a")));
   EXPECT_CALL(visitor_, OnDataFramePayload(QuicStringPiece("t")));
@@ -315,10 +339,8 @@ TEST_F(HttpDecoderTest, FrameHeaderPartialDelivery) {
   EXPECT_EQ("", decoder_.error_detail());
 
   // Send data.
-  EXPECT_CALL(visitor_, OnDataFrameStart());
+  EXPECT_CALL(visitor_, OnDataFrameStart(Http3FrameLengths(3, 2048)));
   EXPECT_CALL(visitor_, OnDataFramePayload(QuicStringPiece(input)));
-  // EXPECT_CALL(visitor_,
-  //            OnDataFramePayload(QuicStringPiece(QuicString(2048, 'x'))));
   EXPECT_CALL(visitor_, OnDataFrameEnd());
   EXPECT_EQ(2048u, decoder_.ProcessInput(input.data(), 2048));
   EXPECT_EQ(QUIC_NO_ERROR, decoder_.error());
@@ -361,7 +383,7 @@ TEST_F(HttpDecoderTest, HeadersFrame) {
   InSequence s;
   EXPECT_CALL(visitor_, OnHeadersFrameStart());
   EXPECT_CALL(visitor_, OnHeadersFramePayload(QuicStringPiece("Headers")));
-  EXPECT_CALL(visitor_, OnHeadersFrameEnd());
+  EXPECT_CALL(visitor_, OnHeadersFrameEnd(7));
   EXPECT_EQ(QUIC_ARRAYSIZE(input),
             decoder_.ProcessInput(input, QUIC_ARRAYSIZE(input)));
   EXPECT_EQ(QUIC_NO_ERROR, decoder_.error());
@@ -376,7 +398,7 @@ TEST_F(HttpDecoderTest, HeadersFrame) {
   EXPECT_CALL(visitor_, OnHeadersFramePayload(QuicStringPiece("e")));
   EXPECT_CALL(visitor_, OnHeadersFramePayload(QuicStringPiece("r")));
   EXPECT_CALL(visitor_, OnHeadersFramePayload(QuicStringPiece("s")));
-  EXPECT_CALL(visitor_, OnHeadersFrameEnd());
+  EXPECT_CALL(visitor_, OnHeadersFrameEnd(7));
   for (char c : input) {
     EXPECT_EQ(1u, decoder_.ProcessInput(&c, 1));
   }

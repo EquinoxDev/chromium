@@ -4,521 +4,184 @@
 
 package org.chromium.chrome.browser.autofill_assistant;
 
-import android.accounts.Account;
-import android.content.Context;
-import android.graphics.RectF;
-import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.telephony.TelephonyManager;
-
-import org.chromium.base.ContextUtils;
-import org.chromium.base.LocaleUtils;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.autofill_assistant.R;
+import org.chromium.chrome.browser.ActivityTabProvider;
 import org.chromium.chrome.browser.ChromeActivity;
-import org.chromium.chrome.browser.autofill.PersonalDataManager;
-import org.chromium.components.signin.AccountManagerFacade;
-import org.chromium.components.signin.OAuth2TokenService;
+import org.chromium.chrome.browser.autofill_assistant.metrics.DropOutReason;
+import org.chromium.chrome.browser.customtabs.CustomTabActivity;
+import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
+import org.chromium.chrome.browser.tabmodel.TabModel;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.WebContents;
-import org.chromium.payments.mojom.PaymentOptions;
-
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
 
 /**
  * Bridge to native side autofill_assistant::UiControllerAndroid. It allows native side to control
  * Autofill Assistant related UIs and forward UI events to native side.
+ * This controller is purely a translation and forwarding layer between Native side and the
+ * different Java coordinators.
  */
 @JNINamespace("autofill_assistant")
-public class AutofillAssistantUiController extends AbstractAutofillAssistantUiController {
-    /** OAuth2 scope that RPCs require. */
-    private static final String AUTH_TOKEN_TYPE =
-            "oauth2:https://www.googleapis.com/auth/userinfo.profile";
-    private static final String PARAMETER_USER_EMAIL = "USER_EMAIL";
+// TODO(crbug.com/806868): This class should be removed once all logic is in native side and the
+// model is directly modified by the native AssistantMediator.
+class AutofillAssistantUiController implements AssistantCoordinator.Delegate {
+    private static final int GRACEFUL_SHUTDOWN_DELAY_MS = 5_000;
 
-    private final WebContents mWebContents;
-    private final String mInitialUrl;
+    private long mNativeUiController;
 
-    // TODO(crbug.com/806868): Move mCurrentDetails and mStatusMessage to a Model (refactor to MVC).
-    private Details mCurrentDetails = Details.EMPTY_DETAILS;
-    private String mStatusMessage;
-
-    /** Native pointer to the UIController. */
-    private long mUiControllerAndroid;
-
-    private UiDelegateHolder mUiDelegateHolder;
-
-    /**
-     * Indicates whether {@link mAccount} has been initialized.
-     */
-    private boolean mAccountInitialized;
-
-    /**
-     * Account that was used to initiate AutofillAssistant.
-     *
-     * <p>This account is used to  authenticate when sending RPCs and as default account for Payment
-     * Request. Not relevant until the accounts have been fetched, and mAccountInitialized set to
-     * true. Can still be null after the accounts are fetched, in which case authentication is
-     * disabled.
-     */
-    @Nullable
-    private Account mAccount;
-
-    /** If set, fetch the access token once the accounts are fetched. */
-    private boolean mShouldFetchAccessToken;
-
-    /**
-     * Construct Autofill Assistant UI controller.
-     *
-     * @param activity The ChromeActivity of the controller associated with.
-     */
-    public AutofillAssistantUiController(ChromeActivity activity, Map<String, String> parameters) {
-        mWebContents = activity.getActivityTab().getWebContents();
-        mInitialUrl = activity.getInitialIntent().getDataString();
-
-        mUiControllerAndroid =
-                nativeInit(mWebContents, parameters.keySet().toArray(new String[parameters.size()]),
-                        parameters.values().toArray(new String[parameters.size()]),
-                        LocaleUtils.getDefaultLocaleString(), getCountryIso());
-
-        chooseAccountAsync(
-                parameters.get(PARAMETER_USER_EMAIL), activity.getInitialIntent().getExtras());
-    }
+    private final ChromeActivity mActivity;
+    private final AssistantCoordinator mCoordinator;
+    private final ActivityTabProvider.ActivityTabTabObserver mActivityTabObserver;
 
     @CalledByNative
-    private void onNativeDestroy() {
-        mUiControllerAndroid = 0;
+    private static AutofillAssistantUiController createAndStartUi(
+            WebContents webContents, long nativeUiController) {
+        return new AutofillAssistantUiController(
+                ChromeActivity.fromWebContents(webContents), webContents, nativeUiController);
     }
 
-    @Override
-    public void init(UiDelegateHolder delegateHolder, Details details) {
-        mUiDelegateHolder = delegateHolder;
-        maybeUpdateDetails(details);
-        if (mUiControllerAndroid != 0) nativeStart(mUiControllerAndroid, mInitialUrl);
-    }
-
-    @Override
-    public void onDismiss() {
-        mUiDelegateHolder.dismiss(R.string.autofill_assistant_stopped);
-    }
-
-    @Override
-    public Details getDetails() {
-        return mCurrentDetails;
-    }
-
-    @Override
-    public String getStatusMessage() {
-        return mStatusMessage;
-    }
-
-    @Override
-    public void onUnexpectedTaps() {
-        mUiDelegateHolder.dismiss(R.string.autofill_assistant_maybe_give_up);
-    }
-
-    @Override
-    public void updateTouchableArea() {
-        if (mUiControllerAndroid != 0) nativeUpdateTouchableArea(mUiControllerAndroid);
-    }
-
-    @Override
-    public void onUserInteractionInsideTouchableArea() {
-        if (mUiControllerAndroid != 0)
-            nativeOnUserInteractionInsideTouchableArea(mUiControllerAndroid);
-    }
-
-    @Override
-    public void onScriptSelected(String scriptPath) {
-        if (mUiControllerAndroid != 0) nativeOnScriptSelected(mUiControllerAndroid, scriptPath);
-    }
-
-    @Override
-    public void onChoice(byte[] serverPayload) {
-        if (mUiControllerAndroid != 0) nativeOnChoice(mUiControllerAndroid, serverPayload);
-    }
-
-    @Override
-    public void onAddressSelected(String guid) {
-        if (mUiControllerAndroid != 0) nativeOnAddressSelected(mUiControllerAndroid, guid);
-    }
-
-    @Override
-    public void onCardSelected(String guid) {
-        if (mUiControllerAndroid != 0) nativeOnCardSelected(mUiControllerAndroid, guid);
-    }
-
-    @Override
-    public void onDetailsAcknowledged(Details displayedDetails, boolean canContinue) {
-        mCurrentDetails = displayedDetails;
-        if (mUiControllerAndroid != 0) nativeOnShowDetails(mUiControllerAndroid, canContinue);
-    }
-
-    @Override
-    public String getDebugContext() {
-        if (mUiControllerAndroid == 0) return "";
-        return nativeOnRequestDebugContext(mUiControllerAndroid);
-    }
-
-    @Override
-    public void onCompleteShutdown() {
-        if (mUiControllerAndroid != 0) nativeDestroy(mUiControllerAndroid);
-    }
-
-    @CalledByNative
-    private void onAllowShowingSoftKeyboard(boolean allowed) {
-        this.mUiDelegateHolder.performUiOperation(
-                uiDelegate -> uiDelegate.allowShowingSoftKeyboard(allowed));
-    }
-
-    @CalledByNative
-    private void onShowStatusMessage(String message) {
-        mStatusMessage = message;
-        mUiDelegateHolder.performUiOperation(uiDelegate -> uiDelegate.showStatusMessage(message));
-    }
-
-    @CalledByNative
-    private String onGetStatusMessage() {
-        return mStatusMessage;
-    }
-
-    @CalledByNative
-    private void onShowOverlay() {
-        mUiDelegateHolder.performUiOperation(uiDelegate -> {
-            uiDelegate.showOverlay();
-            uiDelegate.disableProgressBarPulsing();
-        });
-    }
-
-    @CalledByNative
-    private void onHideOverlay() {
-        mUiDelegateHolder.performUiOperation(uiDelegate -> {
-            uiDelegate.hideOverlay();
-            uiDelegate.enableProgressBarPulsing();
-        });
-    }
-
-    @CalledByNative
-    private void onShutdown() {
-        mUiDelegateHolder.shutdown();
-    }
-
-    @CalledByNative
-    private void onClose() {
-        mUiDelegateHolder.close();
-    }
-
-    @CalledByNative
-    private void onShutdownGracefully() {
-        mUiDelegateHolder.enterGracefulShutdownMode();
-    }
-
-    @CalledByNative
-    private void onUpdateScripts(
-            String[] scriptNames, String[] scriptPaths, boolean[] scriptsHighlightFlags) {
-        assert scriptNames.length == scriptPaths.length;
-        assert scriptNames.length == scriptsHighlightFlags.length;
-
-        List<AutofillAssistantUiDelegate.ScriptHandle> scriptHandles = new ArrayList<>();
-        // Note that scriptNames, scriptsHighlightFlags and scriptPaths are one-on-one matched by
-        // index.
-        for (int i = 0; i < scriptNames.length; i++) {
-            scriptHandles.add(new AutofillAssistantUiDelegate.ScriptHandle(
-                    scriptNames[i], scriptsHighlightFlags[i], scriptPaths[i]));
-        }
-
-        mUiDelegateHolder.performUiOperation(uiDelegate -> uiDelegate.updateScripts(scriptHandles));
-    }
-
-    @CalledByNative
-    private void onChoose(String[] names, byte[][] serverPayloads, boolean[] highlightFlags) {
-        assert names.length == serverPayloads.length;
-        assert names.length == highlightFlags.length;
-
-        // An empty choice list is supported, as selection can still be forced. onForceChoose should
-        // be a no-op in this case.
-        if (names.length == 0) return;
-
-        List<AutofillAssistantUiDelegate.Choice> choices = new ArrayList<>();
-        assert (names.length == serverPayloads.length);
-        for (int i = 0; i < names.length; i++) {
-            choices.add(new AutofillAssistantUiDelegate.Choice(
-                    names[i], highlightFlags[i], serverPayloads[i]));
-        }
-        mUiDelegateHolder.performUiOperation(uiDelegate -> uiDelegate.showChoices(choices));
-    }
-
-    @CalledByNative
-    private void onForceChoose() {
-        mUiDelegateHolder.performUiOperation(uiDelegate -> uiDelegate.clearCarousel());
-    }
-
-    @CalledByNative
-    private void onChooseAddress() {
-        // TODO(crbug.com/806868): Remove this method once all scripts use payment request.
-        mUiDelegateHolder.performUiOperation(uiDelegate
-                -> uiDelegate.showProfiles(PersonalDataManager.getInstance().getProfilesToSuggest(
-                        /* includeNameInLabel= */ true)));
-    }
-
-    @CalledByNative
-    private void onChooseCard() {
-        // TODO(crbug.com/806868): Remove this method once all scripts use payment request.
-        mUiDelegateHolder.performUiOperation(uiDelegate
-                -> uiDelegate.showCards(PersonalDataManager.getInstance().getCreditCardsToSuggest(
-                        /* includeServerCards= */ true)));
-    }
-
-    @CalledByNative
-    private void onRequestPaymentInformation(boolean requestShipping, boolean requestPayerName,
-            boolean requestPayerPhone, boolean requestPayerEmail, int shippingType, String title,
-            String[] supportedBasicCardNetworks) {
-        PaymentOptions paymentOptions = new PaymentOptions();
-        paymentOptions.requestShipping = requestShipping;
-        paymentOptions.requestPayerName = requestPayerName;
-        paymentOptions.requestPayerPhone = requestPayerPhone;
-        paymentOptions.requestPayerEmail = requestPayerEmail;
-        paymentOptions.shippingType = shippingType;
-
-        String defaultEmail = mAccount != null ? mAccount.name : "";
-
-        mUiDelegateHolder.performUiOperation(uiDelegate -> {
-            uiDelegate.showPaymentRequest(mWebContents, paymentOptions, title,
-                    supportedBasicCardNetworks, defaultEmail, (selectedPaymentInformation -> {
-                        uiDelegate.closePaymentRequest();
-                        if (selectedPaymentInformation.succeed) {
-                            if (mUiControllerAndroid != 0) {
-                                nativeOnGetPaymentInformation(mUiControllerAndroid,
-                                        selectedPaymentInformation.succeed,
-                                        selectedPaymentInformation.card,
-                                        selectedPaymentInformation.address,
-                                        selectedPaymentInformation.payerName,
-                                        selectedPaymentInformation.payerPhone,
-                                        selectedPaymentInformation.payerEmail,
-                                        selectedPaymentInformation.isTermsAndConditionsAccepted);
-                            }
-                        } else {
-                            // A failed payment request flow indicates that the UI was either
-                            // dismissed or the back button was clicked. In that case we gracefully
-                            // shut down.
-                            mUiDelegateHolder.giveUp();
+    private AutofillAssistantUiController(
+            ChromeActivity activity, WebContents webContents, long nativeUiController) {
+        mNativeUiController = nativeUiController;
+        mActivity = activity;
+        mCoordinator = new AssistantCoordinator(activity, webContents, this);
+        mActivityTabObserver =
+                new ActivityTabProvider.ActivityTabTabObserver(activity.getActivityTabProvider()) {
+                    @Override
+                    protected void onObservingDifferentTab(Tab tab) {
+                        // A null tab indicates that there's no selected tab; We're in the process
+                        // of selecting a new tab. TODO(crbug/925947): Hide AssistantCoordinator
+                        // instead of destroying it, in case the tab that's eventually selected also
+                        // has AutofillAssistant enabled or is the same tab.
+                        if (tab == null || tab.getWebContents() != webContents) {
+                            safeNativeDestroyUI();
                         }
-                    }));
-        });
+                    }
+
+                    @Override
+                    public void onActivityAttachmentChanged(Tab tab, boolean isAttached) {
+                        if (!isAttached && tab.getWebContents() == webContents) {
+                            safeNativeDestroyUI();
+                        }
+                    }
+                };
+
+        initForCustomTab(activity, webContents);
     }
 
-    /**
-     * Updates the currently shown details.
-     *
-     * @param newDetails details to display.
-     */
-    void maybeUpdateDetails(Details newDetails) {
-        if (mCurrentDetails.isEmpty() && newDetails.isEmpty()) {
-            // No update on UI needed.
-            if (mUiControllerAndroid != 0) {
-                nativeOnShowDetails(mUiControllerAndroid, /* canContinue= */ true);
+    private void initForCustomTab(ChromeActivity activity, WebContents webContents) {
+        if (!(activity instanceof CustomTabActivity)) {
+            return;
+        }
+
+        // Shut down Autofill Assistant when the selected tab (foreground tab) is changed.
+        TabModel currentTabModel = activity.getTabModelSelector().getCurrentModel();
+        currentTabModel.addObserver(new EmptyTabModelObserver() {
+            @Override
+            public void didSelectTab(Tab tab, int type, int lastId) {
+                // Shutdown the Autofill Assistant if the user switches to another tab.
+                if (tab.getWebContents() != webContents) {
+                    currentTabModel.removeObserver(this);
+                    safeNativeOnFatalError(activity.getString(R.string.autofill_assistant_give_up),
+                            DropOutReason.TAB_CHANGED);
+                }
             }
+        });
+    }
+
+    // Java => native methods.
+
+    /** Shut down the Autofill Assistant immediately, without showing a message. */
+    @Override
+    public void stop(@DropOutReason int reason) {
+        safeNativeStop(reason);
+    }
+
+    // Native => Java methods.
+
+    // TODO(crbug.com/806868): Some of these functions still have a little bit of logic (e.g. make
+    // the progress bar pulse when hiding overlay). Maybe it would be better to forward all calls to
+    // AssistantCoordinator (that way this bridge would only have a reference to that one) which in
+    // turn will forward calls to the other sub coordinators. The main reason this is not done yet
+    // is to avoid boilerplate.
+
+    @CalledByNative
+    private AssistantModel getModel() {
+        return mCoordinator.getModel();
+    }
+
+    @CalledByNative
+    private void clearNativePtr() {
+        mNativeUiController = 0;
+    }
+
+    /** Destroys this instance and {@link AssistantCoordinator}. */
+    @CalledByNative
+    private void destroy(boolean delayed) {
+        mActivityTabObserver.destroy();
+
+        if (delayed) {
+            // Give some time to the user to read any error message.
+            PostTask.postDelayedTask(
+                    UiThreadTaskTraits.DEFAULT, mCoordinator::destroy, GRACEFUL_SHUTDOWN_DELAY_MS);
             return;
         }
-
-        Details mergedDetails = Details.merge(mCurrentDetails, newDetails);
-        mUiDelegateHolder.performUiOperation(uiDelegate -> uiDelegate.showDetails(mergedDetails));
+        mCoordinator.destroy();
     }
 
+    /**
+     * Close CCT after the current task has finished running - usually after Autofill Assistant has
+     * finished shutting itself down.
+     */
     @CalledByNative
-    private void onHideDetails() {
-        mUiDelegateHolder.performUiOperation(AutofillAssistantUiDelegate::hideDetails);
-    }
-
-    @CalledByNative
-    private void onShowDetails(String title, String url, String description, String mId,
-            String price, int year, int month, int day, int hour, int minute, int second) {
-        Date date;
-        if (year > 0 && month > 0 && day > 0 && hour >= 0 && minute >= 0 && second >= 0) {
-            Calendar calendar = Calendar.getInstance();
-            calendar.clear();
-            // Month in Java Date is 0-based, but the one we receive from the server is 1-based.
-            calendar.set(year, month - 1, day, hour, minute, second);
-            date = calendar.getTime();
-        } else {
-            date = null;
+    private void scheduleCloseCustomTab() {
+        if (mActivity instanceof CustomTabActivity) {
+            PostTask.postTask(UiThreadTaskTraits.DEFAULT, mActivity::finish);
         }
-
-        if (price.length() == 0) price = null;
-
-        maybeUpdateDetails(new Details(title, url, date, description, mId, price,
-                /* isFinal= */ true, Collections.emptySet()));
     }
 
     @CalledByNative
-    private void onShowProgressBar(int progress, String message) {
-        mUiDelegateHolder.performUiOperation(
-                uiDelegate -> uiDelegate.showProgressBar(progress, message));
-    }
-
-    @CalledByNative
-    private void onHideProgressBar() {
-        mUiDelegateHolder.performUiOperation(AutofillAssistantUiDelegate::hideProgressBar);
-    }
-
-    @CalledByNative
-    private void updateTouchableArea(boolean enabled, float[] coords) {
-        List<RectF> boxes = new ArrayList<>();
-        for (int i = 0; i < coords.length; i += 4) {
-            boxes.add(new RectF(/* left= */ coords[i], /* top= */ coords[i + 1],
-                    /* right= */ coords[i + 2], /* bottom= */ coords[i + 3]));
-        }
-        mUiDelegateHolder.performUiOperation(
-                uiDelegate -> { uiDelegate.updateTouchableArea(enabled, boxes); });
-    }
-
-
-    @CalledByNative
-    private void fetchAccessToken() {
-        if (!mAccountInitialized) {
-            // Still getting the account list. Fetch the token as soon as an account is available.
-            mShouldFetchAccessToken = true;
-            return;
-        }
-        if (mAccount == null) {
-            if (mUiControllerAndroid != 0) nativeOnAccessToken(mUiControllerAndroid, true, "");
-            return;
-        }
-
-        OAuth2TokenService.getAccessToken(
-                mAccount, AUTH_TOKEN_TYPE, new OAuth2TokenService.GetAccessTokenCallback() {
-                    @Override
-                    public void onGetTokenSuccess(String token) {
-                        if (mUiControllerAndroid != 0) {
-                            nativeOnAccessToken(mUiControllerAndroid, true, token);
-                        }
-                    }
-
-                    @Override
-                    public void onGetTokenFailure(boolean isTransientError) {
-                        if (!isTransientError && mUiControllerAndroid != 0) {
-                            nativeOnAccessToken(mUiControllerAndroid, false, "");
-                        }
-                    }
-                });
-    }
-
-    @CalledByNative
-    private void invalidateAccessToken(String accessToken) {
-        if (mAccount == null) {
-            return;
-        }
-
-        OAuth2TokenService.invalidateAccessToken(accessToken);
+    private void onShowOnboarding(Runnable onAccept) {
+        mCoordinator.showOnboarding(onAccept);
     }
 
     @CalledByNative
     private void expandBottomSheet() {
-        mUiDelegateHolder.performUiOperation(AutofillAssistantUiDelegate::expandBottomSheet);
+        mCoordinator.getBottomBarCoordinator().expand();
     }
 
-    /** Choose an account to authenticate as for making RPCs to the backend. */
-    private void chooseAccountAsync(@Nullable String accountFromParameter, Bundle extras) {
-        AccountManagerFacade.get().tryGetGoogleAccounts(accounts -> {
-            if (mUiControllerAndroid == 0) return;
-            if (accounts.size() == 1) {
-                // If there's only one account, there aren't any doubts.
-                onAccountChosen(accounts.get(0));
-                return;
-            }
-            Account signedIn =
-                    findAccountByName(accounts, nativeGetPrimaryAccountName(mUiControllerAndroid));
-            if (signedIn != null) {
-                // TODO(crbug.com/806868): Compare against account name from extras and complain if
-                // they don't match.
-                onAccountChosen(signedIn);
-                return;
-            }
-
-            if (accountFromParameter != null) {
-                Account account = findAccountByName(accounts, accountFromParameter);
-                if (account != null) {
-                    onAccountChosen(account);
-                    return;
-                }
-            }
-
-            for (String extra : extras.keySet()) {
-                // TODO(crbug.com/806868): Deprecate ACCOUNT_NAME.
-                if (extra.endsWith("ACCOUNT_NAME")) {
-                    Account account = findAccountByName(accounts, extras.getString(extra));
-                    if (account != null) {
-                        onAccountChosen(account);
-                        return;
-                    }
-                }
-            }
-            onAccountChosen(null);
-        });
+    @CalledByNative
+    private void showFeedback(String debugContext) {
+        mCoordinator.showFeedback(debugContext);
     }
 
-    private void onAccountChosen(@Nullable Account account) {
-        mAccount = account;
-        mAccountInitialized = true;
-        // TODO(crbug.com/806868): Consider providing a way of signing in this case, to enforce
-        // that all calls are authenticated.
-
-        if (mShouldFetchAccessToken) {
-            mShouldFetchAccessToken = false;
-            fetchAccessToken();
-        }
+    @CalledByNative
+    private void showSnackbar(String message) {
+        AssistantSnackbar.show(mActivity, message, this::safeSnackbarResult);
     }
 
-    private static Account findAccountByName(List<Account> accounts, String name) {
-        for (int i = 0; i < accounts.size(); i++) {
-            Account account = accounts.get(i);
-            if (account.name.equals(name)) {
-                return account;
-            }
-        }
-        return null;
+    // Native methods.
+    private void safeSnackbarResult(boolean undo) {
+        if (mNativeUiController != 0) nativeSnackbarResult(mNativeUiController, undo);
     }
+    private native void nativeSnackbarResult(long nativeUiControllerAndroid, boolean undo);
 
-    /** Returns the country that the device is currently located in. This currently only works
-     * for devices with active SIM cards. For a more general solution, we should probably use
-     * the LocationManager together with the Geocoder.*/
-    private String getCountryIso() {
-        TelephonyManager telephonyManager =
-                (TelephonyManager) ContextUtils.getApplicationContext().getSystemService(
-                        Context.TELEPHONY_SERVICE);
-
-        // According to API, location for CDMA networks is unreliable
-        if (telephonyManager != null
-                && telephonyManager.getPhoneType() != TelephonyManager.PHONE_TYPE_CDMA)
-            return telephonyManager.getNetworkCountryIso();
-        else
-            return null;
+    private void safeNativeStop(@DropOutReason int reason) {
+        if (mNativeUiController != 0) nativeStop(mNativeUiController, reason);
     }
+    private native void nativeStop(long nativeUiControllerAndroid, @DropOutReason int reason);
 
-    // native methods.
-    private native long nativeInit(WebContents webContents, String[] parameterNames,
-            String[] parameterValues, String locale, String countryCode);
-    private native void nativeStart(long nativeUiControllerAndroid, String initialUrl);
-    private native void nativeDestroy(long nativeUiControllerAndroid);
-    private native void nativeUpdateTouchableArea(long nativeUiControllerAndroid);
-    private native void nativeOnUserInteractionInsideTouchableArea(long nativeUiControllerAndroid);
-    private native void nativeOnScriptSelected(long nativeUiControllerAndroid, String scriptPath);
-    private native void nativeOnChoice(long nativeUiControllerAndroid, byte[] serverPayload);
-    private native void nativeOnAddressSelected(long nativeUiControllerAndroid, String guid);
-    private native void nativeOnCardSelected(long nativeUiControllerAndroid, String guid);
-    private native void nativeOnShowDetails(long nativeUiControllerAndroid, boolean canContinue);
-    private native void nativeOnGetPaymentInformation(long nativeUiControllerAndroid,
-            boolean succeed, @Nullable PersonalDataManager.CreditCard card,
-            @Nullable PersonalDataManager.AutofillProfile address, @Nullable String payerName,
-            @Nullable String payerPhone, @Nullable String payerEmail,
-            boolean isTermsAndConditionsAccepted);
-    private native void nativeOnAccessToken(
-            long nativeUiControllerAndroid, boolean success, String accessToken);
-    private native String nativeGetPrimaryAccountName(long nativeUiControllerAndroid);
-    private native String nativeOnRequestDebugContext(long nativeUiControllerAndroid);
+    private void safeNativeDestroyUI() {
+        if (mNativeUiController != 0) nativeDestroyUI(mNativeUiController);
+    }
+    private native void nativeDestroyUI(long nativeUiControllerAndroid);
+
+    private void safeNativeOnFatalError(String message, @DropOutReason int reason) {
+        if (mNativeUiController != 0) nativeOnFatalError(mNativeUiController, message, reason);
+    }
+    private native void nativeOnFatalError(
+            long nativeUiControllerAndroid, String message, @DropOutReason int reason);
 }

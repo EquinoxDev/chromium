@@ -73,7 +73,7 @@ void VersionInfoUpdater::StartUpdate(bool is_official_build) {
         base::Bind(&VersionInfoUpdater::OnVersion,
                    weak_pointer_factory_.GetWeakPtr()));
   } else {
-    UpdateVersionLabel();
+    OnVersion("linux-chromeos");
   }
 
   policy::BrowserPolicyConnectorChromeOS* connector =
@@ -97,7 +97,7 @@ void VersionInfoUpdater::StartUpdate(bool is_official_build) {
   }
 
   // Update device bluetooth info.
-  device::BluetoothAdapterFactory::GetAdapter(base::Bind(
+  device::BluetoothAdapterFactory::GetAdapter(base::BindOnce(
       &VersionInfoUpdater::OnGetAdapter, weak_pointer_factory_.GetWeakPtr()));
 }
 
@@ -112,10 +112,6 @@ void VersionInfoUpdater::UpdateVersionLabel() {
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
       base::UTF8ToUTF16(version_info::GetVersionNumber()),
       base::UTF8ToUTF16(version_text_), base::UTF8ToUTF16(serial_number_text_));
-
-  // Workaround over incorrect width calculation in old fonts.
-  // TODO(glotov): remove the following line when new fonts are used.
-  label_text += ' ';
 
   if (delegate_)
     delegate_->OnOSVersionLabelTextUpdated(label_text);

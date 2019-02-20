@@ -12,10 +12,8 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
-#include "content/common/media/media_stream_controls.h"
 #include "content/public/common/content_features.h"
 #include "content/renderer/media/stream/media_stream_audio_processor_options.h"
-#include "content/renderer/media/stream/media_stream_audio_source.h"
 #include "content/renderer/media/stream/media_stream_constraints_util.h"
 #include "content/renderer/media/stream/media_stream_constraints_util_sets.h"
 #include "content/renderer/media/stream/media_stream_video_source.h"
@@ -23,6 +21,8 @@
 #include "media/audio/audio_features.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/limits.h"
+#include "third_party/blink/public/common/mediastream/media_stream_controls.h"
+#include "third_party/blink/public/platform/modules/mediastream/media_stream_audio_source.h"
 #include "third_party/blink/public/platform/web_media_constraints.h"
 #include "third_party/blink/public/platform/web_string.h"
 
@@ -380,7 +380,6 @@ class EchoCancellationContainer {
     bool default_audio_processing_value =
         GetDefaultValueForAudioProperties(echo_cancellation_constraint);
 
-    properties->goog_audio_mirroring &= default_audio_processing_value;
     properties->goog_auto_gain_control &= default_audio_processing_value;
     properties->goog_experimental_echo_cancellation &=
         default_audio_processing_value;
@@ -515,16 +514,14 @@ class EchoCancellationContainer {
     }
 
     base::Optional<bool> override_aec3 = GetOverrideAec3();
-    if (override_aec3) {
-      bool use_aec3 = override_aec3.value_or(
-          base::FeatureList::IsEnabled(features::kWebRtcUseEchoCanceller3));
-      if ((use_aec3 && ec_mode_allowed_values_.Contains(
-                           EchoCancellationType::kEchoCancellationAec3)) ||
-          (!use_aec3 && ec_mode_allowed_values_.Contains(
-                            EchoCancellationType::kEchoCancellationAec2))) {
-        return use_aec3 ? EchoCancellationType::kEchoCancellationAec3
-                        : EchoCancellationType::kEchoCancellationAec2;
-      }
+    bool use_aec3 = override_aec3.value_or(
+        base::FeatureList::IsEnabled(features::kWebRtcUseEchoCanceller3));
+    if ((use_aec3 && ec_mode_allowed_values_.Contains(
+                         EchoCancellationType::kEchoCancellationAec3)) ||
+        (!use_aec3 && ec_mode_allowed_values_.Contains(
+                          EchoCancellationType::kEchoCancellationAec2))) {
+      return use_aec3 ? EchoCancellationType::kEchoCancellationAec3
+                      : EchoCancellationType::kEchoCancellationAec2;
     }
 
     // If the previous tie breakers were not enough to determine the selected
@@ -958,7 +955,7 @@ class ProcessingBasedContainer {
       ProcessingType processing_type,
       const media::AudioParameters& device_parameters) {
     double fallback_latency =
-        static_cast<double>(kFallbackAudioLatencyMs) / 1000;
+        static_cast<double>(blink::kFallbackAudioLatencyMs) / 1000;
     double device_latency = device_parameters.GetBufferDuration().InSecondsF();
     double allowed_latency = device_parameters.frames_per_buffer() > 0
                                  ? device_latency
@@ -1059,10 +1056,7 @@ class DeviceContainer {
     if (source_info.type() == SourceType::kNone)
       return;
 
-    MediaStreamAudioSource* source = capability.source();
-    boolean_containers_[kHotwordEnabled] =
-        BooleanContainer(BoolSet({source->hotword_enabled()}));
-
+    blink::MediaStreamAudioSource* source = capability.source();
     boolean_containers_[kDisableLocalEcho] =
         BooleanContainer(BoolSet({source->disable_local_echo()}));
 
@@ -1136,12 +1130,6 @@ class DeviceContainer {
                                                    std::string());
     score += sub_score;
 
-    bool hotword_enabled;
-    std::tie(sub_score, hotword_enabled) =
-        boolean_containers_[kHotwordEnabled].SelectSettingsAndScore(
-            constraint_set.hotword_enabled, false);
-    score += sub_score;
-
     bool disable_local_echo;
     std::tie(sub_score, disable_local_echo) =
         boolean_containers_[kDisableLocalEcho].SelectSettingsAndScore(
@@ -1193,7 +1181,7 @@ class DeviceContainer {
     // in case multiple candidates are available.
     return std::make_tuple(
         score,
-        AudioCaptureSettings(device_id, hotword_enabled, disable_local_echo,
+        AudioCaptureSettings(device_id, disable_local_echo,
                              render_to_associated_sink, best_properties));
   }
 
@@ -1212,7 +1200,6 @@ class DeviceContainer {
 
  private:
   enum BooleanContainerId {
-    kHotwordEnabled,
     kDisableLocalEcho,
     kRenderToAssociatedSink,
     kNumBooleanContainerIds
@@ -1227,13 +1214,12 @@ class DeviceContainer {
 
   static constexpr BooleanPropertyContainerInfo
       kBooleanPropertyContainerInfoMap[] = {
-          {kHotwordEnabled, &ConstraintSet::hotword_enabled},
           {kDisableLocalEcho, &ConstraintSet::disable_local_echo},
           {kRenderToAssociatedSink, &ConstraintSet::render_to_associated_sink}};
 
   // Utility function to determine which version of this class should be
   // allocated depending on the |source| provided.
-  static SourceInfo InfoFromSource(MediaStreamAudioSource* source,
+  static SourceInfo InfoFromSource(blink::MediaStreamAudioSource* source,
                                    int effects) {
     SourceType source_type;
     AudioProcessingProperties properties;
@@ -1360,7 +1346,7 @@ AudioDeviceCaptureCapability::AudioDeviceCaptureCapability()
     : parameters_(media::AudioParameters::UnavailableDeviceParams()) {}
 
 AudioDeviceCaptureCapability::AudioDeviceCaptureCapability(
-    MediaStreamAudioSource* source)
+    blink::MediaStreamAudioSource* source)
     : source_(source) {}
 
 AudioDeviceCaptureCapability::AudioDeviceCaptureCapability(
@@ -1422,39 +1408,40 @@ AudioCaptureSettings SelectSettingsAudioCapture(
   // Score is ignored as it is no longer needed.
   AudioCaptureSettings settings;
   std::tie(std::ignore, settings) = candidates.SelectSettingsAndScore(
-      constraints.Basic(), media_stream_source == kMediaStreamSourceDesktop,
+      constraints.Basic(),
+      media_stream_source == blink::kMediaStreamSourceDesktop,
       should_disable_hardware_noise_suppression);
 
   return settings;
 }
 
 AudioCaptureSettings CONTENT_EXPORT
-SelectSettingsAudioCapture(MediaStreamAudioSource* source,
+SelectSettingsAudioCapture(blink::MediaStreamAudioSource* source,
                            const blink::WebMediaConstraints& constraints) {
   DCHECK(source);
-  if (source->device().type != MEDIA_DEVICE_AUDIO_CAPTURE &&
-      source->device().type != MEDIA_GUM_TAB_AUDIO_CAPTURE &&
-      source->device().type != MEDIA_GUM_DESKTOP_AUDIO_CAPTURE) {
+  if (source->device().type != blink::MEDIA_DEVICE_AUDIO_CAPTURE &&
+      source->device().type != blink::MEDIA_GUM_TAB_AUDIO_CAPTURE &&
+      source->device().type != blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE) {
     return AudioCaptureSettings();
   }
 
   std::string media_stream_source = GetMediaStreamSource(constraints);
-  if (source->device().type == MEDIA_DEVICE_AUDIO_CAPTURE &&
+  if (source->device().type == blink::MEDIA_DEVICE_AUDIO_CAPTURE &&
       !media_stream_source.empty()) {
     return AudioCaptureSettings(
         constraints.Basic().media_stream_source.GetName());
   }
 
-  if (source->device().type == MEDIA_GUM_TAB_AUDIO_CAPTURE &&
+  if (source->device().type == blink::MEDIA_GUM_TAB_AUDIO_CAPTURE &&
       !media_stream_source.empty() &&
-      media_stream_source != kMediaStreamSourceTab) {
+      media_stream_source != blink::kMediaStreamSourceTab) {
     return AudioCaptureSettings(
         constraints.Basic().media_stream_source.GetName());
   }
-  if (source->device().type == MEDIA_GUM_DESKTOP_AUDIO_CAPTURE &&
+  if (source->device().type == blink::MEDIA_GUM_DESKTOP_AUDIO_CAPTURE &&
       !media_stream_source.empty() &&
-      media_stream_source != kMediaStreamSourceSystem &&
-      media_stream_source != kMediaStreamSourceDesktop) {
+      media_stream_source != blink::kMediaStreamSourceSystem &&
+      media_stream_source != blink::kMediaStreamSourceDesktop) {
     return AudioCaptureSettings(
         constraints.Basic().media_stream_source.GetName());
   }

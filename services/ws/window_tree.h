@@ -27,6 +27,10 @@ namespace aura {
 class Window;
 }
 
+namespace gfx {
+class PointF;
+}
+
 namespace ui {
 class Event;
 }
@@ -140,9 +144,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
 
   ConnectionType connection_type() const { return connection_type_; }
 
-  // Returns true if at a compositor frame sink has been created for at least
-  // one of the roots.
-  bool HasAtLeastOneRootWithCompositorFrameSink();
+  // Returns the first ClientRoot that has its compositor frame sink created.
+  ClientRoot* GetFirstRootWithCompositorFrameSink();
 
   // Returns true if |window| has been exposed to this client. A client
   // typically only sees a limited set of windows that may exist. The set of
@@ -156,6 +159,17 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   // If |window| is a client root, the ClientRoot is returned. This does not
   // recurse.
   ClientRoot* GetClientRootForWindow(aura::Window* window);
+
+  // Converts an Event's root_location as supplied to the window service to be
+  // relative to the nearest client root of |window|. The returned value should
+  // used as the root_location() for Events supplied to clients.
+  gfx::PointF ConvertRootLocationForClient(aura::Window* window,
+                                           const gfx::PointF& root_location);
+
+  // Sends CleanupGestureState mojo call for |window| to the window tree client.
+  void CleanupGestureState(aura::Window* window);
+
+  bool IsMovingWindow() const { return window_moving_ != nullptr; }
 
  private:
   friend class ClientRoot;
@@ -290,11 +304,6 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   // mapping, there may not be a window with the returned id.
   ClientWindowId MakeClientWindowId(Id transport_window_id) const;
 
-  // Returns true if the local-surface id for |window| is assigned by this
-  // client. A return value of false means the LocalSurfaceId is assigned by
-  // either another client, or by the WindowService itself.
-  bool IsLocalSurfaceIdAssignedByClient(aura::Window* window);
-
   std::vector<mojom::WindowDataPtr> WindowsToWindowDatas(
       const std::vector<aura::Window*>& windows);
   mojom::WindowDataPtr WindowToWindowData(aura::Window* window);
@@ -336,16 +345,18 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
                  mojom::WindowTreeClient* window_tree_client,
                  uint32_t flags);
   bool SetWindowOpacityImpl(const ClientWindowId& window_id, float opacity);
-  bool SetWindowBoundsImpl(
-      const ClientWindowId& window_id,
-      const gfx::Rect& bounds,
-      const base::Optional<viz::LocalSurfaceId>& local_surface_id);
+  bool SetWindowBoundsImpl(const ClientWindowId& window_id,
+                           const gfx::Rect& bounds,
+                           const base::Optional<viz::LocalSurfaceIdAllocation>&
+                               local_surface_id_allocation);
+  bool SetWindowTransformImpl(const ClientWindowId& window_id,
+                              const gfx::Transform& transform);
   bool ReorderWindowImpl(const ClientWindowId& window_id,
                          const ClientWindowId& relative_window_id,
                          mojom::OrderDirection direction);
   std::vector<aura::Window*> GetWindowTreeImpl(const ClientWindowId& window_id);
   bool SetFocusImpl(const ClientWindowId& window_id);
-  bool SetCursorImpl(const ClientWindowId& window_id, ui::CursorData cursor);
+  bool SetCursorImpl(const ClientWindowId& window_id, ui::Cursor cursor);
   bool StackAboveImpl(const ClientWindowId& above_window_id,
                       const ClientWindowId& below_window_id);
   bool StackAtTopImpl(const ClientWindowId& window_id);
@@ -382,13 +393,17 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void ReleaseCapture(uint32_t change_id, Id transport_window_id) override;
   void ObserveEventTypes(
       const std::vector<ui::mojom::EventType>& types) override;
-  void SetWindowBounds(
-      uint32_t change_id,
-      Id window_id,
-      const gfx::Rect& bounds,
-      const base::Optional<viz::LocalSurfaceId>& local_surface_id) override;
+  void SetWindowBounds(uint32_t change_id,
+                       Id window_id,
+                       const gfx::Rect& bounds,
+                       const base::Optional<viz::LocalSurfaceIdAllocation>&
+                           local_surface_id_allocation) override;
+  void UpdateLocalSurfaceIdFromChild(Id transport_window_id,
+                                     const viz::LocalSurfaceIdAllocation&
+                                         local_surface_id_allocation) override;
+  void AllocateLocalSurfaceId(Id transport_window_id) override;
   void SetWindowTransform(uint32_t change_id,
-                          Id window_id,
+                          Id transport_window_id,
                           const gfx::Transform& transform) override;
   void SetClientArea(Id transport_window_id,
                      const gfx::Insets& insets,
@@ -448,7 +463,7 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void SetCanFocus(Id transport_window_id, bool can_focus) override;
   void SetCursor(uint32_t change_id,
                  Id transport_window_id,
-                 ui::CursorData cursor) override;
+                 ui::Cursor cursor) override;
   void SetWindowTextInputState(Id window_id,
                                ui::mojom::TextInputStatePtr state) override;
   void SetImeVisibility(Id window_id,
@@ -469,7 +484,8 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void PerformWindowMove(uint32_t change_id,
                          Id transport_window_id,
                          mojom::MoveLoopSource source,
-                         const gfx::Point& cursor) override;
+                         const gfx::Point& cursor,
+                         int hit_test) override;
   void CancelWindowMove(Id transport_window_id) override;
   void PerformDragDrop(
       uint32_t change_id,
@@ -484,6 +500,7 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) WindowTree
   void ObserveTopmostWindow(mojom::MoveLoopSource source,
                             Id window_id) override;
   void StopObservingTopmostWindow() override;
+  void SetWindowResizeShadow(Id window_id, int hit_test) override;
   void CancelActiveTouchesExcept(Id not_cancelled_window_id) override;
   void CancelActiveTouches(Id window_id) override;
   void TransferGestureEventsTo(Id current_id,

@@ -127,6 +127,8 @@ class GPU_IPC_SERVICE_EXPORT GpuChannelMessageFilter
   scoped_refptr<ImageDecodeAcceleratorStub> image_decode_accelerator_stub_;
   base::ThreadChecker io_thread_checker_;
 
+  bool allow_crash_for_testing_ = false;
+
   DISALLOW_COPY_AND_ASSIGN(GpuChannelMessageFilter);
 };
 
@@ -145,6 +147,9 @@ GpuChannelMessageFilter::GpuChannelMessageFilter(
               static_cast<int32_t>(
                   GpuChannelReservedRoutes::kImageDecodeAccelerator))) {
   io_thread_checker_.DetachFromThread();
+  allow_crash_for_testing_ = gpu_channel->gpu_channel_manager()
+                                 ->gpu_preferences()
+                                 .enable_gpu_benchmarking_extension;
 }
 
 GpuChannelMessageFilter::~GpuChannelMessageFilter() {
@@ -240,6 +245,18 @@ bool GpuChannelMessageFilter::OnMessageReceived(const IPC::Message& message) {
     case GpuChannelMsg_CreateSharedImage::ID:
     case GpuChannelMsg_DestroySharedImage::ID:
       return MessageErrorHandler(message, "Invalid message");
+    case GpuChannelMsg_CrashForTesting::ID:
+      // Handle this message early, on the IO thread, in case the main
+      // thread is hung. This is the purpose of this message: generating
+      // minidumps on the bots, which are symbolized later by the test
+      // harness. Only pay attention to this message if Telemetry's GPU
+      // benchmarking extension was enabled via the command line, which
+      // exposes privileged APIs to JavaScript.
+      if (allow_crash_for_testing_) {
+        gl::Crash();
+      }
+      // Won't be reached if the extension is enabled.
+      return MessageErrorHandler(message, "Crashes for testing are disabled");
     default:
       break;
   }
@@ -267,6 +284,7 @@ bool GpuChannelMessageFilter::OnMessageReceived(const IPC::Message& message) {
       static_cast<int32_t>(GpuChannelReservedRoutes::kImageDecodeAccelerator)) {
     if (!image_decode_accelerator_stub_->OnMessageReceived(message))
       return MessageErrorHandler(message, "Invalid image decode request");
+    return true;
   }
 
   bool handle_out_of_order =
@@ -473,8 +491,7 @@ CommandBufferStub* GpuChannel::LookupCommandBuffer(int32_t route_id) {
 
 bool GpuChannel::HasActiveWebGLContext() const {
   for (auto& kv : stubs_) {
-    ContextType context_type =
-        kv.second->context_group()->feature_info()->context_type();
+    ContextType context_type = kv.second->context_type();
     if (context_type == CONTEXT_TYPE_WEBGL1 ||
         context_type == CONTEXT_TYPE_WEBGL2) {
       return true;
@@ -509,7 +526,6 @@ bool GpuChannel::OnControlMessageReceived(const IPC::Message& msg) {
                         OnCreateCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuChannelMsg_DestroyCommandBuffer,
                         OnDestroyCommandBuffer)
-    IPC_MESSAGE_HANDLER(GpuChannelMsg_CrashForTesting, OnCrashForTesting)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -596,6 +612,13 @@ void GpuChannel::OnCreateCommandBuffer(
     return;
   }
 
+  if (gpu_channel_manager_->delegate()->IsExiting()) {
+    LOG(ERROR) << "ContextResult::kTransientFailure: trying to create command "
+                  "buffer during process shutdown.";
+    *result = gpu::ContextResult::kTransientFailure;
+    return;
+  }
+
   int32_t stream_id = init_params.stream_id;
   int32_t share_group_id = init_params.share_group_id;
   CommandBufferStub* share_group = LookupCommandBuffer(share_group_id);
@@ -640,6 +663,9 @@ void GpuChannel::OnCreateCommandBuffer(
   bool use_passthrough_cmd_decoder =
       gpu_channel_manager_->gpu_preferences().use_passthrough_cmd_decoder &&
       gles2::PassthroughCommandDecoderSupported();
+  bool allow_raster_decoder =
+      !use_passthrough_cmd_decoder ||
+      gpu_channel_manager_->gpu_preferences().enable_passthrough_raster_decoder;
 
   if (init_params.attribs.context_type == CONTEXT_TYPE_WEBGPU) {
     if (!gpu_channel_manager_->gpu_preferences().enable_webgpu) {
@@ -649,7 +675,7 @@ void GpuChannel::OnCreateCommandBuffer(
 
     stub = std::make_unique<WebGPUCommandBufferStub>(
         this, init_params, command_buffer_id, sequence_id, stream_id, route_id);
-  } else if (!use_passthrough_cmd_decoder &&
+  } else if (allow_raster_decoder &&
              init_params.attribs.enable_raster_interface &&
              !init_params.attribs.enable_gles2_interface) {
     stub = std::make_unique<RasterCommandBufferStub>(
@@ -698,16 +724,6 @@ void GpuChannel::OnDestroyCommandBuffer(int32_t route_id) {
   RemoveRoute(route_id);
 }
 
-void GpuChannel::OnCrashForTesting() {
-  // Only pay attention to this message if Telemetry's GPU
-  // benchmarking extension was enabled via the command line, which
-  // exposes privileged APIs to JavaScript.
-  if (!gpu_channel_manager_->gpu_preferences()
-           .enable_gpu_benchmarking_extension)
-    return;
-  gl::Crash();
-}
-
 void GpuChannel::CacheShader(const std::string& key,
                              const std::string& shader) {
   gpu_channel_manager_->delegate()->StoreShaderToDisk(client_id_, key, shader);
@@ -715,14 +731,14 @@ void GpuChannel::CacheShader(const std::string& key,
 
 void GpuChannel::AddFilter(IPC::MessageFilter* filter) {
   io_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&GpuChannelMessageFilter::AddChannelFilter, filter_,
-                            base::RetainedRef(filter)));
+      FROM_HERE, base::BindOnce(&GpuChannelMessageFilter::AddChannelFilter,
+                                filter_, base::RetainedRef(filter)));
 }
 
 void GpuChannel::RemoveFilter(IPC::MessageFilter* filter) {
   io_task_runner_->PostTask(
-      FROM_HERE, base::Bind(&GpuChannelMessageFilter::RemoveChannelFilter,
-                            filter_, base::RetainedRef(filter)));
+      FROM_HERE, base::BindOnce(&GpuChannelMessageFilter::RemoveChannelFilter,
+                                filter_, base::RetainedRef(filter)));
 }
 
 uint64_t GpuChannel::GetMemoryUsage() const {

@@ -204,6 +204,9 @@ video::-internal-media-controls-picture-in-picture-button {
   background-color: initial;
   color: inherit;
   cursor: pointer;
+
+  /* Cursor: pointer will cause a highlight when touch on it, this will disable it */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /*
@@ -601,6 +604,10 @@ video::-webkit-media-controls-timeline {
   margin: 0;
   background: transparent;
   cursor: pointer;
+
+  /* Cursor: pointer will cause a highlight when touch on it, this will disable it */
+  -webkit-tap-highlight-color: transparent;
+
   /* This prevents layout issues in quirks mode */
   box-sizing: unset !important;
 }
@@ -760,6 +767,10 @@ video::-webkit-media-controls-volume-slider {
   padding: 22px 0; /* (48px button panel height - 4px slider height) / 2  */
   background: transparent;
   cursor: pointer;
+
+  /* Cursor: pointer will cause a highlight when touch on it, this will disable it */
+  -webkit-tap-highlight-color: transparent;
+
   /* This prevents layout issues in quirks mode. */
   box-sizing: unset !important;
 }
@@ -827,6 +838,11 @@ video::-internal-media-controls-overflow-menu-list {
   transform-origin: bottom right;
 }
 
+audio::-internal-media-controls-overflow-menu-list:focus,
+video::-internal-media-controls-overflow-menu-list:focus {
+  outline: none;
+}
+
 audio::-internal-media-controls-overflow-menu-list.closed,
 video::-internal-media-controls-overflow-menu-list.closed {
   transform: scale(0);
@@ -852,6 +868,15 @@ video::-internal-media-controls-overflow-menu-list-item {
   padding-left: 16px;
   padding-right: 16px;
   cursor: pointer;
+  /* Cursor: pointer will cause a highlight when touch on it, this will disable it */
+  -webkit-tap-highlight-color: transparent;
+
+  /*
+   * Avoid slight text movement after item transition ends.
+   * By setting translateZ, we are using hardware acceleration,
+   * which allows a smoother transition.
+   */
+  transform: translateZ(0);
 }
 
 video::-webkit-media-controls div[pseudo="-internal-media-controls-text-track-list" i].pip-presented,
@@ -1143,7 +1168,6 @@ video::cue {
     display: inline;
 
     background-color: rgba(0, 0, 0, 0.8);
-    padding: 2px 2px;
 }
 
 video::-webkit-media-text-track-region {

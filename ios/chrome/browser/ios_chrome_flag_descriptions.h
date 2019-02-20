@@ -7,6 +7,11 @@
 
 namespace flag_descriptions {
 
+// Title and description for the flag to control the autocomplete retention
+// policy.
+extern const char kEnableAutocompleteDataRetentionPolicyName[];
+extern const char kEnableAutocompleteDataRetentionPolicyDescription[];
+
 // Title and description for the flag to control the autofill query cache.
 extern const char kAutofillCacheQueryResponsesName[];
 extern const char kAutofillCacheQueryResponsesDescription[];
@@ -33,6 +38,12 @@ extern const char kBreakpadNoDelayInitialUploadDescription[];
 extern const char kCompactTranslateInfobarName[];
 extern const char kCompactTranslateInfobarDescription[];
 
+#if defined(DCHECK_IS_CONFIGURABLE)
+// Title and description for the flag to enable configurable DCHECKs.
+extern const char kDcheckIsFatalName[];
+extern const char kDcheckIsFatalDescription[];
+#endif  // defined(DCHECK_IS_CONFIGURABLE)
+
 // Title and description for the flag to control if a crash report is generated
 // on main thread freeze.
 extern const char kDetectMainThreadFreezeName[];
@@ -50,6 +61,12 @@ extern const char
 extern const char kEnableAutofillSaveCreditCardUsesStrikeSystemName[];
 extern const char kEnableAutofillSaveCreditCardUsesStrikeSystemDescription[];
 
+// Title and description for the flag to control if credit card save should
+// utilize the updated version of Autofill StrikeDatabase when determining
+// whether save should be offered.
+extern const char kEnableAutofillSaveCreditCardUsesStrikeSystemV2Name[];
+extern const char kEnableAutofillSaveCreditCardUsesStrikeSystemV2Description[];
+
 extern const char kEnableSyncUSSBookmarksName[];
 extern const char kEnableSyncUSSBookmarksDescription[];
 
@@ -58,9 +75,6 @@ extern const char kSyncPseudoUSSFaviconsDescription[];
 
 extern const char kSyncPseudoUSSHistoryDeleteDirectivesName[];
 extern const char kSyncPseudoUSSHistoryDeleteDirectivesDescription[];
-
-extern const char kSyncPseudoUSSPasswordsName[];
-extern const char kSyncPseudoUSSPasswordsDescription[];
 
 extern const char kSyncPseudoUSSPreferencesName[];
 extern const char kSyncPseudoUSSPreferencesDescription[];
@@ -147,14 +161,20 @@ extern const char kBrowserContainerFullscreenDescription[];
 extern const char kBrowserContainerContainsNTPName[];
 extern const char kBrowserContainerContainsNTPDescription[];
 
+// Title and description for the flag to make browser container keep the
+// content view hierarchy directly.
+extern const char kBrowserContainerKeepsContentViewName[];
+extern const char kBrowserContainerKeepsContentViewDescription[];
+
+// Title and description for the flag to load external files with WebState
+// instead of using ExternalFileController.
+extern const char kExternalFilesLoadedInWebStateName[];
+extern const char kExternalFilesLoadedInWebStateDescription[];
+
 // Title and description for the flag to control redirection to the task
 // scheduler.
 extern const char kBrowserTaskScheduler[];
 extern const char kBrowserTaskSchedulerDescription[];
-
-// Title and description for the flag to enable Captive Portal metrics logging.
-extern const char kCaptivePortalMetricsName[];
-extern const char kCaptivePortalMetricsDescription[];
 
 // Title and description for the flag to enable automatically switching to the
 // regular tabs after closing the last incognito tab.
@@ -165,9 +185,10 @@ extern const char kClosingLastIncognitoTabDescription[];
 extern const char kContextualSearch[];
 extern const char kContextualSearchDescription[];
 
-// Title and description for the flag to enable copying image.
-extern const char kCopyImageName[];
-extern const char kCopyImageDescription[];
+// Title and description for the flag to diffentiate between copied
+// urls, strings, and images.
+extern const char kCopiedContentBehaviorName[];
+extern const char kCopiedContentBehaviorDescription[];
 
 // Title and description for the flag to enable drag and drop.
 extern const char kDragAndDropName[];
@@ -176,6 +197,16 @@ extern const char kDragAndDropDescription[];
 // Title and description for the flag to enable new Clear Browsing Data UI.
 extern const char kNewClearBrowsingDataUIName[];
 extern const char kNewClearBrowsingDataUIDescription[];
+
+// Title and description for the flag to enable the clipboard provider to
+// suggest copied text
+extern const char kEnableClipboardProviderTextSuggestionsName[];
+extern const char kEnableClipboardProviderTextSuggestionsDescription[];
+
+// Title and description for the flag to enable the clipboard provider to
+// suggest searchihng for copied imagse
+extern const char kEnableClipboardProviderImageSuggestionsName[];
+extern const char kEnableClipboardProviderImageSuggestionsDescription[];
 
 // Title and description for the flag to enable invaliations delivery via FCM.
 extern const char kFCMInvalidationsName[];
@@ -235,6 +266,11 @@ extern const char kOmniboxPopupShortcutIconsInZeroStateDescription[];
 extern const char kOmniboxTabSwitchSuggestionsName[];
 extern const char kOmniboxTabSwitchSuggestionsDescription[];
 
+// Title and description for the flag to change the max number of autocomplete
+// matches in the omnibox popup.
+extern const char kOmniboxUIMaxAutocompleteMatchesName[];
+extern const char kOmniboxUIMaxAutocompleteMatchesDescription[];
+
 // Title and description for the flag to enable elision of the URL path, query,
 // and ref in omnibox URL suggestions.
 extern const char kOmniboxUIElideSuggestionUrlAfterHostName[];
@@ -258,13 +294,14 @@ extern const char kPhysicalWebDescription[];
 extern const char kIgnoresViewportScaleLimitsName[];
 extern const char kIgnoresViewportScaleLimitsDescription[];
 
-// Title and description for the flag to enable searching for a copied image.
-extern const char kSearchCopiedImageName[];
-extern const char kSearchCopiedImageDescription[];
-
 // Title and description for the flag to toggle the flag of the search button.
 extern const char kSearchIconToggleName[];
 extern const char kSearchIconToggleDescription[];
+
+// Title and description for the flag to toggle the flag for the settings UI
+// Refresh.
+extern const char kSettingsRefreshName[];
+extern const char kSettingsRefreshDescription[];
 
 // Title and description for the flag to enable WKBackForwardList based
 // navigation manager.
@@ -276,24 +313,10 @@ extern const char kSlimNavigationManagerDescription[];
 extern const char kShowAutofillTypePredictionsName[];
 extern const char kShowAutofillTypePredictionsDescription[];
 
-// Title and description for the flag to enable WKWebView in SSO.
-extern const char kSSOWithWKWebViewName[];
-extern const char kSSOWithWKWebViewDescription[];
-
-// Title and description for the flag to diffentiate between copied
-// text and urls.
-extern const char kCopiedTextBehaviorName[];
-extern const char kCopiedTextBehaviorDescription[];
-
 // Title and description for the flag to enable the toolbar container
 // implementation.
 extern const char kToolbarContainerName[];
 extern const char kToolbarContainerDescription[];
-
-// Title and description for the flag to use UIViewController for Sad Tab UI
-// presentation.
-extern const char kPresentSadTabInViewControllerName[];
-extern const char kPresentSadTabInViewControllerDescription[];
 
 // Title and description for the flag to use |-drawViewHierarchy:| for taking
 // snapshots.
@@ -321,6 +344,11 @@ extern const char kUsdzPreviewDescription[];
 // Title and description for the flag to enable the ddljson Doodle API.
 extern const char kUseDdljsonApiName[];
 extern const char kUseDdljsonApiDescription[];
+
+// Title and description for the flag to use the Clear browsing data API from
+// web.
+extern const char kWebClearBrowsingDataName[];
+extern const char kWebClearBrowsingDataDescription[];
 
 // Title and description for the flag to enable web frame messaging.
 extern const char kWebFrameMessagingName[];

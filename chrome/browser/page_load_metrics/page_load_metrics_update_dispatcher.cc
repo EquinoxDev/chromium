@@ -7,6 +7,7 @@
 #include <ostream>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
@@ -339,10 +340,18 @@ class PageLoadTimingMerger {
 
       target_paint_timing->largest_image_paint =
           new_paint_timing.largest_image_paint;
+      target_paint_timing->largest_image_paint_size =
+          new_paint_timing.largest_image_paint_size;
       target_paint_timing->last_image_paint = new_paint_timing.last_image_paint;
+      target_paint_timing->last_image_paint_size =
+          new_paint_timing.last_image_paint_size;
       target_paint_timing->largest_text_paint =
           new_paint_timing.largest_text_paint;
+      target_paint_timing->largest_text_paint_size =
+          new_paint_timing.largest_text_paint_size;
       target_paint_timing->last_text_paint = new_paint_timing.last_text_paint;
+      target_paint_timing->last_text_paint_size =
+          new_paint_timing.last_text_paint_size;
     }
   }
 

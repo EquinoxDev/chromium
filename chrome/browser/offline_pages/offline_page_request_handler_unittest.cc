@@ -672,7 +672,7 @@ void OfflinePageRequestHandlerTestBase::CreateFileWithContentOnIO(
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   }
   std::string file_name("test");
-  file_name += base::IntToString(file_name_sequence_num_++);
+  file_name += base::NumberToString(file_name_sequence_num_++);
   file_name += ".mht";
   temp_file_path_ = temp_dir_.GetPath().AppendASCII(file_name);
   ASSERT_NE(base::WriteFile(temp_file_path_, content.c_str(), content.length()),
@@ -877,7 +877,7 @@ std::string OfflinePageRequestHandlerTestBase::UseOfflinePageHeader(
   DCHECK_NE(OfflinePageHeader::Reason::NONE, reason);
   offline_page_header_.reason = reason;
   if (offline_id)
-    offline_page_header_.id = base::Int64ToString(offline_id);
+    offline_page_header_.id = base::NumberToString(offline_id);
   return offline_page_header_.GetCompleteHeaderString();
 }
 
@@ -888,7 +888,7 @@ std::string OfflinePageRequestHandlerTestBase::UseOfflinePageHeaderForIntent(
   DCHECK_NE(OfflinePageHeader::Reason::NONE, reason);
   DCHECK(offline_id);
   offline_page_header_.reason = reason;
-  offline_page_header_.id = base::Int64ToString(offline_id);
+  offline_page_header_.id = base::NumberToString(offline_id);
   offline_page_header_.intent_url = intent_url;
   return offline_page_header_.GetCompleteHeaderString();
 }
@@ -943,7 +943,7 @@ int64_t OfflinePageRequestHandlerTestBase::SavePage(
   OfflinePageModel::SavePageParams save_page_params;
   save_page_params.url = url;
   save_page_params.client_id =
-      ClientId(kDownloadNamespace, base::IntToString(item_counter));
+      ClientId(kDownloadNamespace, base::NumberToString(item_counter));
   save_page_params.original_url = original_url;
   OfflinePageModelFactory::GetForBrowserContext(profile())->SavePage(
       save_page_params, std::move(archiver), nullptr,
@@ -1146,8 +1146,7 @@ std::unique_ptr<net::URLRequest> OfflinePageRequestJobBuilder::CreateRequest(
       /*render_process_id=*/1,
       /*render_view_id=*/-1,
       /*render_frame_id=*/1,
-      /*is_main_frame=*/true,
-      /*allow_download=*/true,
+      /*is_main_frame=*/true, content::ResourceInterceptPolicy::kAllowAll,
       /*is_async=*/true,
       test_base_->allow_preview() ? content::OFFLINE_PAGE_ON
                                   : content::PREVIEWS_OFF,
@@ -1429,7 +1428,7 @@ typedef testing::Types<OfflinePageRequestJobBuilder,
                        OfflinePageURLLoaderBuilder>
     MyTypes;
 
-TYPED_TEST_CASE(OfflinePageRequestHandlerTest, MyTypes);
+TYPED_TEST_SUITE(OfflinePageRequestHandlerTest, MyTypes);
 
 TYPED_TEST(OfflinePageRequestHandlerTest, FailedToCreateRequestJob) {
   this->SimulateHasNetworkConnectivity(false);
@@ -2077,7 +2076,8 @@ TYPED_TEST(OfflinePageRequestHandlerTest, LoadOtherPageOnDigestMismatch) {
   this->ExpectOfflinePageAccessCount(offline_id2, 0);
 }
 
-TYPED_TEST(OfflinePageRequestHandlerTest, EmptyFile) {
+// Disabled due to https://crbug.com/917113.
+TYPED_TEST(OfflinePageRequestHandlerTest, DISABLED_EmptyFile) {
   this->SimulateHasNetworkConnectivity(false);
 
   const std::string expected_data("");

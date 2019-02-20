@@ -9,6 +9,7 @@ import static org.chromium.chrome.browser.customtabs.dynamicmodule.DynamicModule
 import android.content.ComponentName;
 import android.content.Context;
 import android.net.Uri;
+import android.os.SystemClock;
 import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
 import android.support.customtabs.CustomTabsService;
@@ -18,33 +19,37 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import org.chromium.base.Callback;
-import org.chromium.base.ThreadUtils;
+import org.chromium.base.TraceEvent;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.browserservices.PostMessageHandler;
 import org.chromium.chrome.browser.customtabs.CloseButtonNavigator;
-import org.chromium.chrome.browser.customtabs.CustomTabActivity;
 import org.chromium.chrome.browser.customtabs.CustomTabBottomBarDelegate;
 import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider;
 import org.chromium.chrome.browser.customtabs.CustomTabTopBarDelegate;
 import org.chromium.chrome.browser.customtabs.CustomTabsConnection;
 import org.chromium.chrome.browser.customtabs.TabObserverRegistrar;
+import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabController;
 import org.chromium.chrome.browser.dependency_injection.ActivityScope;
 import org.chromium.chrome.browser.fullscreen.ChromeFullscreenManager;
 import org.chromium.chrome.browser.init.ActivityLifecycleDispatcher;
 import org.chromium.chrome.browser.lifecycle.Destroyable;
 import org.chromium.chrome.browser.lifecycle.NativeInitObserver;
+import org.chromium.chrome.browser.metrics.PageLoadMetrics;
 import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.util.UrlUtilities;
+import org.chromium.content_public.browser.LoadUrlParams;
+import org.chromium.content_public.browser.NavigationHandle;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.WebContents;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.List;
 import java.util.regex.Pattern;
 
 import javax.inject.Inject;
@@ -59,9 +64,9 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     private final CustomTabIntentDataProvider mIntentDataProvider;
     private final TabObserverRegistrar mTabObserverRegistrar;
     private final CustomTabsConnection mConnection;
+    private final CustomTabActivityTabController mTabController;
 
-    // TODO(amalova): CustomTabActivity is only needed for loadUri(). Remove it once it is possible.
-    private final CustomTabActivity mActivity;
+    private final ChromeActivity mActivity;
 
     private final Lazy<CustomTabTopBarDelegate> mTopBarDelegate;
     private final Lazy<CustomTabBottomBarDelegate> mBottomBarDelegate;
@@ -77,8 +82,8 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     @Nullable
     private PostMessageHandler mDynamicModulePostMessageHandler;
 
-    @Retention(RetentionPolicy.SOURCE)
     @IntDef({View.VISIBLE, View.INVISIBLE, View.GONE})
+    @Retention(RetentionPolicy.SOURCE)
     private @interface ToolbarVisibility {}
 
     // Default visibility of the Toolbar prior to any header customization.
@@ -92,19 +97,62 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     private int mDefaultTopControlContainerHeight;
     private boolean mHasSetOverlayView;
 
+    // Whether isModuleManagedUrl(url) must check the URL's port number or not.
+    // This makes it easier to run tests with the EmbeddedTestServer.
+    private static boolean sAllowNonStandardPortNumber; // false by default.
+
+    @VisibleForTesting
+    public static void setAllowNonStandardPortNumber(boolean allowNonStandardPortNumber) {
+        sAllowNonStandardPortNumber = allowNonStandardPortNumber;
+    }
+
     private final EmptyTabObserver mHeaderVisibilityObserver = new EmptyTabObserver() {
         @Override
-        public void onDidFinishNavigation(Tab tab, String url, boolean isInMainFrame,
-                                          boolean isErrorPage, boolean hasCommitted,
-                                          boolean isSameDocument, boolean isFragmentNavigation,
-                                          @Nullable Integer pageTransition, int errorCode,
-                                          int httpStatusCode) {
-            if (!isInMainFrame || !hasCommitted) return;
-            maybeCustomizeCctHeader(url);
+        public void onDidFinishNavigation(Tab tab, NavigationHandle navigation) {
+            if (!navigation.isInMainFrame() || !navigation.hasCommitted()) return;
+            maybeCustomizeCctHeader(navigation.getUrl());
         }
     };
+
+    // Update the request's header on module managed URLs.
+    private final EmptyTabObserver mCustomRequestHeaderModifier = new EmptyTabObserver() {
+        @Override
+        public void onDidStartNavigation(Tab tab, NavigationHandle navigation) {
+            updateCustomRequestHeader(navigation, /* isRedirect */ false);
+        }
+
+        @Override
+        public void onDidRedirectNavigation(Tab tab, NavigationHandle navigation) {
+            updateCustomRequestHeader(navigation, /* is_redirect */ true);
+        }
+
+        private void updateCustomRequestHeader(NavigationHandle navigation, boolean isRedirect) {
+            // Update an header only when the navigation emit a network request.²
+            if (!navigation.isInMainFrame() || navigation.isSameDocument()
+                    || navigation.isErrorPage()
+                    || !ChromeFeatureList.isEnabled(
+                            ChromeFeatureList.CCT_MODULE_CUSTOM_REQUEST_HEADER)) {
+                return;
+            }
+
+            try (TraceEvent e = TraceEvent.scoped(
+                         "DynamicModuleCoordinator.updateCustomRequestHeader")) {
+                if (isModuleManagedUrl(navigation.getUrl())) {
+                    String headerValue = mIntentDataProvider.getExtraModuleManagedUrlsHeaderValue();
+                    if (headerValue != null) {
+                        navigation.setRequestHeader(
+                                DynamicModuleConstants.MANAGED_URL_HEADER, headerValue);
+                    }
+                } else if (isRedirect) {
+                    navigation.removeRequestHeader(DynamicModuleConstants.MANAGED_URL_HEADER);
+                }
+            }
+        }
+    };
+
     private final DynamicModuleNavigationEventObserver mModuleNavigationEventObserver =
             new DynamicModuleNavigationEventObserver();
+    private final DynamicModulePageLoadObserver mPageLoadObserver;
 
     @Inject
     public DynamicModuleCoordinator(CustomTabIntentDataProvider intentDataProvider,
@@ -115,14 +163,21 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
                                     Lazy<CustomTabTopBarDelegate> topBarDelegate,
                                     Lazy<CustomTabBottomBarDelegate> bottomBarDelegate,
                                     Lazy<ChromeFullscreenManager> fullscreenManager,
-                                    CustomTabsConnection connection, ChromeActivity activity) {
+                                    CustomTabsConnection connection, ChromeActivity activity,
+                                    CustomTabActivityTabController tabController,
+                                    DynamicModulePageLoadObserver pageLoadObserver) {
         mIntentDataProvider = intentDataProvider;
         mTabObserverRegistrar = tabObserverRegistrar;
-        mActivity = (CustomTabActivity) activity;
+        mActivity = activity;
+        mTabController = tabController;
         mConnection = connection;
 
         mTabObserverRegistrar.registerTabObserver(mModuleNavigationEventObserver);
         mTabObserverRegistrar.registerTabObserver(mHeaderVisibilityObserver);
+        mTabObserverRegistrar.registerTabObserver(mCustomRequestHeaderModifier);
+
+        mPageLoadObserver = pageLoadObserver;
+        mTabObserverRegistrar.registerPageLoadMetricsObserver(mPageLoadObserver);
 
         mActivityDelegate = activityDelegate;
         mTopBarDelegate = topBarDelegate;
@@ -148,9 +203,7 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
      */
     @VisibleForTesting
     /* package */ void loadModule() {
-        ComponentName componentName = mIntentDataProvider.getModuleComponentName();
-
-        ModuleLoader moduleLoader = mConnection.getModuleLoader(componentName);
+        ModuleLoader moduleLoader = getModuleLoader();
         moduleLoader.loadModule();
         mModuleCallback = new LoadModuleCallback();
         moduleLoader.addCallbackAndIncrementUseCount(mModuleCallback);
@@ -159,10 +212,13 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     @Override
     public void destroy() {
         mModuleEntryPoint = null;
+        getModuleLoader().removeCallbackAndDecrementUseCount(mModuleCallback);
+    }
 
-        ComponentName moduleComponentName = mIntentDataProvider.getModuleComponentName();
-        mConnection.getModuleLoader(moduleComponentName)
-                    .removeCallbackAndDecrementUseCount(mModuleCallback);
+    private ModuleLoader getModuleLoader() {
+        ComponentName componentName = mIntentDataProvider.getModuleComponentName();
+        int dexResourceId = mIntentDataProvider.getModuleDexResourceId();
+        return mConnection.getModuleLoader(componentName, dexResourceId);
     }
 
     /* package */ Context getActivityContext() {
@@ -190,7 +246,8 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     }
 
     /* package */ void loadUri(Uri uri) {
-        mActivity.loadUri(uri);
+        mTabController.loadUrlInTab(new LoadUrlParams(uri.toString()),
+                SystemClock.elapsedRealtime());
     }
 
     @VisibleForTesting
@@ -245,8 +302,10 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     public boolean requestPostMessageChannel(Uri postMessageOrigin) {
         if (mDynamicModulePostMessageHandler == null) return false;
 
-        ThreadUtils.postOnUiThread(() ->
-                mDynamicModulePostMessageHandler.initializeWithPostMessageUri(postMessageOrigin));
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT,
+                ()
+                        -> mDynamicModulePostMessageHandler.initializeWithPostMessageUri(
+                                postMessageOrigin));
         return true;
     }
 
@@ -298,7 +357,14 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
                         >= DynamicModuleConstants.ON_NAVIGATION_EVENT_MODULE_API_VERSION) {
                     mModuleNavigationEventObserver.setActivityDelegate(mActivityDelegate);
                 } else {
-                    unregisterModuleObservers();
+                    unregisterObserver(mModuleNavigationEventObserver);
+                }
+
+                if (mModuleEntryPoint.getModuleVersion()
+                        >= DynamicModuleConstants.ON_PAGE_LOAD_METRIC_API_VERSION) {
+                    mPageLoadObserver.setActivityDelegate(mActivityDelegate);
+                } else {
+                    PageLoadMetrics.removeObserver(mPageLoadObserver);
                 }
 
                 // Initialise the PostMessageHandler for the current web contents.
@@ -320,13 +386,15 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
     }
 
     private boolean isModuleManagedUrl(String url) {
-        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE)) {
+        if (TextUtils.isEmpty(url)) {
             return false;
         }
-        List<String> moduleManagedHosts = mIntentDataProvider.getExtraModuleManagedHosts();
         Pattern urlsPattern = mIntentDataProvider.getExtraModuleManagedUrlsPattern();
-        if (TextUtils.isEmpty(url) || moduleManagedHosts == null || moduleManagedHosts.isEmpty()
-                || urlsPattern == null) {
+        if (urlsPattern == null) {
+            return false;
+        }
+        String pathAndQuery = url.substring(UrlUtilities.stripPath(url).length());
+        if (!urlsPattern.matcher(pathAndQuery).matches()) {
             return false;
         }
         Uri parsed = Uri.parse(url);
@@ -334,30 +402,30 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
         if (!UrlConstants.HTTPS_SCHEME.equals(scheme)) {
             return false;
         }
-        String host = parsed.getHost();
-        if (host == null) {
+        if (!UrlUtilities.nativeIsGoogleDomainUrl(url, sAllowNonStandardPortNumber)) {
             return false;
         }
-        String pathAndQuery = url.substring(UrlUtilities.stripPath(url).length());
-        for (String moduleManagedHost : moduleManagedHosts) {
-            if (host.equals(moduleManagedHost) && urlsPattern.matcher(pathAndQuery).matches()) {
-                return true;
-            }
-        }
-        return false;
+        return true;
     }
 
     public void setTopBarHeight(int height) {
         mTopBarDelegate.get().setTopBarHeight(height);
-        maybeCustomizeCctHeader(mIntentDataProvider.getUrlToLoad());
+        maybeCustomizeCctHeader(getContentUrl());
+    }
+
+    private String getContentUrl() {
+        Tab tab = mTabController.getTab();
+        if (tab != null && tab.getWebContents() != null && !tab.getWebContents().isDestroyed()
+                && tab.getWebContents().getLastCommittedUrl() != null) {
+            return tab.getWebContents().getLastCommittedUrl();
+        }
+        return mIntentDataProvider.getUrlToLoad();
     }
 
     private int getTopBarHeight() {
         Integer topBarHeight = mTopBarDelegate.get().getTopBarHeight();
-        // Custom top bar height must not be too small compared to the default top control container
-        // height, nor shall it be larger than the height of the web content.
+        // Custom top bar height must not be larger than the height of the web content.
         if (topBarHeight != null && topBarHeight >= 0
-                && topBarHeight > mDefaultTopControlContainerHeight / 2
                 && mActivity.getWindow() != null
                 && topBarHeight < mActivity.getWindow().getDecorView().getHeight() / 2) {
             return topBarHeight;
@@ -365,28 +433,53 @@ public class DynamicModuleCoordinator implements NativeInitObserver, Destroyable
         return mDefaultTopControlContainerHeight;
     }
 
+    private boolean shouldHideCctHeaderOnModuleManagedUrls() {
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE_CUSTOM_HEADER)) return false;
+
+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE_USE_INTENT_EXTRAS)
+                && mIntentDataProvider.shouldHideCctHeaderOnModuleManagedUrls()) {
+            return true;
+        }
+
+        return mConnection.shouldHideTopBarOnModuleManagedUrlsForSession(
+                mIntentDataProvider.getSession());
+    }
+
+    private View getProgressBarAnchorView(boolean isModuleManagedUrl) {
+        View anchorView = null;
+        if (isModuleManagedUrl) {
+            View topBarContentView = mTopBarDelegate.get().getTopBarContentView();
+            if (topBarContentView != null && topBarContentView.getVisibility() == View.VISIBLE) {
+                anchorView = topBarContentView;
+            }
+        } else {
+            anchorView = mActivity.getToolbarManager().getToolbarView();
+        }
+        return anchorView;
+    }
+
     private void maybeCustomizeCctHeader(String url) {
         if (!isModuleLoaded() && !isModuleLoading()) return;
 
         boolean isModuleManagedUrl = isModuleManagedUrl(url);
         mTopBarDelegate.get().showTopBarIfNecessary(isModuleManagedUrl);
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE_CUSTOM_HEADER)
-                && mIntentDataProvider.shouldHideCctHeaderOnModuleManagedUrls()) {
+        if (shouldHideCctHeaderOnModuleManagedUrls()) {
             mActivity.getToolbarManager().setToolbarVisibility(
                     isModuleManagedUrl ? View.GONE : mDefaultToolbarVisibility);
             mActivity.getToolbarManager().setToolbarShadowVisibility(
                     isModuleManagedUrl ? View.GONE : mDefaultToolbarShadowVisibility);
             mFullscreenManager.get().setTopControlsHeight(
                     isModuleManagedUrl ? getTopBarHeight() : mDefaultTopControlContainerHeight);
-            mActivity.getToolbarManager().setProgressBarAnchorView(isModuleManagedUrl
-                            ? mTopBarDelegate.get().getTopBarContentView()
-                            : mActivity.getToolbarManager().getToolbarView());
+            mActivity.getToolbarManager().setProgressBarAnchorView(
+                    getProgressBarAnchorView(isModuleManagedUrl));
         }
     }
 
     private void unregisterModuleObservers() {
         unregisterObserver(mModuleNavigationEventObserver);
         unregisterObserver(mHeaderVisibilityObserver);
+        unregisterObserver(mCustomRequestHeaderModifier);
+        PageLoadMetrics.removeObserver(mPageLoadObserver);
     }
 
     private void unregisterObserver(TabObserver observer) {

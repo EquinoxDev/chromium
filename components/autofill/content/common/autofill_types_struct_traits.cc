@@ -641,7 +641,7 @@ bool StructTraits<
 
   out->is_enabled = data.is_enabled();
   out->is_readonly = data.is_readonly();
-  if (!data.ReadValue(&out->typed_value))
+  if (!data.ReadTypedValue(&out->typed_value))
     return false;
 
   if (!data.ReadOptionValues(&out->option_values))
@@ -877,7 +877,7 @@ bool StructTraits<
       data.was_parsed_using_autofill_predictions();
   out->is_public_suffix_match = data.is_public_suffix_match();
   out->is_affiliation_based_match = data.is_affiliation_based_match();
-  out->only_for_fallback_saving = data.only_for_fallback_saving();
+  out->only_for_fallback = data.only_for_fallback();
   out->is_gaia_with_skip_save_password_form =
       data.is_gaia_with_skip_save_password_form();
 

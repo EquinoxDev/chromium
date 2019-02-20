@@ -14,11 +14,10 @@ import android.view.KeyEvent;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabDelegateFactory;
 import org.chromium.chrome.browser.tabmodel.SingleTabModelSelector;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.document.TabDelegate;
-import org.chromium.content_public.browser.ChildProcessImportance;
 import org.chromium.content_public.browser.LoadUrlParams;
 
 /**
@@ -67,7 +66,6 @@ public abstract class SingleTabActivity extends ChromeActivity {
         Tab tab = createTab();
         getTabModelSelector().setTab(tab);
         tab.show(TabSelectionType.FROM_NEW);
-        tab.setImportance(ChildProcessImportance.MODERATE);
     }
 
     @Override
@@ -136,5 +134,5 @@ public abstract class SingleTabActivity extends ChromeActivity {
     }
 
     @Override
-    public void onCheckForUpdate() {}
+    public void onUpdateStateChanged() {}
 }

@@ -164,8 +164,8 @@ void CALLBACK SaveAccountInfoW(HWND /*hwnd*/,
 
   HRESULT hr = S_OK;
   base::DictionaryValue* dict = nullptr;
-  std::unique_ptr<base::Value> properties =
-      base::JSONReader::Read(buffer, base::JSON_ALLOW_TRAILING_COMMAS);
+  std::unique_ptr<base::Value> properties = base::JSONReader::ReadDeprecated(
+      buffer, base::JSON_ALLOW_TRAILING_COMMAS);
   if (!properties || !properties->GetAsDictionary(&dict)) {
     LOGFN(ERROR) << "base::JSONReader::Read failed length=" << buffer_len_bytes;
     hr = E_FAIL;
@@ -179,7 +179,8 @@ void CALLBACK SaveAccountInfoW(HWND /*hwnd*/,
 
   wchar_t mdm_url[256];
   ULONG length = base::size(mdm_url);
-  hr = credential_provider::GetGlobalFlag(L"mdm", mdm_url, &length);
+  hr = credential_provider::GetGlobalFlag(credential_provider::kRegMdmUrl,
+                                          mdm_url, &length);
   if (SUCCEEDED(hr)) {
     dict->SetString(credential_provider::kKeyMdmUrl, mdm_url);
 

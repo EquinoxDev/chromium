@@ -13,6 +13,7 @@
 #include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/text_run_constructor.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/image_element_timing.h"
@@ -188,7 +189,9 @@ void ImagePainter::PaintIntoRect(GraphicsContext& context,
                 image->paint_image_id())
           : Image::kUnspecifiedDecode;
 
-  if (layout_image_.IsImagePolicyViolated()) {
+  // TODO(loonybear): Support image policies on other image types in addition to
+  // HTMLImageElement.
+  if (IsHTMLImageElement(node) && layout_image_.IsImagePolicyViolated()) {
     // Does not set an observer for the placeholder image, setting it to null.
     scoped_refptr<PlaceholderImage> placeholder_image =
         PlaceholderImage::Create(nullptr, image->Size(),
@@ -196,18 +199,22 @@ void ImagePainter::PaintIntoRect(GraphicsContext& context,
     placeholder_image->SetIconAndTextScaleFactor(
         layout_image_.GetFrame()->PageZoomFactor());
     image = std::move(placeholder_image);
+
+    // Report layout related image policy violation.
+    layout_image_.ReportImagePolicyViolation();
   }
 
   context.DrawImage(
       image.get(), decode_mode, FloatRect(pixel_snapped_dest_rect), &src_rect,
       SkBlendMode::kSrcOver,
       LayoutObject::ShouldRespectImageOrientation(&layout_image_));
-  if (RuntimeEnabledFeatures::ElementTimingEnabled() &&
-      IsHTMLImageElement(node) && !context.ContextDisabled()) {
+  if (origin_trials::ElementTimingEnabled(&layout_image_.GetDocument()) &&
+      IsHTMLImageElement(node) && !context.ContextDisabled() &&
+      layout_image_.CachedImage() && layout_image_.CachedImage()->IsLoaded()) {
     LocalDOMWindow* window = layout_image_.GetDocument().domWindow();
     DCHECK(window);
     ImageElementTiming::From(*window).NotifyImagePainted(
-        ToHTMLImageElement(node), &layout_image_, painting_layer);
+        &layout_image_, layout_image_.CachedImage(), painting_layer);
   }
 }
 

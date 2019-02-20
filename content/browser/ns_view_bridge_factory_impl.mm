@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/no_destructor.h"
 #include "content/browser/renderer_host/input/web_input_event_builders_mac.h"
@@ -15,6 +16,7 @@
 #include "content/browser/web_contents/web_contents_ns_view_bridge.h"
 #include "content/common/render_widget_host_ns_view.mojom.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
 #include "ui/base/cocoa/remote_accessibility_api.h"
 
@@ -169,9 +171,12 @@ void NSViewBridgeFactoryImpl::CreateWebContentsNSViewBridge(
     mojom::WebContentsNSViewBridgeAssociatedRequest bridge_request) {
   // Note that the resulting object will be destroyed when its underlying pipe
   // is closed.
-  ignore_result(new WebContentsNSViewBridge(
-      view_id, mojom::WebContentsNSViewClientAssociatedPtr(std::move(client)),
-      std::move(bridge_request)));
+  mojo::MakeStrongAssociatedBinding(
+      std::make_unique<WebContentsNSViewBridge>(
+          view_id,
+          mojom::WebContentsNSViewClientAssociatedPtr(std::move(client))),
+      std::move(bridge_request),
+      ui::WindowResizeHelperMac::Get()->task_runner());
 }
 
 NSViewBridgeFactoryImpl::NSViewBridgeFactoryImpl() : binding_(this) {}

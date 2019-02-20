@@ -140,170 +140,12 @@ String Image::FilenameExtension() const {
   return String();
 }
 
-// TODO(schenney): Lift this code, with the calculations for subsetting the
-// image and the like, up the stack into a BackgroundPainter.
-void Image::DrawTiledBackground(GraphicsContext& ctxt,
-                                const FloatSize& unsnapped_subset_size,
-                                const FloatRect& snapped_paint_rect,
-                                const FloatPoint& phase,
-                                const FloatSize& tile_size,
-                                SkBlendMode op,
-                                const FloatSize& repeat_spacing) {
-  if (tile_size.IsEmpty())
-    return;
-
-  // Use the intrinsic size of the image if it has one, otherwise force the
-  // generated image to be the tile size.
-  FloatSize intrinsic_tile_size(Size());
-  FloatSize scale(1, 1);
-  if (HasRelativeSize()) {
-    intrinsic_tile_size.SetWidth(tile_size.Width());
-    intrinsic_tile_size.SetHeight(tile_size.Height());
-  } else {
-    scale = FloatSize(tile_size.Width() / intrinsic_tile_size.Width(),
-                      tile_size.Height() / intrinsic_tile_size.Height());
-  }
-
-  const FloatRect one_tile_rect = ComputePhaseForBackground(
-      snapped_paint_rect.Location(), tile_size, phase, repeat_spacing);
-
-  // Check and see if a single draw of the image can cover the entire area we
-  // are supposed to tile. The dest_rect_for_subset must use the same
-  // location that was used in ComputePhaseForBackground and the unsnapped
-  // destination rect in order to correctly evaluate the subset size and
-  // location in the presence of border snapping and zoom.
-  FloatRect dest_rect_for_subset(snapped_paint_rect.Location(),
-                                 unsnapped_subset_size);
-  if (one_tile_rect.Contains(dest_rect_for_subset)) {
-    FloatRect visible_src_rect = ComputeSubsetForBackground(
-        one_tile_rect, dest_rect_for_subset, intrinsic_tile_size);
-    // Round to avoid filtering pulling in neighboring pixels, for the
-    // common case of sprite maps.
-    // TODO(schenney): Snapping at this level is a problem for cases where we
-    // might be animating background-position to pan over an image. Ideally we
-    // would either snap only if close to integral, or move snapping
-    // calculations up the stack.
-    visible_src_rect = FloatRect(RoundedIntRect(visible_src_rect));
-    ctxt.DrawImage(this, kSyncDecode, snapped_paint_rect, &visible_src_rect, op,
-                   kDoNotRespectImageOrientation);
-    return;
-  }
-
-  // Note that this tile rect the image's pre-scaled size.
-  FloatRect tile_rect(FloatPoint(), intrinsic_tile_size);
-  // This call takes the unscaled image, applies the given scale, and paints
-  // it into the snapped_dest_rect using phase from one_tile_rect and the
-  // given repeat spacing. Note the phase is already scaled.
-  DrawPattern(ctxt, tile_rect, scale, one_tile_rect.Location(), op,
-              snapped_paint_rect, repeat_spacing);
-
-  StartAnimation();
-}
-
-// TODO(schenney): Lift this code, with the calculations for subsetting the
-// image and the like, up the stack into a border painting class.
-void Image::DrawTiledBorder(GraphicsContext& ctxt,
-                            const FloatRect& dst_rect,
-                            const FloatRect& src_rect,
-                            const FloatSize& provided_tile_scale_factor,
-                            TileRule h_rule,
-                            TileRule v_rule,
-                            SkBlendMode op) {
-  // TODO(cavalcantii): see crbug.com/662513.
-  FloatSize tile_scale_factor = provided_tile_scale_factor;
-  if (v_rule == kRoundTile) {
-    float v_repetitions = std::max(
-        1.0f, roundf(dst_rect.Height() /
-                     (tile_scale_factor.Height() * src_rect.Height())));
-    tile_scale_factor.SetHeight(dst_rect.Height() /
-                                (src_rect.Height() * v_repetitions));
-  }
-
-  if (h_rule == kRoundTile) {
-    float h_repetitions =
-        std::max(1.0f, roundf(dst_rect.Width() /
-                              (tile_scale_factor.Width() * src_rect.Width())));
-    tile_scale_factor.SetWidth(dst_rect.Width() /
-                               (src_rect.Width() * h_repetitions));
-  }
-
-  // We want to construct the phase such that the pattern is centered (when
-  // stretch is not set for a particular rule).
-  float v_phase = tile_scale_factor.Height() * src_rect.Y();
-  float h_phase = tile_scale_factor.Width() * src_rect.X();
-  if (v_rule == kRepeatTile) {
-    float scaled_tile_height = tile_scale_factor.Height() * src_rect.Height();
-    v_phase -= (dst_rect.Height() - scaled_tile_height) / 2;
-  }
-
-  if (h_rule == kRepeatTile) {
-    float scaled_tile_width = tile_scale_factor.Width() * src_rect.Width();
-    h_phase -= (dst_rect.Width() - scaled_tile_width) / 2;
-  }
-
-  FloatSize spacing;
-  auto calculate_space_needed =
-      [](const float destination,
-         const float source) -> std::tuple<bool, float> {
-    DCHECK_GT(source, 0);
-    DCHECK_GT(destination, 0);
-
-    float repeat_tiles_count = floorf(destination / source);
-    if (!repeat_tiles_count)
-      return std::make_tuple(false, -1);
-
-    float space = destination;
-    space -= source * repeat_tiles_count;
-    space /= repeat_tiles_count + 1.0;
-
-    return std::make_tuple(true, space);
-  };
-
-  if (v_rule == kSpaceTile) {
-    std::tuple<bool, float> space =
-        calculate_space_needed(dst_rect.Height(), src_rect.Height());
-    if (!std::get<0>(space))
-      return;
-
-    spacing.SetHeight(std::get<1>(space));
-    tile_scale_factor.SetHeight(1.0);
-    v_phase = src_rect.Y();
-    v_phase -= spacing.Height();
-  }
-
-  if (h_rule == kSpaceTile) {
-    std::tuple<bool, float> space =
-        calculate_space_needed(dst_rect.Width(), src_rect.Width());
-    if (!std::get<0>(space))
-      return;
-
-    spacing.SetWidth(std::get<1>(space));
-    tile_scale_factor.SetWidth(1.0);
-    h_phase = src_rect.X();
-    h_phase -= spacing.Width();
-  }
-
-  FloatPoint pattern_phase(dst_rect.X() - h_phase, dst_rect.Y() - v_phase);
-
-  // TODO(cavalcantii): see crbug.com/662507.
-  if ((h_rule == kRoundTile) || (v_rule == kRoundTile)) {
-    ScopedInterpolationQuality interpolation_quality_scope(ctxt,
-                                                           kInterpolationLow);
-    DrawPattern(ctxt, src_rect, tile_scale_factor, pattern_phase, op, dst_rect,
-                FloatSize());
-  } else {
-    DrawPattern(ctxt, src_rect, tile_scale_factor, pattern_phase, op, dst_rect,
-                spacing);
-  }
-
-  StartAnimation();
-}
-
 namespace {
 
 sk_sp<PaintShader> CreatePatternShader(const PaintImage& image,
                                        const SkMatrix& shader_matrix,
-                                       const PaintFlags& paint,
+                                       SkFilterQuality quality_to_use,
+                                       bool should_antialias,
                                        const FloatSize& spacing,
                                        SkShader::TileMode tmx,
                                        SkShader::TileMode tmy) {
@@ -318,7 +160,10 @@ sk_sp<PaintShader> CreatePatternShader(const PaintImage& image,
 
   PaintRecorder recorder;
   cc::PaintCanvas* canvas = recorder.beginRecording(tile_rect);
-  canvas->drawImage(image, 0, 0, &paint);
+  PaintFlags flags;
+  flags.setAntiAlias(should_antialias);
+  flags.setFilterQuality(quality_to_use);
+  canvas->drawImage(image, 0, 0, &flags);
 
   return PaintShader::MakePaintRecord(recorder.finishRecordingAsPicture(),
                                       tile_rect, tmx, tmy, &shader_matrix);
@@ -389,24 +234,26 @@ void Image::DrawPattern(GraphicsContext& context,
   const auto tmy = ComputeTileMode(dest_rect.Y(), dest_rect.MaxY(), adjusted_y,
                                    adjusted_y + tile_size.Height());
 
-  PaintFlags flags = context.FillFlags();
-  flags.setColor(SK_ColorBLACK);
-  flags.setBlendMode(composite_op);
-  flags.setFilterQuality(
-      context.ComputeFilterQuality(this, dest_rect, FloatRect(subset_rect)));
-  flags.setAntiAlias(context.ShouldAntialias());
-  flags.setShader(CreatePatternShader(
-      image, local_matrix, flags,
+  SkFilterQuality quality_to_use =
+      context.ComputeFilterQuality(this, dest_rect, FloatRect(subset_rect));
+  sk_sp<PaintShader> tile_shader = CreatePatternShader(
+      image, local_matrix, quality_to_use, context.ShouldAntialias(),
       FloatSize(repeat_spacing.Width() / scale_src_to_dest.Width(),
                 repeat_spacing.Height() / scale_src_to_dest.Height()),
-      tmx, tmy));
+      tmx, tmy);
+
+  PaintFlags flags = context.FillFlags();
   // If the shader could not be instantiated (e.g. non-invertible matrix),
   // draw transparent.
   // Note: we can't simply bail, because of arbitrary blend mode.
-  if (!flags.HasShader())
-    flags.setColor(SK_ColorTRANSPARENT);
+  flags.setColor(tile_shader ? SK_ColorBLACK : SK_ColorTRANSPARENT);
+  flags.setBlendMode(composite_op);
+  flags.setFilterQuality(quality_to_use);
+  flags.setShader(std::move(tile_shader));
 
   context.DrawRect(dest_rect, flags);
+
+  StartAnimation();
 
   if (CurrentFrameIsLazyDecoded()) {
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
@@ -448,33 +295,6 @@ bool Image::ApplyShader(PaintFlags& flags, const SkMatrix& local_matrix) {
   StartAnimation();
 
   return true;
-}
-
-FloatRect Image::ComputePhaseForBackground(const FloatPoint& destination_offset,
-                                           const FloatSize& size,
-                                           const FloatPoint& phase,
-                                           const FloatSize& spacing) {
-  const FloatSize step_per_tile(size + spacing);
-  return FloatRect(
-      FloatPoint(
-          destination_offset.X() + fmodf(-phase.X(), step_per_tile.Width()),
-          destination_offset.Y() + fmodf(-phase.Y(), step_per_tile.Height())),
-      size);
-}
-
-FloatRect Image::ComputeSubsetForBackground(const FloatRect& phase_and_size,
-                                            const FloatRect& subset,
-                                            const FloatSize& intrinsic_size) {
-  // TODO(schenney): Re-enable this after determining why it fails for
-  // CAP, and maybe other cases.
-  // DCHECK(phase_and_size.Contains(subset));
-
-  const FloatSize scale(phase_and_size.Width() / intrinsic_size.Width(),
-                        phase_and_size.Height() / intrinsic_size.Height());
-  return FloatRect((subset.X() - phase_and_size.X()) / scale.Width(),
-                   (subset.Y() - phase_and_size.Y()) / scale.Height(),
-                   subset.Width() / scale.Width(),
-                   subset.Height() / scale.Height());
 }
 
 SkBitmap Image::AsSkBitmapForCurrentFrame(

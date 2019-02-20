@@ -5,7 +5,11 @@
 #ifndef SERVICES_MEDIA_SESSION_PUBLIC_CPP_TEST_MOCK_MEDIA_SESSION_H_
 #define SERVICES_MEDIA_SESSION_PUBLIC_CPP_TEST_MOCK_MEDIA_SESSION_H_
 
+#include <utility>
+#include <vector>
+
 #include "base/component_export.h"
+#include "base/containers/flat_map.h"
 #include "base/optional.h"
 #include "base/run_loop.h"
 #include "mojo/public/cpp/bindings/binding.h"
@@ -27,10 +31,7 @@ namespace test {
 class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
     MockMediaSessionMojoObserver : public mojom::MediaSessionObserver {
  public:
-  // A MediaSessionObserver can observe a MediaSession directly or through a
-  // MediaController.
   explicit MockMediaSessionMojoObserver(mojom::MediaSession& media_session);
-  explicit MockMediaSessionMojoObserver(mojom::MediaControllerPtr& controller);
 
   ~MockMediaSessionMojoObserver() override;
 
@@ -40,12 +41,23 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
       const base::Optional<MediaMetadata>& metadata) override;
   void MediaSessionActionsChanged(
       const std::vector<mojom::MediaSessionAction>& actions) override;
+  void MediaSessionImagesChanged(
+      const base::flat_map<mojom::MediaSessionImageType,
+                           std::vector<MediaImage>>& images) override;
 
   void WaitForState(mojom::MediaSessionInfo::SessionState wanted_state);
   void WaitForPlaybackState(mojom::MediaPlaybackState wanted_state);
-  const base::Optional<MediaMetadata>& WaitForMetadata();
-  const MediaMetadata& WaitForNonEmptyMetadata();
-  void WaitForActions();
+  void WaitForControllable(bool is_controllable);
+
+  void WaitForEmptyMetadata();
+  void WaitForExpectedMetadata(const MediaMetadata& metadata);
+
+  void WaitForEmptyActions();
+  void WaitForExpectedActions(
+      const std::set<mojom::MediaSessionAction>& actions);
+
+  void WaitForExpectedImagesOfType(mojom::MediaSessionImageType type,
+                                   const std::vector<MediaImage>& images);
 
   const mojom::MediaSessionInfoPtr& session_info() const {
     return session_info_;
@@ -56,8 +68,8 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
     return session_metadata_;
   }
 
-  const std::vector<mojom::MediaSessionAction>& actions() const {
-    return session_actions_;
+  const std::set<mojom::MediaSessionAction>& actions() const {
+    return *session_actions_;
   }
 
  private:
@@ -65,11 +77,18 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP)
 
   mojom::MediaSessionInfoPtr session_info_;
   base::Optional<base::Optional<MediaMetadata>> session_metadata_;
-  std::vector<mojom::MediaSessionAction> session_actions_;
+  base::Optional<std::set<mojom::MediaSessionAction>> session_actions_;
+  base::Optional<
+      base::flat_map<mojom::MediaSessionImageType, std::vector<MediaImage>>>
+      session_images_;
 
-  bool waiting_for_metadata_ = false;
-  bool waiting_for_non_empty_metadata_ = false;
-  bool waiting_for_actions_ = false;
+  base::Optional<MediaMetadata> expected_metadata_;
+  base::Optional<std::set<mojom::MediaSessionAction>> expected_actions_;
+  base::Optional<bool> expected_controllable_;
+  base::Optional<
+      std::pair<mojom::MediaSessionImageType, std::vector<MediaImage>>>
+      expected_images_of_type_;
+  bool waiting_for_empty_metadata_ = false;
 
   base::Optional<mojom::MediaSessionInfo::SessionState> wanted_state_;
   base::Optional<mojom::MediaPlaybackState> wanted_playback_state_;
@@ -98,10 +117,13 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) MockMediaSession
   void GetDebugInfo(GetDebugInfoCallback callback) override;
   void PreviousTrack() override;
   void NextTrack() override;
+  void SkipAd() override {}
   void Seek(base::TimeDelta seek_time) override;
   void Stop(SuspendType type) override;
 
   void SetIsControllable(bool value);
+
+  void SetPreferStop(bool value) { prefer_stop_ = value; }
 
   void AbandonAudioFocusFromClient();
   base::UnguessableToken GetRequestIdFromClient();
@@ -143,6 +165,7 @@ class COMPONENT_EXPORT(MEDIA_SESSION_TEST_SUPPORT_CPP) MockMediaSession
   const bool force_duck_ = false;
   bool is_ducking_ = false;
   bool is_controllable_ = false;
+  bool prefer_stop_ = false;
 
   int prev_track_count_ = 0;
   int next_track_count_ = 0;

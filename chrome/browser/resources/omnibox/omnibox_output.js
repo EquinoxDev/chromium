@@ -3,6 +3,17 @@
 // found in the LICENSE file.
 
 cr.define('omnibox_output', function() {
+  /**
+   * @typedef  {{
+   *   cursorPosition: number,
+   *   time: number,
+   *   done: boolean,
+   *   host: string,
+   *   isTypedHost: boolean,
+   * }}
+   */
+  let ResultsDetails;
+
   /** @param {!Element} element*/
   function clearChildren(element) {
     while (element.firstChild) {
@@ -14,11 +25,10 @@ cr.define('omnibox_output', function() {
     constructor() {
       super('omnibox-output-template');
 
-      /** @type {!CopyDelegate} */
-      this.copyDelegate = new CopyDelegate(this);
-
-      /** @type {!Array<!mojom.OmniboxResult>} */
-      this.responses = [];
+      /** @private {number} */
+      this.selectedResponseIndex_ = 0;
+      /** @type {!Array<!Array<!mojom.OmniboxResponse>>} */
+      this.responsesHistory = [];
       /** @private {!Array<!OutputResultsGroup>} */
       this.resultsGroups_ = [];
       /** @private {!QueryInputs} */
@@ -38,6 +48,7 @@ cr.define('omnibox_output', function() {
     updateDisplayInputs(displayInputs) {
       this.displayInputs_ = displayInputs;
       this.updateVisibility_();
+      this.updateEliding_();
     }
 
     /** @param {string} filterText */
@@ -46,20 +57,57 @@ cr.define('omnibox_output', function() {
       this.updateFilterHighlights_();
     }
 
-    clearAutocompleteResponses() {
-      this.responses = [];
-      this.resultsGroups_ = [];
-      clearChildren(this.$$('contents'));
+    /** @param {!Array<!Array<!mojom.OmniboxResponse>>} responsesHistory */
+    setResponsesHistory(responsesHistory) {
+      this.responsesHistory = responsesHistory;
+      this.dispatchEvent(new CustomEvent(
+          'responses-count-changed', {detail: responsesHistory.length}));
+      this.updateSelectedResponseIndex(this.selectedResponseIndex_);
     }
 
-    /** @param {!mojom.OmniboxResult} response */
-    addAutocompleteResponse(response) {
-      this.responses.push(response);
+    /** @param {number} selection */
+    updateSelectedResponseIndex(selection) {
+      if (selection >= 0 && selection < this.responsesHistory.length) {
+        this.selectedResponseIndex_ = selection;
+        this.clearResultsGroups_();
+        this.responsesHistory[selection].forEach(
+            this.createResultsGroup_.bind(this));
+      }
+    }
 
+    prepareNewQuery() {
+      this.responsesHistory.push([]);
+      this.dispatchEvent(new CustomEvent(
+          'responses-count-changed', {detail: this.responsesHistory.length}));
+    }
+
+    /** @param {!mojom.OmniboxResponse} response */
+    addAutocompleteResponse(response) {
+      const lastIndex = this.responsesHistory.length - 1;
+      this.responsesHistory[lastIndex].push(response);
+      if (lastIndex === this.selectedResponseIndex_) {
+        this.createResultsGroup_(response);
+      }
+    }
+
+    /**
+     * Clears result groups from the UI.
+     * @private
+     */
+    clearResultsGroups_() {
+      this.resultsGroups_ = [];
+      clearChildren(this.$$('#contents'));
+    }
+
+    /**
+     * Creates and adds a result group to the UI.
+     * @private @param {!mojom.OmniboxResponse} response
+     */
+    createResultsGroup_(response) {
       const resultsGroup =
           OutputResultsGroup.create(response, this.queryInputs_.cursorPosition);
       this.resultsGroups_.push(resultsGroup);
-      this.$$('contents').appendChild(resultsGroup);
+      this.$$('#contents').appendChild(resultsGroup);
 
       this.updateVisibility_();
       this.updateFilterHighlights_();
@@ -70,7 +118,8 @@ cr.define('omnibox_output', function() {
      * @param {string} data
      */
     updateAnswerImage(url, data) {
-      this.matches.forEach(match => match.updateAnswerImage(url, data));
+      this.autocompleteMatches.forEach(
+          match => match.updateAnswerImage(url, data));
     }
 
     /**
@@ -84,10 +133,10 @@ cr.define('omnibox_output', function() {
      */
     updateVisibility_() {
       // Show non-last result groups only if showIncompleteResults is true.
-      this.resultsGroups_.forEach(
-          (resultsGroup, index) => resultsGroup.hidden =
-              !this.displayInputs_.showIncompleteResults &&
-              index !== this.resultsGroups_.length - 1);
+      this.resultsGroups_.forEach((resultsGroup, index) => {
+        resultsGroup.hidden = !this.displayInputs_.showIncompleteResults &&
+            index !== this.resultsGroups_.length - 1;
+      });
 
       this.resultsGroups_.forEach(resultsGroup => {
         resultsGroup.updateVisibility(
@@ -98,13 +147,21 @@ cr.define('omnibox_output', function() {
     }
 
     /** @private */
+    updateEliding_() {
+      this.resultsGroups_.forEach(
+          resultsGroup =>
+              resultsGroup.updateEliding(this.displayInputs_.elideCells));
+    }
+
+    /** @private */
     updateFilterHighlights_() {
-      this.matches.forEach(match => match.filter(this.filterText_));
+      this.autocompleteMatches.forEach(match => match.filter(this.filterText_));
     }
 
     /** @return {!Array<!OutputMatch>} */
-    get matches() {
-      return this.resultsGroups_.flatMap(resultsGroup => resultsGroup.matches);
+    get autocompleteMatches() {
+      return this.resultsGroups_.flatMap(
+          resultsGroup => resultsGroup.autocompleteMatches);
     }
 
     /** @return {string} */
@@ -126,7 +183,7 @@ cr.define('omnibox_output', function() {
    */
   class OutputResultsGroup extends OmniboxElement {
     /**
-     * @param {!mojom.OmniboxResult} resultsGroup
+     * @param {!mojom.OmniboxResponse} resultsGroup
      * @param {number} cursorPosition
      * @return {!OutputResultsGroup}
      */
@@ -137,19 +194,16 @@ cr.define('omnibox_output', function() {
     }
 
     constructor() {
-      super('details-and-table-template');
+      super('output-results-group-template');
     }
 
     /**
-     *  @param {!mojom.OmniboxResult} resultsGroup
+     *  @param {!mojom.OmniboxResponse} resultsGroup
      *  @param {number} cursorPosition
      */
     setResultsGroup(resultsGroup, cursorPosition) {
-      /**
-       * @type {{cursorPosition: number, time: number, done: boolean, host:
-       *     string, isTypedHost: boolean}}
-       */
-      this.details = {
+      /** @private {ResultsDetails} */
+      this.details_ = {
         cursorPosition: cursorPosition,
         time: resultsGroup.timeSinceOmniboxStartedMs,
         done: resultsGroup.done,
@@ -183,33 +237,25 @@ cr.define('omnibox_output', function() {
       /** @private {!Array<!Element>} */
       this.innerHeaders_ = [];
 
-      this.$$('details').appendChild(this.renderDetails_());
-      this.$$('table').appendChild(this.renderHeader_());
-      this.$$('table').appendChild(this.combinedResults);
+      customElements.whenDefined(this.$$('output-results-details').localName)
+          .then(
+              () =>
+                  this.$$('output-results-details').setDetails(this.details_));
+
+      this.$$('#table').appendChild(this.renderHeader_());
+      this.$$('#table').appendChild(this.combinedResults);
       this.individualResultsList.forEach(results => {
         const innerHeader = this.renderInnerHeader_(results);
         this.innerHeaders_.push(innerHeader);
-        this.$$('table').appendChild(innerHeader);
-        this.$$('table').appendChild(results);
+        this.$$('#table').appendChild(innerHeader);
+        this.$$('#table').appendChild(results);
       });
-    }
-
-    /** @private @return {!Element} */
-    renderDetails_() {
-      const details = OmniboxElement.getTemplate('details-template');
-      details.querySelector('.cursor-position').textContent =
-          this.details.cursorPosition;
-      details.querySelector('.time').textContent = this.details.time;
-      details.querySelector('.done').textContent = this.details.done;
-      details.querySelector('.host').textContent = this.details.host;
-      details.querySelector('.is-typed-host').textContent =
-          this.details.isTypedHost;
-      return details;
     }
 
     /** @private @return {!Element} */
     renderHeader_() {
       const head = document.createElement('thead');
+      head.classList.add('head');
       const row = document.createElement('tr');
       this.headers.forEach(cell => row.appendChild(cell));
       head.appendChild(row);
@@ -222,7 +268,8 @@ cr.define('omnibox_output', function() {
      * @return {!Element}
      */
     renderInnerHeader_(results) {
-      const head = document.createElement('thead');
+      const head = document.createElement('tbody');
+      head.classList.add('head');
       const row = document.createElement('tr');
       const cell = document.createElement('th');
       // Reserve 1 more column for showing the additional properties column.
@@ -241,7 +288,8 @@ cr.define('omnibox_output', function() {
     updateVisibility(showIncompleteResults, showDetails, showAllProviders) {
       // Show the details section above each table if showDetails or
       // showIncompleteResults are true.
-      this.$$('details').hidden = !showDetails && !showIncompleteResults;
+      this.$$('output-results-details').hidden =
+          !showDetails && !showIncompleteResults;
 
       // Show individual results when showAllProviders is true.
       this.individualResultsList.forEach(
@@ -250,12 +298,19 @@ cr.define('omnibox_output', function() {
           innerHeader => innerHeader.hidden = !showAllProviders);
 
       // Show certain column headers only if they showDetails is true.
-      COLUMNS.forEach(
-          (column, index) => this.headers[index].hidden =
-              !showDetails && !column.displayAlways);
+      COLUMNS.forEach(({displayAlways}, index) => {
+        this.headers[index].hidden = !showDetails && !displayAlways;
+      });
 
       // Show certain columns only if they showDetails is true.
-      this.matches.forEach(match => match.updateVisibility(showDetails));
+      this.autocompleteMatches.forEach(
+          match => match.updateVisibility(showDetails));
+    }
+
+    /** @param {boolean} elideCells */
+    updateEliding(elideCells) {
+      this.autocompleteMatches.forEach(
+          match => match.updateEliding(elideCells));
     }
 
     /**
@@ -269,16 +324,31 @@ cr.define('omnibox_output', function() {
     }
 
     /** @return {!Array<!OutputMatch>} */
-    get matches() {
+    get autocompleteMatches() {
       return [this.combinedResults]
           .concat(this.individualResultsList)
-          .flatMap(results => results.matches);
+          .flatMap(results => results.autocompleteMatches);
     }
 
     /** @return {!Array<string>} */
     get visibleText() {
       return Array.from(this.shadowRoot.querySelectorAll(':host > :not(style)'))
           .map(child => child.innerText);
+    }
+  }
+
+  class OutputResultsDetails extends OmniboxElement {
+    constructor() {
+      super('output-results-details-template');
+    }
+
+    /** @param {ResultsDetails} details */
+    setDetails(details) {
+      this.$$('#cursor-position').textContent = details.cursorPosition;
+      this.$$('#time').textContent = details.time;
+      this.$$('#done').textContent = details.done;
+      this.$$('#host').textContent = details.host;
+      this.$$('#is-typed-host').textContent = details.isTypedHost;
     }
   }
 
@@ -299,25 +369,27 @@ cr.define('omnibox_output', function() {
 
     constructor() {
       super();
+      this.classList.add('body');
       /** @type {!Array<!OutputMatch>} */
-      this.matches = [];
+      this.autocompleteMatches = [];
     }
 
     /** @param {!Array<!mojom.AutocompleteMatch>} results */
     set results(results) {
-      this.matches.forEach(match => match.remove());
-      this.matches = results.map(OutputMatch.create);
-      this.matches.forEach(this.appendChild.bind(this));
+      this.autocompleteMatches.forEach(match => match.remove());
+      this.autocompleteMatches = results.map(OutputMatch.create);
+      this.autocompleteMatches.forEach(this.appendChild.bind(this));
     }
 
     /** @return {?string} */
     get innerHeaderText() {
-      return this.matches[0].providerName;
+      return this.autocompleteMatches[0].providerName;
     }
 
     /** @return {boolean} */
     get hasAdditionalProperties() {
-      return this.matches.some(match => match.hasAdditionalProperties);
+      return this.autocompleteMatches.some(
+          match => match.hasAdditionalProperties);
     }
   }
 
@@ -345,23 +417,15 @@ cr.define('omnibox_output', function() {
 
       COLUMNS.forEach(column => {
         const values = column.sourceProperties.map(
-            propertyName =>
-                /** @type {Object} */ (match)[propertyName]);
+            propertyName => /** @type {Object} */ (match)[propertyName]);
         this.properties[column.matchKey] =
             OutputProperty.create(column, values);
       });
 
       const unconsumedProperties = {};
       Object.entries(match)
-          .filter(propertyNameValueTuple => {
-            const propertyName = propertyNameValueTuple[0];
-            return !CONSUMED_SOURCE_PROPERTIES.includes(propertyName);
-          })
-          .forEach(propertyNameValueTuple => {
-            const propertyName = propertyNameValueTuple[0];
-            const propertyValue = propertyNameValueTuple[1];
-            unconsumedProperties[propertyName] = propertyValue;
-          });
+          .filter(([name]) => !CONSUMED_SOURCE_PROPERTIES.includes(name))
+          .forEach(([name, value]) => unconsumedProperties[name] = value);
 
       /** @type {!OutputProperty} */
       this.additionalProperties = OutputProperty.create(
@@ -393,10 +457,15 @@ cr.define('omnibox_output', function() {
     /** @param {boolean} showDetails */
     updateVisibility(showDetails) {
       // Show certain columns only if they showDetails is true.
-      COLUMNS.forEach(column => {
-        this.properties[column.matchKey].hidden =
-            !showDetails && !column.displayAlways;
+      COLUMNS.forEach(({matchKey, displayAlways}) => {
+        this.properties[matchKey].hidden = !showDetails && !displayAlways;
       });
+    }
+
+    /** @param {boolean} elideCells */
+    updateEliding(elideCells) {
+      Object.values(this.properties)
+          .forEach(property => property.classList.toggle('elided', elideCells));
     }
 
     /** @param {string} filterText */
@@ -470,6 +539,12 @@ cr.define('omnibox_output', function() {
   }
 
   class OutputProperty extends HTMLTableCellElement {
+    constructor() {
+      super();
+      /** @type {string} */
+      this.filterName;
+    }
+
     /**
      * @param {Column} column
      * @param {!Array<*>} values
@@ -478,7 +553,7 @@ cr.define('omnibox_output', function() {
     static create(column, values) {
       const outputProperty = new column.outputClass();
       outputProperty.classList.add(column.cellClassName);
-      outputProperty.name = column.headerText.join('.');
+      outputProperty.filterName = column.tooltip.split('\n', 1)[0];
       outputProperty.values = values;
       return outputProperty;
     }
@@ -523,8 +598,7 @@ cr.define('omnibox_output', function() {
 
     /** @private @override */
     render_() {
-      this.first_.textContent = this.values_[0];
-      this.second_.textContent = this.values_[1];
+      [this.first_.textContent, this.second_.textContent] = this.values_;
     }
 
     /** @override @return {string} */
@@ -570,7 +644,7 @@ cr.define('omnibox_output', function() {
 
       /** @type {!Element} */
       this.image_ = document.createElement('img');
-      this.image_.classList.add('pair-item', 'image');
+      this.image_.classList.add('pair-item');
       this.container_.appendChild(this.image_);
 
       /** @type {!Element} */
@@ -587,6 +661,11 @@ cr.define('omnibox_output', function() {
       this.answer_ = document.createElement('div');
       this.answer_.classList.add('pair-item', 'answer');
       this.container_.appendChild(this.answer_);
+
+      /** @type {!Element} */
+      this.imageUrl_ = document.createElement('a');
+      this.imageUrl_.classList.add('pair-item', 'image-url');
+      this.container_.appendChild(this.imageUrl_);
     }
 
     /** @param {string} imageData */
@@ -599,6 +678,8 @@ cr.define('omnibox_output', function() {
       this.contents_.textContent = this.values_[1];
       this.description_.textContent = this.values_[2];
       this.answer_.textContent = this.values_[3];
+      this.imageUrl_.textContent = this.values_[0];
+      this.imageUrl_.href = this.values_[0];
     }
 
     /** @override @return {string} */
@@ -623,7 +704,7 @@ cr.define('omnibox_output', function() {
     }
 
     get text() {
-      return (this.value ? 'is: ' : 'not: ') + this.name;
+      return (this.value ? 'is: ' : 'not: ') + this.filterName;
     }
   }
 
@@ -640,9 +721,10 @@ cr.define('omnibox_output', function() {
     render_() {
       clearChildren(this.pre_);
       this.text.split(/("(?:[^"\\]|\\.)*":?|\w+)/)
-          .map(
-              word => OutputJsonProperty.renderJsonWord(
-                  word, OutputJsonProperty.classifyJsonWord(word)))
+          .map(word => {
+            return OutputJsonProperty.renderJsonWord(
+                word, OutputJsonProperty.classifyJsonWord(word));
+          })
           .forEach(jsonSpan => this.pre_.appendChild(jsonSpan));
     }
 
@@ -717,23 +799,37 @@ cr.define('omnibox_output', function() {
       this.appendChild(this.container_);
 
       /** @private {!Element} */
-      this.icon_ = document.createElement('img');
-      this.container_.appendChild(this.icon_);
+      this.iconAndUrlContainer_ = document.createElement('div');
+      this.iconAndUrlContainer_.classList.add('pair-item');
+      this.container_.appendChild(this.iconAndUrlContainer_);
 
       /** @private {!Element} */
-      this.link_ = document.createElement('a');
-      this.container_.appendChild(this.link_);
+      this.icon_ = document.createElement('img');
+      this.iconAndUrlContainer_.appendChild(this.icon_);
+
+      /** @private {!Element} */
+      this.urlLink_ = document.createElement('a');
+      this.iconAndUrlContainer_.appendChild(this.urlLink_);
+
+      /** @private {!Element} */
+      this.strippedUrlLink_ = document.createElement('a');
+      this.strippedUrlLink_.classList.add('pair-item');
+      this.container_.appendChild(this.strippedUrlLink_);
     }
 
     /** @private @override */
     render_() {
-      if (this.values_[1]) {
+      const [destinationUrl, isSearchType, strippedDestinationUrl] =
+          this.values_;
+      if (isSearchType) {
         this.icon_.removeAttribute('src');
       } else {
-        this.icon_.src = `chrome://favicon/${this.value}`;
+        this.icon_.src = `chrome://favicon/${destinationUrl}`;
       }
-      this.link_.textContent = this.value;
-      this.link_.href = this.value;
+      this.urlLink_.textContent = destinationUrl;
+      this.urlLink_.href = destinationUrl;
+      this.strippedUrlLink_.textContent = strippedDestinationUrl;
+      this.strippedUrlLink_.href = strippedDestinationUrl;
     }
   }
 
@@ -748,32 +844,6 @@ cr.define('omnibox_output', function() {
     /** @private @override */
     render_() {
       this.div_.textContent = this.value;
-    }
-  }
-
-  /** Responsible for setting clipboard contents. */
-  class CopyDelegate {
-    /** @param {!omnibox_output.OmniboxOutput} omniboxOutput */
-    constructor(omniboxOutput) {
-      /** @private {!omnibox_output.OmniboxOutput} */
-      this.omniboxOutput_ = omniboxOutput;
-    }
-
-    copyTextOutput() {
-      this.copy_(this.omniboxOutput_.visibleTableText);
-    }
-
-    copyJsonOutput() {
-      this.copy_(JSON.stringify(this.omniboxOutput_.responses, null, 2));
-    }
-
-    /**
-     * @private
-     * @param {string} value
-     */
-    copy_(value) {
-      navigator.clipboard.writeText(value).catch(
-          error => console.error('unable to copy to clipboard:', error));
     }
   }
 
@@ -883,7 +953,7 @@ cr.define('omnibox_output', function() {
         ['image', 'contents', 'description', 'answer'], OutputAnswerProperty),
     new Column(
         ['D'], '', 'allowedToBeDefaultMatch', true,
-        'Can Be Default\nA green checkmark indicates that the result can be ' +
+        'Can be Default\nA green checkmark indicates that the result can be ' +
             'the default match (i.e., can be the match that pressing enter ' +
             'in the omnibox navigates to).',
         ['allowedToBeDefaultMatch'], OutputBooleanProperty),
@@ -898,8 +968,10 @@ cr.define('omnibox_output', function() {
             'matches an open tab.',
         ['hasTabMatch'], OutputBooleanProperty),
     new Column(
-        ['URL'], '', 'destinationUrl', true, 'The URL for the result.',
-        ['destinationUrl', 'isSearchType'], OutputUrlProperty),
+        ['URL', 'Stripped URL'], '', 'destinationUrl', true,
+        'The URL for the result.',
+        ['destinationUrl', 'isSearchType', 'strippedDestinationUrl'],
+        OutputUrlProperty),
     new Column(
         ['Fill', 'Inline'], '', 'fillAndInline', false,
         'The text shown in the omnibox when the result is selected. / The ' +
@@ -957,10 +1029,11 @@ cr.define('omnibox_output', function() {
 
   customElements.define('omnibox-output', OmniboxOutput);
   customElements.define('output-results-group', OutputResultsGroup);
+  customElements.define('output-results-details', OutputResultsDetails);
   customElements.define(
       'output-results-table', OutputResultsTable, {extends: 'tbody'});
   customElements.define('output-match', OutputMatch, {extends: 'tr'});
-  customElements.define('output-haeder', OutputHeader, {extends: 'th'});
+  customElements.define('output-header', OutputHeader, {extends: 'th'});
   customElements.define(
       'output-pair-property', OutputPairProperty, {extends: 'td'});
   customElements.define(

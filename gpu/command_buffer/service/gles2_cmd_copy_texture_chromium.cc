@@ -43,6 +43,7 @@ enum {
   S_FORMAT_RGB_YCBCR_420V_CHROMIUM,
   S_FORMAT_RGB_YCBCR_422_CHROMIUM,
   S_FORMAT_COMPRESSED,
+  S_FORMAT_RGB10_A2,
   NUM_S_FORMAT
 };
 
@@ -185,8 +186,12 @@ ShaderId GetFragmentShaderId(bool premultiply_alpha,
     case GL_ETC1_RGB8_OES:
       sourceFormatIndex = S_FORMAT_COMPRESSED;
       break;
+    case GL_RGB10_A2:
+      sourceFormatIndex = S_FORMAT_RGB10_A2;
+      break;
     default:
-      NOTREACHED();
+      NOTREACHED() << "Invalid source format "
+                   << gl::GLEnums::GetStringEnum(source_format);
       break;
   }
 
@@ -546,7 +551,7 @@ bool BindFramebufferTexture2D(GLenum target,
 }
 
 void DoCopyTexImage2D(
-    const gpu::DecoderContext* decoder,
+    gpu::DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,
@@ -599,7 +604,7 @@ void DoCopyTexImage2D(
 }
 
 void DoCopyTexSubImage2D(
-    const gpu::DecoderContext* decoder,
+    gpu::DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,
@@ -771,7 +776,7 @@ enum TexImageCommandType {
 };
 
 void DoReadbackAndTexImage(TexImageCommandType command_type,
-                           const gpu::DecoderContext* decoder,
+                           gpu::DecoderContext* decoder,
                            GLenum source_target,
                            GLuint source_id,
                            GLint source_level,
@@ -858,7 +863,7 @@ class CopyTextureResourceManagerImpl
       const gles2::FeatureInfo::FeatureFlags& feature_flags) override;
   void Destroy() override;
   void DoCopyTexture(
-      const DecoderContext* decoder,
+      DecoderContext* decoder,
       GLenum source_target,
       GLuint source_id,
       GLint source_level,
@@ -876,7 +881,7 @@ class CopyTextureResourceManagerImpl
       CopyTextureMethod method,
       CopyTexImageResourceManager* luma_emulation_blitter) override;
   void DoCopySubTexture(
-      const DecoderContext* decoder,
+      DecoderContext* decoder,
       GLenum source_target,
       GLuint source_id,
       GLint source_level,
@@ -902,7 +907,7 @@ class CopyTextureResourceManagerImpl
       CopyTextureMethod method,
       CopyTexImageResourceManager* luma_emulation_blitter) override;
   void DoCopySubTextureWithTransform(
-      const DecoderContext* decoder,
+      DecoderContext* decoder,
       GLenum source_target,
       GLuint source_id,
       GLint source_level,
@@ -928,7 +933,7 @@ class CopyTextureResourceManagerImpl
       const GLfloat transform_matrix[16],
       CopyTexImageResourceManager* luma_emulation_blitter) override;
   void DoCopyTextureWithTransform(
-      const DecoderContext* decoder,
+      DecoderContext* decoder,
       GLenum source_target,
       GLuint source_id,
       GLint source_level,
@@ -975,7 +980,7 @@ class CopyTextureResourceManagerImpl
   };
 
   void DoCopyTextureInternal(
-      const DecoderContext* decoder,
+      DecoderContext* decoder,
       GLenum source_target,
       GLuint source_id,
       GLint source_level,
@@ -1099,7 +1104,7 @@ void CopyTextureResourceManagerImpl::Destroy() {
 }
 
 void CopyTextureResourceManagerImpl::DoCopyTexture(
-    const DecoderContext* decoder,
+    DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,
@@ -1125,7 +1130,7 @@ void CopyTextureResourceManagerImpl::DoCopyTexture(
 }
 
 void CopyTextureResourceManagerImpl::DoCopySubTexture(
-    const DecoderContext* decoder,
+    DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,
@@ -1219,7 +1224,7 @@ void CopyTextureResourceManagerImpl::DoCopySubTexture(
 }
 
 void CopyTextureResourceManagerImpl::DoCopySubTextureWithTransform(
-    const DecoderContext* decoder,
+    DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,
@@ -1253,7 +1258,7 @@ void CopyTextureResourceManagerImpl::DoCopySubTextureWithTransform(
 }
 
 void CopyTextureResourceManagerImpl::DoCopyTextureWithTransform(
-    const DecoderContext* decoder,
+    DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,
@@ -1333,7 +1338,7 @@ void CopyTextureResourceManagerImpl::DoCopyTextureWithTransform(
 }
 
 void CopyTextureResourceManagerImpl::DoCopyTextureInternal(
-    const DecoderContext* decoder,
+    DecoderContext* decoder,
     GLenum source_target,
     GLuint source_id,
     GLint source_level,

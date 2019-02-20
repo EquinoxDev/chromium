@@ -17,6 +17,12 @@
 #include "ui/gl/gl_image.h"
 #include "ui/gl/gl_surface.h"
 
+namespace base {
+namespace android {
+class ScopedHardwareBufferFenceSync;
+}  // namespace android
+}  // namespace base
+
 namespace gpu {
 class DecoderContext;
 namespace gles2 {
@@ -39,8 +45,12 @@ class MEDIA_GPU_EXPORT TextureOwner
   // new TextureOwner attached to it. Returns null on failure.
   // |texture| should be either from CreateAbstractTexture() or a mock.  The
   // corresponding GL context must be current.
+  // SecureMode indicates whether the video textures created using this owner
+  // should be hardware protected.
+  enum class SecureMode { kSecure, kInsecure };
   static scoped_refptr<TextureOwner> Create(
-      std::unique_ptr<gpu::gles2::AbstractTexture> texture);
+      std::unique_ptr<gpu::gles2::AbstractTexture> texture,
+      SecureMode secure_mode);
 
   // Create a texture that's appropriate for a TextureOwner.
   static std::unique_ptr<gpu::gles2::AbstractTexture> CreateTexture(
@@ -59,7 +69,9 @@ class MEDIA_GPU_EXPORT TextureOwner
   virtual gl::ScopedJavaSurface CreateJavaSurface() const = 0;
 
   // Update the texture image using the latest available image data.
-  virtual void UpdateTexImage() = 0;
+  // |bind_egl_image| hints the underlying implementation whether an egl image
+  // should be bound to the texture target or not.
+  virtual void UpdateTexImage(bool bind_egl_image = true) = 0;
 
   // Transformation matrix if any associated with the texture image.
   virtual void GetTransformMatrix(float mtx[16]) = 0;
@@ -87,7 +99,7 @@ class MEDIA_GPU_EXPORT TextureOwner
   // Retrieves the AHardwareBuffer from the latest available image data.
   // Note that the object must be used and destroyed on the same thread the
   // TextureOwner is bound to.
-  virtual std::unique_ptr<gl::GLImage::ScopedHardwareBuffer>
+  virtual std::unique_ptr<base::android::ScopedHardwareBufferFenceSync>
   GetAHardwareBuffer() = 0;
 
  protected:

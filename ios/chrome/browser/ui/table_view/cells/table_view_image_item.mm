@@ -22,11 +22,12 @@
   self = [super initWithType:type];
   if (self) {
     self.cellClass = [TableViewImageCell class];
+    _enabled = YES;
   }
   return self;
 }
 
-- (void)configureCell:(UITableViewCell*)tableCell
+- (void)configureCell:(TableViewCell*)tableCell
            withStyler:(ChromeTableViewStyler*)styler {
   [super configureCell:tableCell withStyler:styler];
 
@@ -41,13 +42,18 @@
   }
 
   cell.titleLabel.text = self.title;
-  cell.imageView.backgroundColor = styler.tableViewBackgroundColor;
-  cell.titleLabel.backgroundColor = styler.tableViewBackgroundColor;
+  UIColor* cellBackgroundColor = styler.cellBackgroundColor
+                                     ? styler.cellBackgroundColor
+                                     : styler.tableViewBackgroundColor;
+  cell.imageView.backgroundColor = cellBackgroundColor;
+  cell.titleLabel.backgroundColor = cellBackgroundColor;
   if (self.textColor) {
     cell.titleLabel.textColor = self.textColor;
   } else if (styler.cellTitleColor) {
     cell.titleLabel.textColor = styler.cellTitleColor;
   }
+
+  cell.userInteractionEnabled = self.enabled;
 }
 
 @end
@@ -86,6 +92,12 @@
     horizontalStack.alignment = UIStackViewAlignmentCenter;
 
     [self.contentView addSubview:horizontalStack];
+
+    NSLayoutConstraint* heightConstraint = [self.contentView.heightAnchor
+        constraintGreaterThanOrEqualToConstant:kChromeTableViewCellHeight];
+    // Don't set the priority to required to avoid clashing with the estimated
+    // height.
+    heightConstraint.priority = UILayoutPriorityRequired - 1;
     [NSLayoutConstraint activateConstraints:@[
       // Horizontal Stack constraints.
       [horizontalStack.leadingAnchor
@@ -94,15 +106,23 @@
       [horizontalStack.trailingAnchor
           constraintEqualToAnchor:self.contentView.trailingAnchor
                          constant:-kTableViewHorizontalSpacing],
+      [horizontalStack.centerYAnchor
+          constraintEqualToAnchor:self.contentView.centerYAnchor],
       [horizontalStack.topAnchor
-          constraintEqualToAnchor:self.contentView.topAnchor
-                         constant:kTableViewVerticalSpacing],
+          constraintGreaterThanOrEqualToAnchor:self.contentView.topAnchor
+                                      constant:kTableViewVerticalSpacing],
       [horizontalStack.bottomAnchor
-          constraintEqualToAnchor:self.contentView.bottomAnchor
-                         constant:-kTableViewVerticalSpacing],
+          constraintLessThanOrEqualToAnchor:self.contentView.bottomAnchor
+                                   constant:-kTableViewVerticalSpacing],
+      heightConstraint,
     ]];
   }
   return self;
+}
+
+- (void)prepareForReuse {
+  [super prepareForReuse];
+  self.userInteractionEnabled = YES;
 }
 
 @end

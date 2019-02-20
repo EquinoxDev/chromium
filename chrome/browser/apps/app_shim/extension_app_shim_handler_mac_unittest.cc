@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/test/mock_callback.h"
@@ -78,13 +79,19 @@ class MockDelegate : public ExtensionAppShimHandler::Delegate {
   void LaunchShim(Profile* profile,
                   const Extension* extension,
                   bool recreate_shim,
-                  LaunchShimCallback launch_callback) override {
+                  ShimLaunchedCallback launched_callback,
+                  ShimTerminatedCallback terminated_callback) override {
     if (launch_shim_callback_capture_)
-      *launch_shim_callback_capture_ = std::move(launch_callback);
+      *launch_shim_callback_capture_ = std::move(launched_callback);
+    if (terminated_shim_callback_capture_)
+      *terminated_shim_callback_capture_ = std::move(terminated_callback);
     DoLaunchShim(profile, extension, recreate_shim);
   }
-  void SetCaptureLaunchShimCallback(LaunchShimCallback* callback) {
+  void SetCaptureShimLaunchedCallback(ShimLaunchedCallback* callback) {
     launch_shim_callback_capture_ = callback;
+  }
+  void SetCaptureShimTerminatedCallback(ShimTerminatedCallback* callback) {
+    terminated_shim_callback_capture_ = callback;
   }
 
   MOCK_METHOD0(LaunchUserManager, void());
@@ -123,7 +130,8 @@ class MockDelegate : public ExtensionAppShimHandler::Delegate {
   }
 
  private:
-  LaunchShimCallback* launch_shim_callback_capture_ = nullptr;
+  ShimLaunchedCallback* launch_shim_callback_capture_ = nullptr;
+  ShimTerminatedCallback* terminated_shim_callback_capture_ = nullptr;
   std::map<base::FilePath, base::OnceCallback<void(Profile*)>> callbacks_;
   AppShimHost* host_for_create_ = nullptr;
   bool allow_shim_to_connect_ = true;
@@ -152,9 +160,17 @@ class TestingExtensionAppShimHandler : public ExtensionAppShimHandler {
     return it == hosts().end() ? NULL : it->second;
   }
 
+  void SetAcceptablyCodeSigned(bool is_acceptable_code_signed) {
+    is_acceptably_code_signed_ = is_acceptable_code_signed;
+  }
+  bool IsAcceptablyCodeSigned(pid_t pid) const override {
+    return is_acceptably_code_signed_;
+  }
+
   content::NotificationRegistrar& GetRegistrar() { return registrar(); }
 
  private:
+  bool is_acceptably_code_signed_ = true;
   DISALLOW_COPY_AND_ASSIGN(TestingExtensionAppShimHandler);
 };
 
@@ -214,7 +230,7 @@ class TestHost : public AppShimHost {
            TestingExtensionAppShimHandler* handler)
       : AppShimHost(app_id, profile_path, false /* uses_remote_views */),
         handler_(handler),
-        weak_factory_(this) {}
+        test_weak_factory_(this) {}
 
   // Override the GetAppShimHandler for testing.
   apps::AppShimHandler* GetAppShimHandler() const override { return handler_; }
@@ -228,14 +244,16 @@ class TestHost : public AppShimHost {
   }
   bool did_connect_to_host() const { return did_connect_to_host_; }
 
-  base::WeakPtr<TestHost> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+  base::WeakPtr<TestHost> GetWeakPtr() {
+    return test_weak_factory_.GetWeakPtr();
+  }
 
  private:
   ~TestHost() override {}
   TestingExtensionAppShimHandler* handler_;
   bool did_connect_to_host_ = false;
 
-  base::WeakPtrFactory<TestHost> weak_factory_;
+  base::WeakPtrFactory<TestHost> test_weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(TestHost);
 };
 
@@ -261,6 +279,11 @@ class ExtensionAppShimHandlerTest : public testing::Test {
     bootstrap_aa_duplicate_ =
         (new TestingAppShimHostBootstrap(profile_path_a_, kTestAppIdA,
                                          &bootstrap_aa_duplicate_result_,
+                                         handler_.get()))
+            ->GetWeakPtr();
+    bootstrap_aa_thethird_ =
+        (new TestingAppShimHostBootstrap(profile_path_a_, kTestAppIdA,
+                                         &bootstrap_aa_thethird_result_,
                                          handler_.get()))
             ->GetWeakPtr();
 
@@ -328,6 +351,7 @@ class ExtensionAppShimHandlerTest : public testing::Test {
     delete bootstrap_ab_.get();
     delete bootstrap_bb_.get();
     delete bootstrap_aa_duplicate_.get();
+    delete bootstrap_aa_thethird_.get();
   }
 
   void DoShimLaunch(base::WeakPtr<TestingAppShimHostBootstrap> bootstrap,
@@ -389,11 +413,13 @@ class ExtensionAppShimHandlerTest : public testing::Test {
   base::WeakPtr<TestingAppShimHostBootstrap> bootstrap_ab_;
   base::WeakPtr<TestingAppShimHostBootstrap> bootstrap_bb_;
   base::WeakPtr<TestingAppShimHostBootstrap> bootstrap_aa_duplicate_;
+  base::WeakPtr<TestingAppShimHostBootstrap> bootstrap_aa_thethird_;
 
   base::Optional<apps::AppShimLaunchResult> bootstrap_aa_result_;
   base::Optional<apps::AppShimLaunchResult> bootstrap_ab_result_;
   base::Optional<apps::AppShimLaunchResult> bootstrap_bb_result_;
   base::Optional<apps::AppShimLaunchResult> bootstrap_aa_duplicate_result_;
+  base::Optional<apps::AppShimLaunchResult> bootstrap_aa_thethird_result_;
 
   base::WeakPtr<TestHost> host_aa_;
   base::WeakPtr<TestHost> host_ab_;
@@ -540,8 +566,8 @@ TEST_F(ExtensionAppShimHandlerTest, AppLifetime) {
 
 TEST_F(ExtensionAppShimHandlerTest, FailToLaunch) {
   // When the app activates, it requests a launch.
-  LaunchShimCallback launch_callback;
-  delegate_->SetCaptureLaunchShimCallback(&launch_callback);
+  ShimLaunchedCallback launch_callback;
+  delegate_->SetCaptureShimLaunchedCallback(&launch_callback);
   delegate_->SetHostForCreate(host_aa_.get());
   EXPECT_CALL(*delegate_, DoLaunchShim(&profile_a_, extension_a_.get(), false));
   handler_->OnAppActivated(&profile_a_, kTestAppIdA);
@@ -558,6 +584,80 @@ TEST_F(ExtensionAppShimHandlerTest, FailToLaunch) {
   EXPECT_NE(nullptr, host_aa_.get());
   std::move(launch_callback).Run(base::Process());
   EXPECT_EQ(nullptr, host_aa_.get());
+}
+
+TEST_F(ExtensionAppShimHandlerTest, FailToConnect) {
+  // When the app activates, it requests a launch.
+  ShimLaunchedCallback launched_callback;
+  delegate_->SetCaptureShimLaunchedCallback(&launched_callback);
+  ShimTerminatedCallback terminated_callback;
+  delegate_->SetCaptureShimTerminatedCallback(&terminated_callback);
+
+  delegate_->SetHostForCreate(host_aa_.get());
+  EXPECT_CALL(*delegate_, DoLaunchShim(&profile_a_, extension_a_.get(), false));
+  handler_->OnAppActivated(&profile_a_, kTestAppIdA);
+  EXPECT_EQ(host_aa_.get(), handler_->FindHost(&profile_a_, kTestAppIdA));
+  EXPECT_TRUE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+
+  // Run the launch callback claiming that the launch succeeded.
+  std::move(launched_callback).Run(base::Process(5));
+  EXPECT_FALSE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+
+  // Report that the process terminated. This should trigger a re-create and
+  // re-launch.
+  EXPECT_CALL(*delegate_, DoLaunchShim(&profile_a_, extension_a_.get(), true));
+  std::move(terminated_callback).Run();
+  EXPECT_TRUE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+
+  // Run the launch callback claiming that the launch succeeded.
+  std::move(launched_callback).Run(base::Process(7));
+  EXPECT_FALSE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+
+  // Report that the process terminated again. This should trigger deletion of
+  // the host.
+  EXPECT_NE(nullptr, host_aa_.get());
+  std::move(terminated_callback).Run();
+  EXPECT_EQ(nullptr, host_aa_.get());
+}
+
+TEST_F(ExtensionAppShimHandlerTest, FailCodeSignature) {
+  handler_->SetAcceptablyCodeSigned(false);
+  ShimLaunchedCallback launched_callback;
+  delegate_->SetCaptureShimLaunchedCallback(&launched_callback);
+  ShimTerminatedCallback terminated_callback;
+  delegate_->SetCaptureShimTerminatedCallback(&terminated_callback);
+
+  // Fail to code-sign. This should result in a host being created, and a launch
+  // having been requested.
+  EXPECT_CALL(*delegate_, DoLaunchShim(&profile_a_, extension_a_.get(), false));
+  NormalLaunch(bootstrap_aa_, host_aa_);
+  EXPECT_EQ(host_aa_.get(), handler_->FindHost(&profile_a_, kTestAppIdA));
+  EXPECT_TRUE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+  EXPECT_FALSE(host_aa_->HasBootstrapConnected());
+
+  // Run the launch callback claiming that the launch succeeded.
+  std::move(launched_callback).Run(base::Process(5));
+  EXPECT_FALSE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+  EXPECT_FALSE(host_aa_->HasBootstrapConnected());
+
+  // Simulate the register call that then fails due to signature failing.
+  RegisterOnlyLaunch(bootstrap_aa_duplicate_, host_aa_);
+  EXPECT_FALSE(host_aa_->HasBootstrapConnected());
+
+  // Simulate the termination after the register failed.
+  handler_->SetAcceptablyCodeSigned(true);
+  EXPECT_CALL(*delegate_, DoLaunchShim(&profile_a_, extension_a_.get(), true));
+  std::move(terminated_callback).Run();
+  EXPECT_TRUE(launched_callback);
+  EXPECT_TRUE(terminated_callback);
+  RegisterOnlyLaunch(bootstrap_aa_thethird_, host_aa_);
+  EXPECT_TRUE(host_aa_->HasBootstrapConnected());
 }
 
 TEST_F(ExtensionAppShimHandlerTest, MaybeTerminate) {

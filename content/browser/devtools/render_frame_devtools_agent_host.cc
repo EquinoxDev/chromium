@@ -7,6 +7,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ptr_util.h"
@@ -304,7 +305,8 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session) {
   session->AddHandler(base::WrapUnique(new protocol::SecurityHandler()));
   if (!frame_tree_node_ || !frame_tree_node_->parent()) {
     session->AddHandler(base::WrapUnique(
-        new protocol::TracingHandler(frame_tree_node_, GetIOContext())));
+        new protocol::TracingHandler(frame_tree_node_, GetIOContext(),
+                                     session->client()->UsesBinaryProtocol())));
   }
 
   if (sessions().empty()) {
@@ -378,6 +380,10 @@ void RenderFrameDevToolsAgentHost::ReadyToCommitNavigation(
     return;
   }
 
+  // Child workers will eventually disconnect, but timing depends on the
+  // renderer process. To ensure consistent view over protocol, disconnect them
+  // right now.
+  GetRendererChannel()->ForceDetachWorkerSessions();
   UpdateFrameHost(handle->GetRenderFrameHost());
   // UpdateFrameHost may destruct |this|.
 }
@@ -399,10 +405,8 @@ void RenderFrameDevToolsAgentHost::DidFinishNavigation(
     for (DevToolsSession* session : sessions())
       session->ResumeSendingMessagesToAgent();
   }
-  if (handle->HasCommitted()) {
-    for (auto* target : protocol::TargetHandler::ForAgentHost(this))
-      target->DidCommitNavigation();
-  }
+  for (auto* target : protocol::TargetHandler::ForAgentHost(this))
+    target->DidFinishNavigation();
 }
 
 void RenderFrameDevToolsAgentHost::UpdateFrameHost(

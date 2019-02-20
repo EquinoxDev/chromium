@@ -149,36 +149,13 @@ QUIC_FLAG(bool,
 // expire when the bandwidth increases more than 25% in QUIC BBR STARTUP.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_bbr_slower_startup4, false)
 
-// If true, QuicCryptoServerConfig::EvaluateClientHello will use GetCertChain
-// instead of the more expensive GetProof.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_use_get_cert_chain, true)
-
-// If true, try to aggregate acked stream frames.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_aggregate_acked_stream_frames_2,
-          true)
-
-// If true, only process stateless reset packets on the client side.
-QUIC_FLAG(
-    bool,
-    FLAGS_quic_reloadable_flag_quic_process_stateless_reset_at_client_only,
-    true)
-
-// If true, do not retransmit old window update frames.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_donot_retransmit_old_window_update2,
-          true)
-
 // If true, disable QUIC version 35.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_35, false)
-// If true, then QuicCryptoServerConfig::ProcessClientHelloAfterGetProof() will
-// use the async interface to KeyExchange::CalculateSharedKeys.
-QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_use_async_key_exchange, true)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_35, true)
 
 // If true, increase size of random bytes in IETF stateless reset packet.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_more_random_bytes_in_stateless_reset,
-          false)
+          true)
 
 // If true, use new, lower-overhead implementation of LRU cache for compressed
 // certificates.
@@ -193,12 +170,6 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_bbr_flexible_app_limited, false)
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_stop_reading_when_level_triggered,
           false)
-
-// If true, mark packets for loss retransmission even they do not contain
-// retransmittable frames.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_fix_mark_for_loss_retransmission,
-          true)
 
 // If true, enable version 45.
 QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_45, false)
@@ -226,26 +197,14 @@ QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_unidirectional_server_push_stream,
           true)
 
-// If true, a QUIC connection will attempt to process decryptable packets when
-// a new decryption key is made available.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_decrypt_packets_on_key_change,
-          true)
-
-// This flag fixes a bug where dispatcher's last_packet_is_ietf_quic may be
-// wrong when getting proof asynchronously.
-QUIC_FLAG(bool,
-          FLAGS_quic_reloadable_flag_quic_fix_last_packet_is_ietf_quic,
-          true)
-
 // If true, dispatcher passes in a single version when creating a server
 // connection, such that version negotiation is not supported in connection.
 QUIC_FLAG(bool,
           FLAGS_quic_restart_flag_quic_no_server_conn_ver_negotiation2,
           false)
 
-// If true, enable QUIC version 46 which adds CRYPTO frames.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_46, false)
+// If true, enable QUIC version 46.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_46, true)
 
 // When true, cache that encryption has been established to save CPU.
 QUIC_FLAG(bool,
@@ -261,7 +220,7 @@ QUIC_FLAG(
 
 // If true, make GeneralLossAlgorithm::DetectLosses faster by never rescanning
 // the same packet in QuicUnackedPacketMap.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_faster_detect_loss, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_faster_detect_loss, true)
 
 // If true, use common code for checking whether a new stream ID may be
 // allocated.
@@ -282,17 +241,13 @@ QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fix_spurious_ack_alarm, false)
 
 // If true, QuicSpdyStream::WritevBody() will convert iovs into QuicMemSliceSpan
 // and call WriteMemSlices instead.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_call_write_mem_slices, false)
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_call_write_mem_slices, true)
 
 // If true, enables the BBS4 and BBS5 connection options, which reduce BBR's
 // pacing rate in STARTUP as more losses occur as a fraction of CWND.
 QUIC_FLAG(bool,
           FLAGS_quic_reloadable_flag_quic_bbr_startup_rate_reduction,
           false)
-
-// If true, only send version negotiation packets when they are at least
-// 1200 bytes.
-QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_limit_version_negotiation, true)
 
 // If true, disables key share caching for QUIC key exchange
 QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_no_ephemeral_key_source, true)
@@ -301,7 +256,7 @@ QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_no_ephemeral_key_source, true)
 // opinion about whether their packet writers are blocked.
 QUIC_FLAG(bool,
           FLAGS_quic_restart_flag_quic_check_blocked_writer_for_blockage,
-          false)
+          true)
 
 // If true, for QUIC V44, if a server connection is post handshake and has no
 // termination packets, add it to time wait list with
@@ -316,22 +271,83 @@ QUIC_FLAG(
 QUIC_FLAG(
     bool,
     FLAGS_quic_reloadable_flag_quic_connection_do_not_add_to_write_blocked_list_if_disconnected,
-    false)
+    true)
 
 // Changes internal in-memory representation of QUIC connection IDs to network
 // byte order.
 QUIC_FLAG(bool,
           FLAGS_quic_restart_flag_quic_connection_ids_network_byte_order,
-          false)
+          true)
 
 // Allows use of new QUIC connection ID constructor designed for
 // variable-length connection IDs when acting as client.
 QUIC_FLAG(bool,
           FLAGS_quic_restart_flag_quic_variable_length_connection_ids_client,
-          false)
+          true)
 
 // Allows use of new QUIC connection ID constructor designed for
 // variable-length connection IDs when acting as server
 QUIC_FLAG(bool,
           FLAGS_quic_restart_flag_quic_variable_length_connection_ids_server,
-          false)
+          true)
+// If true, QuicPacketCreator::SetTransmissionType will set the transmission
+// type of the next successfully added frame.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_set_transmission_type_for_next_frame,
+          true)
+// If true, always send connection close/reset for IETF connections.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_always_reset_ietf_connections,
+          true)
+
+// When true, allows the AKD2 and AKD4 connection options to continue activating
+// ack decimation with reordering.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_keep_ack_decimation_reordering,
+          true)
+
+// If true, log leaf cert subject name into warning log.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_log_cert_name_for_empty_sct,
+          true)
+
+// If true, close connection with INVALID_STOP_WAITING if received a
+// STOP_WAITING with least_unacked 0.
+QUIC_FLAG(
+    bool,
+    FLAGS_quic_reloadable_flag_quic_close_connection_with_zero_least_unacked_stop_waiting,
+    true)
+
+// If true, QuicCryptoServerConfig will correctly rotate configs based on
+// primary time.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_fix_config_rotation, true)
+
+// If true, use numeric_limits<uint64_t>::max() to represent uninitialized
+// packet number.
+QUIC_FLAG(bool, FLAGS_quic_restart_flag_quic_uint64max_uninitialized_pn, true)
+
+// If true, Set is_current_packet_connectivity_probing_ to false in the end
+// of QuicConnection::ProcessUdpPacket.
+QUIC_FLAG(
+    bool,
+    FLAGS_quic_reloadable_flag_quic_clear_probing_mark_after_packet_processing,
+    true)
+
+// If true, enable QUIC version 47 which adds CRYPTO frames.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_enable_version_47, false)
+
+// If true, disable QUIC version 39.
+QUIC_FLAG(bool, FLAGS_quic_reloadable_flag_quic_disable_version_39, false)
+
+// If true, simplifies the implementation of
+// QuicFramer::BuildConnectivityProbingPacket().
+QUIC_FLAG(
+    bool,
+    FLAGS_quic_reloadable_flag_quic_simplify_build_connectivity_probing_packet,
+    false)
+
+// If true, for QUIC v44+, long header packet type is determined by encryption
+// level.
+QUIC_FLAG(bool,
+          FLAGS_quic_reloadable_flag_quic_encryption_driven_header_type,
+          true)

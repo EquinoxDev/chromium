@@ -9,17 +9,11 @@
 #include <set>
 
 #include "base/macros.h"
-#include "base/sequence_checker.h"
-#include "base/sequenced_task_runner.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
 #include "services/service_manager/public/cpp/identity.h"
 #include "services/tracing/public/cpp/perfetto/task_runner.h"
 #include "services/tracing/public/mojom/perfetto_service.mojom.h"
-
-namespace service_manager {
-struct BindSourceInfo;
-}  // namespace service_manager
 
 namespace perfetto {
 class TracingService;
@@ -33,34 +27,27 @@ namespace tracing {
 // ProducerHost.
 class PerfettoService : public mojom::PerfettoService {
  public:
-  explicit PerfettoService(scoped_refptr<base::SequencedTaskRunner>
-                               task_runner_for_testing = nullptr);
+  PerfettoService();
   ~PerfettoService() override;
 
   static PerfettoService* GetInstance();
 
-  void BindRequest(mojom::PerfettoServiceRequest request,
-                   const service_manager::BindSourceInfo& source_info);
+  void BindRequest(mojom::PerfettoServiceRequest request);
 
   // mojom::PerfettoService implementation.
   void ConnectToProducerHost(mojom::ProducerClientPtr producer_client,
                              mojom::ProducerHostRequest producer_host) override;
 
   perfetto::TracingService* GetService() const;
-  scoped_refptr<base::SequencedTaskRunner> task_runner() {
-    return perfetto_task_runner_.task_runner();
-  }
 
  private:
-  void BindOnSequence(mojom::PerfettoServiceRequest request,
-                      const service_manager::Identity& identity);
+  void BindOnSequence(mojom::PerfettoServiceRequest request);
   void CreateServiceOnSequence();
 
   PerfettoTaskRunner perfetto_task_runner_;
   std::unique_ptr<perfetto::TracingService> service_;
-  mojo::BindingSet<mojom::PerfettoService, service_manager::Identity> bindings_;
+  mojo::BindingSet<mojom::PerfettoService> bindings_;
   mojo::StrongBindingSet<mojom::ProducerHost> producer_bindings_;
-  SEQUENCE_CHECKER(sequence_checker_);
 
   DISALLOW_COPY_AND_ASSIGN(PerfettoService);
 };

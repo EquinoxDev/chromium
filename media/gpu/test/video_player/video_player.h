@@ -6,6 +6,7 @@
 #define MEDIA_GPU_TEST_VIDEO_PLAYER_VIDEO_PLAYER_H_
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "base/callback.h"
@@ -14,16 +15,19 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/thread_annotations.h"
+#include "media/gpu/test/video_frame_helpers.h"
+#include "media/gpu/test/video_player/frame_renderer.h"
 
 namespace media {
 namespace test {
 
 class FrameRenderer;
-class VideoDecoderClient;
 class Video;
+class VideoDecoderClient;
+struct VideoDecoderClientConfig;
 
 // Default timeout used when waiting for events.
-constexpr base::TimeDelta kDefaultTimeout = base::TimeDelta::FromSeconds(10);
+constexpr base::TimeDelta kDefaultTimeout = base::TimeDelta::FromSeconds(30);
 
 enum class VideoPlayerState : size_t {
   kUninitialized = 0,
@@ -38,6 +42,7 @@ enum class VideoPlayerEvent : size_t {
   kFlushDone,
   kResetting,
   kResetDone,
+  kConfigInfo,  // A config info was encountered in a H.264 video stream.
   kNumEvents,
 };
 
@@ -46,22 +51,31 @@ enum class VideoPlayerEvent : size_t {
 // events to occur.
 class VideoPlayer {
  public:
-  using EventCallback = base::RepeatingCallback<void(VideoPlayerEvent)>;
+  using EventCallback = base::RepeatingCallback<bool(VideoPlayerEvent)>;
 
   ~VideoPlayer();
 
-  // Create an instance of the video player. The |frame_renderer| will not be
-  // owned by the video player. The caller should guarantee it exists for the
-  // entire lifetime of the video player.
-  static std::unique_ptr<VideoPlayer> Create(FrameRenderer* frame_renderer);
+  // Create an instance of the video player. The |video|, |frame_renderer| and
+  // |frame_processors| will not be owned by the video player. The caller should
+  // guarantee they outlive the video player.
+  static std::unique_ptr<VideoPlayer> Create(
+      const Video* video,
+      std::unique_ptr<FrameRenderer> frame_renderer,
+      std::vector<std::unique_ptr<VideoFrameProcessor>> frame_processors,
+      const VideoDecoderClientConfig& config);
 
-  // Set the video stream to be played. The |video| will not be owned by the
-  // video player. A decoder will be set up for the specified video stream.
-  void SetStream(const Video* video);
+  // Wait until all frame processors have finished processing. Returns whether
+  // processing was successful.
+  bool WaitForFrameProcessors();
 
+  // Play the video asynchronously.
   void Play();
-  void Stop();
+  // Play the video asynchronously. Automatically pause decoding when the
+  // specified |event| occurred |event_count| times.
+  void PlayUntil(VideoPlayerEvent event, size_t event_count = 1);
+  // Reset the decoder to the beginning of the video stream.
   void Reset();
+  // Flush the decoder.
   void Flush();
 
   // Get current media time.
@@ -70,6 +84,8 @@ class VideoPlayer {
   size_t GetCurrentFrame() const;
   // Get the current state of the video player.
   VideoPlayerState GetState() const;
+  // Get the frame renderer associated with the video player.
+  FrameRenderer* GetFrameRenderer() const;
 
   // Wait for an event to occur the specified number of times. All events that
   // occurred since last calling this function will be taken into account. All
@@ -78,18 +94,35 @@ class VideoPlayer {
   bool WaitForEvent(VideoPlayerEvent event,
                     size_t times = 1,
                     base::TimeDelta max_wait = kDefaultTimeout);
+  // Helper function to wait for a FlushDone event.
+  bool WaitForFlushDone();
+  // Helper function to wait for a ResetDone event.
+  bool WaitForResetDone();
+  // Helper function to wait for the specified number of FrameDecoded events.
+  bool WaitForFrameDecoded(size_t times);
 
   // Get the number of times the specified event occurred.
   size_t GetEventCount(VideoPlayerEvent event) const;
+  // Helper function to get the number of ResetDone events thrown.
+  size_t GetResetDoneCount() const;
+  // Helper function to get the number of FlushDone events thrown.
+  size_t GetFlushDoneCount() const;
+  // Helper function to get the number of FrameDecoded events thrown.
+  size_t GetFrameDecodedCount() const;
 
  private:
   VideoPlayer();
 
-  bool Initialize(FrameRenderer* frame_renderer);
+  void Initialize(
+      const Video* video,
+      std::unique_ptr<FrameRenderer> frame_renderer,
+      std::vector<std::unique_ptr<VideoFrameProcessor>> frame_processors,
+      const VideoDecoderClientConfig& config);
   void Destroy();
 
-  // Notify the client an event has occurred (e.g. frame decoded).
-  void NotifyEvent(VideoPlayerEvent event);
+  // Notify the video player an event has occurred (e.g. frame decoded). Returns
+  // whether the decoder client should continue decoding frames.
+  bool NotifyEvent(VideoPlayerEvent event);
 
   const Video* video_;
   VideoPlayerState video_player_state_;
@@ -103,6 +136,10 @@ class VideoPlayer {
       VideoPlayerEvent::kNumEvents)] GUARDED_BY(event_lock_);
   // The next event ID to start at, when waiting for events.
   size_t event_id_ GUARDED_BY(event_lock_);
+
+  // Automatically pause decoding once the video player has seen the specified
+  // number of events occur.
+  std::pair<VideoPlayerEvent, size_t> play_until_;
 
   SEQUENCE_CHECKER(sequence_checker_);
   DISALLOW_COPY_AND_ASSIGN(VideoPlayer);

@@ -10,6 +10,11 @@
 #include "chrome/common/chrome_features.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/crostini/crostini_registry_service_factory.h"
+#include "extensions/browser/extension_registry_factory.h"
+#endif  // OS_CHROMEOS
+
 namespace apps {
 
 // static
@@ -33,13 +38,19 @@ AppServiceProxyFactory* AppServiceProxyFactory::GetInstance() {
 
 // static
 bool AppServiceProxyFactory::IsEnabled() {
-  return base::FeatureList::IsEnabled(features::kAppService);
+  return base::FeatureList::IsEnabled(features::kAppServiceAsh) ||
+         base::FeatureList::IsEnabled(features::kAppManagement);
 }
 
 AppServiceProxyFactory::AppServiceProxyFactory()
     : BrowserContextKeyedServiceFactory(
           "AppServiceProxy",
-          BrowserContextDependencyManager::GetInstance()) {}
+          BrowserContextDependencyManager::GetInstance()) {
+#if defined(OS_CHROMEOS)
+  DependsOn(crostini::CrostiniRegistryServiceFactory::GetInstance());
+  DependsOn(extensions::ExtensionRegistryFactory::GetInstance());
+#endif  // OS_CHROMEOS
+}
 
 AppServiceProxyFactory::~AppServiceProxyFactory() = default;
 

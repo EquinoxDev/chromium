@@ -145,14 +145,6 @@ gfx::Size RenderWidgetHostViewBase::GetCompositorViewportPixelSize() const {
                                 GetDeviceScaleFactor());
 }
 
-bool RenderWidgetHostViewBase::DoBrowserControlsShrinkRendererSize() const {
-  return false;
-}
-
-float RenderWidgetHostViewBase::GetTopControlsHeight() const {
-  return 0.f;
-}
-
 void RenderWidgetHostViewBase::SelectionBoundsChanged(
     const WidgetHostMsg_SelectionBounds_Params& params) {
 #if !defined(OS_ANDROID)
@@ -161,10 +153,6 @@ void RenderWidgetHostViewBase::SelectionBoundsChanged(
 #else
   NOTREACHED() << "Selection bounds should be routed through the compositor.";
 #endif
-}
-
-float RenderWidgetHostViewBase::GetBottomControlsHeight() const {
-  return 0.f;
 }
 
 int RenderWidgetHostViewBase::GetMouseWheelMinimumGranularity() const {
@@ -566,12 +554,6 @@ RenderWidgetHostViewBase::DidUpdateVisualProperties(
 
 base::WeakPtr<RenderWidgetHostViewBase> RenderWidgetHostViewBase::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
-}
-
-std::unique_ptr<SyntheticGestureTarget>
-RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
-  return std::unique_ptr<SyntheticGestureTarget>(
-      new SyntheticGestureTargetBase(host()));
 }
 
 void RenderWidgetHostViewBase::FocusedNodeTouched(

@@ -34,6 +34,7 @@
 #include "libassistant/shared/internal_api/assistant_manager_delegate.h"
 #include "libassistant/shared/internal_api/assistant_manager_internal.h"
 #include "libassistant/shared/public/media_manager.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/service_manager/public/cpp/connector.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -99,16 +100,20 @@ AssistantManagerServiceImpl::AssistantManagerServiceImpl(
     service_manager::Connector* connector,
     device::mojom::BatteryMonitorPtr battery_monitor,
     Service* service,
-    network::NetworkConnectionTracker* network_connection_tracker)
+    network::NetworkConnectionTracker* network_connection_tracker,
+    std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+        url_loader_factory_info)
     : media_session_(std::make_unique<AssistantMediaSession>(connector)),
       action_module_(std::make_unique<action::CrosActionModule>(
           this,
-          base::FeatureList::IsEnabled(
-              assistant::features::kAssistantAppSupport))),
-      chromium_api_delegate_(service->io_task_runner()),
+          assistant::features::IsAppSupportEnabled(),
+          assistant::features::IsRoutinesEnabled())),
+      chromium_api_delegate_(std::move(url_loader_factory_info)),
+      display_connection_(std::make_unique<CrosDisplayConnection>(
+          this,
+          assistant::features::IsFeedbackUiEnabled())),
       assistant_settings_manager_(
           std::make_unique<AssistantSettingsManagerImpl>(service, this)),
-      display_connection_(std::make_unique<CrosDisplayConnection>(this)),
       service_(service),
       background_thread_("background thread"),
       weak_factory_(this) {
@@ -126,13 +131,14 @@ void AssistantManagerServiceImpl::Start(const std::string& access_token,
                                         bool enable_hotword,
                                         base::OnceClosure post_init_callback) {
   DCHECK(!assistant_manager_);
+  DCHECK_EQ(state_, State::STOPPED);
 
   // Set the flag to avoid starting the service multiple times.
   state_ = State::STARTED;
 
   started_time_ = base::TimeTicks::Now();
 
-  platform_api_->OnHotwordEnabled(enable_hotword);
+  EnableHotword(enable_hotword);
 
   using AssistantManagerPtr =
       std::unique_ptr<assistant_client::AssistantManager>;
@@ -152,13 +158,16 @@ void AssistantManagerServiceImpl::Start(const std::string& access_token,
           },
           new_assistant_manager,
           base::BindOnce(&AssistantManagerServiceImpl::StartAssistantInternal,
-                         base::Unretained(this), access_token, enable_hotword)),
+                         base::Unretained(this), access_token)),
       base::BindOnce(&AssistantManagerServiceImpl::PostInitAssistant,
                      base::Unretained(this), std::move(post_init_callback),
                      base::Owned(new_assistant_manager)));
 }
 
 void AssistantManagerServiceImpl::Stop() {
+  // We cannot cleanly stop the service if it is in the process of starting up.
+  DCHECK_NE(state_, State::STARTED);
+
   state_ = State::STOPPED;
 
   assistant_manager_internal_ = nullptr;
@@ -171,6 +180,9 @@ AssistantManagerService::State AssistantManagerServiceImpl::GetState() const {
 
 void AssistantManagerServiceImpl::SetAccessToken(
     const std::string& access_token) {
+  if (!assistant_manager_)
+    return;
+
   VLOG(1) << "Set access token.";
   // Push the |access_token| we got as an argument into AssistantManager before
   // starting to ensure that all server requests will be authenticated once
@@ -200,6 +212,11 @@ void AssistantManagerServiceImpl::RegisterFallbackMediaHandler() {
 
 void AssistantManagerServiceImpl::EnableListening(bool enable) {
   assistant_manager_->EnableListening(enable);
+  EnableHotword(enable);
+}
+
+void AssistantManagerServiceImpl::EnableHotword(bool enable) {
+  platform_api_->OnHotwordEnabled(enable);
 }
 
 AssistantSettingsManager*
@@ -243,6 +260,8 @@ void AssistantManagerServiceImpl::StartWarmerWelcomeInteraction(
       [](auto) {});
 }
 
+// TODO(eyor): Add a method that can be called to clear the cached interaction
+// when the UI is hidden/closed.
 void AssistantManagerServiceImpl::StartCachedScreenContextInteraction() {
   if (!IsScreenContextAllowed(service_->assistant_state()))
     return;
@@ -253,8 +272,8 @@ void AssistantManagerServiceImpl::StartCachedScreenContextInteraction() {
   DCHECK(assistant_tree_);
   DCHECK(!assistant_screenshot_.empty());
 
-  SendScreenContextRequest(std::move(assistant_extra_),
-                           std::move(assistant_tree_), assistant_screenshot_);
+  SendScreenContextRequest(assistant_extra_.get(), assistant_tree_.get(),
+                           assistant_screenshot_);
 }
 
 void AssistantManagerServiceImpl::StartMetalayerInteraction(
@@ -279,9 +298,21 @@ void AssistantManagerServiceImpl::StartTextInteraction(const std::string& query,
         assistant_client::VoicelessOptions::Modality::TYPING_MODALITY;
   }
 
-  std::string interaction = CreateTextQueryInteraction(query);
-  assistant_manager_internal_->SendVoicelessInteraction(
-      interaction, /*description=*/"text_query", options, [](auto) {});
+  if (base::FeatureList::IsEnabled(
+          assistant::features::kEnableTextQueriesWithClientDiscourseContext) &&
+      assistant_extra_ && assistant_tree_) {
+    assistant_manager_internal_->SendTextQueryWithClientDiscourseContext(
+        query,
+        CreateContextProto(
+            AssistantBundle{assistant_extra_.get(), assistant_tree_.get()},
+            is_first_client_discourse_context_query_),
+        options);
+    is_first_client_discourse_context_query_ = false;
+  } else {
+    std::string interaction = CreateTextQueryInteraction(query);
+    assistant_manager_internal_->SendVoicelessInteraction(
+        interaction, /*description=*/"text_query", options, [](auto) {});
+  }
 }
 
 void AssistantManagerServiceImpl::AddAssistantInteractionSubscriber(
@@ -721,13 +752,12 @@ void AssistantManagerServiceImpl::OnCommunicationError(int error_code) {
 
 std::unique_ptr<assistant_client::AssistantManager>
 AssistantManagerServiceImpl::StartAssistantInternal(
-    const std::string& access_token,
-    bool enable_hotword) {
+    const std::string& access_token) {
   DCHECK(background_thread_.task_runner()->BelongsToCurrentThread());
 
   std::unique_ptr<assistant_client::AssistantManager> assistant_manager;
   assistant_manager.reset(assistant_client::AssistantManager::Create(
-      platform_api_.get(), CreateLibAssistantConfig(!enable_hotword)));
+      platform_api_.get(), CreateLibAssistantConfig()));
   auto* assistant_manager_internal =
       UnwrapAssistantManagerInternal(assistant_manager.get());
 
@@ -758,6 +788,7 @@ void AssistantManagerServiceImpl::PostInitAssistant(
     base::OnceClosure post_init_callback,
     std::unique_ptr<assistant_client::AssistantManager>* assistant_manager) {
   DCHECK(service_->main_task_runner()->RunsTasksInCurrentSequence());
+  DCHECK_EQ(state_, State::STARTED);
 
   assistant_manager_ = std::move(*assistant_manager);
   assistant_manager_internal_ =
@@ -853,6 +884,9 @@ void AssistantManagerServiceImpl::UpdateInternalOptions(
   SetAssistantOptions(internal_options, user_agent,
                       service_->assistant_state()->locale().value(),
                       spoken_feedback_enabled_);
+
+  internal_options->SetClientControlEnabled(
+      assistant::features::IsRoutinesEnabled());
 
   if (base::FeatureList::IsEnabled(assistant::features::kAssistantVoiceMatch) &&
       assistant_settings_manager_->speaker_id_enrollment_done()) {
@@ -1064,6 +1098,13 @@ void AssistantManagerServiceImpl::CacheScreenContext(
                      weak_factory_.GetWeakPtr(), on_done));
 }
 
+void AssistantManagerServiceImpl::ClearScreenContextCache() {
+  assistant_extra_.reset();
+  assistant_tree_.reset();
+  assistant_screenshot_.clear();
+  is_first_client_discourse_context_query_ = true;
+}
+
 void AssistantManagerServiceImpl::OnAccessibilityStatusChanged(
     bool spoken_feedback_enabled) {
   if (spoken_feedback_enabled_ == spoken_feedback_enabled)
@@ -1094,8 +1135,8 @@ void AssistantManagerServiceImpl::CacheAssistantScreenshot(
 }
 
 void AssistantManagerServiceImpl::SendScreenContextRequest(
-    ax::mojom::AssistantExtraPtr assistant_extra,
-    std::unique_ptr<ui::AssistantTree> assistant_tree,
+    ax::mojom::AssistantExtra* assistant_extra,
+    ui::AssistantTree* assistant_tree,
     const std::vector<uint8_t>& assistant_screenshot) {
   std::vector<std::string> context_protos;
 
@@ -1104,13 +1145,17 @@ void AssistantManagerServiceImpl::SendScreenContextRequest(
   // the metalayer. For this scenario, we don't create a context proto for the
   // AssistantBundle that consists of the assistant_extra and assistant_tree.
   if (assistant_extra && assistant_tree) {
-    context_protos.emplace_back(CreateContextProto(AssistantBundle{
-        std::move(assistant_extra), std::move(assistant_tree)}));
+    // Note: the value of is_first_query for screen context query is a no-op
+    // because it is not used for metalayer and "What's on my screen" queries.
+    context_protos.emplace_back(
+        CreateContextProto(AssistantBundle{assistant_extra, assistant_tree},
+                           /*is_first_query=*/true));
   }
 
-  context_protos.emplace_back(CreateContextProto(assistant_screenshot));
+  // Note: the value of is_first_query for screen context query is a no-op.
+  context_protos.emplace_back(CreateContextProto(assistant_screenshot,
+                                                 /*is_first_query=*/true));
   assistant_manager_internal_->SendScreenContextRequest(context_protos);
-  assistant_screenshot_.clear();
 }
 
 std::string AssistantManagerServiceImpl::GetLastSearchSource() {
@@ -1152,6 +1197,20 @@ void AssistantManagerServiceImpl::RecordQueryResponseTypeUMA() {
   receive_inline_response_ = false;
   receive_modify_settings_proto_response_ = false;
   receive_url_response_.clear();
+}
+
+void AssistantManagerServiceImpl::SendAssistantFeedback(
+    mojom::AssistantFeedbackPtr assistant_feedback) {
+  const std::string interaction = CreateSendFeedbackInteraction(
+      assistant_feedback->assistant_debug_info_allowed,
+      assistant_feedback->description, assistant_feedback->screenshot_png);
+  assistant_client::VoicelessOptions voiceless_options;
+
+  voiceless_options.is_user_initiated = false;
+
+  assistant_manager_internal_->SendVoicelessInteraction(
+      interaction, "send feedback with details", voiceless_options,
+      [](auto) {});
 }
 
 }  // namespace assistant

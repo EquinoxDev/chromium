@@ -70,6 +70,44 @@ void SecurityContext::SetContentSecurityPolicy(
   content_security_policy_ = content_security_policy;
 }
 
+bool SecurityContext::IsSandboxed(SandboxFlag mask) const {
+  if (RuntimeEnabledFeatures::FeaturePolicyForSandboxEnabled()) {
+    switch (mask) {
+      case kSandboxAll:
+        NOTREACHED();
+        break;
+      case kSandboxTopNavigation:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kTopNavigation);
+      case kSandboxForms:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kFormSubmission);
+      case kSandboxScripts:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kScript);
+      case kSandboxPopups:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kPopups);
+      case kSandboxPointerLock:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kPointerLock);
+      case kSandboxOrientationLock:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kOrientationLock);
+      case kSandboxModals:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kModals);
+      case kSandboxPresentationController:
+        return !feature_policy_->IsFeatureEnabled(
+            mojom::FeaturePolicyFeature::kPresentation);
+      default:
+        // Any other flags fall through to the bitmask test below
+        break;
+    }
+  }
+  return sandbox_flags_ & mask;
+}
+
 void SecurityContext::EnforceSandboxFlags(SandboxFlags mask) {
   ApplySandboxFlags(mask);
 }
@@ -104,6 +142,20 @@ String SecurityContext::addressSpaceForBindings() const {
   return "public";
 }
 
+void SecurityContext::SetRequireTrustedTypes() {
+  DCHECK(require_safe_types_ ||
+         content_security_policy_->IsRequireTrustedTypes());
+  require_safe_types_ = true;
+}
+
+void SecurityContext::SetRequireTrustedTypesForTesting() {
+  require_safe_types_ = true;
+}
+
+bool SecurityContext::RequireTrustedTypes() const {
+  return require_safe_types_;
+}
+
 void SecurityContext::SetFeaturePolicy(
     std::unique_ptr<FeaturePolicy> feature_policy) {
   // This method should be called before a FeaturePolicy has been created.
@@ -114,7 +166,13 @@ void SecurityContext::SetFeaturePolicy(
 void SecurityContext::InitializeFeaturePolicy(
     const ParsedFeaturePolicy& parsed_header,
     const ParsedFeaturePolicy& container_policy,
-    const FeaturePolicy* parent_feature_policy) {
+    const FeaturePolicy* parent_feature_policy,
+    const FeaturePolicy::FeatureState* opener_feature_state) {
+  // Feature policy should either come from a parent in the case of an embedded
+  // child frame, or from an opener if any when a new window is created by an
+  // opener. A main frame without an opener would not have a parent policy nor
+  // an opener feature state.
+  DCHECK(!parent_feature_policy || !opener_feature_state);
   report_only_feature_policy_ = nullptr;
   if (!HasCustomizedFeaturePolicy()) {
     feature_policy_ = FeaturePolicy::CreateFromParentPolicy(
@@ -122,8 +180,16 @@ void SecurityContext::InitializeFeaturePolicy(
     return;
   }
 
-  feature_policy_ = FeaturePolicy::CreateFromParentPolicy(
-      parent_feature_policy, container_policy, security_origin_->ToUrlOrigin());
+  if (!opener_feature_state ||
+      !RuntimeEnabledFeatures::ExperimentalProductivityFeaturesEnabled()) {
+    feature_policy_ = FeaturePolicy::CreateFromParentPolicy(
+        parent_feature_policy, container_policy,
+        security_origin_->ToUrlOrigin());
+  } else {
+    DCHECK(!parent_feature_policy);
+    feature_policy_ = FeaturePolicy::CreateWithOpenerPolicy(
+        *opener_feature_state, security_origin_->ToUrlOrigin());
+  }
   feature_policy_->SetHeaderPolicy(parsed_header);
 }
 
@@ -132,9 +198,6 @@ void SecurityContext::AddReportOnlyFeaturePolicy(
     const ParsedFeaturePolicy& parsed_report_only_header,
     const ParsedFeaturePolicy& container_policy,
     const FeaturePolicy* parent_feature_policy) {
-  if (!RuntimeEnabledFeatures::FeaturePolicyReportingEnabled())
-    return;
-
   report_only_feature_policy_ = FeaturePolicy::CreateFromParentPolicy(
       parent_feature_policy, container_policy, security_origin_->ToUrlOrigin());
   report_only_feature_policy_->SetHeaderPolicy(parsed_report_only_header);
@@ -153,8 +216,7 @@ bool SecurityContext::IsFeatureEnabled(mojom::FeaturePolicyFeature feature,
   FeatureEnabledState state = GetFeatureEnabledState(feature);
   if (state == FeatureEnabledState::kEnabled)
     return true;
-  if (report_on_failure == ReportOptions::kReportOnFailure &&
-      RuntimeEnabledFeatures::FeaturePolicyReportingEnabled()) {
+  if (report_on_failure == ReportOptions::kReportOnFailure) {
     ReportFeaturePolicyViolation(
         feature,
         (state == FeatureEnabledState::kReportOnly

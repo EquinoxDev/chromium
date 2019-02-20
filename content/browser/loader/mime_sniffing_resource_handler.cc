@@ -75,10 +75,9 @@ class MimeSniffingResourceHandler::Controller : public ResourceController {
   }
 
   void ResumeForRedirect(
-      const base::Optional<std::vector<std::string>>& removed_headers,
-      const base::Optional<net::HttpRequestHeaders>& modified_headers)
-      override {
-    DCHECK(!removed_headers && !modified_headers)
+      const std::vector<std::string>& removed_headers,
+      const net::HttpRequestHeaders& modified_headers) override {
+    DCHECK(removed_headers.empty() && modified_headers.IsEmpty())
         << "Redirect with removed or modified headers is not used nor "
            "supported. See https://crbug.com/845683.";
     Resume();
@@ -447,7 +446,8 @@ bool MimeSniffingResourceHandler::MaybeStartInterception() {
 
   // Allow requests for object/embed tags to be intercepted as streams.
   if (info->GetResourceType() == content::RESOURCE_TYPE_OBJECT) {
-    DCHECK(!info->allow_download());
+    DCHECK(info->resource_intercept_policy() !=
+           ResourceInterceptPolicy::kAllowAll);
 
     bool handled_by_plugin;
     if (!CheckForPluginHandler(&handled_by_plugin))
@@ -456,10 +456,10 @@ bool MimeSniffingResourceHandler::MaybeStartInterception() {
       return true;
   }
 
-  if (!info->allow_download())
+  if (info->resource_intercept_policy() == ResourceInterceptPolicy::kAllowNone)
     return true;
 
-  // info->allow_download() == true implies
+  // A policy unequal to ResourceInterceptPolicy::kAllowNone implies
   // info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME or
   // info->GetResourceType() == RESOURCE_TYPE_SUB_FRAME.
   DCHECK(info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME ||
@@ -478,6 +478,11 @@ bool MimeSniffingResourceHandler::MaybeStartInterception() {
       return false;
     if (handled_by_plugin)
       return true;
+  }
+
+  if (info->resource_intercept_policy() ==
+      ResourceInterceptPolicy::kAllowPluginOnly) {
+    return true;
   }
 
   // This request is a download.

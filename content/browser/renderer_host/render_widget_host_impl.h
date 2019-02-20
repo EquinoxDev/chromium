@@ -174,10 +174,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   RenderWidgetHostOwnerDelegate* owner_delegate() { return owner_delegate_; }
 
-  // Gets the RenderViewHost from the owner delegate if this RenderWidgetHost
-  // is for a main frame (and thus has an owner delegate).
-  RenderViewHost* GetRenderViewHost();
-
   void set_clock_for_testing(const base::TickClock* clock) { clock_ = clock; }
 
   // Returns the viz::FrameSinkId that this object uses to put things on screen.
@@ -280,6 +276,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Initializes a RenderWidgetHost that is attached to a RenderFrameHost.
   void InitForFrame();
+
+  // Returns true if the frame content needs be stored before being evicted.
+  bool ShouldShowStaleContentOnEviction();
 
   // Signal whether this RenderWidgetHost is owned by a RenderFrameHost, in
   // which case it does not do self-deletion.
@@ -413,6 +412,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const blink::WebMouseWheelEvent& wheel_event,
       const ui::LatencyInfo& latency) override;
 
+  // Resolves the given callback once all effects of prior input have been
+  // fully realized.
+  void WaitForInputProcessed(SyntheticGestureParams::GestureType type,
+                             SyntheticGestureParams::GestureSourceType source,
+                             base::OnceClosure callback);
+
   // Retrieve an iterator over any RenderWidgetHosts that are immediately
   // embedded within this one. This does not return hosts that are embedded
   // indirectly (i.e. nested within embedded hosts).
@@ -505,6 +510,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // properties.
   void ResetSentVisualProperties();
 
+  // When the WebContents (which acts as the Delegate) is destroyed, this object
+  // may still outlive it while the renderer is shutting down. In that case the
+  // delegate pointer is removed (since it would be a UAF).
   void DetachDelegate();
 
   // Update the renderer's cache of the screen rect of the view and window.
@@ -666,6 +674,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const std::vector<gfx::Rect>& character_bounds) override;
   void OnImeCancelComposition() override;
   bool IsWheelScrollInProgress() override;
+  bool IsAutoscrollInProgress() override;
   void SetMouseCapture(bool capture) override;
 
   // FrameTokenMessageQueue::Client:
@@ -1183,6 +1192,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool force_enable_zoom_ = false;
 
   RenderFrameMetadataProviderImpl render_frame_metadata_provider_;
+  bool surface_id_allocation_suppressed_ = false;
 
   const viz::FrameSinkId frame_sink_id_;
 
@@ -1190,6 +1200,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   bool sent_autoscroll_scroll_begin_ = false;
   gfx::PointF autoscroll_start_position_;
+
+  // True when the cursor has entered the autoscroll mode. A GSB is not
+  // necessarily sent yet.
+  bool autoscroll_in_progress_ = false;
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 

@@ -5,6 +5,7 @@
 package org.chromium.components.module_installer;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 
 import com.google.android.play.core.splitcompat.SplitCompat;
 import com.google.android.play.core.splitcompat.ingestion.Verifier;
@@ -60,6 +61,9 @@ class FakeModuleInstallerBackend extends ModuleInstallerBackend {
     }
 
     @Override
+    public void installDeferred(String moduleName) {}
+
+    @Override
     public void close() {
         // No open resources. Nothing to be done here.
     }
@@ -67,31 +71,44 @@ class FakeModuleInstallerBackend extends ModuleInstallerBackend {
     private boolean installInternal(String moduleName) {
         Context context = ContextUtils.getApplicationContext();
         int versionCode = BuildInfo.getInstance().versionCode;
-        // Path where SplitCompat looks for downloaded modules. May change in future releases of
-        // the Play Core SDK.
-        File dstModuleFile = joinPaths(context.getFilesDir().getPath(), "splitcompat",
-                Integer.toString(versionCode), "unverified-splits", moduleName + ".apk");
-        File srcModuleFile = joinPaths(MODULES_SRC_DIRECTORY_PATH, moduleName + ".apk");
+        // Get list of all files at path where SplitCompat looks for downloaded modules.
+        // May change in future releases of the Play Core SDK.
+        File[] srcModuleFiles = new File(MODULES_SRC_DIRECTORY_PATH).listFiles();
 
-        // NOTE: Need to give Chrome storage permission for this to work.
-        try {
-            dstModuleFile.getParentFile().mkdirs();
-        } catch (SecurityException e) {
-            Log.e(TAG, "Failed to create module dir", e);
-            return false;
-        }
+        for (File srcModuleFile : srcModuleFiles) {
+            // Take only source APK files.
+            if (srcModuleFile.getName().endsWith(".apk")) {
+                // Construct destination file corresponding to each source file.
+                File dstModuleFile = joinPaths(context.getFilesDir().getPath(), "splitcompat",
+                        Integer.toString(versionCode), "unverified-splits",
+                        srcModuleFile.getName());
 
-        try (FileInputStream istream = new FileInputStream(srcModuleFile);
-                FileOutputStream ostream = new FileOutputStream(dstModuleFile)) {
-            ostream.getChannel().transferFrom(istream.getChannel(), 0, istream.getChannel().size());
-        } catch (RuntimeException | IOException e) {
-            Log.e(TAG, "Failed to install module", e);
-            return false;
+                // NOTE: Need to give Chrome storage permission for this to work.
+                try {
+                    dstModuleFile.getParentFile().mkdirs();
+                } catch (SecurityException e) {
+                    Log.e(TAG, "Failed to create module dir %s", dstModuleFile.getName(), e);
+                    return false;
+                }
+
+                try (FileInputStream istream = new FileInputStream(srcModuleFile);
+                        FileOutputStream ostream = new FileOutputStream(dstModuleFile)) {
+                    ostream.getChannel().transferFrom(
+                            istream.getChannel(), 0, istream.getChannel().size());
+                } catch (RuntimeException | IOException e) {
+                    Log.e(TAG, "Failed to install module apk %s", dstModuleFile.getName(), e);
+                    return false;
+                }
+            }
         }
 
         // Check that the module's signature matches Chrome's.
-        Verifier verifier = new Verifier(context);
-        if (!verifier.verifySplits()) {
+        try {
+            Verifier verifier = new Verifier(context);
+            if (!verifier.verifySplits()) {
+                return false;
+            }
+        } catch (IOException | PackageManager.NameNotFoundException e) {
             return false;
         }
 

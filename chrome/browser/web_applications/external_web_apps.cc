@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
 #include "base/files/file_enumerator.h"
@@ -19,6 +20,8 @@
 #include "base/task/post_task.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "build/build_config.h"
+#include "chrome/browser/apps/user_type_filter.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/components/web_app_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
@@ -53,14 +56,6 @@ constexpr char kLaunchContainerTab[] = "tab";
 constexpr char kLaunchContainerWindow[] = "window";
 
 #if defined(OS_CHROMEOS)
-// Defines directory with web apps for child users.
-const base::FilePath::CharType kChildUsersSubdir[] =
-    FILE_PATH_LITERAL("child_users");
-
-// Defines directory with web apps for managed users.
-const base::FilePath::CharType kManagedUsersSubdir[] =
-    FILE_PATH_LITERAL("managed_users");
-
 // The sub-directory of the extensions directory in which to scan for external
 // web apps (as opposed to external extensions or external ARC apps).
 const base::FilePath::CharType kWebAppsSubDirectory[] =
@@ -92,11 +87,12 @@ bool IsFeatureEnabled(const std::string& feature_name) {
 }
 
 std::vector<web_app::PendingAppManager::AppInfo> ScanDir(
-    const base::FilePath& dir) {
+    const base::FilePath& dir,
+    const std::string& user_type) {
   base::ScopedBlockingCall scoped_blocking_call(base::BlockingType::MAY_BLOCK);
   base::FilePath::StringType extension(FILE_PATH_LITERAL(".json"));
   base::FileEnumerator json_files(dir,
-                                  true,  // Recursive.
+                                  false,  // Recursive.
                                   base::FileEnumerator::FILES);
 
   std::vector<web_app::PendingAppManager::AppInfo> app_infos;
@@ -120,7 +116,14 @@ std::vector<web_app::PendingAppManager::AppInfo> ScanDir(
       continue;
     }
 
-    base::Value* value =
+    if (!apps::UserTypeMatchesJsonUserType(
+            user_type, file.MaybeAsASCII() /* app_id */, dict.get(),
+            nullptr /* default_user_types */)) {
+      // Already logged.
+      continue;
+    }
+
+    const base::Value* value =
         dict->FindKeyOfType(kFeatureName, base::Value::Type::STRING);
     if (value) {
       std::string feature_name = value->GetString();
@@ -180,7 +183,7 @@ std::vector<web_app::PendingAppManager::AppInfo> ScanDir(
   return app_infos;
 }
 
-base::FilePath DetermineScanDir(Profile* profile) {
+base::FilePath DetermineScanDir(const Profile* profile) {
   base::FilePath dir;
 #if defined(OS_CHROMEOS)
   // As of mid 2018, only Chrome OS has default/external web apps, and
@@ -197,13 +200,6 @@ base::FilePath DetermineScanDir(Profile* profile) {
       LOG(ERROR) << "ScanForExternalWebApps: base::PathService::Get failed";
     } else {
       dir = dir.Append(kWebAppsSubDirectory);
-
-      // Limit web apps for known type of users. Unmanaged users have all apps,
-      // including sub-dirs.
-      if (profile->IsChild())
-        dir = dir.Append(kChildUsersSubdir);
-      else if (profile->IsSupervised())
-        dir = dir.Append(kManagedUsersSubdir);
     }
   }
 
@@ -216,8 +212,9 @@ base::FilePath DetermineScanDir(Profile* profile) {
 namespace web_app {
 
 std::vector<web_app::PendingAppManager::AppInfo>
-ScanDirForExternalWebAppsForTesting(const base::FilePath& dir) {
-  return ScanDir(dir);
+ScanDirForExternalWebAppsForTesting(const base::FilePath& dir,
+                                    Profile* profile) {
+  return ScanDir(dir, apps::DetermineUserType(profile));
 }
 
 void ScanForExternalWebApps(Profile* profile,
@@ -241,7 +238,8 @@ void ScanForExternalWebApps(Profile* profile,
       FROM_HERE,
       {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
        base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
-      base::BindOnce(&ScanDir, dir), std::move(callback));
+      base::BindOnce(&ScanDir, dir, apps::DetermineUserType(profile)),
+      std::move(callback));
 }
 
 }  //  namespace web_app

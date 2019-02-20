@@ -81,12 +81,12 @@ void ParentLocalSurfaceIdAllocator::Invalidate() {
 }
 
 void ParentLocalSurfaceIdAllocator::GenerateId() {
-  is_invalid_ = false;
   if (is_allocation_suppressed_)
     return;
+  is_invalid_ = false;
 
-  ++current_local_surface_id_allocation_.local_surface_id_
-        .parent_sequence_number_;
+  ++current_local_surface_id_allocation_.local_surface_id_.parent_component_
+        .sequence_number;
   current_local_surface_id_allocation_.allocation_time_ =
       tick_clock_->NowTicks();
 

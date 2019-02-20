@@ -559,10 +559,14 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
     remaining_clients_ = manager()->clients_.size();
     for (auto* client : manager()->clients_) {
       if (quota_client_mask_ & client->id()) {
+        static int tracing_id = 0;
+        TRACE_EVENT_ASYNC_BEGIN2(
+            "browsing_data", "QuotaManager::OriginDataDeleter", ++tracing_id,
+            "client_id", client->id(), "origin", origin_.Serialize());
         client->DeleteOriginData(
             origin_, type_,
             base::BindOnce(&OriginDataDeleter::DidDeleteOriginData,
-                           weak_factory_.GetWeakPtr()));
+                           weak_factory_.GetWeakPtr(), tracing_id));
       } else {
         ++skipped_clients_;
         if (--remaining_clients_ == 0)
@@ -596,8 +600,11 @@ class QuotaManager::OriginDataDeleter : public QuotaTask {
   }
 
  private:
-  void DidDeleteOriginData(blink::mojom::QuotaStatusCode status) {
+  void DidDeleteOriginData(int tracing_id,
+                           blink::mojom::QuotaStatusCode status) {
     DCHECK_GT(remaining_clients_, 0);
+    TRACE_EVENT_ASYNC_END0("browsing_data", "QuotaManager::OriginDataDeleter",
+                           tracing_id);
 
     if (status != blink::mojom::QuotaStatusCode::kOk)
       ++error_count_;
@@ -724,6 +731,60 @@ class QuotaManager::HostDataDeleter : public QuotaTask {
 
   base::WeakPtrFactory<HostDataDeleter> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(HostDataDeleter);
+};
+
+class QuotaManager::StorageCleanupHelper : public QuotaTask {
+ public:
+  StorageCleanupHelper(QuotaManager* manager,
+                       StorageType type,
+                       int quota_client_mask,
+                       base::OnceClosure callback)
+      : QuotaTask(manager),
+        type_(type),
+        quota_client_mask_(quota_client_mask),
+        callback_(std::move(callback)),
+        weak_factory_(this) {}
+
+ protected:
+  void Run() override {
+    base::RepeatingClosure barrier = base::BarrierClosure(
+        manager()->clients_.size(),
+        base::BindOnce(&StorageCleanupHelper::CallCompleted,
+                       weak_factory_.GetWeakPtr()));
+
+    // This may synchronously trigger |callback_| at the end of the for loop,
+    // make sure we do nothing after this block.
+    for (auto* client : manager()->clients_) {
+      if (quota_client_mask_ & client->id()) {
+        client->PerformStorageCleanup(type_, barrier);
+      } else {
+        barrier.Run();
+      }
+    }
+  }
+
+  void Aborted() override {
+    weak_factory_.InvalidateWeakPtrs();
+    std::move(callback_).Run();
+    DeleteSoon();
+  }
+
+  void Completed() override {
+    weak_factory_.InvalidateWeakPtrs();
+    std::move(callback_).Run();
+    DeleteSoon();
+  }
+
+ private:
+  QuotaManager* manager() const {
+    return static_cast<QuotaManager*>(observer());
+  }
+
+  StorageType type_;
+  int quota_client_mask_;
+  base::OnceClosure callback_;
+  base::WeakPtrFactory<StorageCleanupHelper> weak_factory_;
+  DISALLOW_COPY_AND_ASSIGN(StorageCleanupHelper);
 };
 
 class QuotaManager::GetModifiedSinceHelper {
@@ -943,6 +1004,14 @@ void QuotaManager::DeleteOriginData(const url::Origin& origin,
                            std::move(callback));
 }
 
+void QuotaManager::PerformStorageCleanup(StorageType type,
+                                         int quota_client_mask,
+                                         base::OnceClosure callback) {
+  StorageCleanupHelper* deleter = new StorageCleanupHelper(
+      this, type, quota_client_mask, std::move(callback));
+  deleter->Start();
+}
+
 void QuotaManager::DeleteHostData(const std::string& host,
                                   StorageType type,
                                   int quota_client_mask,
@@ -1069,7 +1138,7 @@ std::map<std::string, std::string> QuotaManager::GetStatistics() {
     temporary_storage_evictor_->GetStatistics(&stats);
     for (const auto& origin_usage_pair : stats) {
       statistics[origin_usage_pair.first] =
-          base::Int64ToString(origin_usage_pair.second);
+          base::NumberToString(origin_usage_pair.second);
     }
   }
   return statistics;

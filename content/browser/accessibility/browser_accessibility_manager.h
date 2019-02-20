@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/containers/hash_tables.h"
 #include "base/macros.h"
 #include "build/build_config.h"
 #include "content/browser/accessibility/accessibility_buildflags.h"
@@ -114,6 +113,12 @@ struct BrowserAccessibilityFindInPageInfo {
 
 // Manages a tree of BrowserAccessibility objects.
 class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver {
+ protected:
+  using BrowserAccessibilityPositionInstance =
+      BrowserAccessibilityPosition::AXPositionInstance;
+  using BrowserAccessibilityRange =
+      ui::AXRange<BrowserAccessibilityPositionInstance::element_type>;
+
  public:
   // Creates the platform-specific BrowserAccessibilityManager, but
   // with no parent window pointer. Only useful for unit tests.
@@ -221,10 +226,8 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver {
   void SetFocus(const BrowserAccessibility& node);
   void SetScrollOffset(const BrowserAccessibility& node, gfx::Point offset);
   void SetValue(const BrowserAccessibility& node, const std::string& value);
-  void SetSelection(
-      ui::AXRange<
-          BrowserAccessibilityPosition::AXPositionInstance::element_type>
-          range);
+  void SetSelection(const ui::AXActionData& action_data);
+  void SetSelection(const BrowserAccessibilityRange& range);
   void ShowContextMenu(const BrowserAccessibility& node);
 
   // Retrieve the bounds of the parent View in screen coordinates.
@@ -386,11 +389,6 @@ class CONTENT_EXPORT BrowserAccessibilityManager : public ui::AXTreeObserver {
   void CacheHitTestResult(BrowserAccessibility* hit_test_result);
 
  protected:
-  using BrowserAccessibilityPositionInstance =
-      BrowserAccessibilityPosition::AXPositionInstance;
-  using AXPlatformRange =
-      ui::AXRange<BrowserAccessibilityPositionInstance::element_type>;
-
   BrowserAccessibilityManager(
       BrowserAccessibilityDelegate* delegate,
       BrowserAccessibilityFactory* factory);

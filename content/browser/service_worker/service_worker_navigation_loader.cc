@@ -7,8 +7,12 @@
 #include <sstream>
 #include <utility>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
+#include "base/strings/strcat.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/service_worker/service_worker_provider_host.h"
 #include "content/browser/service_worker/service_worker_version.h"
@@ -40,7 +44,7 @@ bool BodyHasNoDataPipeGetters(const network::ResourceRequestBody* body) {
   if (!body)
     return true;
   for (const auto& elem : *body->elements()) {
-    if (elem.type() == network::DataElement::TYPE_DATA_PIPE)
+    if (elem.type() == network::mojom::DataElementType::kDataPipe)
       return false;
   }
   return true;
@@ -121,7 +125,7 @@ ServiceWorkerNavigationLoader::~ServiceWorkerNavigationLoader() {
       "ServiceWorker",
       "ServiceWorkerNavigationLoader::~ServiceWorkerNavigationloader", this,
       TRACE_EVENT_FLAG_FLOW_IN);
-};
+}
 
 void ServiceWorkerNavigationLoader::FallbackToNetwork() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
@@ -409,12 +413,14 @@ void ServiceWorkerNavigationLoader::StartResponse(
   response_head_.load_timing.receive_headers_start = base::TimeTicks::Now();
   response_head_.load_timing.receive_headers_end =
       response_head_.load_timing.receive_headers_start;
+  response_source_ = response->response_source;
 
   // Make the navigated page inherit the SSLInfo from its controller service
   // worker's script. This affects the HTTPS padlock, etc, shown by the
   // browser. See https://crbug.com/392409 for details about this design.
   // TODO(horo): When we support mixed-content (HTTP) no-cors requests from a
   // ServiceWorker, we have to check the security level of the responses.
+  DCHECK(version->GetMainScriptHttpResponseInfo());
   response_head_.ssl_info = version->GetMainScriptHttpResponseInfo()->ssl_info;
 
   // Handle a redirect response. ComputeRedirectInfo returns non-null redirect
@@ -487,9 +493,8 @@ void ServiceWorkerNavigationLoader::StartResponse(
 // URLLoader implementation----------------------------------------
 
 void ServiceWorkerNavigationLoader::FollowRedirect(
-    const base::Optional<std::vector<std::string>>&
-        to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const std::vector<std::string>& removed_headers,
+    const net::HttpRequestHeaders& modified_headers,
     const base::Optional<GURL>& new_url) {
   NOTIMPLEMENTED();
 }
@@ -599,6 +604,13 @@ void ServiceWorkerNavigationLoader::RecordTimingMetrics(bool handled) {
     UMA_HISTOGRAM_MEDIUM_TIMES(
         "ServiceWorker.LoadTiming.MainFrame.MainResource."
         "ResponseReceivedToCompleted2",
+        completion_time_ - response_head_.load_timing.receive_headers_end);
+    // Same as above, breakdown by response source.
+    base::UmaHistogramMediumTimes(
+        base::StrCat({"ServiceWorker.LoadTiming.MainFrame.MainResource."
+                      "ResponseReceivedToCompleted2",
+                      ServiceWorkerUtils::FetchResponseSourceToSuffix(
+                          response_source_)}),
         completion_time_ - response_head_.load_timing.receive_headers_end);
   } else {
     // Renderer -> Browser IPC delay (network fallback case).

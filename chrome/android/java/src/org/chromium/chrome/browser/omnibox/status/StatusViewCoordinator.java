@@ -4,39 +4,22 @@
 
 package org.chromium.chrome.browser.omnibox.status;
 
-import android.app.Activity;
-import android.content.Context;
 import android.content.res.Resources;
 import android.support.annotation.DrawableRes;
-import android.support.annotation.IntDef;
 import android.view.View;
 
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.modelutil.PropertyModelChangeProcessor;
 import org.chromium.chrome.browser.page_info.PageInfoController;
 import org.chromium.chrome.browser.toolbar.ToolbarDataProvider;
 import org.chromium.ui.modelutil.PropertyModel;
-
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
+import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
 /**
  * A component for displaying a status icon (e.g. security icon or navigation icon) and optional
  * verbose status text.
  */
 public class StatusViewCoordinator implements View.OnClickListener {
-    /**
-     * Specifies the types of buttons shown to signify different types of navigation elements.
-     */
-    @IntDef({NavigationButtonType.PAGE, NavigationButtonType.MAGNIFIER, NavigationButtonType.EMPTY})
-    @Retention(RetentionPolicy.SOURCE)
-    public @interface NavigationButtonType {
-        int PAGE = 0;
-        int MAGNIFIER = 1;
-        int EMPTY = 2;
-    }
-
     private final StatusView mStatusView;
     private final StatusMediator mMediator;
     private final PropertyModel mModel;
@@ -81,6 +64,10 @@ public class StatusViewCoordinator implements View.OnClickListener {
      */
     public void setToolbarDataProvider(ToolbarDataProvider toolbarDataProvider) {
         mToolbarDataProvider = toolbarDataProvider;
+        // Update status immediately after receiving the data provider to avoid initial presence
+        // glitch on tablet devices. This glitch would be typically seen upon launch of app, right
+        // before the landing page is presented to the user.
+        updateStatusIcon();
     }
 
     /**
@@ -135,7 +122,7 @@ public class StatusViewCoordinator implements View.OnClickListener {
      */
     @VisibleForTesting
     public boolean isSecurityButtonShown() {
-        return mMediator.testIsSecurityButtonShown();
+        return mMediator.isSecurityButtonShown();
     }
 
     /**
@@ -148,35 +135,13 @@ public class StatusViewCoordinator implements View.OnClickListener {
     }
 
     /**
-     * Sets the type of the current navigation type and updates the UI to match it.
-     * @param buttonType The type of navigation button to be shown.
-     */
-    public void setNavigationButtonType(@NavigationButtonType int buttonType) {
-        @DrawableRes
-        int imageRes = 0;
-        switch (buttonType) {
-            case NavigationButtonType.PAGE:
-                imageRes = R.drawable.ic_omnibox_page;
-                break;
-            case NavigationButtonType.MAGNIFIER:
-                imageRes = R.drawable.omnibox_search;
-                break;
-            case NavigationButtonType.EMPTY:
-                break;
-            default:
-                assert false : "Invalid navigation button type";
-        }
-        mMediator.setNavigationButtonType(imageRes);
-    }
-
-    /**
      * Update visibility of the verbose status based on the button type and focus state of the
      * omnibox.
      */
     private void updateVerboseStatusVisibility() {
         // TODO(ender): turn around logic for ToolbarDataProvider to offer
         // notifications rather than polling for these attributes.
-        mMediator.setVerboseStatusTextAllowed(mToolbarDataProvider.shouldShowVerboseStatus());
+        mMediator.setPageSecurityLevel(mToolbarDataProvider.getSecurityLevel());
         mMediator.setPageIsOffline(mToolbarDataProvider.isOfflinePage());
         mMediator.setPageIsPreview(mToolbarDataProvider.isPreview());
     }
@@ -185,18 +150,13 @@ public class StatusViewCoordinator implements View.OnClickListener {
     public void onClick(View view) {
         if (mUrlHasFocus) return;
 
-        // Get Activity from our managed view.
-        // TODO(ender): turn this into a property accessible via shared model.
-        Context context = view.getContext();
-        if (context == null || !(context instanceof Activity)) return;
-
         if (!mToolbarDataProvider.hasTab()
                 || mToolbarDataProvider.getTab().getWebContents() == null) {
             return;
         }
 
-        PageInfoController.show((Activity) context, mToolbarDataProvider.getTab(), null,
-                PageInfoController.OpenedFromSource.TOOLBAR);
+        PageInfoController.show(mToolbarDataProvider.getTab().getActivity(),
+                mToolbarDataProvider.getTab(), null, PageInfoController.OpenedFromSource.TOOLBAR);
     }
 
     /**
@@ -213,5 +173,19 @@ public class StatusViewCoordinator implements View.OnClickListener {
      */
     public void setShouldAnimateIconChanges(boolean shouldAnimate) {
         mMediator.setAnimationsEnabled(shouldAnimate);
+    }
+
+    /**
+     * Specify whether URL should present icons when focused.
+     */
+    public void setShowIconsWhenUrlFocused(boolean showIconsWithUrlFocused) {
+        mMediator.setShowIconsWhenUrlFocused(showIconsWithUrlFocused);
+    }
+
+    /**
+     * Specify whether suggestion for URL bar is a search action.
+     */
+    public void setFirstSuggestionIsSearchType(boolean firstSuggestionIsSearchQuery) {
+        mMediator.setFirstSuggestionIsSearchType(firstSuggestionIsSearchQuery);
     }
 }

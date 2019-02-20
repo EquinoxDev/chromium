@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
@@ -21,6 +22,7 @@
 #include "net/log/net_log_source.h"
 #include "net/log/net_log_with_source.h"
 #include "net/socket/tcp_client_socket.h"
+#include "services/network/public/cpp/resolve_host_client_base.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 
 namespace {
@@ -35,8 +37,7 @@ static void RunSocketCallback(
   callback.Run(result, std::move(socket));
 }
 
-class ResolveHostAndOpenSocket final
-    : public network::mojom::ResolveHostClient {
+class ResolveHostAndOpenSocket final : public network::ResolveHostClientBase {
  public:
   ResolveHostAndOpenSocket(const net::HostPortPair& address,
                            const AdbClientSocket::SocketCallback& callback,
@@ -110,7 +111,7 @@ void TCPDeviceProvider::QueryDeviceInfo(const std::string& serial,
     if (serial != target.host())
       continue;
     AndroidDeviceManager::BrowserInfo browser_info;
-    browser_info.socket_name = base::UintToString(target.port());
+    browser_info.socket_name = base::NumberToString(target.port());
     browser_info.display_name = kBrowserName;
     browser_info.type = AndroidDeviceManager::BrowserInfo::kTypeChrome;
 

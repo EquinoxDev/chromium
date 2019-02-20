@@ -4,6 +4,9 @@
 
 #include "content/browser/web_package/signed_exchange_handler.h"
 
+#include <utility>
+
+#include "base/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
@@ -19,6 +22,7 @@
 #include "content/browser/web_package/signed_exchange_devtools_proxy.h"
 #include "content/browser/web_package/signed_exchange_envelope.h"
 #include "content/browser/web_package/signed_exchange_prologue.h"
+#include "content/browser/web_package/signed_exchange_reporter.h"
 #include "content/browser/web_package/signed_exchange_signature_verifier.h"
 #include "content/browser/web_package/signed_exchange_utils.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -78,7 +82,7 @@ base::Time GetVerificationTime() {
 
 bool IsSupportedSignedExchangeVersion(
     const base::Optional<SignedExchangeVersion>& version) {
-  return version == SignedExchangeVersion::kB2;
+  return version == SignedExchangeVersion::kB3;
 }
 
 using VerifyCallback = base::OnceCallback<void(int32_t,
@@ -182,6 +186,7 @@ SignedExchangeHandler::SignedExchangeHandler(
     std::unique_ptr<SignedExchangeCertFetcherFactory> cert_fetcher_factory,
     int load_flags,
     std::unique_ptr<SignedExchangeDevToolsProxy> devtools_proxy,
+    SignedExchangeReporter* reporter,
     base::RepeatingCallback<int(void)> frame_tree_node_id_getter)
     : is_secure_transport_(is_secure_transport),
       has_nosniff_(has_nosniff),
@@ -190,6 +195,7 @@ SignedExchangeHandler::SignedExchangeHandler(
       cert_fetcher_factory_(std::move(cert_fetcher_factory)),
       load_flags_(load_flags),
       devtools_proxy_(std::move(devtools_proxy)),
+      reporter_(reporter),
       frame_tree_node_id_getter_(frame_tree_node_id_getter),
       weak_factory_(this) {
   DCHECK(signed_exchange_utils::IsSignedExchangeHandlingEnabled());
@@ -224,7 +230,7 @@ SignedExchangeHandler::SignedExchangeHandler(
         devtools_proxy_.get(),
         base::StringPrintf("Unsupported version of the content type. Currently "
                            "content type must be "
-                           "\"application/signed-exchange;v=b2\". But the "
+                           "\"application/signed-exchange;v=b3\". But the "
                            "response content type was \"%s\"",
                            content_type.c_str()));
     // Proceed to extract and redirect to the fallback URL.
@@ -403,6 +409,8 @@ SignedExchangeHandler::ParseHeadersAndFetchCertificate() {
                "SignedExchangeHandler::ParseHeadersAndFetchCertificate");
   DCHECK_EQ(state_, State::kReadingHeaders);
 
+  DCHECK(version_.has_value());
+
   base::StringPiece data(header_buf_->data(), header_read_buf_->size());
   base::StringPiece signature_header_field = data.substr(
       0, prologue_fallback_url_and_after_.signature_header_field_length());
@@ -411,8 +419,8 @@ SignedExchangeHandler::ParseHeadersAndFetchCertificate() {
           prologue_fallback_url_and_after_.signature_header_field_length(),
           prologue_fallback_url_and_after_.cbor_header_length())));
   envelope_ = SignedExchangeEnvelope::Parse(
-      prologue_fallback_url_and_after_.fallback_url(), signature_header_field,
-      cbor_header, devtools_proxy_.get());
+      *version_, prologue_fallback_url_and_after_.fallback_url(),
+      signature_header_field, cbor_header, devtools_proxy_.get());
   header_read_buf_ = nullptr;
   header_buf_ = nullptr;
   if (!envelope_) {
@@ -421,11 +429,15 @@ SignedExchangeHandler::ParseHeadersAndFetchCertificate() {
     return SignedExchangeLoadResult::kHeaderParseError;
   }
 
+  if (reporter_) {
+    reporter_->set_inner_url(envelope_->request_url().url);
+    reporter_->set_cert_url(envelope_->signature().cert_url);
+  }
+
   const GURL cert_url = envelope_->signature().cert_url;
   // TODO(https://crbug.com/819467): When we will support ed25519Key, |cert_url|
   // may be empty.
   DCHECK(cert_url.is_valid());
-  DCHECK(version_.has_value());
 
   DCHECK(cert_fetcher_factory_);
 
@@ -434,10 +446,10 @@ SignedExchangeHandler::ParseHeadersAndFetchCertificate() {
   cert_fetch_start_time_ = base::TimeTicks::Now();
   cert_fetcher_ = std::move(cert_fetcher_factory_)
                       ->CreateFetcherAndStart(
-                          cert_url, force_fetch, *version_,
+                          cert_url, force_fetch,
                           base::BindOnce(&SignedExchangeHandler::OnCertReceived,
                                          base::Unretained(this)),
-                          devtools_proxy_.get());
+                          devtools_proxy_.get(), reporter_);
 
   state_ = State::kFetchingCertificate;
   return SignedExchangeLoadResult::kSuccess;
@@ -454,8 +466,8 @@ void SignedExchangeHandler::RunErrorCallback(SignedExchangeLoadResult result,
         nullptr);
   }
   std::move(headers_callback_)
-      .Run(result, error, GetFallbackUrl(), std::string(),
-           network::ResourceResponseHead(), nullptr);
+      .Run(result, error, GetFallbackUrl(), network::ResourceResponseHead(),
+           nullptr);
   state_ = State::kHeadersCallbackCalled;
 }
 
@@ -483,10 +495,11 @@ void SignedExchangeHandler::OnCertReceived(
                              cert_fetch_duration);
   unverified_cert_chain_ = std::move(cert_chain);
 
+  DCHECK(version_.has_value());
   const SignedExchangeSignatureVerifier::Result verify_result =
       SignedExchangeSignatureVerifier::Verify(
-          *envelope_, unverified_cert_chain_->cert(), GetVerificationTime(),
-          devtools_proxy_.get());
+          *version_, *envelope_, unverified_cert_chain_->cert(),
+          GetVerificationTime(), devtools_proxy_.get());
   UMA_HISTOGRAM_ENUMERATION(kHistogramSignatureVerificationResult,
                             verify_result);
   if (verify_result != SignedExchangeSignatureVerifier::Result::kSuccess) {
@@ -639,16 +652,8 @@ void SignedExchangeHandler::OnVerifyCert(
   response_head.load_timing.receive_headers_end = now;
 
   std::string digest_header_value;
-  if (!response_head.headers->EnumerateHeader(nullptr, kDigestHeader,
-                                              &digest_header_value)) {
-    // TODO(https://crbug.com/803774): Detect this error in
-    // SignedExchangeEnvelope::Parse().
-    signed_exchange_utils::ReportErrorAndTraceEvent(
-        devtools_proxy_.get(), "Signed exchange has no Digest: header");
-    RunErrorCallback(SignedExchangeLoadResult::kHeaderParseError,
-                     net::ERR_INVALID_SIGNED_EXCHANGE);
-    return;
-  }
+  response_head.headers->EnumerateHeader(nullptr, kDigestHeader,
+                                         &digest_header_value);
   auto mi_stream = std::make_unique<MerkleIntegritySourceStream>(
       digest_header_value, std::move(source_));
 
@@ -672,8 +677,7 @@ void SignedExchangeHandler::OnVerifyCert(
   response_head.ssl_info = std::move(ssl_info);
   std::move(headers_callback_)
       .Run(SignedExchangeLoadResult::kSuccess, net::OK,
-           envelope_->request_url().url, envelope_->request_method(),
-           response_head, std::move(mi_stream));
+           envelope_->request_url().url, response_head, std::move(mi_stream));
   state_ = State::kHeadersCallbackCalled;
 }
 

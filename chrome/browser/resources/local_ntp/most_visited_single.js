@@ -47,12 +47,11 @@ const CLASSES = {
   REORDERING: 'reordering',  // Applied while we are reordering.
   // Material Design classes.
   MD_EMPTY_TILE: 'md-empty-tile',
-  MD_FALLBACK_BACKGROUND: 'md-fallback-background',
+  MD_ICON_BACKGROUND: 'md-icon-background',
   MD_FALLBACK_LETTER: 'md-fallback-letter',
   MD_FAVICON: 'md-favicon',
   MD_ICON: 'md-icon',
   MD_ADD_ICON: 'md-add-icon',
-  MD_ADD_BACKGROUND: 'md-add-background',
   MD_MENU: 'md-menu',
   MD_EDIT_MENU: 'md-edit-menu',
   MD_TILE: 'md-tile',
@@ -344,6 +343,7 @@ var updateTheme = function(info) {
   document.body.style.setProperty('--tile-title-color', info.tileTitleColor);
   document.body.classList.toggle('dark-theme', info.isThemeDark);
   document.body.classList.toggle('using-theme', info.isUsingTheme);
+  document.documentElement.setAttribute('darkmode', info.isDarkMode);
 
   // Reduce font weight on the default(white) background for Mac and CrOS.
   document.body.classList.toggle('mac-chromeos',
@@ -483,6 +483,9 @@ var addTile = function(args) {
     }
 
     data.tid = data.rid;
+    // Use a dark icon if dark mode is enabled. Keep value in sync with
+    // NtpIconSource.
+    data.dark = args.darkMode ? 'dark/' : '';
     if (!data.faviconUrl) {
       data.faviconUrl = 'chrome-search://favicon/size/16@' +
           window.devicePixelRatio + 'x/' + data.renderViewId + '/' + data.tid;
@@ -716,23 +719,21 @@ function renderMaterialDesignTile(data) {
   let mdIcon = document.createElement('div');
   mdIcon.className = CLASSES.MD_ICON;
 
-  let mdFavicon = document.createElement('div');
-  mdFavicon.className = CLASSES.MD_FAVICON;
   if (data.isAddButton) {
     let mdAdd = document.createElement('div');
     mdAdd.className = CLASSES.MD_ADD_ICON;
     let addBackground = document.createElement('div');
-    addBackground.className = CLASSES.MD_ADD_BACKGROUND;
+    addBackground.className = CLASSES.MD_ICON_BACKGROUND;
 
     addBackground.appendChild(mdAdd);
-    mdFavicon.appendChild(addBackground);
+    mdIcon.appendChild(addBackground);
   } else {
     let fi = document.createElement('img');
     // Set title and alt to empty so screen readers won't say the image name.
     fi.title = '';
     fi.alt = '';
     fi.src = 'chrome-search://ntpicon/size/24@' + window.devicePixelRatio +
-        'x/' + data.url;
+        'x/' + data.dark + data.url;
     loadedCounter += 1;
     fi.addEventListener('load', function(ev) {
       // Store the type for a potential later navigation.
@@ -747,18 +748,18 @@ function renderMaterialDesignTile(data) {
     });
     fi.addEventListener('error', function(ev) {
       let fallbackBackground = document.createElement('div');
-      fallbackBackground.className = CLASSES.MD_FALLBACK_BACKGROUND;
+      fallbackBackground.className = CLASSES.MD_ICON_BACKGROUND;
       let fallbackLetter = document.createElement('div');
       fallbackLetter.className = CLASSES.MD_FALLBACK_LETTER;
-      fallbackLetter.innerText = data.title.charAt(0).toUpperCase();
+      fallbackLetter.textContent = data.title.charAt(0).toUpperCase();
       if (navigator.userAgent.indexOf('Windows') > -1) {
         fallbackLetter.style.fontWeight = 600;
       }
-      mdFavicon.classList.add(CLASSES.FAILED_FAVICON);
+      mdIcon.classList.add(CLASSES.FAILED_FAVICON);
 
       fallbackBackground.appendChild(fallbackLetter);
-      mdFavicon.removeChild(fi);
-      mdFavicon.appendChild(fallbackBackground);
+      mdIcon.removeChild(fi);
+      mdIcon.appendChild(fallbackBackground);
 
       // Store the type for a potential later navigation.
       tileType = TileVisualType.ICON_DEFAULT;
@@ -771,10 +772,9 @@ function renderMaterialDesignTile(data) {
       countLoad();
     });
 
-    mdFavicon.appendChild(fi);
+    mdIcon.appendChild(fi);
   }
 
-  mdIcon.appendChild(mdFavicon);
   mdTileInner.appendChild(mdIcon);
 
   let mdTitleContainer = document.createElement('div');

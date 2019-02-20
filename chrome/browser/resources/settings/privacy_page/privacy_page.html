@@ -19,19 +19,12 @@
 <link rel="import" href="../site_settings/all_sites.html">
 <link rel="import" href="../site_settings/category_default_setting.html">
 <link rel="import" href="../site_settings/category_setting_exceptions.html">
-<!--
-  In order for the browser test for chooser-exception-list-entry to work
-  properly, the custom element needs to be a dependency of the settings page.
-  TODO(https://crbug.com/854329): Update this import once
-  chooser-exception-list is implemented.
--->
-<link rel="import" href="../site_settings/chooser_exception_list_entry.html">
+<link rel="import" href="../site_settings/chooser_exception_list.html">
 <link rel="import" href="../site_settings/constants.html">
 <link rel="import" href="../site_settings/media_picker.html">
 <link rel="import" href="../site_settings/pdf_documents.html">
 <link rel="import" href="../site_settings/protocol_handlers.html">
 <link rel="import" href="../site_settings/site_data_details_subpage.html">
-<link rel="import" href="../site_settings/usb_devices.html">
 <link rel="import" href="../site_settings/site_data.html">
 <link rel="import" href="../site_settings/site_details.html">
 <link rel="import" href="../site_settings/zoom_levels.html">
@@ -51,7 +44,6 @@
     <style include="settings-shared">
 <if expr="not chromeos">
       #toast {
-        color: white;
         left: 0;
         z-index: 1;
       }
@@ -97,6 +89,11 @@
             </p>
           </div>
         </template>
+        <cr-link-row label="$i18n{syncAndNonPersonalizedServices}"
+           sub-label="$i18n{syncAndGoogleServicesPrivacyDescription}"
+           icon-class="subpage-arrow" on-click="onSyncAndGoogleServicesClick_"
+           hidden="[[!unifiedConsentEnabled_]]">
+        </cr-link-row>
 <if expr="not chromeos">
         <settings-toggle-button id="signinAllowedToggle"
             pref="{{prefs.signin.allowed_on_next_startup}}"
@@ -121,6 +118,12 @@
             aria-label="$i18n{canMakePaymentToggleLabel}"
             label="$i18n{canMakePaymentToggleLabel}"
             pref="{{prefs.payments.can_make_payment_enabled}}">
+        </settings-toggle-button>
+        <settings-toggle-button hidden="[[!pageVisibility.networkPrediction]]"
+            pref="{{prefs.net.network_prediction_options}}"
+            label="$i18n{networkPredictionEnabled}"
+            sub-label="$i18n{networkPredictionEnabledDesc}"
+            numeric-unchecked-value="[[networkPredictionUncheckedValue_]]">
         </settings-toggle-button>
 <if expr="chromeos">
         <settings-toggle-button
@@ -183,10 +186,6 @@
                 aria-describedby="clearBrowsingDataSecondary"></button>
           </paper-icon-button-light>
         </div>
-        <div class="settings-box" on-click="onMoreSettingsBoxClicked_"
-            hidden="[[!unifiedConsentEnabled_]]">
-          <div class="start">$i18nRaw{syncAndPersonalizationLink}</div>
-        </div>
       </div>
 <if expr="use_nss_certs">
       <template is="dom-if" route-path="/certificates">
@@ -210,7 +209,7 @@
 
       <template is="dom-if" route-path="/content/all" no-search>
         <settings-subpage page-title="$i18n{siteSettingsAllSites}">
-          <all-sites focus-config="[[focusConfig_]]"></all-sites>
+          <all-sites></all-sites>
         </settings-subpage>
       </template>
       <template is="dom-if" route-path="/content/automaticDownloads" no-search>
@@ -452,7 +451,7 @@
         <settings-subpage page-title="$i18n{siteSettingsFlash}"
             search-label="$i18n{siteSettingsAllSitesSearch}"
             search-term="{{searchFilter_}}">
-          <a class="settings-box first" tabindex="-1"
+          <a class="settings-box first no-outline" tabindex="-1"
               target="_blank">
             $i18n{siteSettingsFlashPermissionsEphemeral}
           </a>
@@ -554,7 +553,10 @@
                   "$i18n{siteSettingsUsbDevicesAskRecommended}"
               category="{{ContentSettingsTypes.USB_DEVICES}}">
           </category-default-setting>
-          <usb-devices></usb-devices>
+          <chooser-exception-list
+              category="{{ContentSettingsTypes.USB_DEVICES}}"
+              chooser-type="{{ChooserType.USB_DEVICES}}">
+          </chooser-exception-list>
         </settings-subpage>
       </template>
       <template is="dom-if" route-path="/content/siteDetails" no-search>

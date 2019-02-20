@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/guid.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
@@ -84,8 +86,8 @@ class BackgroundFetchJobControllerTest : public BackgroundFetchTestBase {
   // To be called when a request for |registration_id| has finished.
   // Moves |request_info| to |out_request_info|.
   void GetRequestInfoOnRequestFinished(
-      const BackgroundFetchRegistrationId& registration_id,
       scoped_refptr<content::BackgroundFetchRequestInfo>* out_request_info,
+      const BackgroundFetchRegistrationId& registration_id,
       scoped_refptr<content::BackgroundFetchRequestInfo> request_info) {
     DCHECK(pending_requests_counts_.count(registration_id));
     DCHECK(out_request_info);
@@ -145,9 +147,6 @@ class BackgroundFetchJobControllerTest : public BackgroundFetchTestBase {
   std::unique_ptr<BackgroundFetchJobController> CreateJobController(
       const BackgroundFetchRegistrationId& registration_id,
       int total_downloads) {
-    delegate_proxy_ =
-        std::make_unique<BackgroundFetchDelegateProxy>(browser_context());
-
     auto controller = std::make_unique<BackgroundFetchJobController>(
         /* data_manager= */ nullptr, delegate_proxy_.get(), registration_id,
         blink::mojom::BackgroundFetchOptions::New(), SkBitmap(),
@@ -180,6 +179,9 @@ class BackgroundFetchJobControllerTest : public BackgroundFetchTestBase {
 
     StoragePartitionImpl* partition = static_cast<StoragePartitionImpl*>(
         BrowserContext::GetDefaultStoragePartition(browser_context()));
+
+    delegate_proxy_ =
+        std::make_unique<BackgroundFetchDelegateProxy>(browser_context());
 
     context_ = base::MakeRefCounted<BackgroundFetchContext>(
         browser_context(),
@@ -254,7 +256,7 @@ TEST_F(BackgroundFetchJobControllerTest, SingleRequestJob) {
   controller->StartRequest(
       requests[0],
       base::BindOnce(&BackgroundFetchJobControllerTest::OnRequestFinished,
-                     base::Unretained(this), registration_id));
+                     base::Unretained(this)));
 
   base::RunLoop().RunUntilIdle();
 
@@ -279,7 +281,7 @@ TEST_F(BackgroundFetchJobControllerTest, SingleRequestJobWithInsecureOrigin) {
       requests[0],
       base::BindOnce(
           &BackgroundFetchJobControllerTest::GetRequestInfoOnRequestFinished,
-          base::Unretained(this), registration_id, &requests[0]));
+          base::Unretained(this), &requests[0]));
 
   base::RunLoop().RunUntilIdle();
 
@@ -307,7 +309,7 @@ TEST_F(BackgroundFetchJobControllerTest, MultipleRequestJob) {
   controller->StartRequest(
       requests[0],
       base::BindOnce(&BackgroundFetchJobControllerTest::OnRequestFinished,
-                     base::Unretained(this), registration_id));
+                     base::Unretained(this)));
 
   base::RunLoop().RunUntilIdle();
 
@@ -317,7 +319,7 @@ TEST_F(BackgroundFetchJobControllerTest, MultipleRequestJob) {
   controller->StartRequest(
       requests[1],
       base::BindOnce(&BackgroundFetchJobControllerTest::OnRequestFinished,
-                     base::Unretained(this), registration_id));
+                     base::Unretained(this)));
 
   base::RunLoop().RunUntilIdle();
 
@@ -327,7 +329,7 @@ TEST_F(BackgroundFetchJobControllerTest, MultipleRequestJob) {
   controller->StartRequest(
       requests[2],
       base::BindOnce(&BackgroundFetchJobControllerTest::OnRequestFinished,
-                     base::Unretained(this), registration_id));
+                     base::Unretained(this)));
 
   base::RunLoop().RunUntilIdle();
 
@@ -354,7 +356,7 @@ TEST_F(BackgroundFetchJobControllerTest, MultipleRequestsJobWithMixedContent) {
       requests[0],
       base::BindOnce(
           &BackgroundFetchJobControllerTest::GetRequestInfoOnRequestFinished,
-          base::Unretained(this), registration_id, &requests[0]));
+          base::Unretained(this), &requests[0]));
 
   base::RunLoop().RunUntilIdle();
 
@@ -366,7 +368,7 @@ TEST_F(BackgroundFetchJobControllerTest, MultipleRequestsJobWithMixedContent) {
       requests[1],
       base::BindOnce(
           &BackgroundFetchJobControllerTest::GetRequestInfoOnRequestFinished,
-          base::Unretained(this), registration_id, &requests[1]));
+          base::Unretained(this), &requests[1]));
 
   base::RunLoop().RunUntilIdle();
 
@@ -391,7 +393,7 @@ TEST_F(BackgroundFetchJobControllerTest, Abort) {
   controller->StartRequest(
       requests[0],
       base::BindOnce(&BackgroundFetchJobControllerTest::OnRequestFinished,
-                     base::Unretained(this), registration_id));
+                     base::Unretained(this)));
 
   controller->Abort(
       blink::mojom::BackgroundFetchFailureReason::CANCELLED_FROM_UI,
@@ -419,7 +421,7 @@ TEST_F(BackgroundFetchJobControllerTest, Progress) {
   controller->StartRequest(
       requests[0],
       base::BindOnce(&BackgroundFetchJobControllerTest::OnRequestFinished,
-                     base::Unretained(this), registration_id));
+                     base::Unretained(this)));
 
   {
     base::RunLoop run_loop;

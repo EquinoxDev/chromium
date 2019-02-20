@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/macros.h"
@@ -192,23 +193,23 @@ AppListSyncableService::SyncItem::SyncItem(
 
 AppListSyncableService::SyncItem::~SyncItem() = default;
 
-// AppListSyncableService::ModelUpdaterDelegate
+// AppListSyncableService::ModelUpdaterObserver
 
-class AppListSyncableService::ModelUpdaterDelegate
-    : public AppListModelUpdaterDelegate {
+class AppListSyncableService::ModelUpdaterObserver
+    : public AppListModelUpdaterObserver {
  public:
-  explicit ModelUpdaterDelegate(AppListSyncableService* owner) : owner_(owner) {
-    DVLOG(2) << owner_ << ": ModelUpdaterDelegate Added";
-    owner_->GetModelUpdater()->SetDelegate(this);
+  explicit ModelUpdaterObserver(AppListSyncableService* owner) : owner_(owner) {
+    DVLOG(2) << owner_ << ": ModelUpdaterObserver Added";
+    owner_->GetModelUpdater()->AddObserver(this);
   }
 
-  ~ModelUpdaterDelegate() override {
-    owner_->GetModelUpdater()->SetDelegate(nullptr);
-    DVLOG(2) << owner_ << ": ModelUpdaterDelegate Removed";
+  ~ModelUpdaterObserver() override {
+    owner_->GetModelUpdater()->RemoveObserver(this);
+    DVLOG(2) << owner_ << ": ModelUpdaterObserver Removed";
   }
 
  private:
-  // ChromeAppListModelUpdaterDelegate
+  // ChromeAppListModelUpdaterObserver
   void OnAppListItemAdded(ChromeAppListItem* item) override {
     DCHECK(adding_item_id_.empty());
     adding_item_id_ = item->id();  // Ignore updates while adding an item.
@@ -255,7 +256,7 @@ class AppListSyncableService::ModelUpdaterDelegate
   AppListSyncableService* owner_;
   std::string adding_item_id_;
 
-  DISALLOW_COPY_AND_ASSIGN(ModelUpdaterDelegate);
+  DISALLOW_COPY_AND_ASSIGN(ModelUpdaterObserver);
 };
 
 // AppListSyncableService
@@ -274,7 +275,7 @@ AppListSyncableService::AppListSyncableService(
       initial_sync_data_processed_(false),
       first_app_list_sync_(true),
       is_app_service_enabled_(
-          base::FeatureList::IsEnabled(features::kAppService)),
+          base::FeatureList::IsEnabled(features::kAppServiceAsh)),
       weak_ptr_factory_(this) {
   if (g_model_updater_factory_callback_for_test_)
     model_updater_ = g_model_updater_factory_callback_for_test_->Run();
@@ -300,7 +301,7 @@ AppListSyncableService::AppListSyncableService(
 
 AppListSyncableService::~AppListSyncableService() {
   // Remove observers.
-  model_updater_delegate_.reset();
+  model_updater_observer_.reset();
 }
 
 bool AppListSyncableService::IsExtensionServiceReady() const {
@@ -429,6 +430,56 @@ const AppListSyncableService::SyncItem* AppListSyncableService::GetSyncItem(
   return NULL;
 }
 
+bool AppListSyncableService::TransferItemAttributes(
+    const std::string& from_app_id,
+    const std::string& to_app_id) {
+  const SyncItem* from_item = FindSyncItem(from_app_id);
+  if (!from_item ||
+      from_item->item_type != sync_pb::AppListSpecifics::TYPE_APP) {
+    return false;
+  }
+
+  auto attributes = std::make_unique<SyncItem>(
+      from_app_id, sync_pb::AppListSpecifics::TYPE_APP);
+  attributes->parent_id = from_item->parent_id;
+  attributes->item_ordinal = from_item->item_ordinal;
+  attributes->item_pin_ordinal = from_item->item_pin_ordinal;
+
+  SyncItem* to_item = FindSyncItem(to_app_id);
+  if (to_item) {
+    // |to_app_id| already exists. Can apply attributes right now.
+    ApplyAppAttributes(to_app_id, std::move(attributes));
+  } else {
+    // |to_app_id| does not exist at this moment. Store attributes to apply it
+    // later once app appears on this device.
+    pending_transfer_map_[to_app_id] = std::move(attributes);
+  }
+
+  return true;
+}
+
+void AppListSyncableService::ApplyAppAttributes(
+    const std::string& app_id,
+    std::unique_ptr<SyncItem> attributes) {
+  SyncItem* item = FindSyncItem(app_id);
+  if (!item || item->item_type != sync_pb::AppListSpecifics::TYPE_APP) {
+    LOG(ERROR) << "Failed to apply app attributes, app " << app_id
+               << " does not exist.";
+    return;
+  }
+
+  HandleUpdateStarted();
+
+  item->parent_id = attributes->parent_id;
+  item->item_ordinal = attributes->item_ordinal;
+  item->item_pin_ordinal = attributes->item_pin_ordinal;
+  UpdateSyncItemInLocalStorage(profile_, item);
+  SendSyncChange(item, SyncChange::ACTION_UPDATE);
+  ProcessExistingSyncItem(item);
+
+  HandleUpdateFinished();
+}
+
 void AppListSyncableService::SetOemFolderName(const std::string& name) {
   oem_folder_name_ = name;
   // Update OEM folder item if it was already created. If it is not created yet
@@ -445,7 +496,7 @@ AppListModelUpdater* AppListSyncableService::GetModelUpdater() {
 
 void AppListSyncableService::HandleUpdateStarted() {
   // Don't observe the model while processing update changes.
-  model_updater_delegate_.reset();
+  model_updater_observer_.reset();
 }
 
 void AppListSyncableService::HandleUpdateFinished() {
@@ -454,7 +505,7 @@ void AppListSyncableService::HandleUpdateFinished() {
   ResolveFolderPositions();
 
   // Resume or start observing app list model changes.
-  model_updater_delegate_ = std::make_unique<ModelUpdaterDelegate>(this);
+  model_updater_observer_ = std::make_unique<ModelUpdaterObserver>(this);
 
   NotifyObserversSyncUpdated();
 }
@@ -1010,12 +1061,13 @@ void AppListSyncableService::ProcessExistingSyncItem(SyncItem* sync_item) {
   }
   VLOG(2) << "ProcessExistingSyncItem: " << sync_item->ToString();
 
-  // OEM app can be moved outside folder or into non-OEM folder, so always sync
-  // the position.
+  // The only place where sync can change an item's folder. Prevent moving OEM
+  // item to the folder, other than OEM folder.
+  const bool update_folder = !AppIsOem(sync_item->item_id);
   model_updater_->UpdateAppItemFromSyncItem(
       sync_item,
       sync_item->item_id != ash::kOemFolderId,  // Don't sync oem folder's name.
-      true /* update_folder */);
+      update_folder);
 }
 
 bool AppListSyncableService::SyncStarted() {
@@ -1070,6 +1122,16 @@ AppListSyncableService::SyncItem* AppListSyncableService::CreateSyncItem(
     sync_pb::AppListSpecifics::AppListItemType item_type) {
   DCHECK(!base::ContainsKey(sync_items_, item_id));
   sync_items_[item_id] = std::make_unique<SyncItem>(item_id, item_type);
+
+  // In case we have pending attributes to apply, process it asynchronously.
+  if (base::ContainsKey(pending_transfer_map_, item_id)) {
+    base::SequencedTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::BindOnce(&AppListSyncableService::ApplyAppAttributes,
+                                  weak_ptr_factory_.GetWeakPtr(), item_id,
+                                  std::move(pending_transfer_map_[item_id])));
+    pending_transfer_map_.erase(item_id);
+  }
+
   return sync_items_[item_id].get();
 }
 

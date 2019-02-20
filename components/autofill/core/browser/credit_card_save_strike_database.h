@@ -17,11 +17,12 @@ namespace autofill {
 class CreditCardSaveStrikeDatabase : public StrikeDatabaseIntegratorBase {
  public:
   CreditCardSaveStrikeDatabase(StrikeDatabase* strike_database);
-  ~CreditCardSaveStrikeDatabase();
+  ~CreditCardSaveStrikeDatabase() override;
 
   std::string GetProjectPrefix() override;
   int GetMaxStrikesLimit() override;
   long long GetExpiryTimeMicros() override;
+  bool UniqueIdsRequired() override;
 };
 
 }  // namespace autofill

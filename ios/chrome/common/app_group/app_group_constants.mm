@@ -17,16 +17,19 @@ namespace app_group {
 
 const char kChromeAppGroupXCallbackCommand[] = "app-group-command";
 
+const char kChromeExtensionFieldTrialPreference[] = "Extension.FieldTrial";
+
 const char kChromeAppGroupCommandPreference[] =
     "GroupApp.ChromeAppGroupCommand";
 
 const char kChromeAppGroupCommandTimePreference[] = "CommandTime";
 const char kChromeAppGroupCommandAppPreference[] = "SourceApp";
 const char kChromeAppGroupCommandCommandPreference[] = "Command";
-const char kChromeAppGroupCommandURLPreference[] = "URL";
+const char kChromeAppGroupCommandTextPreference[] = "Text";
 const char kChromeAppGroupCommandIndexPreference[] = "Index";
 
 const char kChromeAppGroupOpenURLCommand[] = "openurl";
+const char kChromeAppGroupSearchTextCommand[] = "searchtext";
 const char kChromeAppGroupVoiceSearchCommand[] = "voicesearch";
 const char kChromeAppGroupNewTabCommand[] = "newtab";
 const char kChromeAppGroupFocusOmniboxCommand[] = "focusomnibox";

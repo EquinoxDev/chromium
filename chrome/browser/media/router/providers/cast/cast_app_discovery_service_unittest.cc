@@ -4,6 +4,7 @@
 
 #include "chrome/browser/media/router/providers/cast/cast_app_discovery_service.h"
 
+#include "base/bind.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/test/test_simple_task_runner.h"
@@ -72,7 +73,7 @@ class CastAppDiscoveryServiceTest : public testing::Test {
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
   base::SimpleTestTickClock clock_;
-  cast_channel::MockCastSocketService socket_service_;
+  testing::NiceMock<cast_channel::MockCastSocketService> socket_service_;
   cast_channel::MockCastSocket socket_;
   cast_channel::MockCastMessageHandler message_handler_;
   TestMediaSinkService media_sink_service_;

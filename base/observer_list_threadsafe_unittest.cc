@@ -21,6 +21,7 @@
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -323,13 +324,7 @@ static void ThreadSafeObserverHarness(int num_threads,
   scoped_task_environment.RunUntilIdle();
 }
 
-#if defined(OS_FUCHSIA)
-// TODO(crbug.com/738275): This is flaky on Fuchsia.
-#define MAYBE_CrossThreadObserver DISABLED_CrossThreadObserver
-#else
-#define MAYBE_CrossThreadObserver CrossThreadObserver
-#endif
-TEST(ObserverListThreadSafeTest, MAYBE_CrossThreadObserver) {
+TEST(ObserverListThreadSafeTest, CrossThreadObserver) {
   // Use 7 observer threads.  Notifications only come from the main thread.
   ThreadSafeObserverHarness(7, false);
 }

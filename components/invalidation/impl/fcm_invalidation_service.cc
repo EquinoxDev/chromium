@@ -4,12 +4,18 @@
 
 #include "components/invalidation/impl/fcm_invalidation_service.h"
 
+#include <memory>
+
+#include "base/bind.h"
+#include "base/i18n/time_formatting.h"
 #include "base/metrics/histogram_macros.h"
+#include "build/build_config.h"
 #include "components/gcm_driver/instance_id/instance_id_driver.h"
 #include "components/invalidation/impl/fcm_invalidator.h"
 #include "components/invalidation/impl/fcm_network_handler.h"
 #include "components/invalidation/impl/invalidation_prefs.h"
 #include "components/invalidation/impl/invalidation_service_util.h"
+#include "components/invalidation/impl/invalidation_switches.h"
 #include "components/invalidation/impl/invalidator.h"
 #include "components/invalidation/public/invalidation_util.h"
 #include "components/invalidation/public/invalidator_state.h"
@@ -19,6 +25,8 @@
 
 namespace {
 const char kApplicationName[] = "com.google.chrome.fcm.invalidations";
+// Sender ID coming from the Firebase console.
+const char kInvalidationGCMSenderId[] = "8181035976";
 }
 
 namespace invalidation {
@@ -107,7 +115,7 @@ syncer::InvalidatorState FCMInvalidationService::GetInvalidatorState() const {
     return invalidator_->GetInvalidatorState();
   }
   DVLOG(2) << "Invalidator currently stopped";
-  return syncer::TRANSIENT_INVALIDATION_ERROR;
+  return syncer::STOPPED;
 }
 
 std::string FCMInvalidationService::GetInvalidatorClientId() const {
@@ -121,22 +129,51 @@ InvalidationLogger* FCMInvalidationService::GetInvalidationLogger() {
 void FCMInvalidationService::RequestDetailedStatus(
     base::RepeatingCallback<void(const base::DictionaryValue&)> return_callback)
     const {
+  return_callback.Run(diagnostic_info_.CollectDebugData());
+  invalidator_registrar_.RequestDetailedStatus(return_callback);
+  if (identity_provider_) {
+    identity_provider_->RequestDetailedStatus(return_callback);
+  }
   if (IsStarted()) {
     invalidator_->RequestDetailedStatus(return_callback);
   }
 }
 
 void FCMInvalidationService::OnActiveAccountLogin() {
-  if (!IsStarted() && IsReadyToStart())
+  diagnostic_info_.active_account_login = base::Time::Now();
+  diagnostic_info_.was_already_started_on_login = IsStarted();
+  diagnostic_info_.was_ready_to_start_on_login = IsReadyToStart();
+  diagnostic_info_.active_account_id = identity_provider_->GetActiveAccountId();
+
+  if (IsStarted()) {
+    return;
+  }
+  bool is_ready_to_start = IsReadyToStart();
+#if defined(OS_ANDROID)
+  // IsReadyToStart checks if account is available (active account logged in
+  // and token is available). As currently observed, FCMInvalidationService
+  // isn't always notified on Android when token is avaliable.
+  if (base::FeatureList::IsEnabled(
+          invalidation::switches::
+              kFCMInvalidationsStartOnceActiveAccountAvailable)) {
+    is_ready_to_start = true;
+  }
+#endif
+
+  if (is_ready_to_start) {
     StartInvalidator();
+  }
 }
 
 void FCMInvalidationService::OnActiveAccountRefreshTokenUpdated() {
+  diagnostic_info_.active_account_token_updated = base::Time::Now();
   if (!IsStarted() && IsReadyToStart())
     StartInvalidator();
 }
 
 void FCMInvalidationService::OnActiveAccountLogout() {
+  diagnostic_info_.active_account_logged_out = base::Time::Now();
+  diagnostic_info_.active_account_id = std::string();
   if (IsStarted()) {
     StopInvalidator();
     if (!client_id_.empty())
@@ -181,9 +218,10 @@ void FCMInvalidationService::StartInvalidator() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!invalidator_);
   DCHECK(IsReadyToStart());
-
+  diagnostic_info_.service_was_started = base::Time::Now();
   auto network = std::make_unique<syncer::FCMNetworkHandler>(
-      gcm_driver_, instance_id_driver_);
+      gcm_driver_, instance_id_driver_, kInvalidationGCMSenderId,
+      kApplicationName);
   // The order of calls is important. Do not change.
   // We should start listening before requesting the id, because
   // valid id is only generated, once there is an app handler
@@ -193,19 +231,21 @@ void FCMInvalidationService::StartInvalidator() {
 
   invalidator_ = std::make_unique<syncer::FCMInvalidator>(
       std::move(network), identity_provider_, pref_service_, loader_factory_,
-      parse_json_);
+      parse_json_, kInvalidationGCMSenderId);
   invalidator_->RegisterHandler(this);
   DoUpdateRegisteredIdsIfNeeded();
 }
 
 void FCMInvalidationService::StopInvalidator() {
   DCHECK(invalidator_);
+  diagnostic_info_.service_was_stopped = base::Time::Now();
   // TODO(melandory): reset the network.
   invalidator_->UnregisterHandler(this);
   invalidator_.reset();
 }
 
 void FCMInvalidationService::PopulateClientID() {
+  diagnostic_info_.instance_id_requested = base::Time::Now();
   client_id_ = pref_service_->GetString(prefs::kFCMInvalidationClientIDCache);
   instance_id::InstanceID* instance_id =
       instance_id_driver_->GetInstanceID(kApplicationName);
@@ -222,6 +262,7 @@ void FCMInvalidationService::ResetClientID() {
 }
 
 void FCMInvalidationService::OnInstanceIdRecieved(const std::string& id) {
+  diagnostic_info_.instance_id_received = base::Time::Now();
   if (client_id_ != id) {
     client_id_ = id;
     pref_service_->SetString(prefs::kFCMInvalidationClientIDCache, id);
@@ -240,6 +281,36 @@ void FCMInvalidationService::DoUpdateRegisteredIdsIfNeeded() {
   auto registered_ids = invalidator_registrar_.GetAllRegisteredIds();
   CHECK(invalidator_->UpdateRegisteredIds(this, registered_ids));
   update_was_requested_ = false;
+}
+
+FCMInvalidationService::Diagnostics::Diagnostics() {}
+
+base::DictionaryValue FCMInvalidationService::Diagnostics::CollectDebugData()
+    const {
+  base::DictionaryValue status;
+
+  status.SetString("InvalidationService.Active-account-login",
+                   base::TimeFormatShortDateAndTime(active_account_login));
+  status.SetString(
+      "InvalidationService.Active-account-token-updated",
+      base::TimeFormatShortDateAndTime(active_account_token_updated));
+  status.SetString("InvalidationService.Active-account-logged-out",
+                   base::TimeFormatShortDateAndTime(active_account_logged_out));
+  status.SetString("InvalidationService.IID-requested",
+                   base::TimeFormatShortDateAndTime(instance_id_requested));
+  status.SetString("InvalidationService.IID-received",
+                   base::TimeFormatShortDateAndTime(instance_id_received));
+  status.SetString("InvalidationService.Service-stopped",
+                   base::TimeFormatShortDateAndTime(service_was_stopped));
+  status.SetString("InvalidationService.Service-started",
+                   base::TimeFormatShortDateAndTime(service_was_started));
+  status.SetBoolean("InvalidationService.Started-on-active-account-login",
+                    was_already_started_on_login);
+  status.SetBoolean(
+      "InvalidationService.Ready-to-start-on-active-account-login",
+      was_ready_to_start_on_login);
+  status.SetString("InvalidationService.Active-account-id", active_account_id);
+  return status;
 }
 
 }  // namespace invalidation

@@ -32,9 +32,10 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TIMING_PERFORMANCE_TIMING_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
@@ -109,16 +110,27 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   // TODO(crbug.com/848639): This function is exposed as an experiment, and if
   // not useful, this function can be removed.
   unsigned long long FirstMeaningfulPaintCandidate() const;
-  // The time of the first paint after the largest image within viewport being
-  // fully loaded.
+  // Largest Image Paint is the first paint after the largest image within
+  // viewport being fully loaded. LargestImagePaint and LargestImagePaintSize
+  // are the time and size of it.
   unsigned long long LargestImagePaint() const;
-  // The time of the first paint after the last image within viewport being
-  // fully loaded.
+  uint64_t LargestImagePaintSize() const;
+  // Last Image Paint is the first paint after the last image within viewport
+  // being fully loaded. LastImagePaint and LastImagePaintSize are the time and
+  // size of it.
   unsigned long long LastImagePaint() const;
+  uint64_t LastImagePaintSize() const;
   // The time of the first paint of the largest text within viewport.
+  // Largest Text Paint is the first paint after the largest text within
+  // viewport being painted. LargestTextPaint and LargestTextPaintSize
+  // are the time and size of it.
   unsigned long long LargestTextPaint() const;
-  // The time of the first paint of the last text within viewport.
+  uint64_t LargestTextPaintSize() const;
+  // Last Text Paint is the first paint after the last text within viewport
+  // being painted. LastTextPaint and LastTextPaintSize are the time and
+  // size of it.
   unsigned long long LastTextPaint() const;
+  uint64_t LastTextPaintSize() const;
   // The first time the page is considered 'interactive'. This is determined
   // using heuristics based on main thread and network activity.
   unsigned long long PageInteractive() const;
@@ -154,6 +166,8 @@ class CORE_EXPORT PerformanceTiming final : public ScriptWrappable,
   void Trace(blink::Visitor*) override;
 
   unsigned long long MonotonicTimeToIntegerMilliseconds(TimeTicks) const;
+
+  std::unique_ptr<TracedValue> GetNavigationTracingData();
 
  private:
   const DocumentTiming* GetDocumentTiming() const;

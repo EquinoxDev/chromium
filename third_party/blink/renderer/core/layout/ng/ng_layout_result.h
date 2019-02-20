@@ -21,6 +21,7 @@
 namespace blink {
 
 class NGBoxFragmentBuilder;
+class NGContainerFragmentBuilder;
 class NGExclusionSpace;
 class NGLineBoxFragmentBuilder;
 
@@ -47,10 +48,8 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   ~NGLayoutResult();
 
   const NGPhysicalFragment* PhysicalFragment() const {
-    return root_fragment_.get();
+    return physical_fragment_.get();
   }
-  NGPhysicalOffset Offset() const { return root_fragment_.Offset(); }
-  void SetOffset(NGPhysicalOffset offset) { root_fragment_.offset_ = offset; }
 
   const Vector<NGOutOfFlowPositionedDescendant>&
   OutOfFlowPositionedDescendants() const {
@@ -75,8 +74,8 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   const NGMarginStrut EndMarginStrut() const { return end_margin_strut_; }
 
   const LayoutUnit IntrinsicBlockSize() const {
-    DCHECK(root_fragment_->Type() == NGPhysicalFragment::kFragmentBox ||
-           root_fragment_->Type() ==
+    DCHECK(physical_fragment_->Type() == NGPhysicalFragment::kFragmentBox ||
+           physical_fragment_->Type() ==
                NGPhysicalFragment::kFragmentRenderedLegend);
     return intrinsic_block_size_;
   }
@@ -110,6 +109,12 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
 
   bool HasOrthogonalFlowRoots() const { return has_orthogonal_flow_roots_; }
 
+  // Returns true if we aren't able to re-use this layout result if the
+  // PercentageResolutionBlockSize changes.
+  bool DependsOnPercentageBlockSize() const {
+    return depends_on_percentage_block_size_;
+  }
+
  private:
   friend class NGBoxFragmentBuilder;
   friend class NGLineBoxFragmentBuilder;
@@ -117,16 +122,22 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   // This constructor requires a non-null fragment and sets a success status.
   NGLayoutResult(scoped_refptr<const NGPhysicalFragment> physical_fragment,
                  NGBoxFragmentBuilder*);
-  // This constructor is for a non-success status.
-  NGLayoutResult(NGLayoutResultStatus, NGBoxFragmentBuilder*);
+  // This constructor requires a non-null fragment and sets a success status.
   NGLayoutResult(scoped_refptr<const NGPhysicalFragment> physical_fragment,
                  NGLineBoxFragmentBuilder*);
+  // This constructor is for a non-success status.
+  NGLayoutResult(NGLayoutResultStatus, NGBoxFragmentBuilder*);
 
   // We don't need copy constructor today. Delete this to clarify that the
   // default copy constructor will not work because RefCounted can't be copied.
   NGLayoutResult(const NGLayoutResult&) = delete;
 
-  NGLink root_fragment_;
+  // Delegate constructor that sets up what it can, based on the builder.
+  NGLayoutResult(NGContainerFragmentBuilder* builder);
+
+  static bool DependsOnPercentageBlockSize(const NGContainerFragmentBuilder&);
+
+  scoped_refptr<const NGPhysicalFragment> physical_fragment_;
   Vector<NGOutOfFlowPositionedDescendant> oof_positioned_descendants_;
 
   NGUnpositionedListMarker unpositioned_list_marker_;
@@ -135,11 +146,11 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   const LayoutUnit bfc_line_offset_;
   const base::Optional<LayoutUnit> bfc_block_offset_;
   const NGMarginStrut end_margin_strut_;
-  const LayoutUnit intrinsic_block_size_;
-  const LayoutUnit minimal_space_shortage_;
+  LayoutUnit intrinsic_block_size_;
+  LayoutUnit minimal_space_shortage_ = LayoutUnit::Max();
 
-  EBreakBetween initial_break_before_;
-  EBreakBetween final_break_after_;
+  EBreakBetween initial_break_before_ = EBreakBetween::kAuto;
+  EBreakBetween final_break_after_ = EBreakBetween::kAuto;
 
   unsigned has_forced_break_ : 1;
 
@@ -147,6 +158,7 @@ class CORE_EXPORT NGLayoutResult : public RefCounted<NGLayoutResult> {
   unsigned adjoining_floats_ : 2;  // NGFloatTypes
 
   unsigned has_orthogonal_flow_roots_ : 1;
+  unsigned depends_on_percentage_block_size_ : 1;
 
   unsigned status_ : 1;
 };

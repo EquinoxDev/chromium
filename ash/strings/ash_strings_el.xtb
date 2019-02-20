@@ -14,6 +14,7 @@
 <translation id="1153356358378277386">Συσκευές σε σύζευξη</translation>
 <translation id="1195412055398077112">υπερσάρωση</translation>
 <translation id="119944043368869598">Διαγραφή όλων</translation>
+<translation id="123828989343052515">Νέο γραφείο</translation>
 <translation id="1247372569136754018">Μικρόφωνο (εσωτερικό)</translation>
 <translation id="1252999807265626933">Φόρτιση από <ph name="POWER_SOURCE" /></translation>
 <translation id="1255033239764210633">Τι καιρό κάνει;</translation>
@@ -68,10 +69,12 @@
 <translation id="1969011864782743497"><ph name="DEVICE_NAME" /> (USB)</translation>
 <translation id="1993072747612765854">Μάθετε περισσότερα σχετικά με την πιο πρόσφατη ενημέρωση της εφαρμογής <ph name="SYSTEM_APP_NAME" /></translation>
 <translation id="1995660704900986789">Απενεργοποίηση</translation>
+<translation id="1999763610967697511">Μεταφορά και απόθεση</translation>
 <translation id="2012624427112548395">Ctrl+Πλήκτρο αναζήτησης+H</translation>
 <translation id="2016340657076538683">Πληκτρολογήστε ένα μήνυμα</translation>
 <translation id="2050339315714019657">Κάθετα</translation>
 <translation id="2067602449040652523">Φωτεινότητα πληκτρολογίου</translation>
+<translation id="209965399369889474">Δεν υπάρχει σύνδεση στο δίκτυο</translation>
 <translation id="2127372758936585790">Χαμηλή ισχύς φορτιστή</translation>
 <translation id="2135456203358955318">Μεγεθυντικός φακός σε παράθυρο</translation>
 <translation id="2144487987174258011">Κάντε επανεκκίνηση για να ενημερώσετε το Adobe Flash Player</translation>
@@ -94,6 +97,7 @@
 <translation id="2412593942846481727">Υπάρχει διαθέσιμη ενημέρωση</translation>
 <translation id="2413728805700750528">Το <ph name="DISPLAY_NAME" /> είναι μια διαχειριζόμενη περίοδος σύνδεσης την οποία διαχειρίζεται ο τομέας <ph name="DOMAIN" /></translation>
 <translation id="2416346634399901812">Σε σύνδεση στο δίκτυο <ph name="NETWORK_NAME" /></translation>
+<translation id="2427507373259914951">Αριστερό κλικ</translation>
 <translation id="2429753432712299108">Η συσκευή Bluetooth "<ph name="DEVICE_NAME" />" ζητά δικαιώματα σύζευξης. Προτού αποδεχτείτε, επιβεβαιώστε ότι αυτό το κλειδί πρόσβασης εμφανίζεται στη συγκεκριμένη συσκευή: <ph name="PASSKEY" /></translation>
 <translation id="2482878487686419369">Ειδοποιήσεις</translation>
 <translation id="2484513351006226581">Πατήστε <ph name="KEYBOARD_SHORTCUT" />, για να αλλάξετε διάταξη πληκτρολογίου.</translation>
@@ -132,6 +136,7 @@
 <translation id="3000461861112256445">Μονοφωνικός ήχος</translation>
 <translation id="3009178788565917040">Έξοδος</translation>
 <translation id="3019353588588144572">Χρόνος που απομένει μέχρι να φορτιστεί πλήρως η μπαταρία, <ph name="TIME_REMAINING" /></translation>
+<translation id="3051128274746680507">Το προφίλ εποπτευόμενου χρήστη θα καταργηθεί σύντομα. Συνδεθείτε για να μάθετε περισσότερα.</translation>
 <translation id="3055162170959710888">Χρησιμοποιήσατε αυτήν τη συσκευή για <ph name="USED_TIME" /> σήμερα</translation>
 <translation id="3077734595579995578">shift</translation>
 <translation id="3081696990447829002">Ανάπτυξη μενού</translation>
@@ -143,10 +148,10 @@
 <translation id="3153444934357957346">Μπορείτε να χρησιμοποιήσετε έως <ph name="MULTI_PROFILE_USER_LIMIT" /> λογαριασμούς στη λειτουργία σύνδεσης σε πολλούς λογαριασμούς.</translation>
 <translation id="3154351730702813399">Ο διαχειριστής της συσκευής μπορεί να παρακολουθεί τη δραστηριότητα περιήγησής σας.</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{Συνδέθηκε σε κάποια συσκευή}other{Συνδέθηκε σε # συσκευές}}</translation>
-<translation id="32244657276328332">Δεν έχει συνδεθεί σε κάποιο δίκτυο</translation>
 <translation id="3236488194889173876">Δεν υπάρχουν διαθέσιμα δίκτυα κινητής τηλεφωνίας</translation>
 <translation id="3255483164551725916">Τι μπορείς να κάνεις;</translation>
 <translation id="3294437725009624529">Επισκέπτης</translation>
+<translation id="3308453408813785101">Ο χρήστης <ph name="USER_EMAIL_ADDRESS" /> μπορεί να συνδεθεί αργότερα.</translation>
 <translation id="332587331255250389">Αντικαταστήστε την μπαταρία</translation>
 <translation id="3351879221545518001">Αυτήν τη στιγμή πραγματοποιείτε μετάδοση της οθόνης.</translation>
 <translation id="3364721542077212959">Εργαλεία γραφίδας</translation>
@@ -193,6 +198,7 @@
 <translation id="4072264167173457037">Μεσαίο σήμα</translation>
 <translation id="4146833061457621061">Αναπαραγωγή μουσικής</translation>
 <translation id="4181841719683918333">Γλώσσες</translation>
+<translation id="4195877955194704651">Κουμπί αυτόματων κλικ</translation>
 <translation id="4217571870635786043">Υπαγόρευση</translation>
 <translation id="4261870227682513959">Εμφάνιση ρυθμίσεων ειδοποιήσεων. Οι ειδοποιήσεις είναι απενεργοποιημένες.</translation>
 <translation id="4269883910223712419">Ο διαχειριστής αυτής της συσκευής μπορεί να εκτελεί τις ακόλουθες ενέργειες:</translation>
@@ -230,6 +236,7 @@
 <translation id="479989351350248267">search</translation>
 <translation id="4804818685124855865">Αποσύνδεση</translation>
 <translation id="4849058404725798627">Επισήμανση αντικειμένου με εστίαση στο πληκτρολόγιο</translation>
+<translation id="485592688953820832">Καμία ενέργεια (παύση)</translation>
 <translation id="4872237917498892622">Alt+Search ή Shift</translation>
 <translation id="4890187583552566966">Ο Βοηθός Google είναι απενεργοποιημένος από τον διαχειριστή σας.</translation>
 <translation id="4895488851634969361">Η μπαταρία είναι πλήρης.</translation>
@@ -256,6 +263,7 @@
 <translation id="5430931332414098647">Άμεση σύνδεση</translation>
 <translation id="5431825016875453137">OpenVPN / L2TP</translation>
 <translation id="544691375626129091">Όλοι οι διαθέσιμοι χρήστες έχουν ήδη προστεθεί σε αυτήν την περίοδο σύνδεσης.</translation>
+<translation id="5465662442746197494">Χρειάζεστε βοήθεια;</translation>
 <translation id="5496819745535887422">Ο διαχειριστής σας κάνει επαναφορά στη συσκευή σας. Όλα τα δεδομένα θα διαγραφούν όταν γίνει επανεκκίνηση της συσκευής.</translation>
 <translation id="553675580533261935">Έξοδος από περίοδο σύνδεσης</translation>
 <translation id="5537725057119320332">Μετάδοση</translation>
@@ -264,7 +272,6 @@
 <translation id="5571066253365925590">Το Bluetooth έχει ενεργοποιηθεί</translation>
 <translation id="5597451508971090205"><ph name="SHORT_WEEKDAY" />, <ph name="DATE" /></translation>
 <translation id="5600837773213129531">Πιέστε Ctrl + Alt + Z, για να απενεργοποιήσετε τα εκφωνημένα σχόλια.</translation>
-<translation id="5626283214046138476">Ο λογαριασμός εποπτευόμενου χρήστη σας θα λήξει σύντομα.</translation>
 <translation id="5648021990716966815">Υποδοχή μικροφώνου</translation>
 <translation id="5669267381087807207">Ενεργοποίηση</translation>
 <translation id="5673434351075758678">Από "<ph name="FROM_LOCALE" />" σε "<ph name="TO_LOCALE" />" μετά τον συγχρονισμό των ρυθμίσεων.</translation>
@@ -368,6 +375,7 @@
 <translation id="7348093485538360975">Πληκτρολόγιο οθόνης</translation>
 <translation id="735745346212279324">Το VPN αποσυνδέθηκε</translation>
 <translation id="7377169924702866686">Το Caps Lock είναι ενεργοποιημένο.</translation>
+<translation id="7384299914270925461"><ph name="SIGN" /><ph name="MINUTES_REMAINING" />:<ph name="SECONDS_REMAINING" /> δ.</translation>
 <translation id="7398254312354928459">Έγινε εναλλαγή της σύνδεσης δικτύου</translation>
 <translation id="742594950370306541">Η κάμερα δεν χρησιμοποιείται.</translation>
 <translation id="743058460480092004">Η κάμερα και το μικρόφωνο χρησιμοποιούνται.</translation>
@@ -419,13 +427,17 @@
 <translation id="8113423164597455979">Ενεργές, όλες οι εφαρμογές</translation>
 <translation id="8132793192354020517">Έγινε σύνδεση με το δίκτυο <ph name="NAME" /></translation>
 <translation id="813913629614996137">Εκκίνηση…</translation>
+<translation id="8142441511840089262">Διπλό κλικ</translation>
 <translation id="8142699993796781067">Ιδιωτικό δίκτυο</translation>
+<translation id="8167567890448493835">Χρησιμοποιείτε <ph name="LOCALE_NAME" /></translation>
 <translation id="8190698733819146287">Προσαρμογή γλωσσών και εισόδου...</translation>
 <translation id="8192202700944119416">Οι ειδοποιήσεις είναι κρυφές.</translation>
+<translation id="8203795194971602413">Δεξί κλικ</translation>
 <translation id="8236042855478648955">Ώρα για διάλειμμα</translation>
 <translation id="8261506727792406068">Διαγραφή</translation>
 <translation id="8297006494302853456">Αδύναμο</translation>
 <translation id="8308637677604853869">Προηγούμενο μενού</translation>
+<translation id="8332664326438198339">Επιστροφή στην Εφαρμογή εκκίνησης</translation>
 <translation id="8341451174107936385"><ph name="UNLOCK_MORE_FEATURES" />  <ph name="GET_STARTED" /></translation>
 <translation id="8351131234907093545">Δημιουργία σημείωσης</translation>
 <translation id="8375916635258623388">Η συσκευή <ph name="DEVICE_NAME" /> και το τηλέφωνό σας θα συνδεθούν αυτόματα</translation>
@@ -441,7 +453,6 @@
 <translation id="8454013096329229812">Το Wi-Fi έχει ενεργοποιηθεί.</translation>
 <translation id="847056008324733326">Εμφάνιση ρυθμίσεων κλίμακας</translation>
 <translation id="8477270416194247200">Πατήστε Alt+Search ή Shift για ακύρωση.</translation>
-<translation id="8484916590211895857"><ph name="NAME" />: Επανασύνδεση…</translation>
 <translation id="8513108775083588393">Αυτόματη περιστροφή</translation>
 <translation id="8517041960877371778">Δεν είναι δυνατή η φόρτιση της συσκευής <ph name="DEVICE_TYPE" /> ενώ είναι ενεργοποιημένη.</translation>
 <translation id="8627191004499078455">Συνδέθηκε στη συσκευή <ph name="DEVICE_NAME" /></translation>
@@ -456,9 +467,7 @@
 <translation id="8734991477317290293">Μπορεί να επιχειρεί να υποκλέψει τα πατήματα πλήκτρων σας</translation>
 <translation id="8735953464173050365">Εμφάνιση ρυθμίσεων πληκτρολογίου. Έχει επιλεχθεί το πληκτρολόγιο <ph name="KEYBOARD_NAME" />.</translation>
 <translation id="875593634123171288">Εμφάνιση ρυθμίσεων VPN</translation>
-<translation id="8809737090443522491">Πληκτρολογήστε το όνομα μιας εφαρμογής ή ενός εγγράφου</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
-<translation id="8825534185036233643">Δεν υποστηρίζεται ο κατοπτρισμός με περισσότερες από δύο οθόνες.</translation>
 <translation id="8828714802988429505">90°</translation>
 <translation id="8843682306134542540">Εναλλαγή κλειδώματος περιστροφής. <ph name="STATE_TEXT" /></translation>
 <translation id="8850991929411075241">Πλήκτρο αναζήτησης+Esc</translation>
@@ -466,7 +475,7 @@
 <translation id="8874184842967597500">Δεν υπάρχει σύνδεση</translation>
 <translation id="8877788021141246043">Ορισμός υπενθύμισης</translation>
 <translation id="8878886163241303700">Επέκταση οθόνης</translation>
-<translation id="8898978413391960553">00:00 δευτ.</translation>
+<translation id="890616557918890486">Αλλαγή πηγής</translation>
 <translation id="8921624153894383499">Ο Βοηθός Google δεν είναι διαθέσιμος σε αυτήν τη γλώσσα.</translation>
 <translation id="8938800817013097409">Συσκευή USB-C (πίσω δεξιά θύρα)</translation>
 <translation id="8940956008527784070">Χαμηλή στάθμη μπαταρίας (<ph name="PERCENTAGE" />%)</translation>

@@ -44,6 +44,7 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "services/network/public/cpp/features.h"
+#include "services/service_manager/public/mojom/interface_provider.mojom-test-utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace content {
@@ -1378,11 +1379,15 @@ class ScopedFakeInterfaceProviderRequestInjector
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     url_of_last_commit_ = params->url;
-    original_request_of_last_commit_ = std::move(*interface_provider_request);
-    *interface_provider_request = std::move(next_fake_request_);
+    if (interface_params) {
+      original_request_of_last_commit_ =
+          std::move(interface_params->interface_provider_request);
+      interface_params->interface_provider_request =
+          std::move(next_fake_request_);
+    }
     return true;
   }
 
@@ -2009,6 +2014,45 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
   crash_observer.Wait();
   RunPostedTasks();
   EXPECT_EQ(0, process->get_media_stream_count_for_testing());
+}
+
+// Test that a frame is visible/hidden depending on its WebContents visibility
+// state.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest,
+                       VisibilityScrolledOutOfView) {
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  GURL main_frame(embedded_test_server()->GetURL("/iframe_out_of_view.html"));
+  GURL child_url(embedded_test_server()->GetURL("/hello.html"));
+
+  // This will set up the page frame tree as A(A1()).
+  ASSERT_TRUE(NavigateToURL(shell(), main_frame));
+  FrameTreeNode* root = web_contents->GetFrameTree()->root();
+  FrameTreeNode* nested_iframe_node = root->child_at(0);
+  NavigateFrameToURL(nested_iframe_node, child_url);
+
+  ASSERT_EQ(blink::mojom::FrameVisibility::kRenderedOutOfViewport,
+            nested_iframe_node->current_frame_host()->visibility());
+}
+
+// Test that a frame is visible/hidden depending on its WebContents visibility
+// state.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostImplBrowserTest, VisibilityChildInView) {
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+
+  GURL main_frame(embedded_test_server()->GetURL("/iframe_clipped.html"));
+  GURL child_url(embedded_test_server()->GetURL("/hello.html"));
+
+  // This will set up the page frame tree as A(A1()).
+  ASSERT_TRUE(NavigateToURL(shell(), main_frame));
+  FrameTreeNode* root = web_contents->GetFrameTree()->root();
+  FrameTreeNode* nested_iframe_node = root->child_at(0);
+  NavigateFrameToURL(nested_iframe_node, child_url);
+
+  ASSERT_EQ(blink::mojom::FrameVisibility::kRenderedInViewport,
+            nested_iframe_node->current_frame_host()->visibility());
 }
 
 }  // namespace content

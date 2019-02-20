@@ -4,13 +4,12 @@
 
 package org.chromium.chrome.browser.compositor.layouts.phone;
 
-import android.animation.Animator;
-import android.animation.AnimatorSet;
 import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.SystemClock;
 import android.support.annotation.IntDef;
+import android.util.Pair;
 import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.FrameLayout;
@@ -57,6 +56,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -64,41 +64,43 @@ import java.util.List;
  */
 public abstract class StackLayoutBase extends Layout {
     private static final FloatProperty<StackLayoutBase> INNER_MARGIN_PERCENT =
-            new FloatProperty<StackLayoutBase>("") {
+            new FloatProperty<StackLayoutBase>("INNER_MARGIN_PERCENT") {
                 @Override
                 public void setValue(StackLayoutBase layoutBase, float v) {
-                    layoutBase.setInnerMarginPercent(v);
+                    layoutBase.mInnerMarginPercent = v;
                 }
 
                 @Override
-                public Float get(StackLayoutBase layoutTab) {
-                    return null;
+                public Float get(StackLayoutBase layoutBase) {
+                    return layoutBase.mInnerMarginPercent;
                 }
             };
 
     private static final FloatProperty<StackLayoutBase> STACK_OFFSET_Y_PERCENT =
-            new FloatProperty<StackLayoutBase>("") {
+            new FloatProperty<StackLayoutBase>("STACK_OFFSET_Y_PERCENT") {
                 @Override
                 public void setValue(StackLayoutBase layoutBase, float v) {
-                    layoutBase.setStackOffsetYPercent(v);
+                    layoutBase.mStackOffsetYPercent = v;
                 }
 
                 @Override
-                public Float get(StackLayoutBase layoutTab) {
-                    return null;
+                public Float get(StackLayoutBase layoutBase) {
+                    return layoutBase.mStackOffsetYPercent;
                 }
             };
 
     private static final FloatProperty<StackLayoutBase> STACK_SNAP =
-            new FloatProperty<StackLayoutBase>("") {
+            new FloatProperty<StackLayoutBase>("STACK_SNAP") {
                 @Override
                 public void setValue(StackLayoutBase layoutBase, float v) {
                     layoutBase.setStackSnap(v);
                 }
 
                 @Override
-                public Float get(StackLayoutBase layoutTab) {
-                    return null;
+                public Float get(StackLayoutBase layoutBase) {
+                    return layoutBase.mRenderedScrollOffset == layoutBase.mScrollIndexOffset
+                            ? layoutBase.mRenderedScrollOffset
+                            : null;
                 }
             };
 
@@ -224,7 +226,8 @@ public abstract class StackLayoutBase extends Layout {
 
     private StackLayoutGestureHandler mGestureHandler;
 
-    private AnimatorSet mLayoutAnimations;
+    private final ArrayList<Pair<CompositorAnimator, FloatProperty>> mLayoutAnimations =
+            new ArrayList<>();
 
     private class StackLayoutGestureHandler implements GestureHandler {
         @Override
@@ -379,29 +382,11 @@ public abstract class StackLayoutBase extends Layout {
     }
 
     /**
-     * Sets the stack offset percent for vertical axis.
-     *
-     * @param v Value to set.
-     */
-    public void setStackOffsetYPercent(float v) {
-        mStackOffsetYPercent = v;
-    }
-
-    /**
-     * Sets the inner margin percent.
-     *
-     * @param v Value to set.
-     */
-    public void setInnerMarginPercent(float v) {
-        mInnerMarginPercent = v;
-    }
-
-    /**
      * Sets the stack stap value.
      *
      * @param v Value to set.
      */
-    public void setStackSnap(float v) {
+    private void setStackSnap(float v) {
         mRenderedScrollOffset = v;
         mScrollIndexOffset = v;
     }
@@ -704,15 +689,13 @@ public abstract class StackLayoutBase extends Layout {
     @Override
     public boolean onUpdateAnimation(long time, boolean jumpToEnd) {
         boolean animationsWasDone = true;
-        if (mLayoutAnimations != null) {
+        if (!mLayoutAnimations.isEmpty()) {
             if (jumpToEnd) {
-                mLayoutAnimations.end();
+                forceAnimationToFinish();
             } else {
-                animationsWasDone = !mLayoutAnimations.isRunning();
+                animationsWasDone = !isLayoutAnimating();
             }
-
             if (animationsWasDone || jumpToEnd) {
-                mLayoutAnimations = null;
                 onAnimationFinished();
             }
         }
@@ -1586,14 +1569,13 @@ public abstract class StackLayoutBase extends Layout {
      */
     protected void addToAnimation(FloatProperty<StackLayoutBase> property, float start, float end,
             long duration, long startTime) {
-        if (mLayoutAnimations == null) mLayoutAnimations = new AnimatorSet();
-
         CompositorAnimator compositorAnimator = CompositorAnimator.ofFloatProperty(
                 getAnimationHandler(), this, property, start, end, duration);
         compositorAnimator.setStartDelay(startTime);
+        compositorAnimator.start();
 
-        mLayoutAnimations.playTogether(compositorAnimator);
-        mLayoutAnimations.start();
+        mLayoutAnimations.add(
+                new Pair<CompositorAnimator, FloatProperty>(compositorAnimator, property));
 
         requestUpdate();
     }
@@ -1601,10 +1583,11 @@ public abstract class StackLayoutBase extends Layout {
     @Override
     protected void forceAnimationToFinish() {
         super.forceAnimationToFinish();
-        if (mLayoutAnimations != null) {
-            mLayoutAnimations.end();
-            mLayoutAnimations = null;
+
+        for (int i = 0; i < mLayoutAnimations.size(); i++) {
+            mLayoutAnimations.get(i).first.end();
         }
+        mLayoutAnimations.clear();
     }
 
     /**
@@ -1613,17 +1596,25 @@ public abstract class StackLayoutBase extends Layout {
      * @param prop   The property to search for.
      */
     protected void cancelAnimation(FloatProperty<StackLayoutBase> property) {
-        if (mLayoutAnimations == null) return;
+        Pair<CompositorAnimator, FloatProperty> a;
+        Iterator<Pair<CompositorAnimator, FloatProperty>> animationIterator =
+                mLayoutAnimations.iterator();
 
-        for (Animator animator : mLayoutAnimations.getChildAnimations()) {
-            CompositorAnimator a = (CompositorAnimator) animator;
-            if (a.isOfFloatProperty(property)) a.cancel();
+        while (animationIterator.hasNext()) {
+            a = animationIterator.next();
+            if (a.second == property) {
+                a.first.cancel();
+                animationIterator.remove();
+            }
         }
     }
 
     @Override
     @VisibleForTesting
     public boolean isLayoutAnimating() {
-        return mLayoutAnimations != null && mLayoutAnimations.isRunning();
+        for (int i = 0; i < mLayoutAnimations.size(); i++) {
+            if (mLayoutAnimations.get(i).first.isRunning()) return true;
+        }
+        return false;
     }
 }

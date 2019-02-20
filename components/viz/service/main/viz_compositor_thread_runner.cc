@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
@@ -25,8 +26,12 @@
 #if defined(USE_VIZ_DEVTOOLS)
 #include "components/ui_devtools/css_agent.h"
 #include "components/ui_devtools/devtools_server.h"
-#include "components/ui_devtools/viz_views/dom_agent_viz.h"
-#include "components/ui_devtools/viz_views/overlay_agent_viz.h"
+#include "components/ui_devtools/viz/dom_agent_viz.h"
+#include "components/ui_devtools/viz/overlay_agent_viz.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/ozone_platform.h"
 #endif
 
 namespace viz {
@@ -45,10 +50,14 @@ std::unique_ptr<VizCompositorThreadType> CreateAndStartCompositorThread() {
 
   base::Thread::Options thread_options;
 #if defined(OS_WIN)
-  // Windows needs a UI message loop for child HWND. Other platforms can use the
-  // default message loop type.
+  // Windows needs a UI message loop for child HWND.
   thread_options.message_loop_type = base::MessageLoop::TYPE_UI;
-#elif defined(OS_CHROMEOS)
+#elif defined(USE_OZONE)
+  // We may need a non-default message loop type for the platform surface.
+  thread_options.message_loop_type =
+      ui::OzonePlatform::GetInstance()->GetMessageLoopTypeForGpu();
+#endif
+#if defined(OS_CHROMEOS)
   thread_options.priority = base::ThreadPriority::DISPLAY;
 #endif
 

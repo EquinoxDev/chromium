@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ash/public/cpp/app_types.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "chromeos/constants/chromeos_switches.h"
@@ -204,6 +205,11 @@ bool IsArcDataCleanupOnStartRequested() {
 bool IsArcAppSyncFlowDisabled() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(
       chromeos::switches::kArcDisableAppSync);
+}
+
+bool IsArcLocaleSyncDisabled() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      chromeos::switches::kArcDisableLocaleSync);
 }
 
 bool IsArcPlayAutoInstallDisabled() {

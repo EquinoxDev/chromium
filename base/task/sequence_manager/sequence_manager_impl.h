@@ -17,7 +17,6 @@
 #include "base/atomic_sequence_num.h"
 #include "base/cancelable_callback.h"
 #include "base/containers/circular_deque.h"
-#include "base/debug/task_annotator.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
@@ -26,6 +25,7 @@
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
+#include "base/task/common/task_annotator.h"
 #include "base/task/sequence_manager/associated_thread_id.h"
 #include "base/task/sequence_manager/enqueue_order.h"
 #include "base/task/sequence_manager/moveable_auto_lock.h"
@@ -89,26 +89,17 @@ class BASE_EXPORT SequenceManagerImpl
   static std::unique_ptr<SequenceManagerImpl> CreateOnCurrentThread(
       SequenceManager::Settings settings = SequenceManager::Settings());
 
-  // Create a SequenceManager for a future thread that will run the provided
-  // MessageLoop. The SequenceManager can be initialized on the current thread
-  // and then needs to be bound and initialized on the target thread by calling
-  // BindToCurrentThread() and CompleteInitializationOnBoundThread() during the
-  // thread's startup. If |message_loop| is null then BindToMessageLoop() must
-  // be called instead of CompleteInitializationOnBoundThread.
-  //
-  // This function should be called only once per MessageLoop.
+  // Create an unbound SequenceManager (typically for a future thread). The
+  // SequenceManager can be initialized on the current thread and then needs to
+  // be bound and initialized on the target thread by calling one of the Bind*()
+  // methods.
   static std::unique_ptr<SequenceManagerImpl> CreateUnbound(
-      MessageLoopBase* message_loop_base,
-      SequenceManager::Settings settings = Settings());
-
-  static std::unique_ptr<SequenceManagerImpl> CreateUnboundWithPump(
       SequenceManager::Settings settings);
 
   // SequenceManager implementation:
   void BindToCurrentThread() override;
   void BindToMessageLoop(MessageLoopBase* message_loop_base) override;
   void BindToMessagePump(std::unique_ptr<MessagePump> message_pump) override;
-  void CompleteInitializationOnBoundThread() override;
   void SetObserver(Observer* observer) override;
   void AddTaskTimeObserver(TaskTimeObserver* task_time_observer) override;
   void RemoveTaskTimeObserver(TaskTimeObserver* task_time_observer) override;
@@ -157,19 +148,17 @@ class BASE_EXPORT SequenceManagerImpl
   void SetAddQueueTimeToTasks(bool enable) override;
   void SetTaskExecutionAllowed(bool allowed) override;
   bool IsTaskExecutionAllowed() const override;
-#if defined(OS_IOS) || defined(OS_ANDROID)
+#if defined(OS_IOS)
   void AttachToMessagePump() override;
 #endif
   bool IsIdleForTesting() override;
   void BindToCurrentThread(std::unique_ptr<MessagePump> pump) override;
   void DeletePendingTasks() override;
   bool HasTasks() override;
+  MessageLoop::Type GetType() const override;
 
-  // Requests that a task to process work is posted on the main task runner.
-  // These tasks are de-duplicated in two buckets: main-thread and all other
-  // threads. This distinction is done to reduce the overhead from locks, we
-  // assume the main-thread path will be hot.
-  void MaybeScheduleImmediateWork(const Location& from_here);
+  // Requests that a task to process work is scheduled.
+  void ScheduleWork();
 
   // Requests that a delayed task to process work is posted on the main task
   // runner. These delayed tasks are de-duplicated. Must be called on the thread
@@ -220,7 +209,7 @@ class BASE_EXPORT SequenceManagerImpl
     ~AnyThread();
 
     // Task queues with newly available work on the incoming queue.
-    internal::IncomingImmediateWorkList* incoming_immediate_work_list = nullptr;
+    internal::EmptyQueuesToReloadList* empty_queues_to_reload_list = nullptr;
   };
 
   // SequenceManager maintains a queue of non-nestable tasks since they're
@@ -281,7 +270,7 @@ class BASE_EXPORT SequenceManagerImpl
     //   from underneath.
 
     // Scratch space used to store the contents of
-    // any_thread().incoming_immediate_work_list for use by
+    // any_thread().empty_queues_to_reload_list for use by
     // ReloadEmptyWorkQueues.  We keep hold of this vector to avoid unnecessary
     // memory allocations. This should have the same size as |active_queues|.
     // DO NOT RELY ON THE VALIDITY OF THE POINTERS WITHIN!
@@ -304,6 +293,8 @@ class BASE_EXPORT SequenceManagerImpl
     ObserverList<MessageLoopCurrent::DestructionObserver>::Unchecked
         destruction_observers;
   };
+
+  void CompleteInitializationOnBoundThread();
 
   // TaskQueueSelector::Observer:
   void OnTaskQueueEnabled(internal::TaskQueueImpl* queue) override;
@@ -335,18 +326,19 @@ class BASE_EXPORT SequenceManagerImpl
   // Adds |queue| to |any_thread().has_incoming_immediate_work_| and if
   // |schedule_work| is true it makes sure a DoWork is posted.
   // Can be called from any thread.
-  void OnQueueHasIncomingImmediateWork(internal::TaskQueueImpl* queue,
-                                       internal::EnqueueOrder enqueue_order,
-                                       bool schedule_work);
+  void OnEmptyQueueHasIncomingImmediateWork(
+      internal::TaskQueueImpl* queue,
+      internal::EnqueueOrder enqueue_order,
+      bool schedule_work);
 
   // Returns true if |task_queue| was added to the list, or false if it was
   // already in the list.  If |task_queue| was inserted, the |order| is set
   // with |enqueue_order|.
-  bool AddToIncomingImmediateWorkList(internal::TaskQueueImpl* task_queue,
-                                      internal::EnqueueOrder enqueue_order);
-  void RemoveFromIncomingImmediateWorkList(internal::TaskQueueImpl* task_queue);
+  bool AddToEmptyQueuesToReloadList(internal::TaskQueueImpl* task_queue,
+                                    internal::EnqueueOrder enqueue_order);
+  void RemoveFromEmptyQueuesToReloadList(internal::TaskQueueImpl* task_queue);
 
-  // Calls |ReloadImmediateWorkQueueIfEmpty| on all queues in
+  // Calls |TakeImmediateIncomingQueueTasks| on all queues in
   // |main_thread_only().queues_to_reload|.
   void ReloadEmptyWorkQueues();
 
@@ -396,7 +388,7 @@ class BASE_EXPORT SequenceManagerImpl
   // https://crbug.com/757940
   bool Validate();
 
-  int32_t memory_corruption_sentinel_;
+  volatile int32_t memory_corruption_sentinel_;
 
   MainThreadOnly main_thread_only_;
   MainThreadOnly& main_thread_only() {

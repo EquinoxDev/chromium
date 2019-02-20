@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/i18n/number_formatting.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
@@ -200,10 +201,11 @@ NotificationPlatformBridgeMac::~NotificationPlatformBridgeMac() {
 }
 
 // static
-NotificationPlatformBridge* NotificationPlatformBridge::Create() {
+std::unique_ptr<NotificationPlatformBridge>
+NotificationPlatformBridge::Create() {
   base::scoped_nsobject<AlertDispatcherImpl> alert_dispatcher(
       [[AlertDispatcherImpl alloc] init]);
-  return new NotificationPlatformBridgeMac(
+  return std::make_unique<NotificationPlatformBridgeMac>(
       [NSUserNotificationCenter defaultUserNotificationCenter],
       alert_dispatcher.get());
 }
@@ -460,7 +462,7 @@ bool NotificationPlatformBridgeMac::VerifyNotificationData(
 - (void)userNotificationCenter:(NSUserNotificationCenter*)center
        didActivateNotification:(NSUserNotification*)notification {
   NSDictionary* notificationResponse =
-      [NotificationResponseBuilder buildDictionary:notification];
+      [NotificationResponseBuilder buildActivatedDictionary:notification];
   NotificationPlatformBridgeMac::ProcessNotificationResponse(
       notificationResponse);
 }
@@ -474,9 +476,23 @@ bool NotificationPlatformBridgeMac::VerifyNotificationData(
 - (void)userNotificationCenter:(NSUserNotificationCenter*)center
                didDismissAlert:(NSUserNotification*)notification {
   NSDictionary* notificationResponse =
-      [NotificationResponseBuilder buildDictionary:notification];
+      [NotificationResponseBuilder buildDismissedDictionary:notification];
   NotificationPlatformBridgeMac::ProcessNotificationResponse(
       notificationResponse);
+}
+
+// Overriden from _NSUserNotificationCenterDelegatePrivate.
+// Emitted when a user closes a notification from the notification center.
+// This is an undocumented method introduced in 10.8 according to
+// https://bugzilla.mozilla.org/show_bug.cgi?id=852648#c21
+- (void)userNotificationCenter:(NSUserNotificationCenter*)center
+    didRemoveDeliveredNotifications:(NSArray*)notifications {
+  for (NSUserNotification* notification in notifications) {
+    NSDictionary* notificationResponse =
+        [NotificationResponseBuilder buildDismissedDictionary:notification];
+    NotificationPlatformBridgeMac::ProcessNotificationResponse(
+        notificationResponse);
+  }
 }
 
 - (BOOL)userNotificationCenter:(NSUserNotificationCenter*)center
@@ -552,9 +568,11 @@ getDisplayedAlertsForProfileId:(NSString*)profileId
                      incognito:(BOOL)incognito
             notificationCenter:(NSUserNotificationCenter*)notificationCenter
                       callback:(GetDisplayedNotificationsCallback)callback {
+  // Create a copyable version of the OnceCallback because ObjectiveC blocks
+  // copy all referenced variables via copy constructor.
+  auto copyable_callback = base::AdaptCallbackForRepeating(std::move(callback));
   auto reply = ^(NSArray* alerts) {
-    std::unique_ptr<std::set<std::string>> displayedNotifications =
-        std::make_unique<std::set<std::string>>();
+    std::set<std::string> displayedNotifications;
 
     for (NSUserNotification* toast in
          [notificationCenter deliveredNotifications]) {
@@ -565,18 +583,18 @@ getDisplayedAlertsForProfileId:(NSString*)profileId
           boolValue];
       if ([toastProfileId isEqualToString:profileId] &&
           incognito == incognitoNotification) {
-        displayedNotifications->insert(base::SysNSStringToUTF8([toast.userInfo
+        displayedNotifications.insert(base::SysNSStringToUTF8([toast.userInfo
             objectForKey:notification_constants::kNotificationId]));
       }
     }
 
     for (NSString* alert in alerts)
-      displayedNotifications->insert(base::SysNSStringToUTF8(alert));
+      displayedNotifications.insert(base::SysNSStringToUTF8(alert));
 
     base::PostTaskWithTraits(
         FROM_HERE, {content::BrowserThread::UI},
-        base::Bind(callback, base::Passed(&displayedNotifications),
-                   true /* supports_synchronization */));
+        base::BindOnce(copyable_callback, std::move(displayedNotifications),
+                       true /* supports_synchronization */));
   };
 
   [[self serviceProxy] getDisplayedAlertsForProfileId:profileId

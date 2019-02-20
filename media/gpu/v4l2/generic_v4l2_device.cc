@@ -299,8 +299,14 @@ scoped_refptr<gl::GLImage> GenericV4L2Device::CreateGLImage(
   gfx::NativePixmapHandle native_pixmap_handle;
 
   std::vector<base::ScopedFD> duped_fds;
-  for (const auto& fd : dmabuf_fds) {
-    duped_fds.emplace_back(HANDLE_EINTR(dup(fd.get())));
+  // The number of file descriptors can be less than the number of planes when
+  // v4l2 pix fmt, |fourcc|, is a single plane format. Duplicating the last
+  // file descriptor should be safely used for the later planes, because they
+  // are on the last buffer.
+  for (size_t i = 0; i < num_planes; ++i) {
+    int fd =
+        i < dmabuf_fds.size() ? dmabuf_fds[i].get() : dmabuf_fds.back().get();
+    duped_fds.emplace_back(HANDLE_EINTR(dup(fd)));
     if (!duped_fds.back().is_valid()) {
       VPLOGF(1) << "Failed duplicating a dmabuf fd";
       return nullptr;
@@ -332,19 +338,15 @@ scoped_refptr<gl::GLImage> GenericV4L2Device::CreateGLImage(
   }
 
   gfx::BufferFormat buffer_format = gfx::BufferFormat::BGRA_8888;
-  unsigned internal_format = GL_BGRA_EXT;
   switch (fourcc) {
     case DRM_FORMAT_ARGB8888:
       buffer_format = gfx::BufferFormat::BGRA_8888;
-      internal_format = GL_BGRA_EXT;
       break;
     case DRM_FORMAT_NV12:
       buffer_format = gfx::BufferFormat::YUV_420_BIPLANAR;
-      internal_format = GL_RGB_YCBCR_420V_CHROMIUM;
       break;
     case DRM_FORMAT_YVU420:
       buffer_format = gfx::BufferFormat::YVU_420;
-      internal_format = GL_RGB_YCRCB_420_CHROMIUM;
       break;
     default:
       NOTREACHED();
@@ -358,9 +360,9 @@ scoped_refptr<gl::GLImage> GenericV4L2Device::CreateGLImage(
 
   DCHECK(pixmap);
 
-  scoped_refptr<gl::GLImageNativePixmap> image(
-      new gl::GLImageNativePixmap(size, internal_format));
-  bool ret = image->Initialize(pixmap.get(), buffer_format);
+  auto image =
+      base::MakeRefCounted<gl::GLImageNativePixmap>(size, buffer_format);
+  bool ret = image->Initialize(pixmap.get());
   DCHECK(ret);
   return image;
 }

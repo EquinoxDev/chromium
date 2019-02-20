@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/time/time.h"
 #include "chrome/browser/apps/app_service/app_icon_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/internal_app/internal_app_item.h"
@@ -31,17 +32,24 @@ apps::mojom::AppPtr Convert(const app_list::InternalApp& internal_app) {
   app->app_id = internal_app.app_id;
   app->readiness = apps::mojom::Readiness::kReady;
   app->name = l10n_util::GetStringUTF8(internal_app.name_string_resource_id);
+  app->short_name = app->name;
 
   app->icon_key = apps::mojom::IconKey::New();
   app->icon_key->icon_type = apps::mojom::IconType::kResource;
   app->icon_key->u_key = static_cast<uint64_t>(internal_app.icon_resource_id);
 
+  app->last_launch_time = base::Time();
+  app->install_time = base::Time();
+
+  app->installed_internally = apps::mojom::OptionalBool::kTrue;
+  app->is_platform_app = apps::mojom::OptionalBool::kFalse;
   app->show_in_launcher = internal_app.show_in_launcher
                               ? apps::mojom::OptionalBool::kTrue
                               : apps::mojom::OptionalBool::kFalse;
   app->show_in_search = internal_app.searchable
                             ? apps::mojom::OptionalBool::kTrue
                             : apps::mojom::OptionalBool::kFalse;
+  app->show_in_management = apps::mojom::OptionalBool::kFalse;
 
   return app;
 }
@@ -99,17 +107,18 @@ void BuiltInChromeOsApps::Connect(apps::mojom::SubscriberPtr subscriber,
 }
 
 void BuiltInChromeOsApps::LoadIcon(
-    const std::string& app_id,
     apps::mojom::IconKeyPtr icon_key,
     apps::mojom::IconCompression icon_compression,
     int32_t size_hint_in_dip,
+    bool allow_placeholder_icon,
     LoadIconCallback callback) {
+  constexpr bool is_placeholder_icon = false;
   if (!icon_key.is_null() &&
       (icon_key->icon_type == apps::mojom::IconType::kResource) &&
       (icon_key->u_key != 0) && (icon_key->u_key <= INT_MAX)) {
     int resource_id = static_cast<int>(icon_key->u_key);
-    LoadIconFromResource(icon_compression, size_hint_in_dip,
-                         std::move(callback), resource_id);
+    LoadIconFromResource(icon_compression, size_hint_in_dip, resource_id,
+                         is_placeholder_icon, std::move(callback));
     return;
   }
   // On failure, we still run the callback, with the zero IconValue.
@@ -124,18 +133,33 @@ void BuiltInChromeOsApps::Launch(const std::string& app_id,
     case apps::mojom::LaunchSource::kUnknown:
       break;
     case apps::mojom::LaunchSource::kFromAppListGrid:
+    case apps::mojom::LaunchSource::kFromAppListGridContextMenu:
       InternalAppItem::RecordActiveHistogram(app_id);
       break;
-    case apps::mojom::LaunchSource::kFromAppListRecommendation:
+    case apps::mojom::LaunchSource::kFromAppListQuery:
+    case apps::mojom::LaunchSource::kFromAppListQueryContextMenu:
+      app_list::RecordHistogram(app_list::APP_SEARCH_RESULT);
       app_list::InternalAppResult::RecordOpenHistogram(app_id);
       break;
-    case apps::mojom::LaunchSource::kFromAppListQueryResult:
-      app_list::RecordHistogram(app_list::APP_SEARCH_RESULT);
+    case apps::mojom::LaunchSource::kFromAppListRecommendation:
       app_list::InternalAppResult::RecordOpenHistogram(app_id);
       break;
   }
 
   app_list::OpenInternalApp(app_id, profile_, event_flags);
+}
+
+void BuiltInChromeOsApps::SetPermission(const std::string& app_id,
+                                        apps::mojom::PermissionPtr permission) {
+  NOTIMPLEMENTED();
+}
+
+void BuiltInChromeOsApps::Uninstall(const std::string& app_id) {
+  NOTIMPLEMENTED();
+}
+
+void BuiltInChromeOsApps::OpenNativeSettings(const std::string& app_id) {
+  NOTIMPLEMENTED();
 }
 
 }  // namespace apps

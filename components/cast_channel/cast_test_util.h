@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/cast_channel/cast_message_handler.h"
@@ -166,8 +167,19 @@ class MockCastMessageHandler : public CastMessageHandler {
   MOCK_METHOD3(StopSession,
                void(int channel_id,
                     const std::string& session_id,
-                    StopSessionCallback callback));
-  MOCK_METHOD2(SendAppMessage, void(int, const CastMessage&));
+                    ResultCallback callback));
+  MOCK_METHOD2(SendAppMessage,
+               Result(int channel_id, const CastMessage& message));
+  MOCK_METHOD4(SendMediaRequest,
+               base::Optional<int>(int channel_id,
+                                   const base::Value& body,
+                                   const std::string& source_id,
+                                   const std::string& destination_id));
+  MOCK_METHOD4(SendSetVolumeRequest,
+               Result(int channel_id,
+                      const base::Value& body,
+                      const std::string& source_id,
+                      ResultCallback callback));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockCastMessageHandler);

@@ -79,6 +79,7 @@
 #include "content/browser/loader_delegate_impl.h"
 #include "content/browser/media/capture/audio_mirroring_manager.h"
 #include "content/browser/media/media_internals.h"
+#include "content/browser/media/media_keys_listener_manager_impl.h"
 #include "content/browser/memory/swap_metrics_delegate_uma.h"
 #include "content/browser/net/browser_online_state_observer.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
@@ -138,7 +139,6 @@
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/client_process_impl.h"
 #include "services/resource_coordinator/public/mojom/memory_instrumentation/memory_instrumentation.mojom.h"
 #include "services/resource_coordinator/public/mojom/service_constants.mojom.h"
-#include "services/service_manager/runner/common/client_util.h"
 #include "services/service_manager/zygote/common/zygote_buildflags.h"
 #include "skia/ext/event_tracer_impl.h"
 #include "skia/ext/skia_memory_dump_provider.h"
@@ -167,7 +167,6 @@
 #include "content/browser/android/launcher_thread.h"
 #include "content/browser/android/scoped_surface_request_manager.h"
 #include "content/browser/android/tracing_controller_android.h"
-#include "content/browser/media/android/browser_media_player_manager.h"
 #include "content/browser/screen_orientation/screen_orientation_delegate_android.h"
 #include "media/base/android/media_drm_bridge_client.h"
 #include "ui/android/screen_android.h"
@@ -177,7 +176,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/memory/memory_pressure_monitor_mac.h"
-#include "content/browser/cocoa/system_hotkey_helper_mac.h"
 #include "content/browser/mach_broker_mac.h"
 #include "content/browser/renderer_host/browser_compositor_view_mac.h"
 #include "content/browser/theme_helper_mac.h"
@@ -190,6 +188,7 @@
 #include <shellapi.h>
 
 #include "base/memory/memory_pressure_monitor_win.h"
+#include "content/browser/renderer_host/dwrite_font_lookup_table_builder_win.h"
 #include "net/base/winsock_init.h"
 #include "services/service_manager/sandbox/win/sandbox_win.h"
 #include "ui/display/win/screen_win.h"
@@ -682,10 +681,7 @@ void BrowserMainLoop::MainMessageLoopStart() {
   // PostMainMessageLoopStart() below.
 
   TRACE_EVENT0("startup", "BrowserMainLoop::MainMessageLoopStart");
-
-  if (!base::MessageLoopCurrentForUI::IsSet())
-    main_message_loop_ = std::make_unique<base::MessageLoopForUI>();
-
+  DCHECK(base::MessageLoopCurrentForUI::IsSet());
   InitializeMainThread();
 }
 
@@ -733,12 +729,6 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
   }
 
   {
-    system_stats_monitor_.reset(
-        new base::trace_event::TraceEventSystemStatsMonitor(
-            base::ThreadTaskRunnerHandle::Get()));
-  }
-
-  {
     base::SetRecordActionTaskRunner(
         base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::UI}));
   }
@@ -760,7 +750,7 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
 #if defined(OS_ANDROID)
   {
     TRACE_EVENT0("startup",
-                 "BrowserMainLoop::Subsystem:BrowserMediaPlayerManager");
+                 "BrowserMainLoop::Subsystem:ScopedSurfaceRequestManager");
     if (UsingInProcessGpu()) {
       gpu::ScopedSurfaceRequestConduit::SetInstance(
           ScopedSurfaceRequestManager::GetInstance());
@@ -870,8 +860,6 @@ int BrowserMainLoop::PreCreateThreads() {
 }
 
 void BrowserMainLoop::PreShutdown() {
-  parts_->PreShutdown();
-
   ui::Clipboard::OnPreShutdownForCurrentThread();
 }
 
@@ -1043,8 +1031,6 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
                  "BrowserMainLoop::Subsystem:PostMainMessageLoopRun");
     parts_->PostMainMessageLoopRun();
   }
-
-  system_stats_monitor_.reset();
 
   // Cancel pending requests and prevent new requests.
   if (resource_dispatcher_host_) {
@@ -1450,11 +1436,21 @@ int BrowserMainLoop::BrowserThreadsStarted() {
           switches::kDisableGpuProcessForDX12VulkanInfoCollection)) {
     GpuDataManagerImpl::GetInstance()->RequestGpuSupportedRuntimeVersion();
   }
+
+  if (base::FeatureList::IsEnabled(features::kFontSrcLocalMatching)) {
+    content::DWriteFontLookupTableBuilder::GetInstance()
+        ->ScheduleBuildFontUniqueNameTable();
+  }
 #endif
+
+  if (MediaKeysListenerManager::IsMediaKeysListenerManagerEnabled()) {
+    media_keys_listener_manager_ =
+        std::make_unique<MediaKeysListenerManagerImpl>(
+            content::ServiceManagerConnection::GetForProcess()->GetConnector());
+  }
 
 #if defined(OS_MACOSX)
   ThemeHelperMac::GetInstance();
-  SystemHotkeyHelperMac::GetInstance()->DeferredLoadSystemHotkeys();
 #endif  // defined(OS_MACOSX)
 
   responsiveness_watcher_ = new responsiveness::Watcher;

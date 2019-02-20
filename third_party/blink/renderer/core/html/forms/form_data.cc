@@ -37,7 +37,7 @@
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/network/form_data_encoder.h"
-#include "third_party/blink/renderer/platform/text/line_ending.h"
+#include "third_party/blink/renderer/platform/wtf/text/line_ending.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -68,7 +68,7 @@ class FormDataIterationSource final
     return true;
   }
 
-  void Trace(blink::Visitor* visitor) override {
+  void Trace(Visitor* visitor) override {
     visitor->Trace(form_data_);
     PairIterable<String, FormDataEntryValue>::IterationSource::Trace(visitor);
   }
@@ -79,7 +79,7 @@ class FormDataIterationSource final
 };
 
 String Normalize(const String& input) {
-  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#append-an-entry
+  // https://html.spec.whatwg.org/C/#append-an-entry
   return ReplaceUnmatchedSurrogates(NormalizeLineEndingsToCRLF(input));
 }
 
@@ -96,12 +96,12 @@ FormData::FormData() : encoding_(UTF8Encoding()) {}
 
 FormData* FormData::Create(HTMLFormElement* form,
                            ExceptionState& exception_state) {
-  auto* form_data = MakeGarbageCollected<FormData>();
   // TODO(tkent): Null check should be unnecessary.  We should remove
   // LegacyInterfaceTypeChecking from form_data.idl.  crbug.com/561338
   if (!form)
-    return form_data;
-  if (!form->ConstructEntryList(nullptr, *form_data)) {
+    return MakeGarbageCollected<FormData>();
+  FormData* form_data = form->ConstructEntryList(nullptr, UTF8Encoding());
+  if (!form_data) {
     DCHECK(RuntimeEnabledFeatures::FormDataEventEnabled());
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "The form is constructing entry list.");
@@ -113,7 +113,7 @@ FormData* FormData::Create(HTMLFormElement* form,
   return MakeGarbageCollected<FormData>(*form_data);
 }
 
-void FormData::Trace(blink::Visitor* visitor) {
+void FormData::Trace(Visitor* visitor) {
   visitor->Trace(entries_);
   ScriptWrappable::Trace(visitor);
 }
@@ -344,7 +344,7 @@ FormData::Entry::Entry(const String& name, Blob* blob, const String& filename)
       << "'name' should be a USVString.";
 }
 
-void FormData::Entry::Trace(blink::Visitor* visitor) {
+void FormData::Entry::Trace(Visitor* visitor) {
   visitor->Trace(blob_);
 }
 

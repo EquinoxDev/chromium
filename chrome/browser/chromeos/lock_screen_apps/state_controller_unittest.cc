@@ -13,6 +13,7 @@
 #include "ash/public/interfaces/tray_action.mojom.h"
 #include "ash/session/test_session_controller_client.h"
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
@@ -728,20 +729,6 @@ class LockScreenAppStateNoStylusInputTest : public LockScreenAppStateTest {
   DISALLOW_COPY_AND_ASSIGN(LockScreenAppStateNoStylusInputTest);
 };
 
-// Tests with show-md-login flag set.
-class LockScreenAppStateWebUiLockTest : public LockScreenAppStateTest {
- public:
-  LockScreenAppStateWebUiLockTest() = default;
-  ~LockScreenAppStateWebUiLockTest() override = default;
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    command_line->AppendSwitch(ash::switches::kShowWebUiLock);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(LockScreenAppStateWebUiLockTest);
-};
-
 }  // namespace
 
 TEST_F(LockScreenAppStateKioskUserTest, SetPrimaryProfile) {
@@ -1167,35 +1154,6 @@ TEST_F(LockScreenAppStateTest, HandleActionWithLaunchFailure) {
       {TrayActionState::kLaunching, TrayActionState::kAvailable},
       "Second failed launch on new note request");
   EXPECT_EQ(2, app_manager()->launch_count());
-}
-
-TEST_F(LockScreenAppStateWebUiLockTest,
-       LaunchActionWhenStylusRemoved_ActionClosedBeforeAnimationDone) {
-  ASSERT_TRUE(InitializeNoteTakingApp(TrayActionState::kAvailable,
-                                      true /* enable_app_launch */));
-  tray_action()->SendNewNoteRequest(LockScreenNoteOrigin::kStylusEject);
-  state_controller()->FlushTrayActionForTesting();
-
-  ExpectObservedStatesMatch({TrayActionState::kLaunching},
-                            "Launch on new note request");
-  ClearObservedStates();
-  // The app should not be launched until the lock UI reports the animation as
-  // complete.
-  EXPECT_EQ(0, app_manager()->launch_count());
-
-  state_controller()->CloseLockScreenNote(
-      CloseLockScreenNoteReason::kUnlockButtonPressed);
-
-  ExpectObservedStatesMatch({TrayActionState::kAvailable},
-                            "Close note before launch animation done.");
-  ClearObservedStates();
-
-  // The app should not be launched when the animation completes if the action
-  // is closed/canceled before that.
-  state_controller()->NewNoteLaunchAnimationDone();
-  EXPECT_EQ(0, app_manager()->launch_count());
-  ExpectObservedStatesMatch(std::vector<TrayActionState>(),
-                            "No state change if canceled");
 }
 
 TEST_F(LockScreenAppStateTest, AppWindowRegistration) {

@@ -59,6 +59,7 @@ class LayoutMultiColumnFlowThread;
 class LayoutMultiColumnSpannerPlaceholder;
 class LayoutRubyRun;
 class MarginInfo;
+class NGBlockBreakToken;
 class NGBreakToken;
 class NGConstraintSpace;
 class NGLayoutResult;
@@ -66,7 +67,6 @@ class NGPaintFragment;
 class NGPhysicalFragment;
 
 struct NGInlineNodeData;
-struct NGPhysicalOffset;
 
 enum IndentTextOrNot { kDoNotIndentText, kIndentText };
 
@@ -468,13 +468,8 @@ class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
   virtual void ClearCachedLayoutResult();
   virtual bool AreCachedLinesValidFor(const NGConstraintSpace&) const;
   virtual void WillCollectInlines() {}
-  virtual void SetPaintFragment(const NGBreakToken*,
-                                scoped_refptr<const NGPhysicalFragment>,
-                                NGPhysicalOffset);
-  virtual void UpdatePaintFragmentFromCachedLayoutResult(
-      const NGBreakToken*,
-      scoped_refptr<const NGPhysicalFragment>,
-      NGPhysicalOffset);
+  virtual void SetPaintFragment(const NGBlockBreakToken*,
+                                scoped_refptr<const NGPhysicalFragment>);
   virtual const NGPhysicalBoxFragment* CurrentFragment() const {
     return nullptr;
   }

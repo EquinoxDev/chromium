@@ -1249,7 +1249,7 @@ void CSPDirectiveList::ParseReportURI(const String& name, const String& value) {
   }
 
   // Remove report-uri in meta policies, per
-  // https://html.spec.whatwg.org/#attr-meta-http-equiv-content-security-policy.
+  // https://html.spec.whatwg.org/C/#attr-meta-http-equiv-content-security-policy.
   if (header_source_ == kContentSecurityPolicyHeaderSourceMeta) {
     policy_->ReportInvalidDirectiveInMeta(name);
     return;
@@ -1499,12 +1499,11 @@ void CSPDirectiveList::AddDirective(const String& name, const String& value) {
   } else if (type == ContentSecurityPolicy::DirectiveType::kReportTo &&
              base::FeatureList::IsEnabled(network::features::kReporting)) {
     ParseReportTo(name, value);
+  } else if (type == ContentSecurityPolicy::DirectiveType::kTrustedTypes) {
+    RequireTrustedTypes(name, value);
   } else if (policy_->ExperimentalFeaturesEnabled()) {
     if (type == ContentSecurityPolicy::DirectiveType::kRequireSRIFor) {
       ParseRequireSRIFor(name, value);
-    } else if (type == ContentSecurityPolicy::DirectiveType::kTrustedTypes &&
-               RuntimeEnabledFeatures::TrustedDOMTypesEnabled()) {
-      RequireTrustedTypes(name, value);
     } else if (type == ContentSecurityPolicy::DirectiveType::kPrefetchSrc) {
       SetCSPDirective<SourceListDirective>(name, value, prefetch_src_);
     } else {

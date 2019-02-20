@@ -4,6 +4,8 @@
 
 #include "base/task/task_scheduler/platform_native_worker_pool_win.h"
 
+#include <utility>
+
 #include "base/task/task_scheduler/task_tracker.h"
 
 namespace base {
@@ -41,10 +43,10 @@ void PlatformNativeWorkerPoolWin::Start() {
 
   size_t local_num_sequences_before_start;
   {
-    auto transaction(priority_queue_.BeginTransaction());
+    AutoSchedulerLock auto_lock(lock_);
     DCHECK(!started_);
     started_ = true;
-    local_num_sequences_before_start = transaction->Size();
+    local_num_sequences_before_start = priority_queue_.Size();
   }
 
   // Schedule sequences added to |priority_queue_| before Start().
@@ -60,9 +62,8 @@ void PlatformNativeWorkerPoolWin::JoinForTesting() {
 #endif
 }
 
-void PlatformNativeWorkerPoolWin::ReEnqueueSequence(
-    SequenceAndTransaction sequence_and_transaction,
-    bool is_changing_pools) {
+void PlatformNativeWorkerPoolWin::ReEnqueueSequenceChangingPool(
+    SequenceAndTransaction sequence_and_transaction) {
   OnCanScheduleSequence(std::move(sequence_and_transaction));
 }
 
@@ -82,8 +83,10 @@ void CALLBACK PlatformNativeWorkerPoolWin::RunNextSequence(
   sequence = worker_pool->task_tracker_->RunAndPopNextTask(
       std::move(sequence.get()), worker_pool);
 
-  // Re-enqueue sequence and then submit another task to the Windows thread
-  // pool.
+  // Reenqueue sequence and then submit another task to the Windows thread pool.
+  //
+  // TODO(fdoray): Use |delegate_| to decide in which pool the Sequence should
+  // be reenqueued.
   if (sequence)
     worker_pool->OnCanScheduleSequence(std::move(sequence));
 
@@ -91,12 +94,11 @@ void CALLBACK PlatformNativeWorkerPoolWin::RunNextSequence(
 }
 
 scoped_refptr<Sequence> PlatformNativeWorkerPoolWin::GetWork() {
-  auto transaction(priority_queue_.BeginTransaction());
-
+  AutoSchedulerLock auto_lock(lock_);
   // The PQ should never be empty here as there's a 1:1 correspondence between
   // a call to ScheduleSequence()/SubmitThreadpoolWork() and GetWork().
-  DCHECK(!transaction->IsEmpty());
-  return transaction->PopSequence();
+  DCHECK(!priority_queue_.IsEmpty());
+  return priority_queue_.PopSequence();
 }
 
 void PlatformNativeWorkerPoolWin::OnCanScheduleSequence(
@@ -107,15 +109,16 @@ void PlatformNativeWorkerPoolWin::OnCanScheduleSequence(
 
 void PlatformNativeWorkerPoolWin::OnCanScheduleSequence(
     SequenceAndTransaction sequence_and_transaction) {
-  priority_queue_.BeginTransaction()->Push(
-      std::move(sequence_and_transaction.sequence),
-      sequence_and_transaction.transaction.GetSortKey());
-  if (started_) {
-    // TODO(fdoray): Handle priorities by having different work objects and
-    // using ::SetThreadpoolCallbackPriority() and
-    // ::SetThreadpoolCallbackRunsLong().
-    ::SubmitThreadpoolWork(work_);
+  {
+    AutoSchedulerLock auto_lock(lock_);
+    priority_queue_.Push(std::move(sequence_and_transaction.sequence),
+                         sequence_and_transaction.transaction.GetSortKey());
+    if (!started_)
+      return;
   }
+  // TODO(fdoray): Handle priorities by having different work objects and using
+  // SetThreadpoolCallbackPriority() and SetThreadpoolCallbackRunsLong().
+  ::SubmitThreadpoolWork(work_);
 }
 
 }  // namespace internal

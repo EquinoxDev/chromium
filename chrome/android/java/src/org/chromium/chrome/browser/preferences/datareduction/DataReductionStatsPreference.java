@@ -375,10 +375,11 @@ public class DataReductionStatsPreference extends Preference {
                     }
                 };
 
-                new AlertDialog.Builder(getContext(), R.style.AlertDialogTheme)
-                        .setTitle(R.string.data_reduction_usage_reset_statistics_confirmation_title)
-                        .setMessage(
-                                R.string.data_reduction_usage_reset_statistics_confirmation_dialog)
+                new AlertDialog.Builder(getContext(), R.style.Theme_Chromium_AlertDialog)
+                        .setTitle(DataReductionBrandingResourceProvider.getDataSaverBrandedString(
+                                R.string.data_reduction_usage_reset_statistics_confirmation_title))
+                        .setMessage(DataReductionBrandingResourceProvider.getDataSaverBrandedString(
+                                R.string.data_reduction_usage_reset_statistics_confirmation_dialog))
                         .setPositiveButton(
                                 R.string.data_reduction_usage_reset_statistics_confirmation_button,
                                 dialogListener)

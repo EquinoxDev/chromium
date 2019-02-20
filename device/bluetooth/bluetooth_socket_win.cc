@@ -10,6 +10,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner.h"
@@ -125,12 +126,11 @@ void BluetoothSocketWin::Connect(
 
   socket_thread()->task_runner()->PostTask(
       FROM_HERE,
-      base::Bind(
-          &BluetoothSocketWin::DoConnect,
-          this,
+      base::BindOnce(
+          &BluetoothSocketWin::DoConnect, this,
           base::Bind(&BluetoothSocketWin::PostSuccess, this, success_callback),
-          base::Bind(
-              &BluetoothSocketWin::PostErrorCompletion, this, error_callback)));
+          base::Bind(&BluetoothSocketWin::PostErrorCompletion, this,
+                     error_callback)));
 }
 
 void BluetoothSocketWin::Listen(scoped_refptr<BluetoothAdapter> adapter,
@@ -146,12 +146,8 @@ void BluetoothSocketWin::Listen(scoped_refptr<BluetoothAdapter> adapter,
   // TODO(xiyuan): Use |options.name|.
   socket_thread()->task_runner()->PostTask(
       FROM_HERE,
-      base::Bind(&BluetoothSocketWin::DoListen,
-                 this,
-                 uuid,
-                 rfcomm_channel,
-                 success_callback,
-                 error_callback));
+      base::BindOnce(&BluetoothSocketWin::DoListen, this, uuid, rfcomm_channel,
+                     success_callback, error_callback));
 }
 
 void BluetoothSocketWin::ResetData() {
@@ -170,11 +166,8 @@ void BluetoothSocketWin::Accept(
   DCHECK(ui_task_runner()->RunsTasksInCurrentSequence());
 
   socket_thread()->task_runner()->PostTask(
-      FROM_HERE,
-      base::Bind(&BluetoothSocketWin::DoAccept,
-                 this,
-                 success_callback,
-                 error_callback));
+      FROM_HERE, base::BindOnce(&BluetoothSocketWin::DoAccept, this,
+                                success_callback, error_callback));
 }
 
 void BluetoothSocketWin::DoConnect(

@@ -472,9 +472,12 @@ void SessionControllerClient::OnSessionStateChanged() {
 
 #if BUILDFLAG(ENABLE_CROS_ASSISTANT)
     // Assistant is initialized only once when primary user logs in.
+    // Initialize Assistant when browser process restarts.
     if (chromeos::switches::IsAssistantEnabled()) {
       AssistantClient::Get()->MaybeInit(
           ProfileManager::GetPrimaryUserProfile());
+      if (!chromeos::switches::ShouldSkipOobePostLogin())
+        AssistantClient::Get()->MaybeStartAssistantOptInFlow();
     }
 #endif
   }
@@ -559,10 +562,6 @@ void SessionControllerClient::SendUserSessionForProfile(Profile* profile) {
 }
 
 void SessionControllerClient::ConnectToSessionController() {
-  // Tests may bind to their own SessionController.
-  if (session_controller_)
-    return;
-
   content::ServiceManagerConnection::GetForProcess()
       ->GetConnector()
       ->BindInterface(ash::mojom::kServiceName, &session_controller_);

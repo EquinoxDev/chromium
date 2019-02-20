@@ -4,12 +4,15 @@
 
 #include "content/browser/appcache/appcache_frontend_proxy.h"
 
+#include "base/bind.h"
 #include "base/task/post_task.h"
-#include "content/common/appcache.mojom.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/bind_interface_helpers.h"
+#include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
+#include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 
 namespace content {
 
@@ -19,14 +22,15 @@ AppCacheFrontendProxy::AppCacheFrontendProxy(int process_id)
 AppCacheFrontendProxy::~AppCacheFrontendProxy() {}
 
 namespace {
-void BindOnUIThread(int process_id, mojom::AppCacheFrontendRequest request) {
+void BindOnUIThread(int process_id,
+                    blink::mojom::AppCacheFrontendRequest request) {
   if (auto* render_process_host = RenderProcessHost::FromID(process_id)) {
     BindInterface(render_process_host, std::move(request));
   }
 }
 }  // namespace
 
-mojom::AppCacheFrontend* AppCacheFrontendProxy::GetAppCacheFrontend() {
+blink::mojom::AppCacheFrontend* AppCacheFrontendProxy::GetAppCacheFrontend() {
   if (!app_cache_renderer_ptr_) {
     base::PostTaskWithTraits(
         FROM_HERE, {BrowserThread::UI},
@@ -36,50 +40,43 @@ mojom::AppCacheFrontend* AppCacheFrontendProxy::GetAppCacheFrontend() {
   return app_cache_renderer_ptr_.get();
 }
 
-void AppCacheFrontendProxy::OnCacheSelected(
-    int host_id, const AppCacheInfo& info) {
-  // TODO(crbug:611938) Get rid of the need to Clone().
-  GetAppCacheFrontend()->CacheSelected(host_id, info.Clone());
+void AppCacheFrontendProxy::CacheSelected(int32_t host_id,
+                                          blink::mojom::AppCacheInfoPtr info) {
+  GetAppCacheFrontend()->CacheSelected(host_id, std::move(info));
 }
 
-void AppCacheFrontendProxy::OnStatusChanged(const std::vector<int>& host_ids,
-                                            AppCacheStatus status) {
-  GetAppCacheFrontend()->StatusChanged(host_ids, status);
-}
-
-void AppCacheFrontendProxy::OnEventRaised(const std::vector<int>& host_ids,
-                                          AppCacheEventID event_id) {
-  DCHECK_NE(AppCacheEventID::APPCACHE_PROGRESS_EVENT,
+void AppCacheFrontendProxy::EventRaised(
+    const std::vector<int32_t>& host_ids,
+    blink::mojom::AppCacheEventID event_id) {
+  DCHECK_NE(blink::mojom::AppCacheEventID::APPCACHE_PROGRESS_EVENT,
             event_id);  // See OnProgressEventRaised.
   GetAppCacheFrontend()->EventRaised(host_ids, event_id);
 }
 
-void AppCacheFrontendProxy::OnProgressEventRaised(
-    const std::vector<int>& host_ids,
-    const GURL& url, int num_total, int num_complete) {
+void AppCacheFrontendProxy::ProgressEventRaised(
+    const std::vector<int32_t>& host_ids,
+    const GURL& url,
+    int32_t num_total,
+    int32_t num_complete) {
   GetAppCacheFrontend()->ProgressEventRaised(host_ids, url, num_total,
                                              num_complete);
 }
 
-void AppCacheFrontendProxy::OnErrorEventRaised(
-    const std::vector<int>& host_ids,
-    const AppCacheErrorDetails& details) {
-  GetAppCacheFrontend()->ErrorEventRaised(host_ids, details.Clone());
+void AppCacheFrontendProxy::ErrorEventRaised(
+    const std::vector<int32_t>& host_ids,
+    blink::mojom::AppCacheErrorDetailsPtr details) {
+  GetAppCacheFrontend()->ErrorEventRaised(host_ids, std::move(details));
 }
 
-void AppCacheFrontendProxy::OnLogMessage(int host_id,
-                                         AppCacheLogLevel log_level,
-                                         const std::string& message) {
+void AppCacheFrontendProxy::LogMessage(
+    int32_t host_id,
+    blink::mojom::ConsoleMessageLevel log_level,
+    const std::string& message) {
   GetAppCacheFrontend()->LogMessage(host_id, log_level, message);
 }
 
-void AppCacheFrontendProxy::OnContentBlocked(int host_id,
-                                             const GURL& manifest_url) {
-  GetAppCacheFrontend()->ContentBlocked(host_id, manifest_url);
-}
-
-void AppCacheFrontendProxy::OnSetSubresourceFactory(
-    int host_id,
+void AppCacheFrontendProxy::SetSubresourceFactory(
+    int32_t host_id,
     network::mojom::URLLoaderFactoryPtr url_loader_factory) {
   GetAppCacheFrontend()->SetSubresourceFactory(host_id,
                                                std::move(url_loader_factory));

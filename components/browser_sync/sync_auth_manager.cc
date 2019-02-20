@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
 #include "components/sync/base/stop_source.h"
@@ -86,23 +87,11 @@ void SyncAuthManager::RegisterForAuthNotifications() {
 }
 
 syncer::SyncAccountInfo SyncAuthManager::GetActiveAccountInfo() const {
-  if (!registered_for_auth_notifications_) {
-    return syncer::SyncAccountInfo();
-  }
-
-#if defined(OS_CHROMEOS)
-  if (!base::FeatureList::IsEnabled(switches::kSyncSupportSecondaryAccount)) {
-    // TODO(crbug.com/814787): Once the ChromeOS test setup is fixed, we can
-    // just return |sync_account_| here instead of re-querying.
-    return DetermineAccountToUse();
-  }
-#endif  // !defined(OS_CHROMEOS)
-  // Note: At this point, |sync_account_| should generally be identical to the
-  // result of a DetermineAccountToUse() call, but there are a few edge cases
-  // when it isn't: E.g. when another identity observer gets notified before us
-  // and calls in here, or when we're currently switching accounts in
+  // Note: |sync_account_| should generally be identical to the result of a
+  // DetermineAccountToUse() call, but there are a few edge cases when it isn't:
+  // E.g. when another identity observer gets notified before us and calls in
+  // here, or when we're currently switching accounts in
   // UpdateSyncAccountIfNecessary(). So unfortunately we can't verify this.
-
   return sync_account_;
 }
 
@@ -121,9 +110,7 @@ syncer::SyncTokenStatus SyncAuthManager::GetSyncTokenStatus() const {
 }
 
 syncer::SyncCredentials SyncAuthManager::GetCredentials() const {
-  // TODO(crbug.com/814787): Once the ChromeOS test setup is fixed, we can just
-  // use |sync_account_| directly here.
-  const AccountInfo account_info = GetActiveAccountInfo().account_info;
+  const CoreAccountInfo& account_info = sync_account_.account_info;
 
   syncer::SyncCredentials credentials;
   credentials.account_id = account_info.account_id;
@@ -245,19 +232,19 @@ void SyncAuthManager::Clear() {
 }
 
 void SyncAuthManager::OnPrimaryAccountSet(
-    const AccountInfo& primary_account_info) {
+    const CoreAccountInfo& primary_account_info) {
   UpdateSyncAccountIfNecessary();
 }
 
 void SyncAuthManager::OnPrimaryAccountCleared(
-    const AccountInfo& previous_primary_account_info) {
+    const CoreAccountInfo& previous_primary_account_info) {
   UMA_HISTOGRAM_ENUMERATION("Sync.StopSource", syncer::SIGN_OUT,
                             syncer::STOP_SOURCE_LIMIT);
   UpdateSyncAccountIfNecessary();
 }
 
 void SyncAuthManager::OnRefreshTokenUpdatedForAccount(
-    const AccountInfo& account_info) {
+    const CoreAccountInfo& account_info) {
   if (UpdateSyncAccountIfNecessary()) {
     // If the syncing account was updated as a result of this, then all that's
     // necessary has been handled; nothing else to be done here.
@@ -273,32 +260,23 @@ void SyncAuthManager::OnRefreshTokenUpdatedForAccount(
   // CREDENTIALS_REJECTED_BY_CLIENT) if the user signs out of that account on
   // the web.
   // TODO(blundell): Hide this logic inside IdentityManager.
-  bool is_refresh_token_valid = true;
   GoogleServiceAuthError token_error =
       identity_manager_->GetErrorStateOfRefreshTokenForAccount(
           account_info.account_id);
   if (token_error == GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
                          GoogleServiceAuthError::InvalidGaiaCredentialsReason::
                              CREDENTIALS_REJECTED_BY_CLIENT)) {
-    is_refresh_token_valid = false;
-  }
-
-  if (!is_refresh_token_valid) {
     // When the refresh token is replaced by an invalid token, Sync must be
     // stopped immediately, even if the current access token is still valid.
     // This happens e.g. when the user signs out of the web with Dice enabled.
     ClearAccessTokenAndRequest();
 
-    // Set the last auth error to the one that is specified in
-    // google_service_auth_error.h to correspond to this case (token was
-    // invalidated client-side).
+    // Set the last auth error. Usually this happens in AccessTokenFetched(...)
+    // if the fetch failed, but since we just canceled any access token request,
+    // that's not going to happen in this case.
     // TODO(blundell): Long-term, it would be nicer if Sync didn't have to
     // cache signin-level authentication errors.
-    GoogleServiceAuthError invalid_token_error =
-        GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
-            GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                CREDENTIALS_REJECTED_BY_CLIENT);
-    last_auth_error_ = invalid_token_error;
+    last_auth_error_ = token_error;
 
     credentials_changed_callback_.Run();
     return;

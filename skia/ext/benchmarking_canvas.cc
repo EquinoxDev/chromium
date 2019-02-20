@@ -205,16 +205,10 @@ std::unique_ptr<base::Value> AsValue(const SkPaint& paint) {
     val->Set("Xfermode", AsValue(paint.getBlendMode()));
   }
 
-  if (paint.getFlags()) {
+  if (paint.isAntiAlias() || paint.isDither()) {
     FlagsBuilder builder('|');
     builder.addFlag(paint.isAntiAlias(), "AntiAlias");
     builder.addFlag(paint.isDither(), "Dither");
-    builder.addFlag(paint.isFakeBoldText(), "FakeBoldText");
-    builder.addFlag(paint.isLinearText(), "LinearText");
-    builder.addFlag(paint.isSubpixelText(), "SubpixelText");
-    builder.addFlag(paint.isLCDRenderText(), "LCDRenderText");
-    builder.addFlag(paint.isEmbeddedBitmapText(), "EmbeddedBitmapText");
-    builder.addFlag(paint.isAutohinted(), "Autohinted");
 
     val->SetString("Flags", builder.str());
   }
@@ -228,15 +222,6 @@ std::unique_ptr<base::Value> AsValue(const SkPaint& paint) {
                    gFilterQualityStrings[paint.getFilterQuality()]);
   }
 
-  if (paint.getTextSize() != default_paint.getTextSize())
-    val->SetDouble("TextSize", paint.getTextSize());
-
-  if (paint.getTextScaleX() != default_paint.getTextScaleX())
-    val->SetDouble("TextScaleX", paint.getTextScaleX());
-
-  if (paint.getTextSkewX() != default_paint.getTextSkewX())
-    val->SetDouble("TextSkewX", paint.getTextSkewX());
-
   if (paint.getColorFilter())
     val->Set("ColorFilter", AsValue(*paint.getColorFilter()));
 
@@ -248,11 +233,7 @@ std::unique_ptr<base::Value> AsValue(const SkPaint& paint) {
 
 std::unique_ptr<base::Value> SaveLayerFlagsAsValue(
     SkCanvas::SaveLayerFlags flags) {
-  FlagsBuilder builder('|');
-  builder.addFlag(flags & SkCanvas::kPreserveLCDText_SaveLayerFlag,
-                  "kPreserveLCDText");
-
-  std::unique_ptr<base::Value> val(new base::Value(builder.str()));
+  std::unique_ptr<base::Value> val(new base::Value(static_cast<int>(flags)));
 
   return val;
 }

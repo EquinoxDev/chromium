@@ -11,6 +11,7 @@
 #include "base/macros.h"
 #include "base/optional.h"
 #include "components/viz/common/surfaces/local_surface_id.h"
+#include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/host/host_frame_sink_client.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host_observer.h"
@@ -26,11 +27,8 @@ namespace aura_extra {
 class WindowPositionInRootMonitor;
 }
 
-namespace gfx {
-class Insets;
-}
-
 namespace viz {
+class LocalSurfaceIdAllocation;
 class SurfaceInfo;
 }
 
@@ -52,11 +50,6 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
   ClientRoot(WindowTree* window_tree, aura::Window* window, bool is_top_level);
   ~ClientRoot() override;
 
-  // Called when the client area of the window changes. If the window is a
-  // top-level window, then this propagates the insets to the
-  // ClientSurfaceEmbedder.
-  void SetClientAreaInsets(const gfx::Insets& client_area_insets);
-
   // Registers the necessary state needed for embedding in viz.
   void RegisterVizEmbeddingSupport();
 
@@ -64,8 +57,19 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
 
   bool is_top_level() const { return is_top_level_; }
 
+  // Sets the bounds from a client.
+  bool SetBoundsInScreenFromClient(
+      const gfx::Rect& bounds,
+      const base::Optional<viz::LocalSurfaceIdAllocation>& allocation);
+
+  // Updates the LocalSurfaceIdAllocation from the client.
+  void UpdateLocalSurfaceIdFromChild(
+      const viz::LocalSurfaceIdAllocation& local_surface_id_allocation);
+
   // Called when the LocalSurfaceId of the embedder changes.
   void OnLocalSurfaceIdChanged();
+
+  void AllocateLocalSurfaceIdAndNotifyClient();
 
   // Attaches/unattaches proxy_window->attached_frame_sink_id() to the
   // HostFrameSinkManager.
@@ -77,26 +81,39 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
   void AttachChildFrameSinkIdRecursive(ProxyWindow* proxy_window);
   void UnattachChildFrameSinkIdRecursive(ProxyWindow* proxy_window);
 
+  // Returns true if the WindowService should assign the LocalSurfaceId. A value
+  // of false means the client is expected to providate the LocalSurfaceId.
+  bool ShouldAssignLocalSurfaceId() const {
+    return parent_local_surface_id_allocator_.has_value();
+  }
+
  private:
   friend class ClientRootTestHelper;
 
-  void UpdatePrimarySurfaceId();
+  // If necessary, this generates a new LocalSurfaceId. Generally you should
+  // call UpdateLocalSurfaceIdAndClientSurfaceEmbedder(), not this. If you call
+  // this, you need to ensure the ClientSurfaceEmbedder is updated.
+  void GenerateLocalSurfaceIdIfNecessary();
 
-  // Returns true if the WindowService should assign the LocalSurfaceId. A value
-  // of false means the client is expected to providate the LocalSurfaceId.
-  bool ShouldAssignLocalSurfaceId();
+  // Updates cached state specific to the current LocalSurfaceId. This is called
+  // any time |parent_local_surface_id_allocator_| has a new id.
+  void UpdateSurfacePropertiesCache();
 
-  // If necessary, this updates the LocalSurfaceId.
-  void UpdateLocalSurfaceIdIfNecessary();
+  // Calls GenerateLocalSurfaceIdIfNecessary() and if the current LocalSurfaceId
+  // is valid, updates ClientSurfaceEmbedder.
+  void UpdateLocalSurfaceIdAndClientSurfaceEmbedder();
 
   // Calls HandleBoundsOrScaleFactorChange() it the scale factor has changed.
   void CheckForScaleFactorChange();
 
-  // Called when the bounds or scale factor changes. |old_bounds| is the
-  // previous bounds, which may not have changed if the scale factor changes.
-  void HandleBoundsOrScaleFactorChange(const gfx::Rect& old_bounds);
+  // Called when the bounds or scale factor changes.
+  void HandleBoundsOrScaleFactorChange();
 
-  void NotifyClientOfNewBounds(const gfx::Rect& old_bounds);
+  void NotifyClientOfNewBounds();
+
+  // If necessary, notifies the client that the visibility of the Window is
+  // |new_value|. This does nothing for top-levels.
+  void NotifyClientOfVisibilityChange(bool new_value);
 
   // Callback when the position of |window_|, relative to the root, changes.
   // This is *only* called for non-top-levels.
@@ -116,6 +133,7 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
   void OnWillMoveWindowToDisplay(aura::Window* window,
                                  int64_t new_display_id) override;
   void OnDidMoveWindowToDisplay(aura::Window* window) override;
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
 
   // aura::WindowTreeHostObserver:
   void OnHostResized(aura::WindowTreeHost* host) override;
@@ -136,13 +154,14 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
 
   std::unique_ptr<aura::ClientSurfaceEmbedder> client_surface_embedder_;
 
+  // Set to true in OnWillMoveWindowToDisplay() and false in
+  // OnDidMoveWindowToDisplay().
   bool is_moving_across_displays_ = false;
-  base::Optional<gfx::Rect> scheduled_change_old_bounds_;
 
-  // If non-null then the fallback SurfaceInfo was supplied before the primary
-  // surface. This will be pushed to the Layer once the primary surface is
-  // supplied.
-  std::unique_ptr<viz::SurfaceInfo> fallback_surface_info_;
+  // Set to true if the bounds changes between the time
+  // OnWillMoveWindowToDisplay() is called and OnDidMoveWindowToDisplay() is
+  // called.
+  bool display_move_changed_bounds_ = false;
 
   // Used for non-top-levels to watch for changes in screen coordinates.
   std::unique_ptr<aura_extra::WindowPositionInRootMonitor>
@@ -150,6 +169,20 @@ class COMPONENT_EXPORT(WINDOW_SERVICE) ClientRoot
 
   // Last bounds sent to the client.
   gfx::Rect last_bounds_;
+
+  // Last visibility value sent to the client. This is not used for top-levels.
+  bool last_visible_;
+
+  // If true, SetBoundsInScreenFromClient() is setting the window bounds.
+  bool setting_bounds_from_client_ = false;
+
+  // Only used if ShouldAssignLocalSurfaceId() returns true. This is used
+  // instead of the ParentLocalSurfaceIdAllocator maintained by
+  // WindowPortLocal as ClientRoot needs to control when the allocations happen,
+  // and avoid allocations in the case of resizes and clients supplying their
+  // own LocalSurfaceId.
+  base::Optional<viz::ParentLocalSurfaceIdAllocator>
+      parent_local_surface_id_allocator_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientRoot);
 };

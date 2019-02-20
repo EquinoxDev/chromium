@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
@@ -148,7 +149,6 @@ class DemoSetupTest : public LoginManagerTest {
   // LoginTestManager:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     LoginManagerTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(chromeos::switches::kEnableOfflineDemoMode);
     command_line->AppendSwitchASCII(switches::kArcAvailability,
                                     "officially-supported");
     ASSERT_TRUE(arc::IsArcAvailable());
@@ -372,8 +372,9 @@ class DemoSetupTest : public LoginManagerTest {
         WizardController::default_controller()->demo_setup_controller();
 
     // Simulate offline data directory.
-    ASSERT_TRUE(SetupDummyOfflinePolicyDir("test", &fake_policy_dir_));
-    controller->SetOfflineDataDirForTest(fake_policy_dir_.GetPath());
+    ASSERT_TRUE(SetupDummyOfflinePolicyDir("test", &fake_demo_resources_dir_));
+    controller->SetPreinstalledOfflineResourcesPathForTesting(
+        fake_demo_resources_dir_.GetPath());
 
     // Simulate policy store.
     EXPECT_CALL(mock_policy_store_, Store(testing::_))
@@ -437,7 +438,7 @@ class DemoSetupTest : public LoginManagerTest {
   }
 
   // TODO(agawronska): Maybe create a separate test fixture for offline setup.
-  base::ScopedTempDir fake_policy_dir_;
+  base::ScopedTempDir fake_demo_resources_dir_;
   policy::MockCloudPolicyStore mock_policy_store_;
 
   DISALLOW_COPY_AND_ASSIGN(DemoSetupTest);
@@ -736,6 +737,29 @@ IN_PROC_BROWSER_TEST_F(DemoSetupTest, OnlineSetupFlowCrosComponentFailure) {
   EXPECT_FALSE(StartupUtils::IsDeviceRegistered());
 }
 
+IN_PROC_BROWSER_TEST_F(DemoSetupTest, OfflineDemoModeUnavailable) {
+  SimulateNetworkDisconnected();
+
+  InvokeDemoModeWithAccelerator();
+  ClickOkOnConfirmationDialog();
+
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_PREFERENCES).Wait();
+  EXPECT_TRUE(IsScreenShown(OobeScreen::SCREEN_OOBE_DEMO_PREFERENCES));
+
+  ClickOobeButton(OobeScreen::SCREEN_OOBE_DEMO_PREFERENCES, OobeButton::kText,
+                  JSExecution::kAsync);
+
+  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_NETWORK).Wait();
+  EXPECT_TRUE(IsScreenShown(OobeScreen::SCREEN_OOBE_NETWORK));
+  EXPECT_FALSE(IsScreenDialogElementEnabled(OobeScreen::SCREEN_OOBE_NETWORK,
+                                            DemoSetupDialog::kNetwork,
+                                            ButtonToTag(OobeButton::kNext)));
+
+  // Offline Demo Mode is not available when there are no preinstalled demo
+  // resources.
+  EXPECT_FALSE(IsCustomNetworkListElementShown("offlineDemoSetupListItemName"));
+}
+
 IN_PROC_BROWSER_TEST_F(DemoSetupTest, OfflineSetupFlowSuccess) {
   // Simulate offline setup success.
   EnterpriseEnrollmentHelper::SetupEnrollmentHelperMock(
@@ -1011,28 +1035,15 @@ IN_PROC_BROWSER_TEST_F(DemoSetupTest, RetryOnErrorScreen) {
 }
 
 IN_PROC_BROWSER_TEST_F(DemoSetupTest, ShowOfflineSetupOptionOnNetworkList) {
+  auto* const wizard_controller = WizardController::default_controller();
+  wizard_controller->SimulateDemoModeSetupForTesting();
+  SimulateOfflineEnvironment();
   SkipToScreen(OobeScreen::SCREEN_OOBE_NETWORK);
 
   EXPECT_TRUE(IsCustomNetworkListElementShown("offlineDemoSetupListItemName"));
 }
 
-class DemoSetupOfflineDisabledTest : public DemoSetupTest {
- public:
-  DemoSetupOfflineDisabledTest() = default;
-  ~DemoSetupOfflineDisabledTest() override = default;
-
-  // DemoSetupTest:
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    // Don't add kEnableOfflineDemoMode.
-    LoginManagerTest::SetUpCommandLine(command_line);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DemoSetupOfflineDisabledTest);
-};
-
-IN_PROC_BROWSER_TEST_F(DemoSetupOfflineDisabledTest,
-                       NoOfflineSetupOptionOnNetworkList) {
+IN_PROC_BROWSER_TEST_F(DemoSetupTest, NoOfflineSetupOptionOnNetworkList) {
   SkipToScreen(OobeScreen::SCREEN_OOBE_NETWORK);
   EXPECT_FALSE(IsCustomNetworkListElementShown("offlineDemoSetupListItemName"));
 }
@@ -1045,7 +1056,6 @@ class DemoSetupArcUnsupportedTest : public DemoSetupTest {
   // DemoSetupTest:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     LoginManagerTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(chromeos::switches::kEnableOfflineDemoMode);
     command_line->AppendSwitchASCII(switches::kArcAvailability, "none");
     ASSERT_FALSE(arc::IsArcAvailable());
   }
@@ -1105,6 +1115,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, DeviceFromFactory) {
           DemoModeSetupResult::SUCCESS>);
   SimulateNetworkDisconnected();
 
+  InvokeDemoModeWithAccelerator();
+  ClickOkOnConfirmationDialog();
+
   auto* const wizard_controller = WizardController::default_controller();
   wizard_controller->SimulateDemoModeSetupForTesting();
   // It needs to be done after demo setup controller was created (demo setup
@@ -1114,9 +1127,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, DeviceFromFactory) {
   // why we need to set it here.
   wizard_controller->demo_setup_controller()->set_demo_config(
       DemoSession::DemoModeConfig::kOffline);
-  wizard_controller->AdvanceToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
 
-  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_SETUP).Wait();
+  SkipToScreen(OobeScreen::SCREEN_OOBE_NETWORK);
+  SkipToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
   // TODO(agawronska): Progress dialog transition is async - extra work is
   // needed to be able to check it reliably.
 
@@ -1139,6 +1152,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, NonEnterpriseDevice) {
           DemoModeSetupResult::SUCCESS>);
   SimulateNetworkDisconnected();
 
+  InvokeDemoModeWithAccelerator();
+  ClickOkOnConfirmationDialog();
+
   auto* const wizard_controller = WizardController::default_controller();
   wizard_controller->SimulateDemoModeSetupForTesting();
   // It needs to be done after demo setup controller was created (demo setup
@@ -1148,9 +1164,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, NonEnterpriseDevice) {
   // why we need to set it here.
   wizard_controller->demo_setup_controller()->set_demo_config(
       DemoSession::DemoModeConfig::kOffline);
-  wizard_controller->AdvanceToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
 
-  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_SETUP).Wait();
+  SkipToScreen(OobeScreen::SCREEN_OOBE_NETWORK);
+  SkipToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
   // TODO(agawronska): Progress dialog transition is async - extra work is
   // needed to be able to check it reliably.
 
@@ -1174,6 +1190,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, LegacyDemoModeDevice) {
           DemoModeSetupResult::SUCCESS>);
   SimulateNetworkDisconnected();
 
+  InvokeDemoModeWithAccelerator();
+  ClickOkOnConfirmationDialog();
+
   auto* const wizard_controller = WizardController::default_controller();
   wizard_controller->SimulateDemoModeSetupForTesting();
   // It needs to be done after demo setup controller was created (demo setup
@@ -1183,9 +1202,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, LegacyDemoModeDevice) {
   // why we need to set it here.
   wizard_controller->demo_setup_controller()->set_demo_config(
       DemoSession::DemoModeConfig::kOffline);
-  wizard_controller->AdvanceToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
 
-  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_SETUP).Wait();
+  SkipToScreen(OobeScreen::SCREEN_OOBE_NETWORK);
+  SkipToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
   // TODO(agawronska): Progress dialog transition is async - extra work is
   // needed to be able to check it reliably.
 
@@ -1207,6 +1226,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, DeviceWithFRE) {
           DemoModeSetupResult::SUCCESS>);
   SimulateNetworkDisconnected();
 
+  InvokeDemoModeWithAccelerator();
+  ClickOkOnConfirmationDialog();
+
   auto* const wizard_controller = WizardController::default_controller();
   wizard_controller->SimulateDemoModeSetupForTesting();
   // It needs to be done after demo setup controller was created (demo setup
@@ -1216,9 +1238,9 @@ IN_PROC_BROWSER_TEST_F(DemoSetupFRETest, DeviceWithFRE) {
   // why we need to set it here.
   wizard_controller->demo_setup_controller()->set_demo_config(
       DemoSession::DemoModeConfig::kOffline);
-  wizard_controller->AdvanceToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
 
-  OobeScreenWaiter(OobeScreen::SCREEN_OOBE_DEMO_SETUP).Wait();
+  SkipToScreen(OobeScreen::SCREEN_OOBE_NETWORK);
+  SkipToScreen(OobeScreen::SCREEN_OOBE_DEMO_SETUP);
   // TODO(agawronska): Progress dialog transition is async - extra work is
   // needed to be able to check it reliably.
   WaitForScreenDialog(OobeScreen::SCREEN_OOBE_DEMO_SETUP,

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -18,20 +19,25 @@
 #include "net/cert/do_nothing_ct_verifier.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/cert/signed_certificate_timestamp_and_status.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_transaction.h"
+#include "net/http/http_proxy_connect_job.h"
 #include "net/log/net_log_with_source.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/socket_tag.h"
+#include "net/socket/socks_connect_job.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/socket/ssl_connect_job.h"
 #include "net/socket/transport_client_socket_pool.h"
+#include "net/socket/transport_connect_job.h"
 #include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_stream.h"
 #include "net/test/gtest_util.h"
-#include "net/third_party/spdy/core/spdy_alt_svc_wire_format.h"
-#include "net/third_party/spdy/core/spdy_framer.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_alt_svc_wire_format.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_framer.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -397,7 +403,7 @@ HttpNetworkSession::Context SpdySessionDependencies::CreateSessionContext(
     SpdySessionDependencies* session_deps) {
   HttpNetworkSession::Context context;
   context.client_socket_factory = session_deps->socket_factory.get();
-  context.host_resolver = session_deps->host_resolver.get();
+  context.host_resolver = session_deps->GetHostResolver();
   context.cert_verifier = session_deps->cert_verifier.get();
   context.channel_id_service = session_deps->channel_id_service.get();
   context.transport_security_state =
@@ -493,15 +499,19 @@ base::WeakPtr<SpdySession> CreateSpdySessionHelper(
       transport_params, nullptr, nullptr, key.host_port_pair(), ssl_config,
       key.privacy_mode());
   int rv = connection->Init(
-      key.host_port_pair().ToString(), ssl_params, MEDIUM, key.socket_tag(),
-      ClientSocketPool::RespectLimits::ENABLED, callback.callback(),
-      http_session->GetSSLSocketPool(HttpNetworkSession::NORMAL_SOCKET_POOL),
+      key.host_port_pair().ToString(),
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          ssl_params),
+      MEDIUM, key.socket_tag(), ClientSocketPool::RespectLimits::ENABLED,
+      callback.callback(),
+      http_session->GetTransportSocketPool(
+          HttpNetworkSession::NORMAL_SOCKET_POOL),
       net_log);
   rv = callback.GetResult(rv);
   EXPECT_THAT(rv, IsOk());
 
   base::WeakPtr<SpdySession> spdy_session =
-      http_session->spdy_session_pool()->CreateAvailableSessionFromSocket(
+      http_session->spdy_session_pool()->CreateAvailableSessionFromSocketHandle(
           key, is_trusted_proxy, std::move(connection), net_log);
   // Failure is reported asynchronously.
   EXPECT_TRUE(spdy_session);
@@ -604,7 +614,7 @@ base::WeakPtr<SpdySession> CreateFakeSpdySessionHelper(
   handle->SetSocket(std::make_unique<FakeSpdySessionClientSocket>(
       expected_status == OK ? ERR_IO_PENDING : expected_status));
   base::WeakPtr<SpdySession> spdy_session =
-      pool->CreateAvailableSessionFromSocket(
+      pool->CreateAvailableSessionFromSocketHandle(
           key,
           /*is_trusted_proxy=*/false, std::move(handle), NetLogWithSource());
   // Failure is reported asynchronously.
@@ -1064,7 +1074,7 @@ spdy::SpdyHeaderBlock SpdyTestUtil::ConstructHeaderBlock(
   headers[spdy::kHttp2SchemeHeader] = scheme.c_str();
   headers[spdy::kHttp2PathHeader] = path.c_str();
   if (content_length) {
-    std::string length_str = base::Int64ToString(*content_length);
+    std::string length_str = base::NumberToString(*content_length);
     headers["content-length"] = length_str;
   }
   return headers;

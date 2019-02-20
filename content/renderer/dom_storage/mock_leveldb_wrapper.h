@@ -8,6 +8,7 @@
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_area.mojom.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 
@@ -25,10 +26,11 @@ class MockLevelDBWrapper : public blink::mojom::StoragePartitionService,
 
   // StoragePartitionService implementation:
   void OpenLocalStorage(const url::Origin& origin,
-                        blink::mojom::StorageAreaRequest database) override;
-  void OpenSessionStorage(
-      const std::string& namespace_id,
-      blink::mojom::SessionStorageNamespaceRequest request) override;
+                        blink::mojom::StorageAreaRequest database,
+                        OpenLocalStorageCallback done) override;
+  void OpenSessionStorage(const std::string& namespace_id,
+                          blink::mojom::SessionStorageNamespaceRequest request,
+                          OpenSessionStorageCallback done) override;
 
   // StorageArea implementation:
   void AddObserver(

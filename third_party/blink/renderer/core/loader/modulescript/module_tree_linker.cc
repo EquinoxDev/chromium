@@ -150,13 +150,18 @@ void ModuleTreeLinker::AdvanceState(State new_state) {
   }
 }
 
-// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-module-script-tree
+// https://html.spec.whatwg.org/C/#fetch-a-module-script-tree
 void ModuleTreeLinker::FetchRoot(const KURL& original_url,
                                  const ScriptFetchOptions& options) {
 #if DCHECK_IS_ON()
   original_url_ = original_url;
   root_is_inline_ = false;
 #endif
+
+  // https://github.com/WICG/import-maps/blob/master/spec.md#when-import-maps-can-be-encountered
+  // The internal module script graph fetching procedure flips the boolean to
+  // false. [spec text]
+  modulator_->ClearIsAcquiringImportMaps();
 
   AdvanceState(State::kFetchingSelf);
 
@@ -207,6 +212,11 @@ void ModuleTreeLinker::FetchRootInline(ModuleScript* module_script) {
   root_is_inline_ = true;
 #endif
 
+  // https://github.com/WICG/import-maps/blob/master/spec.md#when-import-maps-can-be-encountered
+  // The internal module script graph fetching procedure flips the boolean to
+  // false. [spec text]
+  modulator_->ClearIsAcquiringImportMaps();
+
   AdvanceState(State::kFetchingSelf);
 
   // Store the |module_script| here which will be used as result of the
@@ -255,7 +265,7 @@ void ModuleTreeLinker::NotifyModuleLoadFinished(ModuleScript* module_script) {
 
   if (state_ == State::kFetchingSelf) {
     // Corresponds to top-level calls to
-    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-the-descendants-of-and-instantiate-a-module-script
+    // https://html.spec.whatwg.org/C/#fetch-the-descendants-of-and-instantiate-a-module-script
     // i.e. [IMSGF] with the top-level module fetch flag set (external), or
     // Step 22 of "prepare a script" (inline).
     // |module_script| is the top-level module, and will be instantiated
@@ -288,7 +298,7 @@ void ModuleTreeLinker::NotifyModuleLoadFinished(ModuleScript* module_script) {
   FetchDescendants(module_script);
 }
 
-void ModuleTreeLinker::FetchDescendants(ModuleScript* module_script) {
+void ModuleTreeLinker::FetchDescendants(const ModuleScript* module_script) {
   DCHECK(module_script);
 
   // [nospec] Abort the steps if the browsing context is discarded.
@@ -339,7 +349,7 @@ void ModuleTreeLinker::FetchDescendants(ModuleScript* module_script) {
     // specifier must have been previously successful with these same two
     // arguments.
     CHECK(url.IsValid()) << "ModuleScript::ResolveModuleSpecifier() impl must "
-                            "return either a valid url or null.";
+                            "return a valid url.";
 
     // [FD] Step 5.3. If visited set does not contain url, then:
     if (!visited_set_.Contains(url)) {
@@ -365,15 +375,20 @@ void ModuleTreeLinker::FetchDescendants(ModuleScript* module_script) {
 
   // [FD] Step 6. Let options be the descendant script fetch options for module
   // script's fetch options.
-  // https://html.spec.whatwg.org/multipage/webappapis.html#descendant-script-fetch-options
+  // https://html.spec.whatwg.org/C/#descendant-script-fetch-options
   // the descendant script fetch options are a new script fetch options whose
   // items all have the same values, except for the integrity metadata, which is
   // instead the empty string.
+  // TODO(domfarolino): It has not yet been decided how a root module script's
+  // "importance" mode should trickle down to imports. There is discussion of
+  // this at https://github.com/whatwg/html/issues/3670, but for now, descendant
+  // scripts get "auto" importance (Also see https://crbug.com/821464).
   ScriptFetchOptions options(module_script->FetchOptions().Nonce(),
                              IntegrityMetadataSet(), String(),
                              module_script->FetchOptions().ParserState(),
                              module_script->FetchOptions().CredentialsMode(),
-                             module_script->FetchOptions().GetReferrerPolicy());
+                             module_script->FetchOptions().GetReferrerPolicy(),
+                             mojom::FetchImportanceMode::kImportanceAuto);
 
   // [FD] Step 7. For each url in urls, ...
   //
@@ -431,7 +446,7 @@ void ModuleTreeLinker::Instantiate() {
   // thus skip FindFirstParseError() call.
   if (!found_parse_error_) {
 #if DCHECK_IS_ON()
-    HeapHashSet<Member<ModuleScript>> discovered_set;
+    HeapHashSet<Member<const ModuleScript>> discovered_set;
     DCHECK(FindFirstParseError(result_, &discovered_set).IsEmpty());
 #endif
 
@@ -450,7 +465,7 @@ void ModuleTreeLinker::Instantiate() {
     // [FDaI] Step 7. Otherwise ...
 
     // [FFPE] Step 2. If discoveredSet was not given, let it be an empty set.
-    HeapHashSet<Member<ModuleScript>> discovered_set;
+    HeapHashSet<Member<const ModuleScript>> discovered_set;
 
     // [FDaI] Step 5. Let parse error be the result of finding the first parse
     // error given result.
@@ -465,12 +480,12 @@ void ModuleTreeLinker::Instantiate() {
   AdvanceState(State::kFinished);
 }
 
-// [FFPE] https://html.spec.whatwg.org/#finding-the-first-parse-error
+// [FFPE] https://html.spec.whatwg.org/C/#finding-the-first-parse-error
 //
 // This returns non-empty ScriptValue iff a parse error is found.
 ScriptValue ModuleTreeLinker::FindFirstParseError(
-    ModuleScript* module_script,
-    HeapHashSet<Member<ModuleScript>>* discovered_set) const {
+    const ModuleScript* module_script,
+    HeapHashSet<Member<const ModuleScript>>* discovered_set) const {
   // FindFirstParseError() is called only when there is no fetch errors, i.e.
   // all module scripts in the graph are non-null.
   DCHECK(module_script);
@@ -507,13 +522,14 @@ ScriptValue ModuleTreeLinker::FindFirstParseError(
     // moduleScript would have been marked as itself having a parse error.)
     CHECK(child_url.IsValid())
         << "ModuleScript::ResolveModuleSpecifier() impl must "
-           "return either a valid url or null.";
+           "return a valid url.";
 
     // [FFPE] Step 7. Let childModules be the list obtained by getting each
     // value in moduleMap whose key is given by an item of childURLs.
     //
     // [FFPE] Step 8. For each childModule of childModules:
-    ModuleScript* child_module = modulator_->GetFetchedModuleScript(child_url);
+    const ModuleScript* child_module =
+        modulator_->GetFetchedModuleScript(child_url);
 
     // [FFPE] Step 8.1. Assert: childModule is a module script (i.e., it is not
     // "fetching" or null)

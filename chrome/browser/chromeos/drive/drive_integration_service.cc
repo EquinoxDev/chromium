@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -39,6 +40,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
+#include "chromeos/components/drivefs/drivefs_bootstrap.h"
 #include "chromeos/constants/chromeos_features.h"
 #include "chromeos/network/portal_detector/network_portal_detector.h"
 #include "components/drive/chromeos/file_cache.h"
@@ -306,7 +308,7 @@ void CleanupGCacheV1(
   DeleteDirectoryContents(cache_directory);
 }
 
-std::vector<base::FilePath> GetPinnedFiles(
+std::vector<base::FilePath> GetPinnedAndDirtyFiles(
     std::unique_ptr<internal::ResourceMetadataStorage, util::DestroyHelper>
         metadata_storage,
     base::FilePath cache_directory,
@@ -331,6 +333,7 @@ std::vector<base::FilePath> GetPinnedFiles(
           GetFullPath(metadata_storage.get(), value), value.local_id()));
     }
   }
+  UMA_HISTOGRAM_COUNTS("Drive.MigrateDirtyFilesCount", dirty_files.size());
   // Destructing |metadata_storage| requires a posted task to run, so defer
   // deleting its data until after it's been destructed. This also returns the
   // list of files to pin to the UI thread without waiting for the remaining
@@ -508,15 +511,15 @@ class DriveIntegrationService::DriveFsHolder
  public:
   DriveFsHolder(Profile* profile,
                 drivefs::DriveFsHost::MountObserver* mount_observer,
-                DriveFsMojoConnectionDelegateFactory
-                    test_drivefs_mojo_connection_delegate_factory)
+                DriveFsMojoListenerFactory test_drivefs_mojo_listener_factory)
       : profile_(profile),
         mount_observer_(mount_observer),
-        test_drivefs_mojo_connection_delegate_factory_(
-            std::move(test_drivefs_mojo_connection_delegate_factory)),
+        test_drivefs_mojo_listener_factory_(
+            std::move(test_drivefs_mojo_listener_factory)),
         drivefs_host_(profile_->GetPath(),
                       this,
                       this,
+                      content::GetNetworkConnectionTracker(),
                       base::DefaultClock::GetInstance(),
                       chromeos::disks::DiskMountManager::GetInstance(),
                       std::make_unique<base::OneShotTimer>()) {}
@@ -575,18 +578,17 @@ class DriveIntegrationService::DriveFsHolder
     return profile_salt_;
   }
 
-  std::unique_ptr<drivefs::DriveFsHost::MojoConnectionDelegate>
-  CreateMojoConnectionDelegate() override {
-    if (test_drivefs_mojo_connection_delegate_factory_)
-      return test_drivefs_mojo_connection_delegate_factory_.Run();
-    return Delegate::CreateMojoConnectionDelegate();
+  std::unique_ptr<drivefs::DriveFsBootstrapListener> CreateMojoListener()
+      override {
+    if (test_drivefs_mojo_listener_factory_)
+      return test_drivefs_mojo_listener_factory_.Run();
+    return Delegate::CreateMojoListener();
   }
 
   Profile* const profile_;
   drivefs::DriveFsHost::MountObserver* const mount_observer_;
 
-  const DriveFsMojoConnectionDelegateFactory
-      test_drivefs_mojo_connection_delegate_factory_;
+  const DriveFsMojoListenerFactory test_drivefs_mojo_listener_factory_;
 
   drivefs::DriveFsHost drivefs_host_;
 
@@ -627,8 +629,7 @@ DriveIntegrationService::DriveIntegrationService(
     const std::string& test_mount_point_name,
     const base::FilePath& test_cache_root,
     FileSystemInterface* test_file_system,
-    DriveFsMojoConnectionDelegateFactory
-        test_drivefs_mojo_connection_delegate_factory)
+    DriveFsMojoListenerFactory test_drivefs_mojo_listener_factory)
     : profile_(profile),
       state_(NOT_INITIALIZED),
       enabled_(false),
@@ -636,13 +637,12 @@ DriveIntegrationService::DriveIntegrationService(
       cache_root_directory_(!test_cache_root.empty()
                                 ? test_cache_root
                                 : util::GetCacheRootPath(profile)),
-      drivefs_holder_(
-          base::FeatureList::IsEnabled(chromeos::features::kDriveFs)
-              ? std::make_unique<DriveFsHolder>(
-                    profile_,
-                    this,
-                    std::move(test_drivefs_mojo_connection_delegate_factory))
-              : nullptr),
+      drivefs_holder_(base::FeatureList::IsEnabled(chromeos::features::kDriveFs)
+                          ? std::make_unique<DriveFsHolder>(
+                                profile_,
+                                this,
+                                std::move(test_drivefs_mojo_listener_factory))
+                          : nullptr),
       preference_watcher_(preference_watcher),
       weak_ptr_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -1236,7 +1236,8 @@ void DriveIntegrationService::MigratePinnedFiles() {
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(), FROM_HERE,
       base::BindOnce(
-          &GetPinnedFiles, std::move(metadata_storage_), cache_root_directory_,
+          &GetPinnedAndDirtyFiles, std::move(metadata_storage_),
+          cache_root_directory_,
           file_manager::util::GetDownloadsFolderForProfile(profile_)),
       base::BindOnce(&DriveIntegrationService::PinFiles,
                      weak_ptr_factory_.GetWeakPtr()));

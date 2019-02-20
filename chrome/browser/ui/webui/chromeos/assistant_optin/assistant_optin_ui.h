@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "ash/public/interfaces/assistant_controller.mojom.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/macros.h"
 #include "chrome/browser/ui/webui/chromeos/assistant_optin/assistant_optin_utils.h"
@@ -26,7 +27,11 @@ class AssistantOptInUI : public ui::WebDialogUI {
   ~AssistantOptInUI() override;
 
  private:
-  base::WeakPtrFactory<AssistantOptInUI> weak_factory_;
+  // Called when the webui has been initialized.
+  void Initialize();
+
+  JSCallsContainer js_calls_container_;
+  base::WeakPtrFactory<AssistantOptInUI> weak_factory_{this};
 
   DISALLOW_COPY_AND_ASSIGN(AssistantOptInUI);
 };

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/rlz/chrome_rlz_tracker_delegate.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "build/build_config.h"
@@ -222,7 +223,7 @@ void ChromeRLZTrackerDelegate::Observe(
         if (entry_index < 1)
           break;
 
-        const content::NavigationEntry* previous_entry =
+        content::NavigationEntry* previous_entry =
             controller->GetEntryAtIndex(entry_index - 1);
 
         if (previous_entry == nullptr)

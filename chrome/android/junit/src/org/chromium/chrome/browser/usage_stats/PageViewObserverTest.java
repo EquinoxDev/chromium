@@ -28,9 +28,9 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.Tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.tabmodel.TabModel;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
+import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 
 import java.util.Arrays;
 
@@ -55,6 +55,8 @@ public final class PageViewObserverTest {
     private Tab mTab2;
     @Mock
     private EventTracker mEventTracker;
+    @Mock
+    private TokenTracker mTokenTracker;
     @Captor
     private ArgumentCaptor<TabObserver> mTabObserverCaptor;
     @Captor
@@ -178,9 +180,23 @@ public final class PageViewObserverTest {
         verify(mEventTracker, times(0)).addWebsiteEvent(argThat(isStopEvent(DIFFERENT_FQDN)));
     }
 
+    // TODO(pnoland): add test for platform reporting once the System API is available in Q.
+
+    @Test
+    public void tabIncognito_eventsNotReported() {
+        PageViewObserver observer = createPageViewObserver();
+        onUpdateUrl(mTab, STARTING_URL);
+
+        doReturn(true).when(mTab2).isIncognito();
+        doReturn(DIFFERENT_URL).when(mTab2).getUrl();
+        didSelectTab(mTab2, TabSelectionType.FROM_USER);
+        verify(mEventTracker, times(0)).addWebsiteEvent(argThat(isStartEvent(DIFFERENT_FQDN)));
+        verify(mEventTracker, times(0)).addWebsiteEvent(argThat(isStopEvent(DIFFERENT_FQDN)));
+    }
+
     private PageViewObserver createPageViewObserver() {
         PageViewObserver observer =
-                new PageViewObserver(mActivity, mTabModelSelector, mEventTracker);
+                new PageViewObserver(mActivity, mTabModelSelector, mEventTracker, mTokenTracker);
         verify(mTabModel, times(1)).addObserver(mTabModelObserverCaptor.capture());
         if (mTabModelSelector.getCurrentTab() != null) {
             verify(mTabModelSelector.getCurrentTab(), times(1))

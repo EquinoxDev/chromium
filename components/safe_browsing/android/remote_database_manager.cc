@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -291,6 +292,12 @@ bool RemoteSafeBrowsingDatabaseManager::MatchMalwareIP(
 safe_browsing::ThreatSource RemoteSafeBrowsingDatabaseManager::GetThreatSource()
     const {
   return safe_browsing::ThreatSource::REMOTE;
+}
+
+std::string RemoteSafeBrowsingDatabaseManager::GetSafetyNetId() const {
+  SafeBrowsingApiHandler* api_handler = SafeBrowsingApiHandler::GetInstance();
+  DCHECK(api_handler) << "SafeBrowsingApiHandler was never constructed";
+  return api_handler->GetSafetyNetId();
 }
 
 bool RemoteSafeBrowsingDatabaseManager::IsDownloadProtectionEnabled() const {

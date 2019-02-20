@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -194,7 +195,7 @@ void ParseJson(
     const BreakingNewsGCMAppHandler::SuccessCallback& success_callback,
     const BreakingNewsGCMAppHandler::ErrorCallback& error_callback) {
   base::JSONReader json_reader;
-  std::unique_ptr<base::Value> value = json_reader.ReadToValue(json);
+  std::unique_ptr<base::Value> value = json_reader.ReadToValueDeprecated(json);
   if (value) {
     success_callback.Run(std::move(value));
   } else {

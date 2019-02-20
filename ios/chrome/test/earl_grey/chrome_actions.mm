@@ -6,8 +6,6 @@
 
 #import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/collection_view/cells/collection_view_switch_item.h"
-#import "ios/chrome/browser/ui/settings/cells/legacy/legacy_settings_switch_item.h"
-#import "ios/chrome/browser/ui/settings/cells/legacy/legacy_sync_switch_item.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_cell.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_switch_item.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
@@ -64,40 +62,6 @@ id<GREYAction> TurnSettingsSwitchOn(BOOL on) {
         }];
 }
 
-id<GREYAction> TurnLegacySettingsSwitchOn(BOOL on) {
-  id<GREYMatcher> constraints = grey_not(grey_systemAlertViewShown());
-  NSString* action_name =
-      [NSString stringWithFormat:@"Turn settings switch to %@ state",
-                                 on ? @"ON" : @"OFF"];
-  return [GREYActionBlock
-      actionWithName:action_name
-         constraints:constraints
-        performBlock:^BOOL(id collection_view_cell,
-                           __strong NSError** error_or_nil) {
-          LegacySettingsSwitchCell* switch_cell =
-              base::mac::ObjCCast<LegacySettingsSwitchCell>(
-                  collection_view_cell);
-          if (!switch_cell) {
-            *error_or_nil =
-                [NSError errorWithDomain:kChromeActionsErrorDomain
-                                    code:0
-                                userInfo:@{
-                                  NSLocalizedDescriptionKey :
-                                      @"The element isn't of the expected type "
-                                      @"(LegacySettingsSwitchCell)."
-                                }];
-            return NO;
-          }
-          UISwitch* switch_view = switch_cell.switchView;
-          if (switch_view.on != on) {
-            id<GREYAction> long_press_action = [GREYActions
-                actionForLongPressWithDuration:kGREYLongPressDefaultDuration];
-            return [long_press_action perform:switch_view error:error_or_nil];
-          }
-          return YES;
-        }];
-}
-
 id<GREYAction> TurnSyncSwitchOn(BOOL on) {
   id<GREYMatcher> constraints = grey_not(grey_systemAlertViewShown());
   NSString* actionName = [NSString
@@ -107,8 +71,8 @@ id<GREYAction> TurnSyncSwitchOn(BOOL on) {
          constraints:constraints
         performBlock:^BOOL(id sync_switch_cell,
                            __strong NSError** error_or_nil) {
-          LegacySyncSwitchCell* switch_cell =
-              base::mac::ObjCCastStrict<LegacySyncSwitchCell>(sync_switch_cell);
+          SettingsSwitchCell* switch_cell =
+              base::mac::ObjCCastStrict<SettingsSwitchCell>(sync_switch_cell);
           UISwitch* switch_view = switch_cell.switchView;
           if (switch_view.on != on) {
             id<GREYAction> long_press_action = [GREYActions

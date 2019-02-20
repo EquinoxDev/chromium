@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -29,8 +30,9 @@
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
+#include "chrome/browser/signin/account_fetcher_service_factory.h"
 #include "chrome/browser/signin/chrome_device_id_helper.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
 #include "chrome/browser/supervised_user/supervised_user_constants.h"
 #include "chrome/browser/ui/app_list/arc/arc_data_removal_dialog.h"
@@ -57,11 +59,13 @@
 #include "components/policy/core/common/policy_switches.h"
 #include "components/prefs/pref_member.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/account_tracker_service.h"
+#include "components/signin/core/browser/account_fetcher_service.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_names.h"
 #include "content/public/browser/browser_task_traits.h"
+#include "services/identity/public/cpp/accounts_mutator.h"
+#include "services/identity/public/cpp/identity_manager.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
 #include "services/network/test/test_url_loader_factory.h"
@@ -136,6 +140,13 @@ class FakeAuthInstance : public mojom::AuthInstance {
         account_name, base::BindOnce(&FakeAuthInstance::OnAccountInfoResponse,
                                      weak_ptr_factory_.GetWeakPtr(),
                                      std::move(done_closure)));
+  }
+
+  void GetGoogleAccounts(GetGoogleAccountsCallback callback) override {
+    std::vector<mojom::ArcAccountInfoPtr> accounts;
+    accounts.emplace_back(
+        mojom::ArcAccountInfo::New(kFakeUserName, kFakeGaiaId));
+    std::move(callback).Run(std::move(accounts));
   }
 
   mojom::AccountInfo* account_info() { return account_info_.get(); }
@@ -282,11 +293,7 @@ class ArcAuthServiceTest : public InProcessBrowserTest {
     test_shared_loader_factory_ =
         base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
             &test_url_loader_factory_);
-    account_manager->Initialize(
-        profile()->GetPath(), test_shared_loader_factory_,
-        base::BindRepeating([](const base::RepeatingClosure& closure) -> void {
-          closure.Run();
-        }));
+    account_manager->SetUrlLoaderFactoryForTests(test_shared_loader_factory_);
     auth_service_->SetURLLoaderFactoryForTesting(test_shared_loader_factory_);
     // It is non-trivial to navigate through the merge session in a testing
     // context; currently we just skip it.
@@ -304,6 +311,33 @@ class ArcAuthServiceTest : public InProcessBrowserTest {
         ->MakeAccountAvailable(email);
   }
 
+  void SetInvalidRefreshTokenForAccount(const std::string& account_id) {
+    identity_test_environment_adaptor_->identity_test_env()
+        ->SetInvalidRefreshTokenForAccount(account_id);
+  }
+
+  void RequestGoogleAccountsInArc() {
+    arc_google_accounts_.clear();
+    arc_google_accounts_callback_called_ = false;
+    run_loop_.reset(new base::RunLoop());
+
+    ArcAuthService::GetGoogleAccountsInArcCallback callback = base::BindOnce(
+        [](std::vector<mojom::ArcAccountInfoPtr>* accounts,
+           bool* arc_google_accounts_callback_called,
+           base::OnceClosure quit_closure,
+           std::vector<mojom::ArcAccountInfoPtr> returned_accounts) {
+          *accounts = std::move(returned_accounts);
+          *arc_google_accounts_callback_called = true;
+          std::move(quit_closure).Run();
+        },
+        &arc_google_accounts_, &arc_google_accounts_callback_called_,
+        run_loop_->QuitClosure());
+
+    auth_service().GetGoogleAccountsInArc(std::move(callback));
+  }
+
+  void WaitForGoogleAccountsInArcCallback() { run_loop_->RunUntilIdle(); }
+
   Profile* profile() { return profile_.get(); }
 
   void set_profile_name(const std::string& username) {
@@ -315,6 +349,13 @@ class ArcAuthServiceTest : public InProcessBrowserTest {
   }
   ArcAuthService& auth_service() { return *auth_service_; }
   FakeAuthInstance& auth_instance() { return auth_instance_; }
+  ArcBridgeService& arc_bridge_service() { return *arc_bridge_service_; }
+  const std::vector<mojom::ArcAccountInfoPtr>& arc_google_accounts() const {
+    return arc_google_accounts_;
+  }
+  bool arc_google_accounts_callback_called() const {
+    return arc_google_accounts_callback_called_;
+  }
 
  private:
   std::unique_ptr<user_manager::ScopedUserManager> user_manager_enabler_;
@@ -325,6 +366,10 @@ class ArcAuthServiceTest : public InProcessBrowserTest {
   FakeAuthInstance auth_instance_;
   std::unique_ptr<IdentityTestEnvironmentProfileAdaptor>
       identity_test_environment_adaptor_;
+
+  std::vector<mojom::ArcAccountInfoPtr> arc_google_accounts_;
+  bool arc_google_accounts_callback_called_ = false;
+  std::unique_ptr<base::RunLoop> run_loop_;
 
   // Not owned.
   ArcAuthService* auth_service_ = nullptr;
@@ -454,6 +499,41 @@ IN_PROC_BROWSER_TEST_F(ArcAuthServiceTest,
             auth_instance().sign_in_status());
 }
 
+IN_PROC_BROWSER_TEST_F(ArcAuthServiceTest, FetchGoogleAccountsFromArc) {
+  SetAccountAndProfile(user_manager::USER_TYPE_REGULAR);
+
+  EXPECT_FALSE(arc_google_accounts_callback_called());
+  RequestGoogleAccountsInArc();
+  WaitForGoogleAccountsInArcCallback();
+
+  EXPECT_TRUE(arc_google_accounts_callback_called());
+  ASSERT_EQ(1UL, arc_google_accounts().size());
+  EXPECT_EQ(kFakeUserName, arc_google_accounts()[0]->email);
+  EXPECT_EQ(kFakeGaiaId, arc_google_accounts()[0]->gaia_id);
+}
+
+IN_PROC_BROWSER_TEST_F(ArcAuthServiceTest,
+                       FetchGoogleAccountsFromArcWorksAcrossConnectionResets) {
+  SetAccountAndProfile(user_manager::USER_TYPE_REGULAR);
+
+  // Close the connection.
+  arc_bridge_service().auth()->CloseInstance(&auth_instance());
+  // Make a request.
+  EXPECT_FALSE(arc_google_accounts_callback_called());
+  RequestGoogleAccountsInArc();
+  WaitForGoogleAccountsInArcCallback();
+  // Callback should not be called before connection is restarted.
+  EXPECT_FALSE(arc_google_accounts_callback_called());
+  // Restart the connection.
+  arc_bridge_service().auth()->SetInstance(&auth_instance());
+  WaitForInstanceReady(arc_bridge_service().auth());
+
+  EXPECT_TRUE(arc_google_accounts_callback_called());
+  ASSERT_EQ(1UL, arc_google_accounts().size());
+  EXPECT_EQ(kFakeUserName, arc_google_accounts()[0]->email);
+  EXPECT_EQ(kFakeGaiaId, arc_google_accounts()[0]->gaia_id);
+}
+
 // Tests that need Chrome OS Account Manager feature to be enabled.
 // TODO(crbug.com/912537): Merge them in ArcAuthServiceTest when Account Manager
 // is enabled by default on Chrome OS.
@@ -466,19 +546,6 @@ class ArcAuthServiceAccountManagerTest : public ArcAuthServiceTest {
     scoped_feature_list_.InitAndEnableFeature(
         chromeos::switches::kAccountManager);
     ArcAuthServiceTest::SetUp();
-  }
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    // Configure primary profile to be a guest profile, because the
-    // AccountManager can't deal with regular profiles in tests.
-    // https://crbug.com/915628
-    command_line->AppendSwitch(chromeos::switches::kGuestSession);
-    command_line->AppendSwitch(switches::kIncognito);
-    command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "hash");
-    command_line->AppendSwitchASCII(
-        chromeos::switches::kLoginUser,
-        user_manager::GuestAccountId().GetUserEmail());
-    ArcAuthServiceTest::SetUpCommandLine(command_line);
   }
 
   AccountInfo SetupGaiaAccount(const std::string& email,
@@ -510,6 +577,27 @@ class ArcAuthServiceAccountManagerTest : public ArcAuthServiceTest {
 };
 
 IN_PROC_BROWSER_TEST_F(ArcAuthServiceAccountManagerTest,
+                       UnAuthenticatedAccountsAreNotPropagated) {
+  const AccountInfo account_info =
+      SetupGaiaAccount(kSecondaryAccountEmail, kFakeToken);
+  SetInvalidRefreshTokenForAccount(account_info.account_id);
+
+  // Don't bother checking |initial_num_calls|. AccountManager has a quirk that
+  // if you insert an account into it "too soon" (before it has been fully
+  // initialized), it notifies its observers twice for the inserted account.
+  // This case can only be triggered by tests.
+  const int initial_num_calls = auth_instance().num_account_upserted_calls();
+
+  chromeos::AccountManager::AccountKey account_key{
+      account_info.gaia,
+      chromeos::account_manager::AccountType::ACCOUNT_TYPE_GAIA};
+  account_manager()->UpsertToken(account_key,
+                                 chromeos::AccountManager::kInvalidToken);
+
+  EXPECT_EQ(initial_num_calls, auth_instance().num_account_upserted_calls());
+}
+
+IN_PROC_BROWSER_TEST_F(ArcAuthServiceAccountManagerTest,
                        AccountUpsertsArePropagated) {
   AccountInfo account_info =
       SetupGaiaAccount(kSecondaryAccountEmail, kFakeToken);
@@ -538,12 +626,21 @@ IN_PROC_BROWSER_TEST_F(ArcAuthServiceAccountManagerTest,
 
   EXPECT_EQ(0, auth_instance().num_account_removed_calls());
 
-  AccountTrackerService* account_tracker_service =
-      AccountTrackerServiceFactory::GetInstance()->GetForProfile(profile());
-  const std::string account_id =
-      account_tracker_service->FindAccountInfoByEmail(kSecondaryAccountEmail)
-          .account_id;
-  account_tracker_service->RemoveAccount(account_id);
+  identity::IdentityManager* identity_manager =
+      IdentityManagerFactory::GetForProfile(profile());
+  base::Optional<AccountInfo> maybe_account_info =
+      identity_manager->FindAccountInfoForAccountWithRefreshTokenByEmailAddress(
+          kSecondaryAccountEmail);
+  ASSERT_TRUE(maybe_account_info.has_value());
+
+  AccountFetcherService* account_fetcher_service =
+      AccountFetcherServiceFactory::GetForProfile(profile());
+  // Necessary to ensure that the OnExtendedAccountInfoRemoved() observer will
+  // be sent.
+  account_fetcher_service->EnableNetworkFetchesForTest();
+  identity_manager->GetAccountsMutator()->RemoveAccount(
+      maybe_account_info.value().account_id,
+      signin_metrics::SourceForRefreshTokenOperation::kUnknown);
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1, auth_instance().num_account_removed_calls());
@@ -562,10 +659,10 @@ IN_PROC_BROWSER_TEST_F(ArcAuthServiceAccountManagerTest,
   const int initial_num_calls = auth_instance().num_account_upserted_calls();
 
   chromeos::AccountManager::AccountKey account_key{
-      account_info.gaia,
-      chromeos::account_manager::AccountType::ACCOUNT_TYPE_GAIA};
-  account_manager()->UpsertToken(account_key,
-                                 chromeos::AccountManager::kInvalidToken);
+      "object-guid",
+      chromeos::account_manager::AccountType::ACCOUNT_TYPE_ACTIVE_DIRECTORY};
+  account_manager()->UpsertToken(
+      account_key, chromeos::AccountManager::kActiveDirectoryDummyToken);
 
   EXPECT_EQ(auth_instance().num_account_upserted_calls(), initial_num_calls);
 }

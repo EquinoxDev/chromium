@@ -8,8 +8,9 @@
 # in this file.
 #
 # NOTE: Please do not add new exclusions to this file. Instead fix the test in
-# question such that it passes with --enable-features=WebUIPolymer2 (and with
-# GN optimize_webui=true and false).
+# question such that it passes with --enable-features=WebUIPolymer2 and, on
+# Chrome OS, --disable-features=WebUIPolymer2Exceptions (and with GN
+# optimize_webui=true and false).
 #
 # Note that some of these tests only fail inconsistently (like with
 # --gtest_repeat=5, but might pass on a single invocation).
@@ -40,6 +41,22 @@ AppManagementAppTest.*
 AudioPlayerBrowserTest.*
 AutofillBrowserTest.*
 BluetoothInternalsTest.*
+BookmarksActionsTest.*
+BookmarksAppTest.*
+BookmarksCommandManagerTest.*
+BookmarksDNDManagerTest.*
+BookmarksEditDialogTest.*
+BookmarksFocusTest.*
+BookmarksFolderNodeTest.*
+BookmarksItemTest.*
+BookmarksListTest.*
+BookmarksPolicyTest.*
+BookmarksReducersTest.*
+BookmarksRouterTest.*
+BookmarksStoreTest.*
+BookmarksToastManagerTest.*
+BookmarksToolbarTest.*
+BookmarksUtilTest.*
 CertificateViewerModalUITest.*
 CertificateViewerModalUITestAsync.*
 CertificateViewerUITest.*
@@ -54,6 +71,7 @@ CrElementsCheckboxTest.*
 CrElementsDialogTest.*
 CrElementsDrawerTest.*
 CrElementsFingerprintProgressArcTest.*
+CrElementsIconButtonTest.*
 CrElementsInputTest.*
 CrElementsLazyRenderTest.*
 CrElementsPolicyIndicatorBehaviorTest.*
@@ -71,7 +89,9 @@ CrElementsToastTest.*
 CrElementsToggleTest.*
 CrElementsToolbarSearchFieldTest.*
 CrExtensionsActivityLogTest.*
+CrExtensionsActivityLogHistoryTest.*
 CrExtensionsActivityLogItemTest.*
+CrExtensionsActivityLogStreamTest.*
 CrExtensionsA11yTest.*
 CrExtensionsA11yTestWithMultipleExensions.*
 CrExtensionsCodeSectionTest.*
@@ -84,6 +104,7 @@ CrExtensionsItemsTest.*
 CrExtensionsKioskModeTest.*
 CrExtensionsLoadErrorTest.*
 CrExtensionsManagerUnitTest.*
+CrExtensionsManagerUnitTestWithActivityLogFlag.*
 CrExtensionsNavigationHelperTest.*
 CrExtensionsOptionsDialogTest.*
 CrExtensionsPackDialogTest.*
@@ -111,6 +132,7 @@ CrSettingsCategorySettingExceptionsTest.*
 CrSettingsCertificateManagerTest.*
 CrSettingsChangePasswordPageTest.*
 CrSettingsCheckboxTest.*
+CrSettingsChooserExceptionListTest.*
 CrSettingsChooserExceptionListEntryTest.*
 CrSettingsChromeCleanupPageTest.*
 CrSettingsCrostiniPageTest.*
@@ -139,6 +161,7 @@ CrSettingsMultideviceFeatureItemTest.*
 CrSettingsMultideviceFeatureToggleTest.*
 CrSettingsMultidevicePageContainerTest.*
 CrSettingsMultidevicePageTest.*
+CrSettingsMultideviceSmartLockSubpageTest.*
 CrSettingsMultideviceSubpageTest.*
 CrSettingsNonExistentRouteTest.*
 CrSettingsOnStartupPageTest.*
@@ -203,40 +226,24 @@ GalleryBrowserTest.*
 GalleryBrowserTestInGuestMode.*
 GalleryJsTest.*
 GPUSandboxStatusUITest.*
+HistoryBrowserServiceTest.*
+HistoryDrawerTest.*
+HistoryFocusTest.*
+HistoryItemTest.*
+HistoryListTest.*
+HistoryMetricsTest.*
+HistoryOverflowMenuTest.*
+HistoryRoutingTest.*
+HistoryRoutingWithQueryParamTest.*
+HistorySupervisedUserTest.*
+HistorySyncedTabsTest.*
+HistoryToolbarTest.*
 ImageLoaderJsTest.*
 InterventionsInternalsUITest.*
 InvalidationsWebUITest.*
 LoadTimeDataTest.*
 LocalAndDriveFileSystemExtensionApiTest.*
 LocalFileSystemExtensionApiTest.*
-MaterialBookmarksActionsTest.*
-MaterialBookmarksAppTest.*
-MaterialBookmarksCommandManagerTest.*
-MaterialBookmarksDNDManagerTest.*
-MaterialBookmarksEditDialogTest.*
-MaterialBookmarksFocusTest.*
-MaterialBookmarksFolderNodeTest.*
-MaterialBookmarksItemTest.*
-MaterialBookmarksListTest.*
-MaterialBookmarksPolicyTest.*
-MaterialBookmarksReducersTest.*
-MaterialBookmarksRouterTest.*
-MaterialBookmarksStoreTest.*
-MaterialBookmarksToastManagerTest.*
-MaterialBookmarksToolbarTest.*
-MaterialBookmarksUtilTest.*
-MaterialHistoryBrowserServiceTest.*
-MaterialHistoryDrawerTest.*
-MaterialHistoryFocusTest.*
-MaterialHistoryItemTest.*
-MaterialHistoryListTest.*
-MaterialHistoryMetricsTest.*
-MaterialHistoryOverflowMenuTest.*
-MaterialHistoryRoutingTest.*
-MaterialHistoryRoutingWithQueryParamTest.*
-MaterialHistorySupervisedUserTest.*
-MaterialHistorySyncedTabsTest.*
-MaterialHistoryToolbarTest.*
 MediaEngagementWebUIBrowserTest.*
 MediaRouterElementsBrowserTest.*
 Mock4JSWebUITest.*
@@ -251,6 +258,15 @@ NTP4WebUITest.*
 OnboardingWelcomeEmailChooserTest.*
 OnboardingWelcomeWelcomeAppTest.*
 OpenAudioFiles/*
+PDFAnnotationsTest.*
+PDFExtensionClipboardTest.*
+PDFExtensionHitTestTest.*
+PDFExtensionInternalLinkClickTest.*
+PDFExtensionLinkClickTest.*
+PDFExtensionLoadTest.*
+PDFExtensionTest.*
+PDFIsolatedExtensionTest.*
+PDFPluginDisabledTest.*
 PrintPreviewAdvancedDialogTest.*
 PrintPreviewAdvancedItemTest.*
 PrintPreviewBaseSettingsSectionTest.*
@@ -266,6 +282,7 @@ PrintPreviewLinkContainerTest.*
 PrintPreviewModelTest.*
 PrintPreviewNewDestinationSearchTest.*
 PrintPreviewNumberSettingsSectionTest.*
+PrintPreviewPagesSettingsTest.*
 PrintPreviewPolicyTest.*
 PrintPreviewPreviewGenerationTest.*
 PrintPreviewPrintButtonTest.*

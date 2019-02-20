@@ -11,6 +11,7 @@ import android.util.JsonWriter;
 import org.chromium.chrome.R;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -19,16 +20,16 @@ import java.util.List;
  */
 public class ContactDetails implements Comparable<ContactDetails> {
     // The unique id for the contact.
-    private String mId;
+    private final String mId;
 
     // The display name for this contact.
-    private String mDisplayName;
+    private final String mDisplayName;
 
     // The list of emails registered for this contact.
-    private List<String> mEmails;
+    private final List<String> mEmails;
 
     // The list of phone numbers registered for this contact.
-    private List<String> mPhoneNumbers;
+    private final List<String> mPhoneNumbers;
 
     /**
      * The ContactDetails constructor.
@@ -40,23 +41,28 @@ public class ContactDetails implements Comparable<ContactDetails> {
     public ContactDetails(
             String id, String displayName, List<String> emails, List<String> phoneNumbers) {
         mDisplayName = displayName;
-        mEmails = emails;
-        mPhoneNumbers = phoneNumbers;
+        mEmails = emails != null ? new ArrayList<String>(emails) : new ArrayList<String>();
+        mPhoneNumbers = phoneNumbers != null ? new ArrayList<String>(phoneNumbers)
+                                             : new ArrayList<String>();
         mId = id;
     }
 
-    /**
-     * Accessor for the display name.
-     * @return The full display name.
-     */
+    public List<String> getDisplayNames() {
+        return Arrays.asList(mDisplayName);
+    }
+
+    public List<String> getEmails() {
+        return mEmails;
+    }
+
+    public List<String> getPhoneNumbers() {
+        return mPhoneNumbers;
+    }
+
     public String getDisplayName() {
         return mDisplayName;
     }
 
-    /**
-     * Accessor for the ID.
-     * @return The ID of the contact.
-     */
     public String getId() {
         return mId;
     }
@@ -92,32 +98,28 @@ public class ContactDetails implements Comparable<ContactDetails> {
     public String getContactDetailsAsString(boolean longVersion, @Nullable Resources resources) {
         int count = 0;
         StringBuilder builder = new StringBuilder();
-        if (mEmails != null) {
-            for (String email : mEmails) {
-                if (count++ > 0) {
-                    builder.append("\n");
-                }
-                builder.append(email);
-                if (!longVersion && mEmails.size() > 1) {
-                    int size = mEmails.size() - 1;
-                    builder.append(resources.getQuantityString(
-                            R.plurals.contacts_picker_more_details, size, size));
-                    break;
-                }
+        for (String email : mEmails) {
+            if (count++ > 0) {
+                builder.append("\n");
+            }
+            builder.append(email);
+            if (!longVersion && mEmails.size() > 1) {
+                int size = mEmails.size() - 1;
+                builder.append(resources.getQuantityString(
+                        R.plurals.contacts_picker_more_details, size, size));
+                break;
             }
         }
-        if (mPhoneNumbers != null) {
-            for (String phoneNumber : mPhoneNumbers) {
-                if (count++ > 0) {
-                    builder.append("\n");
-                }
-                builder.append(phoneNumber);
-                if (!longVersion && mPhoneNumbers.size() > 1) {
-                    int size = mPhoneNumbers.size() - 1;
-                    builder.append(resources.getQuantityString(
-                            R.plurals.contacts_picker_more_details, size, size));
-                    break;
-                }
+        for (String phoneNumber : mPhoneNumbers) {
+            if (count++ > 0) {
+                builder.append("\n");
+            }
+            builder.append(phoneNumber);
+            if (!longVersion && mPhoneNumbers.size() > 1) {
+                int size = mPhoneNumbers.size() - 1;
+                builder.append(resources.getQuantityString(
+                        R.plurals.contacts_picker_more_details, size, size));
+                break;
             }
         }
 

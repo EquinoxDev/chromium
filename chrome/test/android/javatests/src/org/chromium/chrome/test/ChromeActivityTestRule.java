@@ -45,10 +45,10 @@ import org.chromium.chrome.browser.preferences.Preferences;
 import org.chromium.chrome.browser.preferences.PreferencesLauncher;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
+import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 import org.chromium.chrome.test.util.ApplicationTestUtils;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.MenuUtils;
@@ -145,6 +145,10 @@ public class ChromeActivityTestRule<T extends ChromeActivity> extends ActivityTe
         try {
             ApplicationTestUtils.tearDown(InstrumentationRegistry.getTargetContext());
             Thread.setDefaultUncaughtExceptionHandler(mDefaultUncaughtExceptionHandler);
+            if (mSetActivity != null) {
+                // This is to ensure onDestroy() is performed before starting the next test.
+                ApplicationTestUtils.finishActivity(mSetActivity);
+            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to tearDown", e);
         }

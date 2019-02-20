@@ -31,6 +31,9 @@ namespace {
 const size_t kTraceConfigFileSizeLimit = 64 * 1024;
 const int kDefaultStartupDuration = 5;
 
+// 95th percentile size of current startup traces size uploaded.
+const size_t kMaxStartupTraceSizeInKb = 300;
+
 // Trace config file path:
 // - Android: /data/local/chrome-trace-config.json
 // - Others: specified by --trace-config-file flag.
@@ -70,6 +73,7 @@ TraceStartupConfig::GetDefaultBrowserStartupConfig() {
       {base::GetCurrentProcId()});
   // First 10k events at start are sufficient to debug startup traces.
   trace_config.SetTraceBufferSizeInEvents(10000);
+  trace_config.SetTraceBufferSizeInKb(kMaxStartupTraceSizeInKb);
   trace_config.SetProcessFilterConfig(process_config);
   // Enable argument filter since we could be background tracing.
   trace_config.EnableArgumentFilter();
@@ -227,7 +231,7 @@ bool TraceStartupConfig::EnableFromBackgroundTracing() {
 
 bool TraceStartupConfig::ParseTraceConfigFileContent(
     const std::string& content) {
-  std::unique_ptr<base::Value> value(base::JSONReader::Read(content));
+  std::unique_ptr<base::Value> value(base::JSONReader::ReadDeprecated(content));
   if (!value || !value->is_dict())
     return false;
 

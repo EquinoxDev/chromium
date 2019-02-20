@@ -33,6 +33,10 @@ blink_core_sources("loader") {
     "frame_loader_state_machine.cc",
     "frame_loader_state_machine.h",
     "frame_loader_types.h",
+    "frame_or_imported_document.cc",
+    "frame_or_imported_document.h",
+    "frame_resource_fetcher_properties.cc",
+    "frame_resource_fetcher_properties.h",
     "history_item.cc",
     "history_item.h",
     "http_equiv.cc",
@@ -50,6 +54,10 @@ blink_core_sources("loader") {
     "link_loader.cc",
     "link_loader.h",
     "link_loader_client.h",
+    "loader_factory_for_frame.cc",
+    "loader_factory_for_frame.h",
+    "loader_factory_for_worker.cc",
+    "loader_factory_for_worker.h",
     "long_task_detector.cc",
     "long_task_detector.h",
     "mixed_content_checker.cc",
@@ -133,6 +141,8 @@ blink_core_sources("loader") {
     "threadable_loader_client.h",
     "worker_fetch_context.cc",
     "worker_fetch_context.h",
+    "worker_resource_fetcher_properties.cc",
+    "worker_resource_fetcher_properties.h",
   ]
 
   public_deps = [

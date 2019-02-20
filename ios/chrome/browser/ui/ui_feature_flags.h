@@ -14,17 +14,22 @@ extern const base::Feature kClosingLastIncognitoTab;
 // Feature to contain the NTP directly from browser container.
 extern const base::Feature kBrowserContainerContainsNTP;
 
-// Feature to copy image to system pasteboard via context menu.
-extern const base::Feature kCopyImage;
+// Feature to retain the contentView in the browser container.
+extern const base::Feature kBrowserContainerKeepsContentView;
 
 // Feature to show most visited sites and collection shortcuts in the omnibox
 // popup instead of ZeroSuggest.
 extern const base::Feature kOmniboxPopupShortcutIconsInZeroState;
 
-// Feature to allow user to search for a copied image.
-extern const base::Feature kSearchCopiedImage;
-
 // Feature to take snapshots using |-drawViewHierarchy:|.
 extern const base::Feature kSnapshotDrawView;
+
+// Feature to rework handling of copied content (url/string/image) in the ui.
+// This feature is used in extensions. If you modify it significantly, you may
+// want to update the version in |app_group_field_trial_version|.
+extern const base::Feature kCopiedContentBehavior;
+
+// Feature to apply UI Refresh theme to the settings.
+extern const base::Feature kSettingsRefresh;
 
 #endif  // IOS_CHROME_BROWSER_UI_UI_FEATURE_FLAGS_H_

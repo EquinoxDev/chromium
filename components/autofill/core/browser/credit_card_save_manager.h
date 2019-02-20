@@ -16,6 +16,7 @@
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/credit_card.h"
+#include "components/autofill/core/browser/credit_card_save_strike_database.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/payments/payments_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
@@ -123,7 +124,13 @@ class CreditCardSaveManager {
  private:
   friend class CreditCardSaveManagerTest;
   friend class CreditCardSaveManagerTestObserverBridge;
-  friend class SaveCardBubbleViewsBrowserTestBase;
+  friend class LocalCardMigrationBrowserTest;
+  friend class TestCreditCardSaveManager;
+  friend class SaveCardBubbleViewsFullFormBrowserTest;
+  friend class SaveCardInfobarEGTestHelper;
+
+  // Returns the CreditCardSaveStrikeDatabase for |client_|.
+  CreditCardSaveStrikeDatabase* GetCreditCardSaveStrikeDatabase();
 
   // Sets |show_save_prompt| and moves forward with offering credit card local
   // save.
@@ -191,12 +198,16 @@ class CreditCardSaveManager {
           user_provided_card_details);
 
 #if defined(OS_ANDROID)
-  // Sets |user_did_accept_upload_prompt_| and calls SendUploadCardRequest if
-  // the risk data is available. Sets the cardholder name on the upload request
-  // if |cardholder_name| is set.
+  // Upload the card details with the user provided cardholder_name.
   // Only relevant for mobile as fix flow is two steps on mobile compared to
   // one step on desktop.
   void OnUserDidAcceptAccountNameFixFlow(const base::string16& cardholder_name);
+
+  // Upload the card details with the user provided expiration date month and
+  // year. Only relevant for mobile as fix flow is two steps on mobile compared
+  // to one step on desktop.
+  void OnUserDidAcceptExpirationDateFixFlow(const base::string16& month,
+                                            const base::string16& year);
 #endif  // defined(OS_ANDROID)
 
   // Helper function that calls SendUploadCardRequest by setting
@@ -302,6 +313,8 @@ class CreditCardSaveManager {
 
   // The returned legal message from a GetUploadDetails call to Google Payments.
   std::unique_ptr<base::DictionaryValue> legal_message_;
+
+  std::unique_ptr<CreditCardSaveStrikeDatabase> strike_database_;
 
   // May be null.
   ObserverForTest* observer_for_testing_ = nullptr;

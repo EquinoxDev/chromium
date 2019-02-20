@@ -181,17 +181,18 @@ void WebContentsDelegate::EnumerateDirectory(
 void WebContentsDelegate::RequestMediaAccessPermission(
     WebContents* web_contents,
     const MediaStreamRequest& request,
-    MediaResponseCallback callback) {
+    content::MediaResponseCallback callback) {
   LOG(ERROR) << "WebContentsDelegate::RequestMediaAccessPermission: "
              << "Not supported.";
-  std::move(callback).Run(MediaStreamDevices(), MEDIA_DEVICE_NOT_SUPPORTED,
-                          std::unique_ptr<MediaStreamUI>());
+  std::move(callback).Run(blink::MediaStreamDevices(),
+                          blink::MEDIA_DEVICE_NOT_SUPPORTED,
+                          std::unique_ptr<content::MediaStreamUI>());
 }
 
 bool WebContentsDelegate::CheckMediaAccessPermission(
     RenderFrameHost* render_frame_host,
     const GURL& security_origin,
-    MediaStreamType type) {
+    blink::MediaStreamType type) {
   LOG(ERROR) << "WebContentsDelegate::CheckMediaAccessPermission: "
              << "Not supported.";
   return false;
@@ -199,7 +200,7 @@ bool WebContentsDelegate::CheckMediaAccessPermission(
 
 std::string WebContentsDelegate::GetDefaultMediaDeviceID(
     WebContents* web_contents,
-    MediaStreamType type) {
+    blink::MediaStreamType type) {
   return std::string();
 }
 
@@ -244,6 +245,10 @@ bool WebContentsDelegate::IsNeverVisible(WebContents* web_contents) {
   return false;
 }
 
+bool WebContentsDelegate::GuestSaveFrame(WebContents* guest_web_contents) {
+  return false;
+}
+
 bool WebContentsDelegate::SaveFrame(const GURL& url, const Referrer& referrer) {
   return false;
 }
@@ -275,7 +280,8 @@ bool WebContentsDelegate::DoBrowserControlsShrinkRendererSize(
   return false;
 }
 
-gfx::Size WebContentsDelegate::EnterPictureInPicture(const viz::SurfaceId&,
+gfx::Size WebContentsDelegate::EnterPictureInPicture(WebContents* web_contents,
+                                                     const viz::SurfaceId&,
                                                      const gfx::Size&) {
   return gfx::Size();
 }
@@ -292,4 +298,8 @@ std::unique_ptr<WebContents> WebContentsDelegate::SwapWebContents(
   return new_contents;
 }
 
+bool WebContentsDelegate::ShouldShowStaleContentOnEviction(
+    WebContents* source) {
+  return false;
+}
 }  // namespace content

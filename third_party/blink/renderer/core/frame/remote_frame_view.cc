@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
 
+#include "third_party/blink/public/common/frame/frame_owner_element_type.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element_visibility_observer.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -32,11 +34,26 @@ LocalFrameView* RemoteFrameView::ParentFrameView() const {
   if (!is_attached_)
     return nullptr;
 
-  Frame* parent_frame = remote_frame_->Tree().Parent();
-  if (parent_frame && parent_frame->IsLocalFrame())
-    return ToLocalFrame(parent_frame)->View();
+  HTMLFrameOwnerElement* owner = remote_frame_->DeprecatedLocalOwner();
+  if (owner && owner->OwnerType() == FrameOwnerElementType::kPortal)
+    return owner->GetDocument().GetFrame()->View();
 
-  return nullptr;
+  // |is_attached_| is only set from AttachToLayout(), which ensures that the
+  // parent is a local frame.
+  return ToLocalFrame(remote_frame_->Tree().Parent())->View();
+}
+
+LocalFrameView* RemoteFrameView::ParentLocalRootFrameView() const {
+  if (!is_attached_)
+    return nullptr;
+
+  HTMLFrameOwnerElement* owner = remote_frame_->DeprecatedLocalOwner();
+  if (owner && owner->OwnerType() == FrameOwnerElementType::kPortal)
+    return owner->GetDocument().GetFrame()->LocalFrameRoot().View();
+
+  // |is_attached_| is only set from AttachToLayout(), which ensures that the
+  // parent is a local frame.
+  return ToLocalFrame(remote_frame_->Tree().Parent())->LocalFrameRoot().View();
 }
 
 void RemoteFrameView::AttachToLayout() {
@@ -44,6 +61,7 @@ void RemoteFrameView::AttachToLayout() {
   is_attached_ = true;
   if (ParentFrameView()->IsVisible())
     SetParentVisible(true);
+  UpdateVisibility(true);
 
   SetupRenderThrottling();
   subtree_throttled_ = ParentFrameView()->CanThrottleRendering();
@@ -68,8 +86,7 @@ void RemoteFrameView::UpdateViewportIntersectionsForSubtree() {
   if (!owner)
     return;
 
-  LocalFrameView* local_root_view =
-      ToLocalFrame(remote_frame_->Tree().Parent())->LocalFrameRoot().View();
+  LocalFrameView* local_root_view = ParentLocalRootFrameView();
   if (!local_root_view)
     return;
 
@@ -139,8 +156,7 @@ void RemoteFrameView::UpdateViewportIntersectionsForSubtree() {
 }
 
 IntRect RemoteFrameView::GetCompositingRect() {
-  LocalFrameView* local_root_view =
-      ToLocalFrame(remote_frame_->Tree().Parent())->LocalFrameRoot().View();
+  LocalFrameView* local_root_view = ParentLocalRootFrameView();
   if (!local_root_view || !remote_frame_->OwnerLayoutObject())
     return IntRect();
 
@@ -282,12 +298,12 @@ void RemoteFrameView::UpdateGeometry() {
 
 void RemoteFrameView::Hide() {
   self_visible_ = false;
-  remote_frame_->Client()->VisibilityChanged(false);
+  UpdateVisibility(scroll_visible_);
 }
 
 void RemoteFrameView::Show() {
   self_visible_ = true;
-  remote_frame_->Client()->VisibilityChanged(true);
+  UpdateVisibility(scroll_visible_);
 }
 
 void RemoteFrameView::SetParentVisible(bool visible) {
@@ -297,8 +313,24 @@ void RemoteFrameView::SetParentVisible(bool visible) {
   parent_visible_ = visible;
   if (!self_visible_)
     return;
+  UpdateVisibility(scroll_visible_);
+}
 
-  remote_frame_->Client()->VisibilityChanged(self_visible_ && parent_visible_);
+void RemoteFrameView::UpdateVisibility(bool scroll_visible) {
+  blink::mojom::FrameVisibility visibility;
+  scroll_visible_ = scroll_visible;
+  if (self_visible_ && parent_visible_) {
+    visibility = scroll_visible
+                     ? blink::mojom::FrameVisibility::kRenderedInViewport
+                     : blink::mojom::FrameVisibility::kRenderedOutOfViewport;
+  } else {
+    visibility = blink::mojom::FrameVisibility::kNotRendered;
+  }
+
+  if (visibility == visibility_)
+    return;
+  visibility_ = visibility;
+  remote_frame_->Client()->VisibilityChanged(visibility);
 }
 
 void RemoteFrameView::SetupRenderThrottling() {
@@ -312,6 +344,7 @@ void RemoteFrameView::SetupRenderThrottling() {
   visibility_observer_ = MakeGarbageCollected<ElementVisibilityObserver>(
       target_element, WTF::BindRepeating(
                           [](RemoteFrameView* remote_view, bool is_visible) {
+                            remote_view->UpdateVisibility(is_visible);
                             remote_view->UpdateRenderThrottlingStatus(
                                 !is_visible, remote_view->subtree_throttled_);
                           },

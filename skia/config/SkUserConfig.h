@@ -144,7 +144,14 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_USE_LEGACY_DISTANCE_FIELDS
 #endif
 
-#define SK_LEGACY_TESSELLATOR_CPU_COVERAGE
+// skbug.com/4783
+#ifndef SK_SUPPORT_LEGACY_DRAWLOOPER
+#define SK_SUPPORT_LEGACY_DRAWLOOPER
+#endif
+
+#ifndef SK_SUPPORT_LEGACY_SETLENGTH
+#define SK_SUPPORT_LEGACY_SETLENGTH
+#endif
 
 // Skia is enabling this feature soon. Chrome probably does
 // not want it for M64
@@ -163,7 +170,15 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #define SK_SUPPORT_LEGACY_AAA_CHOICE
 #endif
 
-#define SK_LEGACY_SRGB_STAGE_CHOICE
+#ifndef SK_SUPPORT_LEGACY_TEXTBLOBCACHEDIFFCANVAS_CONSTRUCTOR
+#define SK_SUPPORT_LEGACY_TEXTBLOBCACHEDIFFCANVAS_CONSTRUCTOR
+#endif
+
+// We're turning this off indefinitely,
+// until we can figure out some fundamental problems with its approach.
+//
+// See chromium:913223, skia:6886.
+#define SK_DISABLE_DAA
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

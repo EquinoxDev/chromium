@@ -8,10 +8,14 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "base/atomic_sequence_num.h"
+#include "base/bind.h"
 #include "base/macros.h"
+#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/media/router/issue_manager.h"
@@ -288,14 +292,14 @@ std::vector<MediaSinkWithCastModes> MediaRouterUIBase::GetEnabledSinks() const {
   // provider-specific behavior, but we currently do not have a way to
   // communicate dialog-specific information to/from the
   // WiredDisplayMediaRouteProvider.
-  std::vector<MediaSinkWithCastModes> enabled_sinks;
+  std::vector<MediaSinkWithCastModes> enabled_sinks(sinks_);
   const std::string display_sink_id =
       WiredDisplayMediaRouteProvider::GetSinkIdForDisplay(
           display_observer_->GetCurrentDisplay());
-  for (const MediaSinkWithCastModes& sink : sinks_) {
-    if (sink.sink.id() != display_sink_id)
-      enabled_sinks.push_back(sink);
-  }
+  base::EraseIf(enabled_sinks,
+                [&display_sink_id](const MediaSinkWithCastModes& sink) {
+                  return sink.sink.id() == display_sink_id;
+                });
   return enabled_sinks;
 }
 

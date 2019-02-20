@@ -18,9 +18,9 @@
 #include "remoting/protocol/host_video_stats_dispatcher.h"
 #include "remoting/protocol/webrtc_frame_scheduler_simple.h"
 #include "remoting/protocol/webrtc_transport.h"
-#include "third_party/webrtc/api/mediastreaminterface.h"
+#include "third_party/webrtc/api/media_stream_interface.h"
 #include "third_party/webrtc/api/notifier.h"
-#include "third_party/webrtc/api/peerconnectioninterface.h"
+#include "third_party/webrtc/api/peer_connection_interface.h"
 
 #if defined(USE_H264_ENCODER)
 #include "remoting/codec/webrtc_video_encoder_gpu.h"
@@ -100,11 +100,8 @@ WebrtcVideoStream::WebrtcVideoStream(const SessionOptions& session_options)
 
 WebrtcVideoStream::~WebrtcVideoStream() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (stream_) {
-    for (const auto& track : stream_->GetVideoTracks()) {
-      stream_->RemoveTrack(track.get());
-    }
-    peer_connection_->RemoveStream(stream_.get());
+  if (video_sender_) {
+    peer_connection_->RemoveTrack(video_sender_.get());
   }
 }
 
@@ -138,17 +135,10 @@ void WebrtcVideoStream::Start(
   rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track =
       peer_connection_factory->CreateVideoTrack(kVideoLabel, src);
 
-  stream_ = peer_connection_factory->CreateLocalMediaStream(kStreamLabel);
-
-  // AddTrack() may fail only if there is another track with the same name,
-  // which is impossible because it's a brand new stream.
-  bool result = stream_->AddTrack(video_track.get());
-  DCHECK(result);
-
-  // AddStream() may fail if there is another stream with the same name or when
-  // the PeerConnection is closed, neither is expected.
-  result = peer_connection_->AddStream(stream_.get());
-  DCHECK(result);
+  // value() DCHECKs if AddTrack() fails, which only happens if a track was
+  // already added with the stream label.
+  video_sender_ =
+      peer_connection_->AddTrack(video_track.get(), {kStreamLabel}).value();
 
   scheduler_.reset(new WebrtcFrameSchedulerSimple(session_options_));
   scheduler_->Start(
@@ -158,6 +148,10 @@ void WebrtcVideoStream::Start(
   video_stats_dispatcher_.Init(webrtc_transport_->CreateOutgoingChannel(
                                    video_stats_dispatcher_.channel_name()),
                                this);
+}
+
+void WebrtcVideoStream::SelectSource(int id) {
+  capturer_->SelectSource(id);
 }
 
 void WebrtcVideoStream::SetEventTimestampsSource(

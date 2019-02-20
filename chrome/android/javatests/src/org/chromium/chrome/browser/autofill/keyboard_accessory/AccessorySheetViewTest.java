@@ -44,13 +44,13 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.KeyboardAccessoryData.Tab;
-import org.chromium.chrome.browser.modelutil.LazyConstructionPropertyMcp;
-import org.chromium.chrome.browser.modelutil.ListModel;
 import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.ViewUtils;
 import org.chromium.ui.DeferredViewStubInflationProvider;
 import org.chromium.ui.ViewProvider;
+import org.chromium.ui.modelutil.LazyConstructionPropertyMcp;
+import org.chromium.ui.modelutil.ListModel;
 import org.chromium.ui.modelutil.PropertyModel;
 
 import java.util.concurrent.ArrayBlockingQueue;
@@ -116,7 +116,7 @@ public class AccessorySheetViewTest {
     @MediumTest
     public void testAddingTabToModelRendersTabsView() throws InterruptedException {
         final String kSampleAction = "Some Action";
-        mModel.get(TABS).add(new Tab(null, null, R.layout.empty_accessory_sheet,
+        mModel.get(TABS).add(new Tab("Passwords", null, null, R.layout.empty_accessory_sheet,
                 AccessoryTabType.PASSWORDS, new Tab.Listener() {
                     @Override
                     public void onTabCreated(ViewGroup view) {
@@ -221,8 +221,8 @@ public class AccessorySheetViewTest {
     }
 
     private Tab createTestTabWithTextView(String textViewCaption) {
-        return new Tab(null, null, R.layout.empty_accessory_sheet, AccessoryTabType.PASSWORDS,
-                new Tab.Listener() {
+        return new Tab("Passwords", null, null, R.layout.empty_accessory_sheet,
+                AccessoryTabType.PASSWORDS, new Tab.Listener() {
                     @Override
                     public void onTabCreated(ViewGroup view) {
                         TextView sampleTextView = new TextView(mActivityTestRule.getActivity());

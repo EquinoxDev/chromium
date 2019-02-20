@@ -30,7 +30,7 @@
 #include "third_party/blink/public/platform/web_rtc_data_channel_handler.h"
 #include "third_party/blink/public/platform/web_rtc_data_channel_handler_client.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
@@ -97,11 +97,11 @@ class MODULES_EXPORT RTCDataChannel final
 
   void close();
 
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(open, kOpen);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(bufferedamountlow, kBufferedamountlow);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(close, kClose);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(message, kMessage);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(open, kOpen)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(bufferedamountlow, kBufferedamountlow)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(error, kError)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(close, kClose)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(message, kMessage)
 
   // EventTarget
   const AtomicString& InterfaceName() const override;

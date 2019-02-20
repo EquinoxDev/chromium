@@ -20,12 +20,13 @@ import com.google.android.libraries.feed.host.imageloader.ImageLoaderApi;
 import org.chromium.base.Callback;
 import org.chromium.base.DiscardableReferencePool;
 import org.chromium.base.SysUtils;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.cached_image_fetcher.CachedImageFetcher;
 import org.chromium.chrome.browser.cached_image_fetcher.InMemoryCachedImageFetcher;
 import org.chromium.chrome.browser.suggestions.ThumbnailGradient;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 
 import java.util.Iterator;
 import java.util.List;
@@ -34,6 +35,7 @@ import java.util.List;
  * Provides image loading and other host-specific asset fetches for Feed.
  */
 public class FeedImageLoader implements ImageLoaderApi {
+    private static final String CACHED_IMAGE_FETCHER_UMA_CLIENT_NAME = "Feed";
     private static final String ASSET_PREFIX = "asset://";
     private static final String OVERLAY_IMAGE_PREFIX = "overlay-image://";
     private static final String OVERLAY_IMAGE_URL_PARAM = "url";
@@ -84,7 +86,7 @@ public class FeedImageLoader implements ImageLoaderApi {
             Iterator<String> urlsIter, int widthPx, int heightPx, Consumer<Drawable> consumer) {
         if (!urlsIter.hasNext() || mCachedImageFetcher == null) {
             // Post to ensure callback is not run synchronously.
-            ThreadUtils.postOnUiThread(() -> consumer.accept(null));
+            PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> consumer.accept(null));
             return;
         }
 
@@ -95,7 +97,7 @@ public class FeedImageLoader implements ImageLoaderApi {
                 loadDrawableWithIter(urlsIter, widthPx, heightPx, consumer);
             } else {
                 // Post to ensure callback is not run synchronously.
-                ThreadUtils.postOnUiThread(() -> consumer.accept(drawable));
+                PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> consumer.accept(drawable));
             }
         } else if (url.startsWith(OVERLAY_IMAGE_PREFIX)) {
             Uri uri = Uri.parse(url);
@@ -167,7 +169,8 @@ public class FeedImageLoader implements ImageLoaderApi {
 
     @VisibleForTesting
     protected void fetchImage(String url, int width, int height, Callback<Bitmap> callback) {
-        mCachedImageFetcher.fetchImage(url, width, height, callback);
+        mCachedImageFetcher.fetchImage(
+                url, CACHED_IMAGE_FETCHER_UMA_CLIENT_NAME, width, height, callback);
     }
 
     @VisibleForTesting

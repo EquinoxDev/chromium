@@ -202,7 +202,7 @@ TEST_F('CrExtensionsItemsTest', 'HtmlInName', function() {
 CrExtensionsActivityLogTest = class extends CrExtensionsBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://extensions/activity_log.html';
+    return 'chrome://extensions/activity_log/activity_log.html';
   }
 
   get extraLibraries() {
@@ -217,12 +217,32 @@ TEST_F('CrExtensionsActivityLogTest', 'All', () => {
 });
 
 ////////////////////////////////////////////////////////////////////////////////
+// Extension Activity Log History Tests
+
+CrExtensionsActivityLogHistoryTest = class extends CrExtensionsBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://extensions/activity_log/activity_log_history.html';
+  }
+
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      'activity_log_history_test.js',
+    ]);
+  }
+};
+
+TEST_F('CrExtensionsActivityLogHistoryTest', 'All', () => {
+  mocha.run();
+});
+
+////////////////////////////////////////////////////////////////////////////////
 // Extension Activity Log Item Tests
 
 CrExtensionsActivityLogItemTest = class extends CrExtensionsBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://extensions/activity_log_item.html';
+    return 'chrome://extensions/activity_log/activity_log_item.html';
   }
 
   get extraLibraries() {
@@ -233,6 +253,26 @@ CrExtensionsActivityLogItemTest = class extends CrExtensionsBrowserTest {
 };
 
 TEST_F('CrExtensionsActivityLogItemTest', 'All', () => {
+  mocha.run();
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// Extension Activity Log Stream Tests
+
+CrExtensionsActivityLogStreamTest = class extends CrExtensionsBrowserTest {
+  /** @override */
+  get browsePreload() {
+    return 'chrome://extensions/activity_log/activity_log_stream.html';
+  }
+
+  get extraLibraries() {
+    return super.extraLibraries.concat([
+      'activity_log_stream_test.js',
+    ]);
+  }
+};
+
+TEST_F('CrExtensionsActivityLogStreamTest', 'All', () => {
   mocha.run();
 });
 
@@ -396,9 +436,11 @@ TEST_F('CrExtensionsManagerUnitTest', 'Uninstall', function() {
   this.runMochaTest(extension_manager_tests.TestNames.Uninstall);
 });
 
-TEST_F('CrExtensionsManagerUnitTest', 'UninstallFromDetails', function() {
-  this.runMochaTest(extension_manager_tests.TestNames.UninstallFromDetails);
-});
+// Flaky since r621915: https://crbug.com/922490
+TEST_F(
+    'CrExtensionsManagerUnitTest', 'DISABLED_UninstallFromDetails', function() {
+      this.runMochaTest(extension_manager_tests.TestNames.UninstallFromDetails);
+    });
 
 TEST_F('CrExtensionsManagerUnitTest', 'ToggleIncognito', function() {
   this.runMochaTest(extension_manager_tests.TestNames.ToggleIncognitoMode);
@@ -414,6 +456,22 @@ TEST_F('CrExtensionsManagerUnitTest', 'KioskMode', function() {
 });
 GEN('#endif');
 
+CrExtensionsManagerUnitTestWithActivityLogFlag =
+    class extends CrExtensionsManagerUnitTest {
+  /** @override */
+  get commandLineSwitches() {
+    return [{
+      switchName: 'enable-extension-activity-logging',
+    }];
+  }
+};
+
+TEST_F(
+    'CrExtensionsManagerUnitTestWithActivityLogFlag', 'UpdateFromActivityLog',
+    function() {
+      this.runMochaTest(
+          extension_manager_tests.TestNames.UpdateFromActivityLog);
+    });
 
 CrExtensionsManagerTestWithMultipleExtensionTypesInstalled =
     class extends CrExtensionsBrowserTest {

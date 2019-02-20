@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/location.h"
 #include "base/strings/stringprintf.h"
 #include "base/task_runner.h"
@@ -126,7 +127,8 @@ UserMediaClientImpl::UserMediaClientImpl(
               std::move(media_stream_device_observer),
               base::BindRepeating(
                   &UserMediaClientImpl::GetMediaDevicesDispatcher,
-                  base::Unretained(this))),
+                  base::Unretained(this)),
+              render_frame->GetTaskRunner(blink::TaskType::kInternalMedia)),
           std::move(task_runner)) {}
 
 UserMediaClientImpl::~UserMediaClientImpl() {
@@ -221,8 +223,9 @@ void UserMediaClientImpl::MaybeProcessNextRequestInfo() {
                        base::Unretained(this)));
   } else {
     DCHECK(current_request.IsStopTrack());
-    MediaStreamTrack* track =
-        MediaStreamTrack::GetTrack(current_request.web_track_to_stop());
+    blink::WebPlatformMediaStreamTrack* track =
+        blink::WebPlatformMediaStreamTrack::GetTrack(
+            current_request.web_track_to_stop());
     if (track) {
       track->StopAndNotify(
           base::BindOnce(&UserMediaClientImpl::CurrentRequestCompleted,

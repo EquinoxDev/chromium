@@ -22,7 +22,6 @@
 #include "components/autofill/core/common/password_form.h"
 #include "components/autofill/core/common/signatures_util.h"
 #include "components/password_manager/core/browser/form_fetcher.h"
-#include "components/password_manager/core/browser/password_form_filling.h"
 #include "components/password_manager/core/browser/password_form_manager_for_ui.h"
 #include "components/password_manager/core/browser/password_form_metrics_recorder.h"
 #include "components/password_manager/core/browser/password_form_user_action.h"
@@ -345,8 +344,14 @@ class PasswordFormManager : public PasswordFormManagerInterface,
   // to an existing one.
   bool is_new_login_;
 
-  // Whether this form has an auto generated password.
+  // Whether this form has an auto generated password. If the user modifies the
+  // password it remains in status "generated".
   bool has_generated_password_;
+
+  // If |has_generated_password_|, contains a generated password. If the user
+  // modifies the generated password, this field is updated to reflect the
+  // modified value.
+  base::string16 generated_password_;
 
   // Whether the saved password was overridden.
   bool password_overridden_;
@@ -394,9 +399,6 @@ class PasswordFormManager : public PasswordFormManagerInterface,
   FormFetcher* form_fetcher_;
 
   VotesUploader votes_uploader_;
-
-  // Probable filling mechanism used in the renderer for this password form.
-  LikelyFormFilling likely_form_filling_ = LikelyFormFilling::kNoFilling;
 
   // Takes care of recording metrics and events for this PasswordFormManager.
   // Make sure to call Init before using |*this|, to ensure it is not null.

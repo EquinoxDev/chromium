@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/time/time.h"
 #include "base/trace_event/common/trace_event_common.h"
 #include "chrome/browser/vr/browser_renderer_browser_interface.h"
@@ -245,6 +246,11 @@ void BrowserRenderer::WatchElementForVisibilityStatusForTesting(
 
 void BrowserRenderer::AcceptDoffPromptForTesting() {
   ui_->AcceptDoffPromptForTesting();
+}
+
+void BrowserRenderer::SetBrowserRendererBrowserInterfaceForTesting(
+    BrowserRendererBrowserInterface* interface_ptr) {
+  browser_ = interface_ptr;
 }
 
 void BrowserRenderer::UpdateUi(const RenderInfo& render_info,

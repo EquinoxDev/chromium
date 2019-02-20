@@ -37,30 +37,12 @@ class DictionaryValue;
 // information about Google Accounts.
 class AccountTrackerService : public KeyedService {
  public:
-  // Name of the preference property that persists the account information
-  // tracked by this service.
-  static const char kAccountInfoPref[];
-
-  // Value representing no hosted domain in the kGoogleServicesHostedDomain
-  // preference.
-  static const char kNoHostedDomainFound[];
-
-  // Value representing no picture URL associated with an account.
-  static const char kNoPictureURLFound[];
-
-  // TODO(knn): Move to ChildAccountInfoFetcher once deprecated service flags
-  // have been migrated from preferences.
-  // Child account service flag name.
-  static const char kChildAccountServiceFlag[];
-
   // Clients of AccountTrackerService can implement this interface and register
   // with AddObserver() to learn about account information changes.
   class Observer {
    public:
     virtual ~Observer() {}
     virtual void OnAccountUpdated(const AccountInfo& info) {}
-    virtual void OnAccountImageUpdated(const std::string& account_id,
-                                       const gfx::Image& image) {}
     virtual void OnAccountUpdateFailed(const std::string& account_id) {}
     virtual void OnAccountRemoved(const AccountInfo& info) {}
   };
@@ -99,10 +81,6 @@ class AccountTrackerService : public KeyedService {
   AccountInfo GetAccountInfo(const std::string& account_id) const;
   AccountInfo FindAccountInfoByGaiaId(const std::string& gaia_id) const;
   AccountInfo FindAccountInfoByEmail(const std::string& email) const;
-
-  // Returns the account image associated to the account id |account_id|.
-  // If the account id is not known an empty image is returned.
-  gfx::Image GetAccountImage(const std::string& account_id);
 
   // Picks the correct account_id for the specified account depending on the
   // migration state.
@@ -146,8 +124,8 @@ class AccountTrackerService : public KeyedService {
 
  protected:
   // Available to be called in tests.
-  void SetAccountStateFromUserInfo(const std::string& account_id,
-                                   const base::DictionaryValue* user_info);
+  void SetAccountInfoFromUserInfo(const std::string& account_id,
+                                  const base::DictionaryValue* user_info);
 
   // Updates the account image. Does nothing if |account_id| does not exist in
   // |accounts_|.
@@ -156,24 +134,18 @@ class AccountTrackerService : public KeyedService {
  private:
   friend class AccountFetcherService;
   friend class FakeAccountFetcherService;
-  struct AccountState {
-    AccountInfo info;
-    gfx::Image image;
-  };
 
-  void NotifyAccountUpdated(const AccountState& state);
-  void NotifyAccountImageUpdated(const std::string& account_id,
-                                 const gfx::Image& image);
+  void NotifyAccountUpdated(const AccountInfo& account_info);
   void NotifyAccountUpdateFailed(const std::string& account_id);
-  void NotifyAccountRemoved(const AccountState& state);
+  void NotifyAccountRemoved(const AccountInfo& accoint_info);
 
   void StartTrackingAccount(const std::string& account_id);
   void StopTrackingAccount(const std::string& account_id);
 
   // Load the current state of the account info from the preferences file.
   void LoadFromPrefs();
-  void SaveToPrefs(const AccountState& account);
-  void RemoveFromPrefs(const AccountState& account);
+  void SaveToPrefs(const AccountInfo& account);
+  void RemoveFromPrefs(const AccountInfo& account);
 
   // Used to load/save account images from/to disc.
   base::FilePath GetImagePathFor(const std::string& account_id);
@@ -204,7 +176,7 @@ class AccountTrackerService : public KeyedService {
       const PrefService* pref_service);
 
   PrefService* pref_service_ = nullptr;  // Not owned.
-  std::map<std::string, AccountState> accounts_;
+  std::map<std::string, AccountInfo> accounts_;
   base::ObserverList<Observer>::Unchecked observer_list_;
 
   base::FilePath user_data_dir_;

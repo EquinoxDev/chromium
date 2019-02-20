@@ -9,6 +9,7 @@
 #include <set>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
@@ -27,7 +28,6 @@
 #include "content/public/common/service_manager_connection.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/image_util.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -36,7 +36,6 @@
 #include "ui/events/keycodes/keyboard_codes.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/public/interfaces/accessibility_controller.mojom.h"
 #include "ash/public/interfaces/accessibility_focus_ring_controller.mojom.h"
 #include "ash/public/interfaces/constants.mojom.h"
 #include "ash/public/interfaces/event_rewriter_controller.mojom.h"
@@ -395,17 +394,76 @@ AccessibilityPrivateSetSwitchAccessMenuStateFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params);
   bool show_menu = params->show;
 
+  int item_count = params->item_count;
+
+  int padding = 16;
+  int item_width = 88;
+  int item_height = 60;
+  // TODO(anastasi): This should be a preference that the user can change.
+  int max_cols = 3;
+
+  // The number of rows is the number of items divided by the max columns,
+  // rounded down.
+  int rows = 1 + (item_count - 1) / max_cols;
+  int cols = rows == 1 ? item_count : max_cols;
+  int width = padding + (item_width * cols);
+  int height = padding + (item_height * rows);
+
   extensions::api::accessibility_private::ScreenRect elem =
       std::move(params->element_bounds);
 
   gfx::Rect element_bounds(elem.left, elem.top, elem.width, elem.height);
 
-  if (show_menu)
-    chromeos::AccessibilityManager::Get()->ShowSwitchAccessMenu(element_bounds);
-  else
+  if (show_menu) {
+    chromeos::AccessibilityManager::Get()->ShowSwitchAccessMenu(element_bounds,
+                                                                width, height);
+  } else {
     chromeos::AccessibilityManager::Get()->HideSwitchAccessMenu();
+  }
 
   return RespondNow(NoArguments());
+}
+
+ExtensionFunction::ResponseAction
+AccessibilityPrivateForwardKeyEventsToSwitchAccessFunction::Run() {
+  std::unique_ptr<accessibility_private::ForwardKeyEventsToSwitchAccess::Params>
+      params =
+          accessibility_private::ForwardKeyEventsToSwitchAccess::Params::Create(
+              *args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  GetAccessibilityController()->ForwardKeyEventsToSwitchAccess(
+      params->should_forward);
+
+  return RespondNow(NoArguments());
+}
+
+AccessibilityPrivateGetBatteryDescriptionFunction::
+    AccessibilityPrivateGetBatteryDescriptionFunction() {}
+
+AccessibilityPrivateGetBatteryDescriptionFunction::
+    ~AccessibilityPrivateGetBatteryDescriptionFunction() {}
+
+ExtensionFunction::ResponseAction
+AccessibilityPrivateGetBatteryDescriptionFunction::Run() {
+  // Get AccessibilityControllerPtr; needs to exist for lifetime of this
+  // function and its callback.
+  controller_ = GetAccessibilityController();
+
+  // Get battery description from ash and return it via callback.
+  controller_->GetBatteryDescription(
+      base::BindOnce(&AccessibilityPrivateGetBatteryDescriptionFunction::
+                         OnGotBatteryDescription,
+                     this));
+
+  return RespondLater();
+}
+
+void AccessibilityPrivateGetBatteryDescriptionFunction::OnGotBatteryDescription(
+    const base::string16& battery_description) {
+  // Send battery description to extension.
+  Respond(OneArgument(std::make_unique<base::Value>(battery_description)));
+  controller_.reset();
 }
 
 #endif  // defined (OS_CHROMEOS)

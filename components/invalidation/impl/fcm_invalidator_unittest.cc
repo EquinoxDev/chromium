@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -47,7 +48,8 @@ class FCMInvalidatorTestDelegate {
     invalidator_.reset(new FCMInvalidator(
         std::move(network_channel), identity_provider_.get(), &pref_service_,
         &url_loader_factory_,
-        base::BindRepeating(&syncer::JsonUnsafeParser::Parse)));
+        base::BindRepeating(&syncer::JsonUnsafeParser::Parse),
+        "fake_sender_id"));
   }
 
   Invalidator* GetInvalidator() { return invalidator_.get(); }
@@ -78,9 +80,9 @@ class FCMInvalidatorTestDelegate {
   TestingPrefServiceSimple pref_service_;
 };
 
-INSTANTIATE_TYPED_TEST_CASE_P(FCMInvalidatorTest,
-                              InvalidatorTest,
-                              FCMInvalidatorTestDelegate);
+INSTANTIATE_TYPED_TEST_SUITE_P(FCMInvalidatorTest,
+                               InvalidatorTest,
+                               FCMInvalidatorTestDelegate);
 
 }  // namespace
 

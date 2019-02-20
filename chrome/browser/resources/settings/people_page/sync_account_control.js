@@ -78,7 +78,23 @@ Polymer({
       computed: 'computeShouldShowAvatarRow_(storedAccounts_, syncStatus,' +
           'storedAccounts_.length, syncStatus.signedIn)',
       observer: 'onShouldShowAvatarRowChange_',
-    }
+    },
+
+    /** @private */
+    subLabel_: {
+      type: String,
+      computed: 'computeSubLabel_(promoSecondaryLabelWithAccount,' +
+          'promoSecondaryLabelWithNoAccount, shownAccount_)',
+    },
+
+    unifiedConsentEnabled: Boolean,
+
+    /** @private */
+    showSetupButtons_: {
+      type: Boolean,
+      computed: 'computeShowSetupButtons_(unifiedConsentEnabled,' +
+          'hideButtons, syncStatus.setupInProgress)',
+    },
   },
 
   observers: [
@@ -126,7 +142,7 @@ Polymer({
    * @private
    */
   computeSignedIn_: function() {
-    return !!this.syncStatus.signedIn;
+    return !!this.syncStatus && !!this.syncStatus.signedIn;
   },
 
   /** @private */
@@ -161,6 +177,23 @@ Polymer({
   },
 
   /**
+   * @return {string}
+   * @private
+   */
+  computeSubLabel_: function() {
+    return this.getLabel_(this.promoSecondaryLabelWithAccount,
+                          this.promoSecondaryLabelWithNoAccount);
+  },
+
+  /**
+   * @return {string}
+   * @private
+   */
+  getPromoHeaderClass_: function() {
+    return !!this.subLabel_ ? 'two-line': '';
+  },
+
+  /**
    * @param {string} label
    * @param {string} name
    * @return {string}
@@ -177,6 +210,9 @@ Polymer({
    * @private
    */
   getAccountLabel_: function(label, account) {
+    if(!!this.unifiedConsentEnabled && !!this.syncStatus.setupInProgress) {
+      return this.syncStatus.statusText || account;
+    }
     return this.syncStatus.signedIn && !this.syncStatus.hasError &&
             !this.syncStatus.disabled ?
         loadTimeData.substituteString(label, account) :
@@ -253,7 +289,8 @@ Polymer({
    * @private
    */
   shouldShowTurnOffButton_: function() {
-    return !this.hideButtons && !!this.syncStatus.signedIn;
+    return !this.hideButtons && !this.showSetupButtons_ &&
+        !!this.syncStatus.signedIn;
   },
 
   /**
@@ -267,8 +304,8 @@ Polymer({
       // In a subpage the passphrase button is not required.
       return false;
     }
-    return !this.hideButtons && !!this.syncStatus.signedIn &&
-        !!this.syncStatus.hasError &&
+    return !this.hideButtons && !this.showSetupButtons_ &&
+        !!this.syncStatus.signedIn && !!this.syncStatus.hasError &&
         this.syncStatus.statusAction != settings.StatusAction.NO_ACTION;
   },
 
@@ -411,5 +448,24 @@ Polymer({
         this.recordImpressionUserActions_();
       }
     }
-  }
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  computeShowSetupButtons_: function() {
+    return !this.hideButtons && !!this.unifiedConsentEnabled &&
+        !!this.syncStatus.setupInProgress;
+  },
+
+  /** @private */
+  onSetupCancel_: function() {
+    this.fire('sync-setup-done', false);
+  },
+
+  /** @private */
+  onSetupConfirm_: function() {
+    this.fire('sync-setup-done', true);
+  },
 });

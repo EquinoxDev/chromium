@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -1172,8 +1173,8 @@ TEST_F(BackgroundSyncManagerTest, NotifyBackgroundSyncRegistered) {
   EXPECT_EQ(0, GetController()->registration_count());
   EXPECT_TRUE(Register(sync_options_1_));
   EXPECT_EQ(1, GetController()->registration_count());
-  EXPECT_EQ(GURL(kScope1).GetOrigin().spec(),
-            GetController()->registration_origin().spec());
+  EXPECT_EQ(url::Origin::Create(GURL(kScope1)),
+            GetController()->registration_origin());
 }
 
 TEST_F(BackgroundSyncManagerTest, WakeBrowserCalled) {

@@ -16,7 +16,7 @@ class SkCanvas;
 namespace cc {
 class ImageDecodeCache;
 class PaintCanvas;
-}
+}  // namespace cc
 
 namespace gpu {
 namespace gles2 {
@@ -48,14 +48,14 @@ class WebGraphicsContext3DProviderWrapper;
 
 class PLATFORM_EXPORT CanvasResourceProvider
     : public WebGraphicsContext3DProviderWrapper::DestructionObserver {
-
  public:
   enum ResourceUsage {
     kSoftwareResourceUsage,
     kSoftwareCompositedResourceUsage,
     kAcceleratedResourceUsage,
     kAcceleratedCompositedResourceUsage,
-    kAcceleratedDirectResourceUsage,
+    kAcceleratedDirect2DResourceUsage,
+    kAcceleratedDirect3DResourceUsage,
   };
 
   enum PresentationMode {
@@ -71,7 +71,8 @@ class PLATFORM_EXPORT CanvasResourceProvider
     kSharedBitmap = 2,
     kTextureGpuMemoryBuffer = 3,
     kBitmapGpuMemoryBuffer = 4,
-    kMaxValue = kBitmapGpuMemoryBuffer,
+    kSharedImage = 5,
+    kMaxValue = kSharedImage,
   };
 
   void static RecordTypeToUMA(ResourceProviderType type);
@@ -90,7 +91,7 @@ class PLATFORM_EXPORT CanvasResourceProvider
   // the compositor. Cases that are destined to be transferred via a
   // TransferableResource should call ProduceFrame() instead.
   virtual scoped_refptr<CanvasResource> ProduceFrame() = 0;
-  scoped_refptr<StaticBitmapImage> Snapshot();
+  virtual scoped_refptr<StaticBitmapImage> Snapshot() = 0;
 
   // WebGraphicsContext3DProvider::DestructionObserver implementation.
   void OnContextDestroyed() override;
@@ -123,6 +124,9 @@ class PLATFORM_EXPORT CanvasResourceProvider
   // operation.
   void TryEnableSingleBuffering();
 
+  // Only works in single buffering mode.
+  bool ImportResource(scoped_refptr<CanvasResource>);
+
   void RecycleResource(scoped_refptr<CanvasResource>);
   void SetResourceRecyclingEnabled(bool);
   void ClearRecycledResources();
@@ -146,6 +150,10 @@ class PLATFORM_EXPORT CanvasResourceProvider
   void Clear();
   ~CanvasResourceProvider() override;
 
+  base::WeakPtr<CanvasResourceProvider> CreateWeakPtr() {
+    return weak_ptr_factory_.GetWeakPtr();
+  }
+
  protected:
   gpu::gles2::GLES2Interface* ContextGL() const;
   GrContext* GetGrContext() const;
@@ -153,9 +161,7 @@ class PLATFORM_EXPORT CanvasResourceProvider
     return context_provider_wrapper_;
   }
   SkFilterQuality FilterQuality() const { return filter_quality_; }
-  base::WeakPtr<CanvasResourceProvider> CreateWeakPtr() {
-    return weak_ptr_factory_.GetWeakPtr();
-  }
+  scoped_refptr<StaticBitmapImage> SnapshotInternal();
 
   CanvasResourceProvider(const IntSize&,
                          const CanvasColorParams&,

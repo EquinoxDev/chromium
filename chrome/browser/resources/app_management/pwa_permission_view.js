@@ -24,29 +24,18 @@ Polymer({
   },
 
   attached: function() {
-    this.watch('app_', function(state) {
-      const selectedAppId = state.currentPage.selectedAppId;
-      if (selectedAppId) {
-        return state.apps[selectedAppId];
-      }
-    });
-
+    this.watch('app_', state => app_management.util.getSelectedApp(state));
     this.updateFromStore();
-  },
 
-  /**
-   * @private
-   */
-  onClickBackButton_: function() {
     this.listExpanded_ = false;
-    this.dispatch(app_management.actions.changePage(PageType.MAIN));
   },
 
   /**
    * @private
    */
-  onClickUninstallButton_: function() {
-    app_management.BrowserProxy.getInstance().handler.uninstall(this.app_.id);
+  onClickSiteSettingsButton_: function() {
+    app_management.BrowserProxy.getInstance().handler.openNativeSettings(
+        this.app_.id);
   },
 
   /**

@@ -56,6 +56,7 @@
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
+#include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/dom_storage/storage_partition_service.mojom.h"
 #include "third_party/blink/public/platform/scheduler/web_rail_mode_observer.h"
 #include "third_party/blink/public/platform/web_connection_type.h"
@@ -204,7 +205,7 @@ class CONTENT_EXPORT RenderThreadImpl
       ResourceDispatcherDelegate* delegate) override;
   std::unique_ptr<base::SharedMemory> HostAllocateSharedMemoryBuffer(
       size_t buffer_size) override;
-  void RegisterExtension(v8::Extension* extension) override;
+  void RegisterExtension(std::unique_ptr<v8::Extension> extension) override;
   int PostTaskToAllWebWorkers(const base::Closure& closure) override;
   bool ResolveProxy(const GURL& url, std::string* proxy_list) override;
   base::WaitableEvent* GetShutdownEvent() override;
@@ -213,6 +214,7 @@ class CONTENT_EXPORT RenderThreadImpl
   void SetRendererProcessType(
       blink::scheduler::WebRendererProcessType type) override;
   blink::WebString GetUserAgent() override;
+  const blink::UserAgentMetadata& GetUserAgentMetadata() override;
 
   // IPC::Listener implementation via ChildThreadImpl:
   void OnAssociatedInterfaceRequest(
@@ -383,8 +385,9 @@ class CONTENT_EXPORT RenderThreadImpl
   // video frame compositing. The ContextProvider given as an argument is
   // one that has been lost, and is a hint to the RenderThreadImpl to clear
   // it's |video_frame_compositor_context_provider_| if it matches.
-  scoped_refptr<viz::ContextProvider> GetVideoFrameCompositorContextProvider(
-      scoped_refptr<viz::ContextProvider>);
+  scoped_refptr<viz::RasterContextProvider>
+      GetVideoFrameCompositorContextProvider(
+          scoped_refptr<viz::RasterContextProvider>);
 
   // Returns a worker context provider that will be bound on the compositor
   // thread.
@@ -539,7 +542,8 @@ class CONTENT_EXPORT RenderThreadImpl
       const FrameReplicationState& replicated_state,
       const base::UnguessableToken& devtools_frame_token) override;
   void SetUpEmbeddedWorkerChannelForServiceWorker(
-      mojom::EmbeddedWorkerInstanceClientRequest client_request) override;
+      blink::mojom::EmbeddedWorkerInstanceClientRequest client_request)
+      override;
   void OnNetworkConnectionChanged(
       net::NetworkChangeNotifier::ConnectionType type,
       double max_bandwidth_mbps) override;
@@ -549,6 +553,7 @@ class CONTENT_EXPORT RenderThreadImpl
                                double bandwidth_kbps) override;
   void SetWebKitSharedTimersSuspended(bool suspend) override;
   void SetUserAgent(const std::string& user_agent) override;
+  void SetUserAgentMetadata(const blink::UserAgentMetadata& metadata) override;
   void UpdateScrollbarTheme(
       mojom::UpdateScrollbarThemeParamsPtr params) override;
   void OnSystemColorsChanged(int32_t aqua_color_variant,
@@ -622,6 +627,9 @@ class CONTENT_EXPORT RenderThreadImpl
   // Used on the render thread.
   std::unique_ptr<VideoCaptureImplManager> vc_manager_;
 
+  // Used to keep track of the renderer's backgrounded state.
+  bool is_backgrounded_;
+
   // The count of RenderWidgets running through this thread.
   int widget_count_;
 
@@ -629,6 +637,7 @@ class CONTENT_EXPORT RenderThreadImpl
   int hidden_widget_count_;
 
   blink::WebString user_agent_;
+  blink::UserAgentMetadata user_agent_metadata_;
 
   // Used to control web test specific behavior.
   std::unique_ptr<WebTestDependencies> web_test_deps_;
@@ -666,7 +675,8 @@ class CONTENT_EXPORT RenderThreadImpl
 
   base::ObserverList<RenderThreadObserver>::Unchecked observers_;
 
-  scoped_refptr<viz::ContextProvider> video_frame_compositor_context_provider_;
+  scoped_refptr<viz::RasterContextProvider>
+      video_frame_compositor_context_provider_;
 
   scoped_refptr<viz::RasterContextProvider> shared_worker_context_provider_;
 

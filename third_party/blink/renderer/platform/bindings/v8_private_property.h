@@ -49,8 +49,6 @@ class ScriptWrappable;
   X(SameObject, NotificationVibrate)                  \
   X(SameObject, PerformanceLongTaskTimingAttribution) \
   X(SameObject, PushManagerSupportedContentEncodings) \
-  X(CustomWrappable, EventHandler)                    \
-  X(CustomWrappable, EventListener)                   \
   SCRIPT_PROMISE_PROPERTIES(X, Promise)               \
   SCRIPT_PROMISE_PROPERTIES(X, Resolver)
 
@@ -82,7 +80,6 @@ class ScriptWrappable;
 //   ...
 class PLATFORM_EXPORT V8PrivateProperty {
   USING_FAST_MALLOC(V8PrivateProperty);
-  WTF_MAKE_NONCOPYABLE(V8PrivateProperty);
 
  public:
   enum CachedAccessorSymbol : unsigned {
@@ -190,7 +187,7 @@ class PLATFORM_EXPORT V8PrivateProperty {
         return GetWindowDocumentCachedAccessor(isolate);
       case kNoCachedAccessor:
         break;
-    };
+    }
     NOTREACHED();
     return GetSymbol(isolate, "unexpected cached accessor");
   }
@@ -219,6 +216,8 @@ class PLATFORM_EXPORT V8PrivateProperty {
   // a snapshot, and it cannot be a v8::Eternal<> due to V8 serializer's
   // requirement.
   ScopedPersistent<v8::Private> symbol_window_document_cached_accessor_;
+
+  DISALLOW_COPY_AND_ASSIGN(V8PrivateProperty);
 };
 
 }  // namespace blink

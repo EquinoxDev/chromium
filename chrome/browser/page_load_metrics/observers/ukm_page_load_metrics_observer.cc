@@ -128,28 +128,6 @@ void UkmPageLoadMetricsObserver::OnFailedProvisionalLoad(
       .Record(ukm::UkmRecorder::Get());
 }
 
-void UkmPageLoadMetricsObserver::OnUserInput(
-    const blink::WebInputEvent& event,
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& extra_info) {
-  if (was_hidden_)
-    return;
-
-  switch (event.GetType()) {
-    // Mouse move/enter/leave are common events, and most pages don't insert new
-    // DOM elements for these events, so we ignore them.
-    case blink::WebInputEvent::kMouseMove:
-    case blink::WebInputEvent::kMouseEnter:
-    case blink::WebInputEvent::kMouseLeave:
-      return;
-    default:
-      break;
-  }
-
-  ukm::builders::PageLoad builder(extra_info.source_id);
-  RecordBeforeUserInputMetrics(&builder, timing, extra_info);
-}
-
 void UkmPageLoadMetricsObserver::OnComplete(
     const page_load_metrics::mojom::PageLoadTiming& timing,
     const page_load_metrics::PageLoadExtraInfo& info) {
@@ -236,6 +214,17 @@ void UkmPageLoadMetricsObserver::RecordTimingMetrics(
     builder.SetExperimental_PaintTiming_NavigationToLastTextPaint(
         timing.paint_timing->last_text_paint.value().InMilliseconds());
   }
+  base::Optional<base::TimeDelta> largest_content_paint_time;
+  uint64_t largest_content_paint_size;
+  AssignTimeAndSizeForLargestContentfulPaint(largest_content_paint_time,
+                                             largest_content_paint_size,
+                                             timing.paint_timing);
+  if (largest_content_paint_size > 0 &&
+      WasStartedInForegroundOptionalEventInForeground(
+          largest_content_paint_time, info)) {
+    builder.SetExperimental_PaintTiming_NavigationToLargestContentPaint(
+        largest_content_paint_time.value().InMilliseconds());
+  }
   if (timing.interactive_timing->interactive) {
     base::TimeDelta time_to_interactive =
         timing.interactive_timing->interactive.value();
@@ -249,26 +238,26 @@ void UkmPageLoadMetricsObserver::RecordTimingMetrics(
   if (timing.interactive_timing->first_input_delay) {
     base::TimeDelta first_input_delay =
         timing.interactive_timing->first_input_delay.value();
-    builder.SetInteractiveTiming_FirstInputDelay(
+    builder.SetInteractiveTiming_FirstInputDelay2(
         first_input_delay.InMilliseconds());
   }
   if (timing.interactive_timing->first_input_timestamp) {
     base::TimeDelta first_input_timestamp =
         timing.interactive_timing->first_input_timestamp.value();
-    builder.SetInteractiveTiming_FirstInputTimestamp(
+    builder.SetInteractiveTiming_FirstInputTimestamp2(
         first_input_timestamp.InMilliseconds());
   }
 
   if (timing.interactive_timing->longest_input_delay) {
     base::TimeDelta longest_input_delay =
         timing.interactive_timing->longest_input_delay.value();
-    builder.SetInteractiveTiming_LongestInputDelay(
+    builder.SetInteractiveTiming_LongestInputDelay2(
         longest_input_delay.InMilliseconds());
   }
   if (timing.interactive_timing->longest_input_timestamp) {
     base::TimeDelta longest_input_timestamp =
         timing.interactive_timing->longest_input_timestamp.value();
-    builder.SetInteractiveTiming_LongestInputTimestamp(
+    builder.SetInteractiveTiming_LongestInputTimestamp2(
         longest_input_timestamp.InMilliseconds());
   }
 
@@ -279,10 +268,6 @@ void UkmPageLoadMetricsObserver::RecordTimingMetrics(
 
   if (main_frame_timing_)
     ReportMainResourceTimingMetrics(timing, &builder);
-
-  // Ensure that before user input metrics are recorded for all page loads, even
-  // if no user input was processed during the page load lifetime.
-  RecordBeforeUserInputMetrics(&builder, timing, info);
 
   builder.Record(ukm::UkmRecorder::Get());
 }
@@ -298,6 +283,17 @@ void UkmPageLoadMetricsObserver::RecordPageLoadExtraInfoMetrics(
     builder.SetPageTiming_ForegroundDuration(
         foreground_duration.value().InMilliseconds());
   }
+
+  bool is_user_initiated_navigation =
+      // All browser initiated page loads are user-initiated.
+      info.user_initiated_info.browser_initiated ||
+
+      // Renderer-initiated navigations are user-initiated if there is an
+      // associated input event.
+      info.user_initiated_info.user_input_event;
+
+  builder.SetExperimental_Navigation_UserInitiated(
+      is_user_initiated_navigation);
 
   // Convert to the EffectiveConnectionType as used in SystemProfileProto
   // before persisting the metric.
@@ -335,28 +331,6 @@ void UkmPageLoadMetricsObserver::RecordPageLoadExtraInfoMetrics(
     builder.SetWasCached(1);
   }
   builder.Record(ukm::UkmRecorder::Get());
-}
-
-void UkmPageLoadMetricsObserver::RecordBeforeUserInputMetrics(
-    ukm::builders::PageLoad* builder,
-    const page_load_metrics::mojom::PageLoadTiming& timing,
-    const page_load_metrics::PageLoadExtraInfo& extra_info) {
-  if (recorded_before_user_input_metrics_)
-    return;
-  recorded_before_user_input_metrics_ = true;
-
-  if (WasStartedInForegroundOptionalEventInForeground(
-          timing.paint_timing->largest_image_paint, extra_info)) {
-    builder
-        ->SetExperimental_PaintTiming_NavigationToLargestImagePaint_BeforeUserInput(
-            timing.paint_timing->largest_image_paint.value().InMilliseconds());
-  }
-  if (WasStartedInForegroundOptionalEventInForeground(
-          timing.paint_timing->largest_text_paint, extra_info)) {
-    builder
-        ->SetExperimental_PaintTiming_NavigationToLargestTextPaint_BeforeUserInput(
-            timing.paint_timing->largest_text_paint.value().InMilliseconds());
-  }
 }
 
 void UkmPageLoadMetricsObserver::ReportMainResourceTimingMetrics(

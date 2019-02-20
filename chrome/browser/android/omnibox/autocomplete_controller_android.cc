@@ -257,7 +257,7 @@ void AutocompleteControllerAndroid::OnSuggestionSelected(
       content::WebContents::FromJavaWebContents(j_web_contents);
 
   if (autocomplete_controller_->result().match_at(selected_index).type ==
-      AutocompleteMatchType::CLIPBOARD) {
+      AutocompleteMatchType::CLIPBOARD_URL) {
     UMA_HISTOGRAM_LONG_TIMES_100(
         "MobileOmnibox.PressedClipboardSuggestionAge",
         ClipboardRecentContent::GetInstance()->GetClipboardContentAge());
@@ -268,6 +268,8 @@ void AutocompleteControllerAndroid::OnSuggestionSelected(
       input_.from_omnibox_focus() ? base::string16() : input_.text(),
       false, /* don't know */
       input_.type(),
+      false, /* not keyword mode */
+      OmniboxEventProto::INVALID,
       true,
       selected_index,
       WindowOpenDisposition::CURRENT_TAB,

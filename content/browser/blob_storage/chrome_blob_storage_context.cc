@@ -88,6 +88,7 @@ class BlobHandleImpl : public BlobHandle {
 
 ChromeBlobStorageContext::ChromeBlobStorageContext() {}
 
+// static
 ChromeBlobStorageContext* ChromeBlobStorageContext::GetFor(
     BrowserContext* context) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -271,7 +272,7 @@ bool GetBodyBlobDataHandles(network::ResourceRequestBody* body,
   DCHECK(blob_context);
   for (size_t i = 0; i < body->elements()->size(); ++i) {
     const network::DataElement& element = (*body->elements())[i];
-    if (element.type() != network::DataElement::TYPE_BLOB)
+    if (element.type() != network::mojom::DataElementType::kBlob)
       continue;
     std::unique_ptr<storage::BlobDataHandle> handle =
         blob_context->GetBlobDataFromUUID(element.blob_uuid());

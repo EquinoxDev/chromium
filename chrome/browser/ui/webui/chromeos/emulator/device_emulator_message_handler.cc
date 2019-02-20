@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
@@ -206,8 +207,8 @@ DeviceEmulatorMessageHandler::DeviceEmulatorMessageHandler()
           chromeos::DBusThreadManager::Get()->GetPowerManagerClient())),
       weak_ptr_factory_(this) {
   device::BluetoothAdapterFactory::GetAdapter(
-      base::Bind(&DeviceEmulatorMessageHandler::BluetoothDeviceAdapterReady,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&DeviceEmulatorMessageHandler::BluetoothDeviceAdapterReady,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 DeviceEmulatorMessageHandler::~DeviceEmulatorMessageHandler() {}

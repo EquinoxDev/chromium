@@ -824,7 +824,8 @@ void LocalFrame::SetPageAndTextZoomFactors(float page_zoom_factor,
   document->SetNeedsStyleRecalc(
       kSubtreeStyleChange,
       StyleChangeReasonForTracing::Create(style_change_reason::kZoom));
-  document->UpdateStyleAndLayoutIgnorePendingStylesheets();
+  if (View() && View()->DidFirstLayout())
+    document->UpdateStyleAndLayoutIgnorePendingStylesheets();
 }
 
 void LocalFrame::DeviceScaleFactorChanged() {
@@ -901,9 +902,8 @@ bool LocalFrame::ShouldReuseDefaultView(
   // Since sandboxing turns the origin into an opaque origin it needs to also
   // be considered when deciding whether to reuse it.
   // Spec:
-  // https://html.spec.whatwg.org/multipage/browsing-the-web.html#initialise-the-document-object
-  if (csp &&
-      SecurityContext::IsSandboxed(kSandboxOrigin, csp->GetSandboxMask())) {
+  // https://html.spec.whatwg.org/C/#initialise-the-document-object
+  if (csp && (csp->GetSandboxMask() & kSandboxOrigin)) {
     return false;
   }
 
@@ -1288,6 +1288,12 @@ service_manager::InterfaceProvider& LocalFrame::GetInterfaceProvider() {
   return *Client()->GetInterfaceProvider();
 }
 
+mojom::blink::DocumentInterfaceBroker&
+LocalFrame::GetDocumentInterfaceBroker() {
+  DCHECK(Client());
+  return *Client()->GetDocumentInterfaceBroker();
+}
+
 AssociatedInterfaceProvider*
 LocalFrame::GetRemoteNavigationAssociatedInterfaces() {
   DCHECK(Client());
@@ -1326,7 +1332,7 @@ void LocalFrame::SetAdTrackerForTesting(AdTracker* ad_tracker) {
   ad_tracker_ = ad_tracker;
 }
 
-DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);
+DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame)
 
 FrameNavigationDisabler::FrameNavigationDisabler(LocalFrame& frame)
     : frame_(&frame) {
@@ -1495,13 +1501,29 @@ bool LocalFrame::IsAdRoot() const {
 
 void LocalFrame::SetIsAdSubframe(blink::mojom::AdFrameType ad_frame_type) {
   DCHECK(!IsMainFrame());
+
+  // Once |ad_frame_type_| has been set to an ad type on this frame, it cannot
+  // be changed.
   if (ad_frame_type == blink::mojom::AdFrameType::kNonAd)
     return;
   if (ad_frame_type_ != blink::mojom::AdFrameType::kNonAd)
     return;
   ad_frame_type_ = ad_frame_type;
+  UpdateAdHighlight();
   frame_scheduler_->SetIsAdFrame();
   InstanceCounters::IncrementCounter(InstanceCounters::kAdSubframeCounter);
+}
+
+void LocalFrame::UpdateAdHighlight() {
+  if (!IsAdRoot()) {
+    // Verify that non root ad subframes do not have an overlay.
+    DCHECK(IsMainFrame() || !frame_color_overlay_);
+    return;
+  }
+  if (GetPage()->GetSettings().GetHighlightAds())
+    SetSubframeColorOverlay(SkColorSetARGB(128, 255, 0, 0));
+  else
+    SetSubframeColorOverlay(Color::kTransparent);
 }
 
 void LocalFrame::PauseSubresourceLoading(
@@ -1658,6 +1680,8 @@ class FrameColorOverlay final : public FrameOverlay::Delegate {
                          const IntSize&) const override {
     const auto* view = frame_->View();
     DCHECK(view);
+    if (view->Width() == 0 || view->Height() == 0)
+      return;
     ScopedPaintChunkProperties properties(
         graphics_context.GetPaintController(),
         view->GetLayoutView()->FirstFragment().LocalBorderBoxProperties(),
@@ -1700,32 +1724,78 @@ void LocalFrame::SetFrameColorOverlay(SkColor color) {
   // update below will be able to attach to the root graphics layer.
   if (View()) {
     View()->UpdateLifecycleToCompositingCleanPlusScrolling();
-    UpdateFrameColorOverlay();
-  }
-}
-
-void LocalFrame::UpdateFrameColorOverlay() {
-  if (frame_color_overlay_)
     frame_color_overlay_->Update();
+  }
 }
 
 void LocalFrame::PaintFrameColorOverlay() {
   DCHECK(!RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
-  if (frame_color_overlay_ && frame_color_overlay_->GetGraphicsLayer())
-    frame_color_overlay_->GetGraphicsLayer()->Paint(nullptr);
+  if (!frame_color_overlay_)
+    return;
+  frame_color_overlay_->Update();
+  if (frame_color_overlay_->GetGraphicsLayer())
+    frame_color_overlay_->GetGraphicsLayer()->Paint();
 }
 
 void LocalFrame::PaintFrameColorOverlay(GraphicsContext& context) {
   DCHECK(RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
-  if (frame_color_overlay_)
-    frame_color_overlay_->Paint(context);
+  if (!frame_color_overlay_)
+    return;
+  frame_color_overlay_->Update();
+  frame_color_overlay_->Paint(context);
 }
 
 void LocalFrame::ForciblyPurgeV8Memory() {
-  // TODO(yuzus): Implement ContextMummified callback and call from here.
+  GetDocument()->NotifyContextDestroyed();
+
   WindowProxyManager* window_proxy_manager = GetWindowProxyManager();
   window_proxy_manager->ClearForV8MemoryPurge();
   Loader().StopAllLoaders();
+}
+
+void LocalFrame::PauseContext() {
+  if (Document* document = GetDocument()) {
+    document->Fetcher()->SetDefersLoading(true);
+    document->SetLifecycleState(lifecycle_state_);
+  }
+  Loader().SetDefersLoading(true);
+  GetFrameScheduler()->SetPaused(true);
+}
+
+void LocalFrame::UnpauseContext() {
+  if (Document* document = GetDocument()) {
+    document->Fetcher()->SetDefersLoading(false);
+    document->SetLifecycleState(mojom::FrameLifecycleState::kRunning);
+  }
+  Loader().SetDefersLoading(false);
+  GetFrameScheduler()->SetPaused(false);
+}
+
+void LocalFrame::SetLifecycleState(mojom::FrameLifecycleState state) {
+  if (state == lifecycle_state_)
+    return;
+  bool is_frozen = lifecycle_state_ != mojom::FrameLifecycleState::kRunning;
+  bool freeze = state != mojom::FrameLifecycleState::kRunning;
+
+  // TODO(dtapuska): Determine if we should dispatch events if we are
+  // transitioning across frozen states. ie. kPaused->kFrozen should
+  // pause media.
+
+  // If we are transitioning from one frozen state to another just return.
+  if (is_frozen == freeze)
+    return;
+  mojom::FrameLifecycleState old_state = lifecycle_state_;
+  lifecycle_state_ = state;
+
+  if (freeze) {
+    if (lifecycle_state_ != mojom::FrameLifecycleState::kPaused)
+      DidFreeze();
+    PauseContext();
+  } else {
+    UnpauseContext();
+    if (old_state != mojom::FrameLifecycleState::kPaused)
+      DidResume();
+  }
 }
 
 }  // namespace blink

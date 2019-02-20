@@ -37,9 +37,9 @@ std::vector<TestParams> GetTestParams() {
 
 class QuicDataWriterTest : public QuicTestWithParam<TestParams> {};
 
-INSTANTIATE_TEST_CASE_P(QuicDataWriterTests,
-                        QuicDataWriterTest,
-                        ::testing::ValuesIn(GetTestParams()));
+INSTANTIATE_TEST_SUITE_P(QuicDataWriterTests,
+                         QuicDataWriterTest,
+                         ::testing::ValuesIn(GetTestParams()));
 
 TEST_P(QuicDataWriterTest, SanityCheckUFloat16Consts) {
   // Check the arithmetic on the constants - otherwise the values below make
@@ -353,7 +353,10 @@ TEST_P(QuicDataWriterTest, WriteConnectionIdClientAllowingVariableLength) {
 
 TEST_P(QuicDataWriterTest, WriteTag) {
   char CHLO[] = {
-      'C', 'H', 'L', 'O',
+      'C',
+      'H',
+      'L',
+      'O',
   };
   const int kBufferLength = sizeof(QuicTag);
   char buffer[kBufferLength];
@@ -852,7 +855,9 @@ TEST_P(QuicDataWriterTest, VarIntGoodTargetedValues) {
 TEST_P(QuicDataWriterTest, VarIntBadTargetedValues) {
   char buffer[kVarIntBufferLength];
   uint64_t failing_values[] = {
-      0x4000000000000000, 0x4000000000000001, 0xfffffffffffffffe,
+      0x4000000000000000,
+      0x4000000000000001,
+      0xfffffffffffffffe,
       0xffffffffffffffff,
   };
   for (uint64_t test_val : failing_values) {

@@ -45,12 +45,10 @@
 class SkBitmap;
 
 namespace cc {
-class AnimationHost;
 class PaintImage;
 }
 
 namespace gfx {
-class Size;
 class Vector2d;
 }  // namespace gfx
 
@@ -76,19 +74,7 @@ class WebLayerTreeView {
 
   virtual ~WebLayerTreeView() = default;
 
-  // Initialization and lifecycle --------------------------------------
-
-  // Sets the root of the tree. The root is set by way of the constructor.
-  virtual void SetRootLayer(scoped_refptr<cc::Layer>) {}
-  virtual void ClearRootLayer() {}
-
-  // TODO(loyso): This should use CompositorAnimationHost. crbug.com/584551
-  virtual cc::AnimationHost* CompositorAnimationHost() { return nullptr; }
-
   // View properties ---------------------------------------------------
-
-  // Viewport size is given in physical pixels.
-  virtual gfx::Size GetViewportSize() const = 0;
 
   // Sets the background color for the viewport.
   virtual void SetBackgroundColor(SkColor) {}
@@ -138,9 +124,6 @@ class WebLayerTreeView {
 
   // Flow control and scheduling ---------------------------------------
 
-  // Run layout and paint of all pending document changes asynchronously.
-  virtual void LayoutAndPaintAsync(base::OnceClosure callback) {}
-
   virtual void CompositeAndReadbackAsync(
       base::OnceCallback<void(const SkBitmap&)> callback) {}
 
@@ -155,6 +138,11 @@ class WebLayerTreeView {
   DeferMainFrameUpdate() {
     return nullptr;
   }
+
+  // Start and Stop defering commits to the compositor. Defering commits
+  // allows document lifecycle updates but does not commit the layer tree.
+  virtual void StartDeferringCommits() {}
+  virtual void StopDeferringCommits() {}
 
   struct ViewportLayers {
     cc::ElementId overscroll_elasticity_element_id;
@@ -202,21 +190,6 @@ class WebLayerTreeView {
   virtual bool HaveScrollEventHandlers() const { return false; }
 
   virtual int LayerTreeId() const { return 0; }
-
-  // Toggles the FPS counter in the HUD layer
-  virtual void SetShowFPSCounter(bool) {}
-
-  // Toggles the paint rects in the HUD layer
-  virtual void SetShowPaintRects(bool) {}
-
-  // Toggles the debug borders on layers
-  virtual void SetShowDebugBorders(bool) {}
-
-  // Toggles scroll bottleneck rects on the HUD layer
-  virtual void SetShowScrollBottleneckRects(bool) {}
-
-  // Toggles the hit-test borders on layers
-  virtual void SetShowHitTestBorders(bool) {}
 
   // ReportTimeCallback is a callback that should be fired when the
   // corresponding Swap completes (either with DidSwap or DidNotSwap).

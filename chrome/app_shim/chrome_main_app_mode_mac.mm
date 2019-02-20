@@ -49,6 +49,14 @@ const int kPingChromeTimeoutSeconds = 60;
 
 }  // namespace
 
+// The NSApplication for app shims is a vanilla NSApplication, but sub-class it
+// so that we can DCHECK that we know precisely when it is initialized.
+@interface AppShimApplication : NSApplication
+@end
+
+@implementation AppShimApplication
+@end
+
 // A ReplyEventHandler is a helper class to send an Apple Event to a process
 // and call a callback when the reply returns.
 //
@@ -160,12 +168,18 @@ extern "C" {
 // upgrade them; the old shim will not be able to dyload the new
 // ChromeAppModeStart, so it will fall back to the upgrade path. See
 // https://crbug.com/561205.
-__attribute__((visibility("default")))
-int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info);
+__attribute__((visibility("default"))) int ChromeAppModeStart_v5(
+    const app_mode::ChromeAppModeInfo* info);
 
 }  // extern "C"
 
-int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info) {
+void PostRepeatingDelayedTask() {
+  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      FROM_HERE, base::BindOnce(&PostRepeatingDelayedTask),
+      base::TimeDelta::FromDays(1));
+}
+
+int ChromeAppModeStart_v5(const app_mode::ChromeAppModeInfo* info) {
   base::CommandLine::Init(info->argc, info->argv);
 
   base::mac::ScopedNSAutoreleasePool scoped_pool;
@@ -182,9 +196,11 @@ int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info) {
   }
 
   // Set bundle paths. This loads the bundles.
-  base::mac::SetOverrideOuterBundlePath(info->chrome_outer_bundle_path);
+  base::mac::SetOverrideOuterBundlePath(
+      base::FilePath(info->chrome_outer_bundle_path));
   base::mac::SetOverrideFrameworkBundlePath(
-      info->chrome_versioned_path.Append(chrome::kFrameworkName));
+      base::FilePath(info->chrome_versioned_path)
+          .Append(chrome::kFrameworkName));
 
   ChromeCrashReporterClient::Create();
   crash_reporter::InitializeCrashpad(true, "app_shim");
@@ -199,6 +215,17 @@ int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info) {
   NSArray* supported_languages = [base::mac::OuterBundle() localizations];
   std::string preferred_localization;
   for (NSString* language in preferred_languages) {
+    // We must convert the "-" separator to "_" to be compatible with
+    // NSBundle::localizations() e.g. "en-GB" becomes "en_GB".
+    // See https://crbug.com/913345.
+    language = [language stringByReplacingOccurrencesOfString:@"-"
+                                                   withString:@"_"];
+    if ([supported_languages containsObject:language]) {
+      preferred_localization = base::SysNSStringToUTF8(language);
+      break;
+    }
+    // Check for language support without the region component.
+    language = [language componentsSeparatedByString:@"_"][0];
     if ([supported_languages containsObject:language]) {
       preferred_localization = base::SysNSStringToUTF8(language);
       break;
@@ -241,10 +268,23 @@ int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info) {
       pid = [[existing_chrome objectAtIndex:0] processIdentifier];
   }
 
+  // Initialize the NSApplication (and ensure that it was not previously
+  // initialized).
+  [AppShimApplication sharedApplication];
+  CHECK([NSApp isKindOfClass:[AppShimApplication class]]);
+
   base::MessageLoopForUI main_message_loop;
   ui::WindowResizeHelperMac::Get()->Init(main_message_loop.task_runner());
   base::PlatformThread::SetName("CrAppShimMain");
   AppShimController controller(info);
+
+  // TODO(https://crbug.com/925998): This workaround ensures that there is
+  // always delayed work enqueued. If there is ever not enqueued delayed work,
+  // then NSMenus and NSAlerts can start misbehaving (see
+  // https://crbug.com/920795 for examples). This workaround is not an
+  // appropriate solution to the problem, and should be replaced by a fix in
+  // the relevant message pump code.
+  PostRepeatingDelayedTask();
 
   // In tests, launching Chrome does nothing, and we won't get a ping response,
   // so just assume the socket exists.
@@ -261,12 +301,12 @@ int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info) {
       command_line.AppendSwitch(switches::kShowAppList);
     } else {
       command_line.AppendSwitchPath(switches::kProfileDirectory,
-                                    info->profile_dir);
+                                    base::FilePath(info->profile_dir));
     }
 
-    base::Process app = base::mac::OpenApplicationWithPath(
+    NSRunningApplication* running_app = base::mac::OpenApplicationWithPath(
         base::mac::OuterBundlePath(), command_line, NSWorkspaceLaunchDefault);
-    if (!app.IsValid())
+    if (!running_app)
       return 1;
 
     base::Callback<void(bool)> on_ping_chrome_reply = base::Bind(
@@ -278,8 +318,9 @@ int ChromeAppModeStart_v4(const app_mode::ChromeAppModeInfo* info) {
     [ReplyEventHandler pingProcessAndCall:on_ping_chrome_reply];
 
     main_message_loop.task_runner()->PostDelayedTask(
-        FROM_HERE, base::Bind(&AppShimController::OnPingChromeTimeout,
-                              base::Unretained(&controller)),
+        FROM_HERE,
+        base::BindOnce(&AppShimController::OnPingChromeTimeout,
+                       base::Unretained(&controller)),
         base::TimeDelta::FromSeconds(kPingChromeTimeoutSeconds));
   } else {
     // Chrome already running. Proceed to init. This could still fail if Chrome

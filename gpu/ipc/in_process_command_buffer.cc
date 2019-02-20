@@ -49,12 +49,11 @@
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/raster_decoder.h"
-#include "gpu/command_buffer/service/raster_decoder_context_state.h"
 #include "gpu/command_buffer/service/scheduler.h"
 #include "gpu/command_buffer/service/service_utils.h"
+#include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/command_buffer/service/shared_image_factory.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
-#include "gpu/command_buffer/service/transfer_buffer_manager.h"
 #include "gpu/command_buffer/service/webgpu_decoder.h"
 #include "gpu/config/gpu_crash_keys.h"
 #include "gpu/config/gpu_feature_info.h"
@@ -132,7 +131,7 @@ class InProcessCommandBuffer::SharedImageInterface
                             const gfx::Size& size,
                             const gfx::ColorSpace& color_space,
                             uint32_t usage) override {
-    auto mailbox = Mailbox::Generate();
+    auto mailbox = Mailbox::GenerateForSharedImage();
     {
       base::AutoLock lock(lock_);
       // Note: we enqueue the task under the lock to guarantee monotonicity of
@@ -152,7 +151,7 @@ class InProcessCommandBuffer::SharedImageInterface
                             const gfx::ColorSpace& color_space,
                             uint32_t usage,
                             base::span<const uint8_t> pixel_data) override {
-    auto mailbox = Mailbox::Generate();
+    auto mailbox = Mailbox::GenerateForSharedImage();
     std::vector<uint8_t> pixel_data_copy(pixel_data.begin(), pixel_data.end());
     {
       base::AutoLock lock(lock_);
@@ -179,7 +178,7 @@ class InProcessCommandBuffer::SharedImageInterface
     DCHECK(gpu::IsImageSizeValidForGpuMemoryBufferFormat(
         gpu_memory_buffer->GetSize(), gpu_memory_buffer->GetFormat()));
 
-    auto mailbox = Mailbox::Generate();
+    auto mailbox = Mailbox::GenerateForSharedImage();
     gfx::GpuMemoryBufferHandle handle = gpu_memory_buffer->CloneHandle();
     bool requires_sync_token = handle.type == gfx::IO_SURFACE_BUFFER;
     SyncToken sync_token;
@@ -308,6 +307,17 @@ bool InProcessCommandBuffer::MakeCurrent() {
   return true;
 }
 
+base::Optional<gles2::ProgramCache::ScopedCacheUse>
+InProcessCommandBuffer::CreateCacheUse() {
+  base::Optional<gles2::ProgramCache::ScopedCacheUse> cache_use;
+  if (context_group_->has_program_cache()) {
+    cache_use.emplace(context_group_->get_program_cache(),
+                      base::BindRepeating(&DecoderClient::CacheShader,
+                                          base::Unretained(this)));
+  }
+  return cache_use;
+}
+
 gpu::ContextResult InProcessCommandBuffer::Initialize(
     scoped_refptr<gl::GLSurface> surface,
     bool is_offscreen,
@@ -371,9 +381,12 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
   TRACE_EVENT0("gpu", "InProcessCommandBuffer::InitializeOnGpuThread")
 
-  // TODO(crbug.com/832243): This could use the TransferBufferManager owned by
-  // |context_group_| instead.
-  transfer_buffer_manager_ = std::make_unique<TransferBufferManager>(nullptr);
+  if (gpu_channel_manager_delegate_ &&
+      gpu_channel_manager_delegate_->IsExiting()) {
+    LOG(ERROR) << "ContextResult::kTransientFailure: trying to create command "
+                  "buffer during process shutdown.";
+    return gpu::ContextResult::kTransientFailure;
+  }
 
   GpuDriverBugWorkarounds workarounds(
       task_executor_->gpu_feature_info().enabled_gpu_driver_bug_workarounds);
@@ -430,7 +443,7 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
                                                                         : "0");
 
   command_buffer_ = std::make_unique<CommandBufferService>(
-      this, transfer_buffer_manager_.get());
+      this, context_group_->memory_tracker());
 
   if (!surface_) {
     if (params.is_offscreen) {
@@ -564,13 +577,17 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
     bool use_passthrough_cmd_decoder =
         task_executor_->gpu_preferences().use_passthrough_cmd_decoder &&
         gles2::PassthroughCommandDecoderSupported();
-    if (!use_passthrough_cmd_decoder &&
-        params.attribs.enable_raster_interface &&
+    bool allow_raster_decoder =
+        !use_passthrough_cmd_decoder ||
+        task_executor_->gpu_preferences().enable_passthrough_raster_decoder;
+
+    if (allow_raster_decoder && params.attribs.enable_raster_interface &&
         !params.attribs.enable_gles2_interface) {
-      context_state_ = base::MakeRefCounted<raster::RasterDecoderContextState>(
+      context_state_ = base::MakeRefCounted<SharedContextState>(
           gl_share_group_, surface_, real_context, use_virtualized_gl_context_,
           base::DoNothing());
-      context_state_->InitializeGL(context_group_->feature_info());
+      context_state_->InitializeGL(task_executor_->gpu_preferences(),
+                                   context_group_->feature_info());
       gr_shader_cache_ = params.gr_shader_cache;
       context_state_->InitializeGrContext(workarounds, params.gr_shader_cache,
                                           params.activity_flags);
@@ -582,7 +599,9 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
 
       decoder_.reset(raster::RasterDecoder::Create(
           this, command_buffer_.get(), task_executor_->outputter(),
-          context_group_.get(), context_state_));
+          task_executor_->gpu_feature_info(), task_executor_->gpu_preferences(),
+          context_group_->memory_tracker(),
+          task_executor_->shared_image_manager(), context_state_));
     } else {
       decoder_.reset(gles2::GLES2Decoder::Create(this, command_buffer_.get(),
                                                  task_executor_->outputter(),
@@ -657,6 +676,9 @@ gpu::ContextResult InProcessCommandBuffer::InitializeOnGpuThread(
 
   image_factory_ = params.image_factory;
 
+  if (gpu_channel_manager_delegate_)
+    gpu_channel_manager_delegate_->DidCreateContextSuccessfully();
+
   return gpu::ContextResult::kSuccess;
 }
 
@@ -689,6 +711,9 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
   bool have_context = context_.get() && context_->MakeCurrent(surface_.get());
   if (shared_image_factory_)
     shared_image_factory_->DestroyAllSharedImages(have_context);
+  base::Optional<gles2::ProgramCache::ScopedCacheUse> cache_use;
+  if (have_context)
+    cache_use = CreateCacheUse();
 
   // Prepare to destroy the surface while the context is still current, because
   // some surface destructors make GL calls.
@@ -701,7 +726,6 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
     decoder_.reset();
   }
   command_buffer_.reset();
-  transfer_buffer_manager_.reset();
   surface_ = nullptr;
 
   context_ = nullptr;
@@ -733,6 +757,19 @@ void InProcessCommandBuffer::OnParseError() {
   // Update last_state_ now before notifying client side to save the
   // error and make the race benign.
   UpdateLastStateOnGpuThread();
+
+  bool was_lost_by_robustness =
+      decoder_ && decoder_->WasContextLostByRobustnessExtension();
+
+  // Work around issues with recovery by allowing a new GPU process to launch.
+  if (was_lost_by_robustness) {
+    GpuDriverBugWorkarounds workarounds(
+        GetGpuFeatureInfo().enabled_gpu_driver_bug_workarounds);
+    if (workarounds.exit_on_context_lost && gpu_channel_manager_delegate_)
+      gpu_channel_manager_delegate_->MaybeExitOnContextLost();
+
+    // TODO(crbug.com/924148): Check if we should force lose all contexts too.
+  }
 
   PostOrRunClientCallback(
       base::BindOnce(&InProcessCommandBuffer::OnContextLost,
@@ -817,6 +854,7 @@ void InProcessCommandBuffer::FlushOnGpuThread(
 
   if (!MakeCurrent())
     return;
+  auto cache_use = CreateCacheUse();
 
   MailboxManager* mailbox_manager = context_group_->mailbox_manager();
   if (mailbox_manager->UsesSync()) {
@@ -825,9 +863,9 @@ void InProcessCommandBuffer::FlushOnGpuThread(
   }
 
   {
-    base::Optional<raster::GrShaderCache::ScopedCacheUse> cache_use;
+    base::Optional<raster::GrShaderCache::ScopedCacheUse> gr_cache_use;
     if (gr_shader_cache_)
-      cache_use.emplace(gr_shader_cache_, kInProcessCommandBufferClientId);
+      gr_cache_use.emplace(gr_shader_cache_, kInProcessCommandBufferClientId);
     command_buffer_->Flush(put_offset, decoder_.get());
   }
   // Update state before signaling the flush event.
@@ -856,6 +894,7 @@ void InProcessCommandBuffer::PerformDelayedWorkOnGpuThread() {
   crash_keys::gpu_gl_context_is_virtual.Set(use_virtualized_gl_context_ ? "1"
                                                                         : "0");
   if (MakeCurrent()) {
+    auto cache_use = CreateCacheUse();
     decoder_->PerformIdleWork();
     decoder_->ProcessPendingQueries(false);
     if (decoder_->HasMoreIdleWork() || decoder_->HasPendingQueries()) {
@@ -870,8 +909,8 @@ void InProcessCommandBuffer::ScheduleDelayedWorkOnGpuThread() {
     return;
   delayed_work_pending_ = true;
   task_executor_->ScheduleDelayedWork(
-      base::Bind(&InProcessCommandBuffer::PerformDelayedWorkOnGpuThread,
-                 gpu_thread_weak_ptr_factory_.GetWeakPtr()));
+      base::BindOnce(&InProcessCommandBuffer::PerformDelayedWorkOnGpuThread,
+                     gpu_thread_weak_ptr_factory_.GetWeakPtr()));
 }
 
 void InProcessCommandBuffer::Flush(int32_t put_offset) {

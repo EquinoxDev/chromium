@@ -11,6 +11,7 @@
 #include "content/browser/frame_host/render_frame_proxy_host.h"
 #include "content/browser/portal/portal.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/common/frame.mojom-test-utils.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -23,6 +24,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/mojom/portal/portal.mojom-test-utils.h"
 #include "third_party/blink/public/mojom/portal/portal.mojom.h"
 #include "url/url_constants.h"
 
@@ -39,8 +41,7 @@ class PortalInterceptorForTesting final
       blink::mojom::PortalRequest request);
   static PortalInterceptorForTesting* From(content::Portal* portal);
 
-  void Activate(base::OnceCallback<void(blink::mojom::PortalActivationStatus)>
-                    callback) override {
+  void Activate(base::OnceCallback<void()> callback) override {
     portal_activated_ = true;
 
     if (run_loop_) {
@@ -99,25 +100,6 @@ PortalInterceptorForTesting* PortalInterceptorForTesting::From(
   CHECK_EQ(interceptor->GetPortal(), portal);
   return interceptor;
 }
-
-class MockPortalWebContentsDelegate : public WebContentsDelegate {
- public:
-  MockPortalWebContentsDelegate() {}
-  ~MockPortalWebContentsDelegate() override {}
-
-  MOCK_METHOD4(
-      DoSwapWebContents,
-      std::unique_ptr<WebContents>(WebContents*, WebContents*, bool, bool));
-  std::unique_ptr<WebContents> SwapWebContents(
-      WebContents* old_contents,
-      std::unique_ptr<WebContents> new_contents,
-      bool did_start_load,
-      bool did_finish_load) override {
-    DoSwapWebContents(old_contents, new_contents.get(), did_start_load,
-                      did_finish_load);
-    return new_contents;
-  }
-};
 
 // The PortalCreatedObserver observes portal creations on
 // |render_frame_host_impl|. This observer can be used to monitor for multiple
@@ -273,45 +255,6 @@ IN_PROC_BROWSER_TEST_F(PortalBrowserTest, NavigatePortal) {
   }
 }
 
-// Tests that the WebContentsDelegate will receive a request to swap the
-// WebContents when a portal is activated.
-// Disabled due to flakiness on Android.  See https://crbug.com/892669.
-#if defined(OS_ANDROID)
-#define MAYBE_ActivatePortal DISABLED_ActivatePortal
-#else
-#define MAYBE_ActivatePortal ActivatePortal
-#endif
-
-IN_PROC_BROWSER_TEST_F(PortalBrowserTest, MAYBE_ActivatePortal) {
-  EXPECT_TRUE(NavigateToURL(
-      shell(), embedded_test_server()->GetURL("portal.test", "/title1.html")));
-  WebContentsImpl* web_contents_impl =
-      static_cast<WebContentsImpl*>(shell()->web_contents());
-  RenderFrameHostImpl* main_frame = web_contents_impl->GetMainFrame();
-
-  PortalCreatedObserver portal_created_observer(main_frame);
-  GURL a_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
-  EXPECT_TRUE(ExecJs(main_frame,
-                     JsReplace("var portal = document.createElement('portal');"
-                               "portal.src = $1;"
-                               "document.body.appendChild(portal);",
-                               a_url)));
-  Portal* portal = portal_created_observer.WaitUntilPortalCreated();
-  MockPortalWebContentsDelegate mock_delegate;
-  shell()->web_contents()->SetDelegate(&mock_delegate);
-
-  base::RunLoop run_loop;
-  EXPECT_CALL(mock_delegate,
-              DoSwapWebContents(shell()->web_contents(),
-                                portal->GetPortalContents(), _, _))
-      .WillOnce(testing::DoAll(
-          testing::InvokeWithoutArgs(&run_loop, &base::RunLoop::Quit),
-          testing::ReturnNull()));
-  EXPECT_TRUE(
-      ExecJs(main_frame, "document.querySelector('portal').activate();"));
-  run_loop.Run();
-}
-
 // Tests that a portal can be activated in content_shell.
 IN_PROC_BROWSER_TEST_F(PortalBrowserTest, ActivatePortalInShell) {
   EXPECT_TRUE(NavigateToURL(
@@ -375,4 +318,44 @@ IN_PROC_BROWSER_TEST_F(PortalBrowserTest, RenderFrameProxyHostCreated) {
   EXPECT_TRUE(proxy_host->is_render_frame_proxy_live());
 }
 
+// Tests that the portal's outer delegate frame tree node and any iframes
+// inside the portal are deleted when the portal element is removed from the
+// document.
+IN_PROC_BROWSER_TEST_F(PortalBrowserTest, DetachPortal) {
+  EXPECT_TRUE(NavigateToURL(
+      shell(), embedded_test_server()->GetURL("portal.test", "/title1.html")));
+  WebContentsImpl* web_contents =
+      static_cast<WebContentsImpl*>(shell()->web_contents());
+  RenderFrameHostImpl* main_frame = web_contents->GetMainFrame();
+
+  Portal* portal = nullptr;
+  PortalCreatedObserver portal_created_observer(main_frame);
+  GURL a_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(a)"));
+  EXPECT_TRUE(ExecJs(main_frame,
+                     JsReplace("var portal = document.createElement('portal');"
+                               "portal.src = $1;"
+                               "document.body.appendChild(portal);",
+                               a_url)));
+
+  // Wait for portal to be created.
+  portal = portal_created_observer.WaitUntilPortalCreated();
+  WebContentsImpl* portal_contents = portal->GetPortalContents();
+  FrameTreeNode* portal_main_frame_node =
+      portal_contents->GetFrameTree()->root();
+
+  // The portal should not have navigated yet, wait for the first navigation.
+  TestNavigationObserver navigation_observer(portal_contents);
+  navigation_observer.Wait();
+
+  // Remove portal from document and wait for frames to be deleted.
+  FrameDeletedObserver fdo1(portal_main_frame_node->render_manager()
+                                ->GetOuterDelegateNode()
+                                ->current_frame_host());
+  FrameDeletedObserver fdo2(
+      portal_main_frame_node->child_at(0)->current_frame_host());
+  EXPECT_TRUE(ExecJs(main_frame, "document.body.removeChild(portal);"));
+  fdo1.Wait();
+  fdo2.Wait();
+}
 }  // namespace content

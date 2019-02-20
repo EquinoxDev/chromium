@@ -190,13 +190,27 @@ void BookmarkRemoteUpdatesHandler::Process(
 
     if (tracked_entity && tracked_entity->IsUnsynced()) {
       ProcessConflict(*update, tracked_entity);
+      if (!bookmark_tracker_->GetEntityForSyncId(update_entity.id)) {
+        // During conflict resolution, the entity could be dropped in case of
+        // a conflict between local and remote deletions. We shouldn't worry
+        // about changes to the encryption in that case.
+        continue;
+      }
     } else if (update_entity.is_deleted()) {
       ProcessDelete(update_entity, tracked_entity);
       // If the local entity has been deleted, no need to check for out of date
       // encryption. Therefore, we can go ahead and process the next update.
       continue;
     } else if (!tracked_entity) {
-      ProcessCreate(*update);
+      bool success = ProcessCreate(*update);
+      if (!success) {
+        // If no new node has been tracked, we shouldn't worry about changes to
+        // the encryption.
+        continue;
+      }
+      // TODO(crbug.com/516866): The below CHECK is added to debug some crashes.
+      // Should be removed after figuring out the reason for the crash.
+      CHECK(bookmark_tracker_->GetEntityForSyncId(update_entity.id));
     } else {
       // Ignore changes to the permanent nodes (e.g. bookmarks bar). We only
       // care about their children.
@@ -204,6 +218,9 @@ void BookmarkRemoteUpdatesHandler::Process(
         continue;
       }
       ProcessUpdate(*update, tracked_entity);
+      // TODO(crbug.com/516866): The below CHECK is added to debug some crashes.
+      // Should be removed after figuring out the reason for the crash.
+      CHECK(bookmark_tracker_->GetEntityForSyncId(update_entity.id));
     }
     // If the received entity has out of date encryption, we schedule another
     // commit to fix it.
@@ -330,14 +347,14 @@ BookmarkRemoteUpdatesHandler::ReorderUpdates(
   return ordered_updates;
 }
 
-void BookmarkRemoteUpdatesHandler::ProcessCreate(
+bool BookmarkRemoteUpdatesHandler::ProcessCreate(
     const syncer::UpdateResponseData& update) {
   const syncer::EntityData& update_entity = update.entity.value();
   DCHECK(!update_entity.is_deleted());
   if (!update_entity.server_defined_unique_tag.empty()) {
     DLOG(ERROR)
         << "Permanent nodes should have been merged during intial sync.";
-    return;
+    return false;
   }
 
   DCHECK(IsValidBookmarkSpecifics(update_entity.specifics.bookmark(),
@@ -349,7 +366,7 @@ void BookmarkRemoteUpdatesHandler::ProcessCreate(
     DLOG(ERROR) << "Could not find parent of node being added."
                 << " Node title: " << update_entity.specifics.bookmark().title()
                 << ", parent id = " << update_entity.parent_id;
-    return;
+    return false;
   }
   const bookmarks::BookmarkNode* bookmark_node =
       CreateBookmarkNodeFromSpecifics(
@@ -362,12 +379,13 @@ void BookmarkRemoteUpdatesHandler::ProcessCreate(
     DLOG(ERROR) << "Failed to create bookmark node with title "
                 << update_entity.specifics.bookmark().title() << " and url "
                 << update_entity.specifics.bookmark().url();
-    return;
+    return false;
   }
   bookmark_tracker_->Add(update_entity.id, bookmark_node,
                          update.response_version, update_entity.creation_time,
                          update_entity.unique_position,
                          update_entity.specifics);
+  return true;
 }
 
 void BookmarkRemoteUpdatesHandler::ProcessUpdate(
@@ -453,8 +471,6 @@ void BookmarkRemoteUpdatesHandler::ProcessConflict(
   const syncer::EntityData& update_entity = update.entity.value();
   // TODO(crbug.com/516866): Handle the case of conflict as a result of
   // re-encryption request.
-
-  // TODO(crbug.com/516866): Add basic unit test for this function.
 
   // Can only conflict with existing nodes.
   DCHECK(tracked_entity);

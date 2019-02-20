@@ -17,6 +17,11 @@
 #include "content/browser/accessibility/browser_accessibility_mac.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 
+// This file uses the deprecated NSObject accessibility interface.
+// TODO(crbug.com/921109): Migrate to the new NSAccessibility interface.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 using base::StringPrintf;
 using base::SysNSStringToUTF8;
 using base::SysNSStringToUTF16;
@@ -219,6 +224,7 @@ class AccessibilityTreeFormatterMac : public AccessibilityTreeFormatterBrowser {
   const std::string GetAllowEmptyString() override;
   const std::string GetAllowString() override;
   const std::string GetDenyString() override;
+  const std::string GetDenyNodeString() override;
   void AddProperties(const BrowserAccessibility& node,
                      base::DictionaryValue* dict) override;
   base::string16 ProcessTreeForOutput(const base::DictionaryValue& node,
@@ -281,7 +287,7 @@ base::string16 AccessibilityTreeFormatterMac::ProcessTreeForOutput(
   if (show_ids()) {
     int id_value;
     dict.GetInteger("id", &id_value);
-    WriteAttribute(true, base::IntToString16(id_value), &line);
+    WriteAttribute(true, base::NumberToString16(id_value), &line);
   }
 
   NSArray* defaultAttributes =
@@ -360,4 +366,10 @@ const string AccessibilityTreeFormatterMac::GetDenyString() {
   return "@MAC-DENY:";
 }
 
+const string AccessibilityTreeFormatterMac::GetDenyNodeString() {
+  return "@MAC-DENY-NODE:";
+}
+
 }  // namespace content
+
+#pragma clang diagnostic pop

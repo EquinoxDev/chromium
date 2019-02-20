@@ -258,6 +258,17 @@ Cronet_RESULT Cronet_EngineImpl::Shutdown() {
   return CheckResult(Cronet_RESULT_SUCCESS);
 }
 
+void Cronet_EngineImpl::AddRequestFinishedListener(
+    Cronet_RequestFinishedInfoListenerPtr listener,
+    Cronet_ExecutorPtr executor) {
+  NOTIMPLEMENTED();
+}
+
+void Cronet_EngineImpl::RemoveRequestFinishedListener(
+    Cronet_RequestFinishedInfoListenerPtr listener) {
+  NOTIMPLEMENTED();
+}
+
 Cronet_RESULT Cronet_EngineImpl::CheckResult(Cronet_RESULT result) {
   if (enable_check_result_)
     CHECK_EQ(Cronet_RESULT_SUCCESS, result);
@@ -388,7 +399,7 @@ stream_engine* Cronet_EngineImpl::GetBidirectionalStreamEngine() {
   return stream_engine_.get();
 }
 
-};  // namespace cronet
+}  // namespace cronet
 
 CRONET_EXPORT Cronet_EnginePtr Cronet_Engine_Create() {
   return new cronet::Cronet_EngineImpl();

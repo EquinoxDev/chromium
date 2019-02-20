@@ -8,7 +8,7 @@
 #include "base/feature_list.h"
 #include "base/memory/memory_pressure_monitor_chromeos.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_switches.h"
+#include "chromeos/dbus/constants/dbus_switches.h"
 
 namespace chromeos {
 namespace switches {
@@ -34,6 +34,7 @@ CHROMEOS_EXPORT extern const char kArcAvailability[];
 CHROMEOS_EXPORT extern const char kArcAvailable[];
 CHROMEOS_EXPORT extern const char kArcDataCleanupOnStart[];
 CHROMEOS_EXPORT extern const char kArcDisableAppSync[];
+CHROMEOS_EXPORT extern const char kArcDisableLocaleSync[];
 CHROMEOS_EXPORT extern const char kArcDisablePlayAutoInstall[];
 CHROMEOS_EXPORT extern const char kArcForceCacheAppIcons[];
 CHROMEOS_EXPORT extern const char kArcForceShowOptInUi[];
@@ -45,7 +46,6 @@ CHROMEOS_EXPORT extern const char kCellularFirst[];
 CHROMEOS_EXPORT extern const char kChildWallpaperLarge[];
 CHROMEOS_EXPORT extern const char kChildWallpaperSmall[];
 CHROMEOS_EXPORT extern const char kConservativeThreshold[];
-CHROMEOS_EXPORT extern const char kContainedShellUrl[];
 CHROMEOS_EXPORT extern const char kCrosGaiaApiV1[];
 CHROMEOS_EXPORT extern const char kCrosRegion[];
 CHROMEOS_EXPORT extern const char kCrosRegionsMode[];
@@ -72,7 +72,6 @@ CHROMEOS_EXPORT extern const char kDisableLoginAnimations[];
 CHROMEOS_EXPORT extern const char kDisableMachineCertRequest[];
 CHROMEOS_EXPORT extern const char kDisableMtpWriteSupport[];
 CHROMEOS_EXPORT extern const char kDisableMultiDisplayLayout[];
-CHROMEOS_EXPORT extern const char kDisableNewKoreanIme[];
 CHROMEOS_EXPORT extern const char kDisableNewZIPUnpacker[];
 CHROMEOS_EXPORT extern const char kDisableOfficeEditingComponentApp[];
 CHROMEOS_EXPORT extern const char kDisablePerUserTimezone[];
@@ -96,14 +95,12 @@ CHROMEOS_EXPORT extern const char kEnableExtensionAssetsSharing[];
 CHROMEOS_EXPORT extern const char kEnableFileManagerTouchMode[];
 CHROMEOS_EXPORT extern const char kEnableFirstRunUITransitions[];
 CHROMEOS_EXPORT extern const char kEnableMarketingOptInScreen[];
-CHROMEOS_EXPORT extern const char kEnableOfflineDemoMode[];
 CHROMEOS_EXPORT extern const char kEnablePhysicalKeyboardAutocorrect[];
 CHROMEOS_EXPORT extern const char kEnableRequestTabletSite[];
 CHROMEOS_EXPORT extern const char kEnableScreenshotTestingWithMode[];
 CHROMEOS_EXPORT extern const char kEnableTouchCalibrationSetting[];
 CHROMEOS_EXPORT extern const char kEnableTouchpadThreeFingerClick[];
 CHROMEOS_EXPORT extern const char kEnableVideoPlayerChromecastSupport[];
-CHROMEOS_EXPORT extern const char kEnableVoiceInteraction[];
 CHROMEOS_EXPORT extern const char kEnterpriseDisableArc[];
 CHROMEOS_EXPORT extern const char kEnterpriseDisableLicenseTypeSelection[];
 CHROMEOS_EXPORT extern const char kEnterpriseEnableForcedReEnrollment[];
@@ -142,16 +139,15 @@ CHROMEOS_EXPORT extern const char kOobeSkipPostLogin[];
 CHROMEOS_EXPORT extern const char kOobeSkipToLogin[];
 CHROMEOS_EXPORT extern const char kOobeTimerInterval[];
 CHROMEOS_EXPORT extern const char kProfileRequiresPolicy[];
+CHROMEOS_EXPORT extern const char kRegulatoryLabelDir[];
 CHROMEOS_EXPORT extern const char kRlzPingDelay[];
 CHROMEOS_EXPORT extern const char kShelfHoverPreviews[];
 CHROMEOS_EXPORT extern const char kShowAndroidFilesInFilesApp[];
 CHROMEOS_EXPORT extern const char kShowLoginDevOverlay[];
-CHROMEOS_EXPORT extern const char kStubCrosSettings[];
 CHROMEOS_EXPORT extern const char kTestEncryptionMigrationUI[];
 CHROMEOS_EXPORT extern const char kTestWallpaperServer[];
 CHROMEOS_EXPORT extern const char kTetherStub[];
 CHROMEOS_EXPORT extern const char kTetherHostScansIgnoreWiredConnections[];
-CHROMEOS_EXPORT extern const char kVoiceInteractionLocales[];
 CHROMEOS_EXPORT extern const char kWaitForInitialPolicyFetchForTest[];
 CHROMEOS_EXPORT extern const char kWakeOnWifiPacket[];
 
@@ -166,6 +162,10 @@ CHROMEOS_EXPORT extern const base::Feature kShowLanguageToggleInDemoMode;
 
 // Controls whether to show the Play Store icon in Demo Mode.
 CHROMEOS_EXPORT extern const base::Feature kShowPlayInDemoMode;
+
+// Controls whether to show a static splash screen instead of the user pods
+// before demo sessions log in.
+CHROMEOS_EXPORT extern const base::Feature kShowSplashScreenInDemoMode;
 
 // Returns true if the system should wake in response to wifi traffic.
 CHROMEOS_EXPORT bool WakeOnWifiEnabled();
@@ -183,15 +183,6 @@ CHROMEOS_EXPORT bool IsGaiaIdMigrationStarted();
 
 // Returns true if this is a Cellular First device.
 CHROMEOS_EXPORT bool IsCellularFirstDevice();
-
-// Returns true if the locale is supported by voice interaction.
-CHROMEOS_EXPORT bool IsVoiceInteractionLocalesSupported();
-
-// Returns true if voice interaction flags are enabled.
-CHROMEOS_EXPORT bool IsVoiceInteractionFlagsEnabled();
-
-// Returns true if voice interaction is enabled.
-CHROMEOS_EXPORT bool IsVoiceInteractionEnabled();
 
 // Returns true if Chrome OS Account Manager is enabled.
 CHROMEOS_EXPORT bool IsAccountManagerEnabled();
@@ -226,6 +217,9 @@ CHROMEOS_EXPORT bool ShouldTetherHostScansIgnoreWiredConnections();
 // Returns true if Play Store should be available in Demo Mode.
 // TODO(michaelpg): Remove after M71 branch to re-enable Play Store by default.
 CHROMEOS_EXPORT bool ShouldShowPlayStoreInDemoMode();
+
+// Returns true if we should skip all other OOBE pages after user login.
+CHROMEOS_EXPORT bool ShouldSkipOobePostLogin();
 
 }  // namespace switches
 }  // namespace chromeos

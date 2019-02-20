@@ -4,6 +4,10 @@
 
 #include "gpu/command_buffer/service/shared_image_backing_factory_gl_texture.h"
 
+#include <algorithm>
+#include <string>
+#include <utility>
+
 #include "base/feature_list.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
@@ -21,7 +25,7 @@
 #include "gpu/command_buffer/service/skia_utils.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_preferences.h"
-#include "third_party/skia/include/gpu/GrBackendSurface.h"
+#include "third_party/skia/include/core/SkPromiseImageTexture.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gl/gl_bindings.h"
@@ -229,14 +233,25 @@ class SharedImageRepresentationGLTexturePassthroughImpl
 
 class SharedImageRepresentationSkiaImpl : public SharedImageRepresentationSkia {
  public:
-  SharedImageRepresentationSkiaImpl(SharedImageManager* manager,
-                                    SharedImageBacking* backing,
-                                    MemoryTypeTracker* tracker,
-                                    GLenum target,
-                                    GLuint service_id)
+  SharedImageRepresentationSkiaImpl(
+      SharedImageManager* manager,
+      SharedImageBacking* backing,
+      sk_sp<SkPromiseImageTexture> cached_promise_texture,
+      MemoryTypeTracker* tracker,
+      GLenum target,
+      GLuint service_id)
       : SharedImageRepresentationSkia(manager, backing, tracker),
-        target_(target),
-        service_id_(service_id) {}
+        promise_texture_(cached_promise_texture) {
+    if (!promise_texture_) {
+      GrBackendTexture backend_texture;
+      GetGrBackendTexture(gl::GLContext::GetCurrent()->GetVersionInfo(), target,
+                          size(), service_id, format(), &backend_texture);
+      promise_texture_ = SkPromiseImageTexture::Make(backend_texture);
+    }
+#if DCHECK_IS_ON()
+    context_ = gl::GLContext::GetCurrent();
+#endif
+  }
 
   ~SharedImageRepresentationSkiaImpl() override { DCHECK(!write_surface_); }
 
@@ -244,20 +259,19 @@ class SharedImageRepresentationSkiaImpl : public SharedImageRepresentationSkia {
       GrContext* gr_context,
       int final_msaa_count,
       const SkSurfaceProps& surface_props) override {
+    CheckContext();
     if (write_surface_)
       return nullptr;
 
-    GrBackendTexture backend_texture;
-    if (!GetGrBackendTexture(gl::GLContext::GetCurrent()->GetVersionInfo(),
-                             target_, size(), service_id_, format(),
-                             &backend_texture)) {
+    if (!promise_texture_) {
       return nullptr;
     }
     SkColorType sk_color_type = viz::ResourceFormatToClosestSkColorType(
         /*gpu_compositing=*/true, format());
     auto surface = SkSurface::MakeFromBackendTextureAsRenderTarget(
-        gr_context, backend_texture, kTopLeft_GrSurfaceOrigin, final_msaa_count,
-        sk_color_type, nullptr, &surface_props);
+        gr_context, promise_texture_->backendTexture(),
+        kTopLeft_GrSurfaceOrigin, final_msaa_count, sk_color_type, nullptr,
+        &surface_props);
     write_surface_ = surface.get();
     return surface;
   }
@@ -265,29 +279,35 @@ class SharedImageRepresentationSkiaImpl : public SharedImageRepresentationSkia {
   void EndWriteAccess(sk_sp<SkSurface> surface) override {
     DCHECK_EQ(surface.get(), write_surface_);
     DCHECK(surface->unique());
+    CheckContext();
     // TODO(ericrk): Keep the surface around for re-use.
     write_surface_ = nullptr;
   }
 
-  bool BeginReadAccess(SkSurface* sk_surface,
-                       GrBackendTexture* backend_texture) override {
-    if (!GetGrBackendTexture(gl::GLContext::GetCurrent()->GetVersionInfo(),
-                             target_, size(), service_id_, format(),
-                             backend_texture)) {
-      return false;
-    }
-    return true;
+  sk_sp<SkPromiseImageTexture> BeginReadAccess(SkSurface* sk_surface) override {
+    CheckContext();
+    return promise_texture_;
   }
 
   void EndReadAccess() override {
     // TODO(ericrk): Handle begin/end correctness checks.
   }
 
+  sk_sp<SkPromiseImageTexture> promise_texture() { return promise_texture_; }
+
  private:
-  GLenum target_;
-  GLuint service_id_;
+  void CheckContext() {
+#if DCHECK_IS_ON()
+    DCHECK(gl::GLContext::GetCurrent() == context_);
+#endif
+  }
+
+  sk_sp<SkPromiseImageTexture> promise_texture_;
 
   SkSurface* write_surface_ = nullptr;
+#if DCHECK_IS_ON()
+  gl::GLContext* context_;
+#endif
 };
 
 // Implementation of SharedImageBacking that creates a GL Texture and stores it
@@ -332,8 +352,10 @@ class SharedImageBackingGLTexture : public SharedImageBacking {
       return;
     image->ReleaseTexImage(target);
     gles2::Texture::ImageState new_state = gles2::Texture::UNBOUND;
-    if (image->BindTexImage(target))
+    if (image->ShouldBindOrCopy() == gl::GLImage::BIND &&
+        image->BindTexImage(target)) {
       new_state = gles2::Texture::BOUND;
+    }
     if (old_state != new_state)
       texture_->SetLevelImage(target, 0, image, new_state);
   }
@@ -380,12 +402,16 @@ class SharedImageBackingGLTexture : public SharedImageBacking {
   std::unique_ptr<SharedImageRepresentationSkia> ProduceSkia(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker) override {
-    return std::make_unique<SharedImageRepresentationSkiaImpl>(
-        manager, this, tracker, texture_->target(), texture_->service_id());
+    auto result = std::make_unique<SharedImageRepresentationSkiaImpl>(
+        manager, this, cached_promise_texture_, tracker, texture_->target(),
+        texture_->service_id());
+    cached_promise_texture_ = result->promise_texture();
+    return result;
   }
 
  private:
   gles2::Texture* texture_ = nullptr;
+  sk_sp<SkPromiseImageTexture> cached_promise_texture_;
 };
 
 // Implementation of SharedImageBacking that creates a GL Texture and stores it
@@ -429,7 +455,9 @@ class SharedImageBackingPassthroughGLTexture : public SharedImageBacking {
     if (!image)
       return;
     image->ReleaseTexImage(target);
-    if (!image->BindTexImage(target))
+    if (image->ShouldBindOrCopy() == gl::GLImage::BIND)
+      image->BindTexImage(target);
+    else
       image->CopyTexImage(target);
   }
 
@@ -476,13 +504,17 @@ class SharedImageBackingPassthroughGLTexture : public SharedImageBacking {
   std::unique_ptr<SharedImageRepresentationSkia> ProduceSkia(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker) override {
-    return std::make_unique<SharedImageRepresentationSkiaImpl>(
-        manager, this, tracker, texture_passthrough_->target(),
-        texture_passthrough_->service_id());
+    auto result = std::make_unique<SharedImageRepresentationSkiaImpl>(
+        manager, this, cached_promise_texture_, tracker,
+        texture_passthrough_->target(), texture_passthrough_->service_id());
+    cached_promise_texture_ = result->promise_texture();
+    return result;
   }
 
  private:
   scoped_refptr<gles2::TexturePassthrough> texture_passthrough_;
+  sk_sp<SkPromiseImageTexture> cached_promise_texture_;
+
   bool is_cleared_ = false;
 };
 
@@ -496,10 +528,18 @@ SharedImageBackingFactoryGLTexture::SharedImageBackingFactoryGLTexture(
       image_factory_(image_factory) {
   gl::GLApi* api = gl::g_current_gl_context;
   api->glGetIntegervFn(GL_MAX_TEXTURE_SIZE, &max_texture_size_);
-  if (workarounds.max_texture_size) {
+  // When the passthrough command decoder is used, the max_texture_size
+  // workaround is implemented by ANGLE. Trying to adjust the max size here
+  // would cause discrepency between what we think the max size is and what
+  // ANGLE tells the clients.
+  if (!use_passthrough_ && workarounds.max_texture_size) {
     max_texture_size_ =
         std::min(max_texture_size_, workarounds.max_texture_size);
   }
+  // Ensure max_texture_size_ is less than INT_MAX so that gfx::Rect and friends
+  // can be used to accurately represent all valid sub-rects, with overflow
+  // cases, clamped to INT_MAX, always invalid.
+  max_texture_size_ = std::min(max_texture_size_, INT_MAX - 1);
 
   // TODO(piman): Can we extract the logic out of FeatureInfo?
   scoped_refptr<gles2::FeatureInfo> feature_info =
@@ -632,7 +672,7 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
       const char* error_message = "unspecified";
       if (!gles2::ValidateCompressedTexDimensions(
               target, 0 /* level */, size.width(), size.height(), 1 /* depth */,
-              format_info.gl_format, false /* restrict_for_webgl */,
+              format_info.image_internal_format, false /* restrict_for_webgl */,
               &error_message)) {
         LOG(ERROR) << "CreateSharedImage: "
                       "ValidateCompressedTexDimensionsFailed with error: "
@@ -643,7 +683,7 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
       GLsizei bytes_required = 0;
       if (!gles2::GetCompressedTexSizeInBytes(
               nullptr /* function_name */, size.width(), size.height(),
-              1 /* depth */, format_info.gl_format, &bytes_required,
+              1 /* depth */, format_info.image_internal_format, &bytes_required,
               nullptr /* error_state */)) {
         LOG(ERROR) << "CreateSharedImage: Unable to compute required size for "
                       "initial texture upload.";
@@ -694,6 +734,8 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
     image = image_factory_->CreateAnonymousImage(
         size, format_info.buffer_format, gfx::BufferUsage::SCANOUT,
         &is_cleared);
+    // A SCANOUT image should not require copy.
+    DCHECK(!image || image->ShouldBindOrCopy() == gl::GLImage::BIND);
     if (!image || !image->BindTexImage(target)) {
       LOG(ERROR) << "CreateSharedImage: Failed to create image";
       api->glDeleteTexturesFn(1, &service_id);
@@ -711,7 +753,7 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
     ScopedResetAndRestoreUnpackState scoped_unpack_state(
         api, es3_capable_, desktop_gl_, supports_unpack_subimage_,
         !pixel_data.empty());
-    api->glCompressedTexImage2DFn(target, 0, format_info.gl_format,
+    api->glCompressedTexImage2DFn(target, 0, format_info.image_internal_format,
                                   size.width(), size.height(), 0,
                                   pixel_data.size(), pixel_data.data());
   } else {
@@ -735,11 +777,11 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
                            pixel_data.data());
   }
 
-  return MakeBacking(mailbox, target, service_id, image, gles2::Texture::BOUND,
-                     level_info_internal_format, format_info.gl_format,
-                     format_info.gl_type, format_info.swizzle,
-                     pixel_data.empty() ? is_cleared : true, format, size,
-                     color_space, usage);
+  return MakeBacking(
+      use_passthrough_, mailbox, target, service_id, image,
+      gles2::Texture::BOUND, level_info_internal_format, format_info.gl_format,
+      format_info.gl_type, format_info.swizzle,
+      pixel_data.empty() ? is_cleared : true, format, size, color_space, usage);
 }
 
 std::unique_ptr<SharedImageBacking>
@@ -762,15 +804,26 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
     return nullptr;
   }
 
-  GLenum target = handle.type == gfx::SHARED_MEMORY_BUFFER
-                      ? GL_TEXTURE_2D
-                      : gpu::GetPlatformSpecificTextureTarget();
+  GLenum target =
+      (handle.type == gfx::SHARED_MEMORY_BUFFER ||
+       !NativeBufferNeedsPlatformSpecificTextureTarget(buffer_format))
+          ? GL_TEXTURE_2D
+          : gpu::GetPlatformSpecificTextureTarget();
   scoped_refptr<gl::GLImage> image = MakeGLImage(
       client_id, std::move(handle), buffer_format, surface_handle, size);
   if (!image) {
     LOG(ERROR) << "Failed to create image.";
     return nullptr;
   }
+  // If we decide to use GL_TEXTURE_2D at the target for a native buffer, we
+  // would like to verify that it will actually work. If the image expects to be
+  // copied, there is no way to do this verification here, because copying is
+  // done lazily after the SharedImage is created, so require that the image is
+  // bindable. Currently NativeBufferNeedsPlatformSpecificTextureTarget can
+  // only return false on Chrome OS where GLImageNativePixmap is used which is
+  // always bindable.
+  DCHECK(handle.type == gfx::SHARED_MEMORY_BUFFER || target != GL_TEXTURE_2D ||
+         image->ShouldBindOrCopy() == gl::GLImage::BIND);
   if (color_space.IsValid())
     image->SetColorSpace(color_space);
 
@@ -784,29 +837,53 @@ SharedImageBackingFactoryGLTexture::CreateSharedImage(
                 SHARED_IMAGE_USAGE_GLES2_FRAMEBUFFER_HINT)) != 0;
   GLuint service_id = MakeTextureAndSetParameters(
       api, target, for_framebuffer_attachment && texture_usage_angle_);
+  bool is_rgb_emulation = usage & SHARED_IMAGE_USAGE_RGB_EMULATION;
 
-  // TODO(piman): RGB emulation
   gles2::Texture::ImageState image_state = gles2::Texture::UNBOUND;
-  if (image->BindTexImage(target)) {
-    image_state = gles2::Texture::BOUND;
+  if (image->ShouldBindOrCopy() == gl::GLImage::BIND) {
+    bool is_bound = false;
+    if (is_rgb_emulation)
+      is_bound = image->BindTexImageWithInternalformat(target, GL_RGB);
+    else
+      is_bound = image->BindTexImage(target);
+    if (is_bound) {
+      image_state = gles2::Texture::BOUND;
+    } else {
+      LOG(ERROR) << "Failed to bind image to target.";
+      api->glDeleteTexturesFn(1, &service_id);
+      return nullptr;
+    }
   } else if (use_passthrough_) {
     image->CopyTexImage(target);
     image_state = gles2::Texture::COPIED;
   }
 
-  // TODO(piman): this is consistent with
-  // GLES2DecoderImpl::BindTexImage2DCHROMIUMImpl or
-  // RasterDecoderImpl::DoBindTexImage2DCHROMIUM but seems wrong:
-  //
-  // - internalformat might be sized, which is wrong for format
-  // - gl_type shouldn't be GL_UNSIGNED_BYTE for RGBA4444 for example.
-  GLuint internal_format = image->GetInternalFormat();
-  GLenum gl_format = internal_format;
-  GLenum gl_type = GL_UNSIGNED_BYTE;
+  GLuint internal_format =
+      is_rgb_emulation ? GL_RGB : image->GetInternalFormat();
+  GLenum gl_format =
+      gles2::TextureManager::ExtractFormatFromStorageFormat(internal_format);
+  GLenum gl_type =
+      gles2::TextureManager::ExtractTypeFromStorageFormat(internal_format);
 
-  return MakeBacking(mailbox, target, service_id, image, image_state,
-                     internal_format, gl_format, gl_type, nullptr, true, format,
-                     size, color_space, usage);
+  return MakeBacking(use_passthrough_, mailbox, target, service_id, image,
+                     image_state, internal_format, gl_format, gl_type, nullptr,
+                     true, format, size, color_space, usage);
+}
+
+std::unique_ptr<SharedImageBacking>
+SharedImageBackingFactoryGLTexture::CreateSharedImageForTest(
+    const Mailbox& mailbox,
+    GLenum target,
+    GLuint service_id,
+    bool is_cleared,
+    viz::ResourceFormat format,
+    const gfx::Size& size,
+    uint32_t usage) {
+  return MakeBacking(false, mailbox, target, service_id, nullptr,
+                     gles2::Texture::UNBOUND, viz::GLInternalFormat(format),
+                     viz::GLDataFormat(format), viz::GLDataType(format),
+                     nullptr, is_cleared, format, size, gfx::ColorSpace(),
+                     usage);
 }
 
 scoped_refptr<gl::GLImage> SharedImageBackingFactoryGLTexture::MakeGLImage(
@@ -836,6 +913,7 @@ scoped_refptr<gl::GLImage> SharedImageBackingFactoryGLTexture::MakeGLImage(
 
 std::unique_ptr<SharedImageBacking>
 SharedImageBackingFactoryGLTexture::MakeBacking(
+    bool passthrough,
     const Mailbox& mailbox,
     GLenum target,
     GLuint service_id,
@@ -850,7 +928,7 @@ SharedImageBackingFactoryGLTexture::MakeBacking(
     const gfx::Size& size,
     const gfx::ColorSpace& color_space,
     uint32_t usage) {
-  if (use_passthrough_) {
+  if (passthrough) {
     scoped_refptr<gles2::TexturePassthrough> passthrough_texture =
         base::MakeRefCounted<gles2::TexturePassthrough>(service_id, target);
     if (image)

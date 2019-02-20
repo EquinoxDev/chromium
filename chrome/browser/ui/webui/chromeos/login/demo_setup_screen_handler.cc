@@ -20,8 +20,9 @@ constexpr char kJsScreenPath[] = "login.DemoSetupScreen";
 
 namespace chromeos {
 
-DemoSetupScreenHandler::DemoSetupScreenHandler()
-    : BaseScreenHandler(kScreenId) {
+DemoSetupScreenHandler::DemoSetupScreenHandler(
+    JSCallsContainer* js_calls_container)
+    : BaseScreenHandler(kScreenId, js_calls_container) {
   set_call_js_prefix(kJsScreenPath);
 }
 
@@ -44,17 +45,16 @@ void DemoSetupScreenHandler::Bind(DemoSetupScreen* screen) {
 void DemoSetupScreenHandler::OnSetupFailed(
     const DemoSetupController::DemoSetupError& error) {
   // TODO(wzang): Consider customization for RecoveryMethod::kReboot as well.
-  CallJSWithPrefix(
-      "onSetupFailed",
-      base::JoinString({error.GetLocalizedErrorMessage(),
-                        error.GetLocalizedRecoveryMessage()},
-                       base::UTF8ToUTF16(" ")),
-      error.recovery_method() ==
-          DemoSetupController::DemoSetupError::RecoveryMethod::kPowerwash);
+  CallJS("login.DemoSetupScreen.onSetupFailed",
+         base::JoinString({error.GetLocalizedErrorMessage(),
+                           error.GetLocalizedRecoveryMessage()},
+                          base::UTF8ToUTF16(" ")),
+         error.recovery_method() ==
+             DemoSetupController::DemoSetupError::RecoveryMethod::kPowerwash);
 }
 
 void DemoSetupScreenHandler::OnSetupSucceeded() {
-  CallJSWithPrefix("onSetupSucceeded");
+  CallJS("login.DemoSetupScreen.onSetupSucceeded");
 }
 
 void DemoSetupScreenHandler::Initialize() {}

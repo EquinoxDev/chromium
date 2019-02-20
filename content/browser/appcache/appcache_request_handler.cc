@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "content/browser/appcache/appcache.h"
 #include "content/browser/appcache/appcache_backend_impl.h"
@@ -23,6 +24,7 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 #include "services/network/public/cpp/features.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
 
 namespace content {
 
@@ -47,7 +49,7 @@ AppCacheRequestHandler::AppCacheRequestHandler(
       cache_entry_not_found_(false),
       is_delivering_network_response_(false),
       maybe_load_resource_executed_(false),
-      cache_id_(kAppCacheNoCacheId),
+      cache_id_(blink::mojom::kAppCacheNoCacheId),
       service_(host_->service()),
       request_(std::move(request)),
       weak_factory_(this) {
@@ -99,7 +101,7 @@ AppCacheJob* AppCacheRequestHandler::MaybeLoadResource(
   // new resource, any values in those fields are no longer valid.
   found_entry_ = AppCacheEntry();
   found_fallback_entry_ = AppCacheEntry();
-  found_cache_id_ = kAppCacheNoCacheId;
+  found_cache_id_ = blink::mojom::kAppCacheNoCacheId;
   found_manifest_url_ = GURL();
   found_network_namespace_ = false;
 
@@ -115,7 +117,7 @@ AppCacheJob* AppCacheRequestHandler::MaybeLoadResource(
   if (job && job->IsDeliveringNetworkResponse()) {
     DCHECK(!job->IsStarted());
     if (job->AsURLLoaderJob()) {
-      job.release();  // AppCacheURLLoaderJob always deletes itself.
+      job.release()->AsURLLoaderJob()->DeleteIfNeeded();
       job_ = nullptr;
     } else {
       job.reset();
@@ -283,14 +285,14 @@ void AppCacheRequestHandler::DeliverAppCachedResponse(
 
 void AppCacheRequestHandler::DeliverErrorResponse() {
   DCHECK(job_.get() && job_->IsWaiting());
-  DCHECK_EQ(kAppCacheNoCacheId, cache_id_);
+  DCHECK_EQ(blink::mojom::kAppCacheNoCacheId, cache_id_);
   DCHECK(manifest_url_.is_empty());
   job_->DeliverErrorResponse();
 }
 
 void AppCacheRequestHandler::DeliverNetworkResponse() {
   DCHECK(job_.get() && job_->IsWaiting());
-  DCHECK_EQ(kAppCacheNoCacheId, cache_id_);
+  DCHECK_EQ(blink::mojom::kAppCacheNoCacheId, cache_id_);
   DCHECK(manifest_url_.is_empty());
   job_->DeliverNetworkResponse();
 }
@@ -300,7 +302,7 @@ void AppCacheRequestHandler::OnPrepareToRestartURLRequest() {
   DCHECK(job_->IsDeliveringNetworkResponse() || job_->IsCacheEntryNotFound());
 
   // Any information about the source of the response is no longer relevant.
-  cache_id_ = kAppCacheNoCacheId;
+  cache_id_ = blink::mojom::kAppCacheNoCacheId;
   manifest_url_ = GURL();
 
   cache_entry_not_found_ = job_->IsCacheEntryNotFound();
@@ -398,7 +400,7 @@ void AppCacheRequestHandler::OnMainResponseFound(
       host_->NotifyMainResourceBlocked(manifest_url);
     } else {
       DCHECK_EQ(resource_type_, RESOURCE_TYPE_SHARED_WORKER);
-      host_->frontend()->OnContentBlocked(host_->host_id(), manifest_url);
+      host_->OnContentBlocked(manifest_url);
     }
     DeliverNetworkResponse();
     return;
@@ -411,7 +413,8 @@ void AppCacheRequestHandler::OnMainResponseFound(
     return;
   }
 
-  if (IsMainResourceType(resource_type_) && cache_id != kAppCacheNoCacheId) {
+  if (IsMainResourceType(resource_type_) &&
+      cache_id != blink::mojom::kAppCacheNoCacheId) {
     // AppCacheHost loads and holds a reference to the main resource cache
     // for two reasons, firstly to preload the cache into the working set
     // in advance of subresource loads happening, secondly to prevent the
@@ -572,7 +575,7 @@ void AppCacheRequestHandler::MaybeCreateLoader(
 }
 
 bool AppCacheRequestHandler::MaybeCreateLoaderForResponse(
-    const GURL& request_url,
+    const network::ResourceRequest& request,
     const network::ResourceResponseHead& response,
     network::mojom::URLLoaderPtr* loader,
     network::mojom::URLLoaderClientRequest* client_request,

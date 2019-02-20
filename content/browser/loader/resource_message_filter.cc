@@ -4,6 +4,7 @@
 
 #include "content/browser/loader/resource_message_filter.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
@@ -195,7 +196,8 @@ void ResourceMessageFilter::InitializeOnIOThread() {
         base::BindRepeating(&ResourceDispatcherHostImpl::CancelRequest,
                             base::Unretained(ResourceDispatcherHostImpl::Get()),
                             requester_info_->child_id()),
-        &shared_cors_origin_access_list_->GetOriginAccessList());
+        &shared_cors_origin_access_list_->GetOriginAccessList(),
+        requester_info_->child_id() == -1 ? 0 : requester_info_->child_id());
   }
 
   std::vector<network::mojom::URLLoaderFactoryRequest> requests =

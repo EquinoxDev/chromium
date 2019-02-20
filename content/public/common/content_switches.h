@@ -138,7 +138,6 @@ CONTENT_EXPORT extern const char kEnableUserMediaScreenCapturing[];
 CONTENT_EXPORT extern const char kEnableUseZoomForDSF[];
 CONTENT_EXPORT extern const char kEnableViewport[];
 CONTENT_EXPORT extern const char kEnableVtune[];
-CONTENT_EXPORT extern const char kEnableVulkan[];
 CONTENT_EXPORT extern const char kEnableWebAuthTestingAPI[];
 CONTENT_EXPORT extern const char kEnableWebBluetoothScanning[];
 CONTENT_EXPORT extern const char kEnableWebGL2ComputeContext[];
@@ -146,7 +145,6 @@ CONTENT_EXPORT extern const char kEnableWebGLDraftExtensions[];
 CONTENT_EXPORT extern const char kEnableWebGLImageChromium[];
 CONTENT_EXPORT extern const char kEnableWebVR[];
 CONTENT_EXPORT extern const char kEnableZeroCopy[];
-CONTENT_EXPORT extern const char kExplicitlyAllowedPorts[];
 CONTENT_EXPORT extern const char kFieldTrialHandle[];
 CONTENT_EXPORT extern const char kFileUrlPathAlias[];
 CONTENT_EXPORT extern const char kForceDisplayList2dCanvas[];
@@ -229,6 +227,7 @@ CONTENT_EXPORT extern const char kTouchEventFeatureDetectionAuto[];
 CONTENT_EXPORT extern const char kTouchEventFeatureDetectionEnabled[];
 CONTENT_EXPORT extern const char kTouchEventFeatureDetectionDisabled[];
 CONTENT_EXPORT extern const char kTouchTextSelectionStrategy[];
+CONTENT_EXPORT extern const char kUseFakeCodecForPeerConnection[];
 CONTENT_EXPORT extern const char kUseFakeUIForMediaStream[];
 CONTENT_EXPORT extern const char kVideoImageTextureTarget[];
 CONTENT_EXPORT extern const char kUseMobileUserAgent[];
@@ -292,7 +291,6 @@ CONTENT_EXPORT extern const char kFontCacheSharedHandle[];
 CONTENT_EXPORT extern const char kMemoryPressureThresholdsMb[];
 CONTENT_EXPORT extern const char kPpapiAntialiasedTextEnabled[];
 CONTENT_EXPORT extern const char kPpapiSubpixelRenderingSetting[];
-CONTENT_EXPORT extern const char kTraceExportEventsToETW[];
 #endif
 
 #if defined(ENABLE_IPC_FUZZER)

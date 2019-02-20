@@ -35,7 +35,7 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/platform/web_common.h"
-#include "third_party/webrtc/api/peerconnectioninterface.h"
+#include "third_party/webrtc/api/peer_connection_interface.h"
 
 namespace blink {
 
@@ -57,7 +57,7 @@ class BLINK_PLATFORM_EXPORT WebRTCPeerConnectionHandlerClient {
   virtual void DidChangeIceConnectionState(
       webrtc::PeerConnectionInterface::IceConnectionState) = 0;
   virtual void DidChangePeerConnectionState(
-      webrtc::PeerConnectionInterface::PeerConnectionState){};
+      webrtc::PeerConnectionInterface::PeerConnectionState) {}
   virtual void DidAddReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) = 0;
   virtual void DidRemoveReceiverPlanB(std::unique_ptr<WebRTCRtpReceiver>) = 0;
   virtual void DidModifyTransceivers(

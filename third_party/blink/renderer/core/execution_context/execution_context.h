@@ -32,12 +32,13 @@
 
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/optional.h"
 #include "base/unguessable_token.h"
-#include "services/network/public/mojom/referrer_policy.mojom-shared.h"
+#include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_notifier.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_notifier.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/loader/console_logger_impl_base.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/https_state.h"
@@ -52,6 +53,12 @@ namespace service_manager {
 class InterfaceProvider;
 }
 
+namespace network {
+namespace mojom {
+enum class ReferrerPolicy : int32_t;
+}  // namespace mojom
+}  // namespace network
+
 namespace blink {
 
 class ContentSecurityPolicy;
@@ -64,7 +71,6 @@ class FrameOrWorkerScheduler;
 class InterfaceInvalidator;
 class KURL;
 class LocalDOMWindow;
-class PausableObject;
 class PublicURLManager;
 class ResourceFetcher;
 class SecurityContext;
@@ -142,6 +148,16 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   SecurityOrigin* GetMutableSecurityOrigin();
 
   ContentSecurityPolicy* GetContentSecurityPolicy();
+
+  // Returns the content security policy to be used based on the current
+  // JavaScript world we are in.
+  // Note: As part of crbug.com/896041, existing usages of
+  // ContentSecurityPolicy::ShouldBypassMainWorld should eventually be replaced
+  // by GetContentSecurityPolicyForWorld. However this is under active
+  // development, hence new callers should still use
+  // ContentSecurityPolicy::ShouldBypassMainWorld for now.
+  virtual ContentSecurityPolicy* GetContentSecurityPolicyForWorld();
+
   virtual const KURL& Url() const = 0;
   virtual const KURL& BaseURL() const = 0;
   virtual KURL CompleteURL(const String& url) const = 0;
@@ -180,27 +196,23 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
 
   virtual void RemoveURLFromMemoryCache(const KURL&);
 
-  void PausePausableObjects();
-  void UnpausePausableObjects();
-  void StopPausableObjects();
+  void SetLifecycleState(mojom::FrameLifecycleState);
   void NotifyContextDestroyed() override;
 
-  void PauseScheduledTasks();
-  void UnpauseScheduledTasks();
-
   // TODO(haraken): Remove these methods by making the customers inherit from
-  // PausableObject. PausableObject is a standard way to observe context
-  // suspension/resumption.
+  // ContextLifecycleObserver. ContextLifecycleObserver is a standard way to
+  // observe context suspension/resumption.
   virtual bool TasksNeedPause() { return false; }
   virtual void TasksWerePaused() {}
   virtual void TasksWereUnpaused() {}
 
-  bool IsContextPaused() const { return is_context_paused_; }
+  bool IsContextPaused() const {
+    return lifecycle_state_ != mojom::FrameLifecycleState::kRunning;
+  }
   bool IsContextDestroyed() const { return is_context_destroyed_; }
-
-  // Called after the construction of an PausableObject to synchronize
-  // pause state.
-  void PausePausableObjectIfNeeded(PausableObject*);
+  mojom::FrameLifecycleState ContextPauseState() const {
+    return lifecycle_state_;
+  }
 
   // Gets the next id in a circular sequence from 1 to 2^31-1.
   int CircularSequentialID();
@@ -271,7 +283,8 @@ class CORE_EXPORT ExecutionContext : public ContextLifecycleNotifier,
   bool in_dispatch_error_event_;
   HeapVector<Member<ErrorEvent>> pending_exceptions_;
 
-  bool is_context_paused_;
+  mojom::FrameLifecycleState lifecycle_state_ =
+      mojom::FrameLifecycleState::kRunning;
   bool is_context_destroyed_;
 
   Member<PublicURLManager> public_url_manager_;

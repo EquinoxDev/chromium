@@ -45,8 +45,8 @@
 #include "third_party/blink/public/platform/web_url_error.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/web/web_associated_url_loader_client.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader_client.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_request.h"
@@ -109,10 +109,8 @@ class WebAssociatedURLLoaderImpl::ClientAdapter final
   // ThreadableLoaderClient
   void DidSendData(unsigned long long /*bytesSent*/,
                    unsigned long long /*totalBytesToBeSent*/) override;
-  void DidReceiveResponse(unsigned long,
-                          const ResourceResponse&,
-                          std::unique_ptr<WebDataConsumerHandle>) override;
-  void DidDownloadData(int /*dataLength*/) override;
+  void DidReceiveResponse(unsigned long, const ResourceResponse&) override;
+  void DidDownloadData(unsigned long long /*dataLength*/) override;
   void DidReceiveData(const char*, unsigned /*dataLength*/) override;
   void DidReceiveCachedMetadata(const char*, int /*dataLength*/) override;
   void DidFinishLoading(unsigned long /*identifier*/) override;
@@ -200,10 +198,7 @@ void WebAssociatedURLLoaderImpl::ClientAdapter::DidSendData(
 
 void WebAssociatedURLLoaderImpl::ClientAdapter::DidReceiveResponse(
     unsigned long,
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
-  ALLOW_UNUSED_LOCAL(handle);
-  DCHECK(!handle);
+    const ResourceResponse& response) {
   if (!client_)
     return;
 
@@ -241,7 +236,7 @@ void WebAssociatedURLLoaderImpl::ClientAdapter::DidReceiveResponse(
 }
 
 void WebAssociatedURLLoaderImpl::ClientAdapter::DidDownloadData(
-    int data_length) {
+    unsigned long long data_length) {
   if (!client_)
     return;
 

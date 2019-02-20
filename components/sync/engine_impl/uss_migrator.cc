@@ -111,7 +111,11 @@ bool MigrateDirectoryDataWithBatchSize(ModelType type,
 
   // Process |batch_size| entities at a time to reduce memory usage.
   size_t i = 0;
-  while (i < child_ids.size()) {
+
+  // We use |do {} while| to guarantee that, even if there are no entities to
+  // process, we call ProcessGetUpdatesResponse() at least once in order to feed
+  // the progress marker.
+  do {
     // Vector to own the temporary entities.
     std::vector<std::unique_ptr<sync_pb::SyncEntity>> entities;
     // Vector of raw pointers for passing to ProcessGetUpdatesResponse().
@@ -140,7 +144,7 @@ bool MigrateDirectoryDataWithBatchSize(ModelType type,
     worker->ProcessGetUpdatesResponse(progress, context, entity_ptrs,
                                       /*from_uss_migrator=*/true,
                                       /*status=*/nullptr);
-  }
+  } while (i != child_ids.size());
 
   worker->PassiveApplyUpdates(nullptr);
   return true;

@@ -34,6 +34,10 @@ class AssistantManager;
 class AssistantManagerInternal;
 }  // namespace assistant_client
 
+namespace network {
+class SharedURLLoaderFactoryInfo;
+}  // namespace network
+
 namespace service_manager {
 class Connector;
 }  // namespace service_manager
@@ -85,7 +89,9 @@ class AssistantManagerServiceImpl
       service_manager::Connector* connector,
       device::mojom::BatteryMonitorPtr battery_monitor,
       Service* service,
-      network::NetworkConnectionTracker* network_connection_tracker);
+      network::NetworkConnectionTracker* network_connection_tracker,
+      std::unique_ptr<network::SharedURLLoaderFactoryInfo>
+          url_loader_factory_info);
 
   ~AssistantManagerServiceImpl() override;
 
@@ -97,6 +103,7 @@ class AssistantManagerServiceImpl
   State GetState() const override;
   void SetAccessToken(const std::string& access_token) override;
   void EnableListening(bool enable) override;
+  void EnableHotword(bool enable) override;
   AssistantSettingsManager* GetAssistantSettingsManager() override;
 
   // mojom::Assistant overrides:
@@ -114,7 +121,10 @@ class AssistantManagerServiceImpl
   void DismissNotification(
       mojom::AssistantNotificationPtr notification) override;
   void CacheScreenContext(CacheScreenContextCallback callback) override;
+  void ClearScreenContextCache() override;
   void OnAccessibilityStatusChanged(bool spoken_feedback_enabled) override;
+  void SendAssistantFeedback(
+      mojom::AssistantFeedbackPtr assistant_feedback) override;
 
   // AssistantActionObserver overrides:
   void OnShowContextualQueryFallback() override;
@@ -171,8 +181,7 @@ class AssistantManagerServiceImpl
 
  private:
   std::unique_ptr<assistant_client::AssistantManager> StartAssistantInternal(
-      const std::string& access_token,
-      bool enable_hotword);
+      const std::string& access_token);
   void PostInitAssistant(
       base::OnceClosure post_init_callback,
       std::unique_ptr<assistant_client::AssistantManager>* assistant_manager);
@@ -222,8 +231,8 @@ class AssistantManagerServiceImpl
       const std::vector<uint8_t>& assistant_screenshot);
 
   void SendScreenContextRequest(
-      ax::mojom::AssistantExtraPtr assistant_extra,
-      std::unique_ptr<ui::AssistantTree> assistant_tree,
+      ax::mojom::AssistantExtra* assistant_extra,
+      ui::AssistantTree* assistant_tree,
       const std::vector<uint8_t>& assistant_screenshot);
 
   void FillServerExperimentIds(std::vector<std::string>* server_experiment_ids);
@@ -242,12 +251,14 @@ class AssistantManagerServiceImpl
   std::unique_ptr<PlatformApiImpl> platform_api_;
   std::unique_ptr<action::CrosActionModule> action_module_;
   ChromiumApiDelegate chromium_api_delegate_;
+  // NOTE: |display_connection_| is used by |assistant_manager_| and must be
+  // declared before so it will be destructed after.
+  std::unique_ptr<CrosDisplayConnection> display_connection_;
   std::unique_ptr<assistant_client::AssistantManager> assistant_manager_;
   std::unique_ptr<AssistantSettingsManagerImpl> assistant_settings_manager_;
   // same ownership as assistant_manager_.
   assistant_client::AssistantManagerInternal* assistant_manager_internal_ =
       nullptr;
-  std::unique_ptr<CrosDisplayConnection> display_connection_;
   mojo::InterfacePtrSet<mojom::AssistantInteractionSubscriber>
       interaction_subscribers_;
   ash::mojom::AshMessageCenterControllerPtr ash_message_center_controller_;
@@ -268,6 +279,8 @@ class AssistantManagerServiceImpl
   bool receive_modify_settings_proto_response_ = false;
   bool receive_inline_response_ = false;
   std::string receive_url_response_;
+
+  bool is_first_client_discourse_context_query_ = true;
 
   base::WeakPtrFactory<AssistantManagerServiceImpl> weak_factory_;
 

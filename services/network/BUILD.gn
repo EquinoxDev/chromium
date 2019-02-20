@@ -6,7 +6,6 @@ import("//build/config/jumbo.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//net/features.gni")
 import("//services/network/public/cpp/features.gni")
-import("//services/service_manager/public/service_manifest.gni")
 
 jumbo_component("network_service") {
   sources = [
@@ -30,6 +29,8 @@ jumbo_component("network_service") {
     "crl_set_distributor.h",
     "cross_origin_read_blocking.cc",
     "cross_origin_read_blocking.h",
+    "cross_origin_resource_policy.cc",
+    "cross_origin_resource_policy.h",
     "data_pipe_element_reader.cc",
     "data_pipe_element_reader.h",
     "dns_config_change_manager.cc",
@@ -38,6 +39,8 @@ jumbo_component("network_service") {
     "empty_url_loader_client.h",
     "host_resolver.cc",
     "host_resolver.h",
+    "host_resolver_mdns_listener.cc",
+    "host_resolver_mdns_listener.h",
     "http_auth_cache_copier.cc",
     "http_auth_cache_copier.h",
     "http_cache_data_counter.cc",
@@ -265,6 +268,13 @@ jumbo_component("network_service") {
   if (is_chromecast) {
     defines += [ "IS_CHROMECAST" ]
   }
+
+  if (trial_comparison_cert_verifier_supported) {
+    sources += [
+      "trial_comparison_cert_verifier_mojo.cc",
+      "trial_comparison_cert_verifier_mojo.h",
+    ]
+  }
 }
 
 source_set("tests") {
@@ -278,6 +288,7 @@ source_set("tests") {
     "cors/cors_url_loader_unittest.cc",
     "cors/preflight_controller_unittest.cc",
     "cross_origin_read_blocking_unittest.cc",
+    "cross_origin_resource_policy_unittest.cc",
     "data_pipe_element_reader_unittest.cc",
     "dns_config_change_manager_unittest.cc",
     "host_resolver_unittest.cc",
@@ -356,6 +367,7 @@ source_set("tests") {
     "//base",
     "//components/network_session_configurator/browser",
     "//components/prefs:test_support",
+    "//components/variations:test_support",
     "//crypto:test_support",
     "//jingle:jingle_fake_socket",
     "//mojo/core/embedder",
@@ -388,6 +400,8 @@ jumbo_source_set("test_support") {
   sources = [
     "mojo_socket_test_util.cc",
     "mojo_socket_test_util.h",
+    "test/test_cookie_manager.cc",
+    "test/test_cookie_manager.h",
     "test/test_data_pipe_getter.cc",
     "test/test_data_pipe_getter.h",
     "test/test_network_connection_tracker.cc",
@@ -423,9 +437,4 @@ jumbo_source_set("test_support") {
     "//services/network:network_service",
     "//testing/gtest",
   ]
-}
-
-service_manifest("manifest") {
-  name = "network"
-  source = "manifest.json"
 }

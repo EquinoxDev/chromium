@@ -231,6 +231,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
   // DisplayItemClient methods
   String DebugName() const final;
+  DOMNodeId OwnerNodeId() const final;
   LayoutRect VisualRect() const final;
 
   LayoutBoxModelObject& GetLayoutObject() const { return layout_object_; }
@@ -346,6 +347,8 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
   void DirtyVisibleContentStatus();
 
+  // True if this layer paints box decorations or a background. Touch-action
+  // rects are painted as part of the background so these are included here.
   bool HasBoxDecorationsOrBackground() const;
   bool HasVisibleBoxDecorations() const;
   // True if this layer container layoutObjects that paint.
@@ -594,6 +597,13 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   bool BackgroundIsKnownToBeOpaqueInRect(const LayoutRect&,
                                          bool should_check_children) const;
 
+  bool ContainsDirtyOverlayScrollbars() const {
+    return contains_dirty_overlay_scrollbars_;
+  }
+  void SetContainsDirtyOverlayScrollbars(bool dirty_scrollbars) {
+    contains_dirty_overlay_scrollbars_ = dirty_scrollbars;
+  }
+
   // If the input CompositorFilterOperation is not empty, it will be populated
   // only if |filter_on_effect_node_dirty_| is true or the reference box has
   // changed. Otherwise it will be populated unconditionally.
@@ -608,7 +618,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // EffectPaintPropertyNode.
   void UpdateCompositorFilterOperationsForBackdropFilter(
       CompositorFilterOperations& operations,
-      gfx::RectF* backdrop_filter_bounds) const;
+      gfx::RRectF* backdrop_filter_bounds) const;
   CompositorFilterOperations CreateCompositorFilterOperationsForBackdropFilter()
       const;
 
@@ -638,7 +648,8 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // coordinate system of the object with the filter. Filter bounds is the
   // reference box, offset by the object's location in the graphics layer.
   FloatRect FilterReferenceBox() const;
-  FloatRect BackdropFilterBounds() const;
+  FloatRect BackdropFilterReferenceBox() const;
+  gfx::RRectF BackdropFilterBounds(const FloatRect& reference_box) const;
 
   void UpdateFilterReferenceBox();
   void UpdateFilters(const ComputedStyle* old_style,
@@ -754,16 +765,9 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
     bool is_under_video = false;
   };
-
-  // Indicates whether the descendant-dependent tree walk bit should also
-  // be set.
-  enum DescendantDependentFlagsUpdateFlag {
-    NeedsDescendantDependentUpdate,
-    DoesNotNeedDescendantDependentUpdate
-  };
   void SetNeedsVisualOverflowRecalc();
-  void SetNeedsCompositingInputsUpdate(
-      DescendantDependentFlagsUpdateFlag = NeedsDescendantDependentUpdate);
+  void SetNeedsCompositingInputsUpdate();
+
   // Use this internal method only for cases during the descendant-dependent
   // tree walk.
   bool ChildNeedsCompositingInputsUpdate() const {
@@ -1182,6 +1186,13 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   bool RequiresScrollableArea() const;
   void UpdateScrollableArea();
 
+  // Indicates whether the descendant-dependent tree walk bit should also
+  // be set.
+  enum DescendantDependentFlagsUpdateFlag {
+    NeedsDescendantDependentUpdate,
+    DoesNotNeedDescendantDependentUpdate
+  };
+
   // Marks the ancestor chain for paint property update, and if
   // the flag is set, the descendant-dependent tree walk as well.
   void MarkAncestorChainForFlagsUpdate(
@@ -1261,6 +1272,8 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // Set on a stacking context layer that has 3D descendants anywhere
   // in a preserves3D hierarchy. Hint to do 3D-aware hit testing.
   unsigned has3d_transformed_descendant_ : 1;
+
+  unsigned contains_dirty_overlay_scrollbars_ : 1;
 
   unsigned needs_ancestor_dependent_compositing_inputs_update_ : 1;
   unsigned child_needs_compositing_inputs_update_ : 1;

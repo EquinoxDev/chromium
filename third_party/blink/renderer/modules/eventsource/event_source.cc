@@ -60,7 +60,7 @@
 
 namespace blink {
 
-const unsigned long long EventSource::kDefaultReconnectDelay = 3000;
+const uint64_t EventSource::kDefaultReconnectDelay = 3000;
 
 inline EventSource::EventSource(ExecutionContext* context,
                                 const KURL& url,
@@ -219,11 +219,8 @@ ExecutionContext* EventSource::GetExecutionContext() const {
   return ContextLifecycleObserver::GetExecutionContext();
 }
 
-void EventSource::DidReceiveResponse(
-    unsigned long identifier,
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
-  DCHECK(!handle);
+void EventSource::DidReceiveResponse(unsigned long identifier,
+                                     const ResourceResponse& response) {
   DCHECK_EQ(kConnecting, state_);
   DCHECK(loader_);
 
@@ -334,7 +331,7 @@ void EventSource::OnMessageEvent(const AtomicString& event_type,
   DispatchEvent(*e);
 }
 
-void EventSource::OnReconnectionTimeSet(unsigned long long reconnection_time) {
+void EventSource::OnReconnectionTimeSet(uint64_t reconnection_time) {
   reconnect_delay_ = reconnection_time;
 }
 

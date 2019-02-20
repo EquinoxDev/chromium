@@ -79,6 +79,7 @@ check_targets = [
   "//base/*",
   "//blink/*",
   "//build/*",
+  "//buildtools/*",
   "//cc/*",
 
   #"//chrome/android/*",  # 13 errors
@@ -279,6 +280,7 @@ check_targets = [
   "//extensions/renderer:unit_tests",
   "//extensions/shell/*",
   "//extensions/strings/*",
+  "//fuchsia/*",
   "//gin/*",
   "//google_apis/*",
   "//google_update/*",
@@ -289,7 +291,6 @@ check_targets = [
   "//ipc/*",
 
   #"//jingle/*",
-  "//mash/*",
 
   "//media/*",
   "//mojo/*",
@@ -393,7 +394,6 @@ check_targets = [
   "//third_party/elfutils/*",
   "//third_party/errorprone/*",
   "//third_party/espresso/*",
-  "//third_party/eu-strip/*",
   "//third_party/expat/*",
   "//third_party/eyesfree/*",
   "//third_party/feed/*",
@@ -597,8 +597,6 @@ check_targets = [
   "//third_party/yara/*",
   "//third_party/yasm/*",
   "//third_party/zlib/*",
-  "//third_party/webrtc/*",
-  "//third_party/webrtc_overrides/*",
   "//third_party/woff2/*",
 
   "//tools/*",
@@ -606,7 +604,6 @@ check_targets = [
   "//url/*",
 
   #"//v8/*",  # Errors: https://bugs.chromium.org/p/v8/issues/detail?id=7330
-  "//webrunner/*",
 ]
 
 # These are the list of GN files that run exec_script. This whitelist exists

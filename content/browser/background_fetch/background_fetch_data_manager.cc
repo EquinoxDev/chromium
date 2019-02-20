@@ -19,6 +19,7 @@
 #include "content/browser/background_fetch/storage/get_developer_ids_task.h"
 #include "content/browser/background_fetch/storage/get_metadata_task.h"
 #include "content/browser/background_fetch/storage/get_registration_task.h"
+#include "content/browser/background_fetch/storage/get_request_blob_task.h"
 #include "content/browser/background_fetch/storage/mark_registration_for_deletion_task.h"
 #include "content/browser/background_fetch/storage/mark_request_complete_task.h"
 #include "content/browser/background_fetch/storage/match_requests_task.h"
@@ -159,6 +160,16 @@ void BackgroundFetchDataManager::PopNextRequest(
           this, registration_id, std::move(callback)));
 }
 
+void BackgroundFetchDataManager::GetRequestBlob(
+    const BackgroundFetchRegistrationId& registration_id,
+    const scoped_refptr<BackgroundFetchRequestInfo>& request_info,
+    GetRequestBlobCallback callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  AddDatabaseTask(std::make_unique<background_fetch::GetRequestBlobTask>(
+      this, registration_id, request_info, std::move(callback)));
+}
+
 void BackgroundFetchDataManager::MarkRequestAsComplete(
     const BackgroundFetchRegistrationId& registration_id,
     scoped_refptr<BackgroundFetchRequestInfo> request_info,
@@ -246,6 +257,11 @@ void BackgroundFetchDataManager::OnTaskFinished(
 
 BackgroundFetchDataManager* BackgroundFetchDataManager::data_manager() {
   return this;
+}
+
+base::WeakPtr<background_fetch::DatabaseTaskHost>
+BackgroundFetchDataManager::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 }  // namespace content

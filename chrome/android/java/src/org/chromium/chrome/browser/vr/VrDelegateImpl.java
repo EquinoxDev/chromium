@@ -142,12 +142,17 @@ import org.chromium.chrome.browser.ChromeActivity;
     }
 
     @Override
-    public boolean willChangeDensityInVr(ChromeActivity activity) {
-        return VrShellDelegate.willChangeDensityInVr(activity);
+    public void onSaveInstanceState(Bundle outState) {
+        VrShellDelegate.onSaveInstanceState(outState);
     }
 
     @Override
-    public void onSaveInstanceState(Bundle outState) {
-        VrShellDelegate.onSaveInstanceState(outState);
+    protected boolean expectedDensityChange() {
+        return VrShellDelegate.expectedDensityChange();
+    }
+
+    @Override
+    public void initAfterModuleInstall() {
+        VrShellDelegate.initAfterModuleInstall();
     }
 }

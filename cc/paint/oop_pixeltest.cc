@@ -5,6 +5,7 @@
 #include <tuple>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -1412,9 +1413,8 @@ sk_sp<SkTextBlob> BuildTextBlob(
   }
 
   SkTextBlobBuilder builder;
-  SkRect bounds = SkRect::MakeWH(100, 100);
   const int glyphCount = 10;
-  const auto& runBuffer = builder.allocRunPosH(font, glyphCount, 0, &bounds);
+  const auto& runBuffer = builder.allocRunPosH(font, glyphCount, 0);
   for (int i = 0; i < glyphCount; i++) {
     runBuffer.glyphs[i] = static_cast<SkGlyphID>(i);
     runBuffer.pos[i] = SkIntToScalar(i);
@@ -1615,8 +1615,8 @@ class OopPathPixelTest : public OopPixelTest,
   void RunTest() {
     auto* ri = static_cast<gpu::raster::RasterImplementation*>(
         raster_context_provider_->RasterInterface());
-    size_t max_inlined_entry_size =
-        AllowInlining() ? std::numeric_limits<size_t>::max() : 0u;
+    uint32_t max_inlined_entry_size =
+        AllowInlining() ? std::numeric_limits<uint32_t>::max() : 0u;
     ri->set_max_inlined_entry_size_for_testing(max_inlined_entry_size);
 
     RasterOptions options;
@@ -1650,11 +1650,11 @@ TEST_P(OopPathPixelTest, Basic) {
   RunTest();
 }
 
-INSTANTIATE_TEST_CASE_P(P, OopImagePixelTest, ::testing::Bool());
-INSTANTIATE_TEST_CASE_P(P, OopClearPixelTest, ::testing::Bool());
-INSTANTIATE_TEST_CASE_P(P, OopRecordShaderPixelTest, ::testing::Bool());
-INSTANTIATE_TEST_CASE_P(P, OopRecordFilterPixelTest, ::testing::Bool());
-INSTANTIATE_TEST_CASE_P(P, OopPathPixelTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(P, OopImagePixelTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(P, OopClearPixelTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(P, OopRecordShaderPixelTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(P, OopRecordFilterPixelTest, ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(P, OopPathPixelTest, ::testing::Bool());
 
 }  // namespace
 }  // namespace cc

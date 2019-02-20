@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "ash/public/interfaces/constants.mojom.h"
+#include "ash/public/interfaces/shell_test_api.test-mojom-test-utils.h"
 #include "ash/public/interfaces/shell_test_api.test-mojom.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -31,12 +32,17 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chromeos/constants/chromeos_features.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/service_manager_connection.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_factory.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/test/background_page_watcher.h"
 #include "extensions/test/extension_test_message_listener.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/service_manager/public/cpp/connector.h"
@@ -128,7 +134,8 @@ class MockSelectFileDialogListener : public ui::SelectFileDialog::Listener {
 };
 
 class SelectFileDialogExtensionBrowserTest
-    : public extensions::ExtensionBrowserTest {
+    : public extensions::ExtensionBrowserTest,
+      public testing::WithParamInterface<bool> {
  public:
   enum DialogButtonType {
     DIALOG_BTN_OK,
@@ -136,6 +143,7 @@ class SelectFileDialogExtensionBrowserTest
   };
 
   void SetUp() override {
+    feature_list_.InitAndEnableFeature(chromeos::features::kMyFilesVolume);
     // Create the dialog wrapper and listener objects.
     listener_.reset(new MockSelectFileDialogListener());
     dialog_ = new SelectFileDialogExtension(listener_.get(), NULL);
@@ -145,7 +153,8 @@ class SelectFileDialogExtensionBrowserTest
     base::FilePath tmp_path;
     base::PathService::Get(base::DIR_TEMP, &tmp_path);
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDirUnderPath(tmp_path));
-    downloads_dir_ = tmp_dir_.GetPath().AppendASCII("Downloads");
+    downloads_dir_ =
+        tmp_dir_.GetPath().AppendASCII("My Files").AppendASCII("Downloads");
     base::CreateDirectory(downloads_dir_);
 
     // Must run after our setup because it actually runs the test.
@@ -157,7 +166,7 @@ class SelectFileDialogExtensionBrowserTest
     // force the virtual keyboard via the command line for tablet mode tests.
     const char* test_name =
         ::testing::UnitTest::GetInstance()->current_test_info()->name();
-    if (base::StringPiece(test_name).ends_with("_TabletMode"))
+    if (base::StringPiece(test_name).find("_TabletMode") != std::string::npos)
       command_line->AppendSwitch(keyboard::switches::kEnableVirtualKeyboard);
 
     extensions::ExtensionBrowserTest::SetUpCommandLine(command_line);
@@ -168,14 +177,27 @@ class SelectFileDialogExtensionBrowserTest
     CHECK(profile());
 
     // Create a file system mount point for the "Downloads" directory.
-    EXPECT_TRUE(file_manager::VolumeManager::Get(profile())
-                    ->RegisterDownloadsDirectoryForTesting(downloads_dir_));
+    EXPECT_TRUE(
+        file_manager::VolumeManager::Get(profile())
+            ->RegisterDownloadsDirectoryForTesting(downloads_dir_.DirName()));
     profile()->GetPrefs()->SetFilePath(prefs::kDownloadDefaultDirectory,
                                        downloads_dir_);
 
     // The test resources are setup: enable and add default ChromeOS component
     // extensions now and not before: crbug.com/831074, crbug.com/804413.
     file_manager::test::AddDefaultComponentExtensionsOnMainThread(profile());
+
+    // Ensure the Files app background page has shut down. These tests should
+    // ensure launching without the background page functions correctly.
+    extensions::ProcessManager::SetEventPageIdleTimeForTesting(1);
+    extensions::ProcessManager::SetEventPageSuspendingTimeForTesting(1);
+    const auto* extension =
+        extensions::ExtensionRegistryFactory::GetForBrowserContext(profile())
+            ->GetExtensionById(extension_misc::kFilesManagerAppId,
+                               extensions::ExtensionRegistry::ENABLED);
+    extensions::BackgroundPageWatcher background_page_watcher(
+        extensions::ProcessManager::Get(profile()), extension);
+    background_page_watcher.WaitForClose();
   }
 
   void TearDown() override {
@@ -244,14 +266,15 @@ class SelectFileDialogExtensionBrowserTest
           new ExtensionTestMessageListener(additional_message, will_reply));
     }
 
-    dialog_->SelectFile(dialog_type,
-                        base::string16() /* title */,
-                        file_path,
-                        NULL /* file_types */,
-                         0 /* file_type_index */,
+    // Include a file type filter. This triggers additional functionality within
+    // the Files app.
+    ui::SelectFileDialog::FileTypeInfo file_types;
+    file_types.extensions = {{"html"}};
+    dialog_->SelectFile(dialog_type, base::string16() /* title */, file_path,
+                        GetParam() ? &file_types : nullptr,
+                        0 /* file_type_index */,
                         FILE_PATH_LITERAL("") /* default_extension */,
-                        owning_window,
-                        this /* params */);
+                        owning_window, this /* params */);
 
     LOG(INFO) << "Waiting for JavaScript ready message.";
     ASSERT_TRUE(init_listener.WaitUntilSatisfied());
@@ -316,6 +339,7 @@ class SelectFileDialogExtensionBrowserTest
       ASSERT_FALSE(dialog_->IsRunning(owning_window));
   }
 
+  base::test::ScopedFeatureList feature_list_;
   base::ScopedTempDir tmp_dir_;
   base::FilePath downloads_dir_;
 
@@ -326,7 +350,7 @@ class SelectFileDialogExtensionBrowserTest
   scoped_refptr<SelectFileDialogExtension> second_dialog_;
 };
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CreateAndDestroy) {
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest, CreateAndDestroy) {
   // The browser window must exist for us to test dialog's parent window.
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -335,14 +359,14 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CreateAndDestroy) {
   ASSERT_FALSE(dialog_->IsRunning(owning_window));
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, DestroyListener) {
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest, DestroyListener) {
   // Some users of SelectFileDialog destroy their listener before cleaning
   // up the dialog.  Make sure we don't crash.
   dialog_->ListenerDestroyed();
   listener_.reset();
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CanResize) {
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest, CanResize) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
 
@@ -354,7 +378,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, CanResize) {
   ASSERT_TRUE(OpenDialogIsResizable());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        CanResize_TabletMode) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -370,7 +394,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_FALSE(OpenDialogIsResizable());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndCancel) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -387,7 +411,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_EQ(this, listener_->params());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndOpen) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -418,7 +442,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_EQ(this, listener_->params());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        SelectFileAndSave) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -441,7 +465,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_EQ(this, listener_->params());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        SelectFileVirtualKeyboard_TabletMode) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -476,7 +500,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   EXPECT_TRUE(client->is_keyboard_visible());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        OpenSingletonTabAndCancel) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
@@ -501,7 +525,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_EQ(this, listener_->params());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, OpenTwoDialogs) {
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest, OpenTwoDialogs) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
 
@@ -522,7 +546,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, OpenTwoDialogs) {
   ASSERT_EQ(this, listener_->params());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, FileInputElement) {
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest, FileInputElement) {
   gfx::NativeWindow owning_window = browser()->window()->GetNativeWindow();
   ASSERT_NE(nullptr, owning_window);
 
@@ -555,7 +579,7 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest, FileInputElement) {
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 }
 
-IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest,
                        OpenDialogWithoutOwningWindow) {
   gfx::NativeWindow owning_window = nullptr;
 
@@ -570,3 +594,13 @@ IN_PROC_BROWSER_TEST_F(SelectFileDialogExtensionBrowserTest,
   ASSERT_TRUE(listener_->canceled());
   ASSERT_EQ(this, listener_->params());
 }
+
+IN_PROC_BROWSER_TEST_P(SelectFileDialogExtensionBrowserTest, MultipleOpenFile) {
+  // No use-after-free when Browser::OpenFile is called multiple times.
+  browser()->OpenFile();
+  browser()->OpenFile();
+}
+
+INSTANTIATE_TEST_SUITE_P(SelectFileDialogExtensionBrowserTest,
+                         SelectFileDialogExtensionBrowserTest,
+                         testing::Bool());

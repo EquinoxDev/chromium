@@ -5,6 +5,8 @@
 #ifndef CC_TREES_PROXY_H_
 #define CC_TREES_PROXY_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <string>
 
@@ -64,6 +66,11 @@ class CC_EXPORT Proxy {
   // reset. It is only supported when using a scheduler.
   virtual void SetDeferMainFrameUpdate(bool defer_main_frame_update) = 0;
 
+  // Defers commits until reset, but continues to update the document
+  // lifecycle in LayerTreeHost::BeginMainFrameUpdate. It is only supported
+  // when using a scheduler.
+  virtual void SetDeferCommits(bool defer_commits) = 0;
+
   virtual bool CommitRequested() const = 0;
 
   // Must be called before using the proxy.
@@ -83,6 +90,9 @@ class CC_EXPORT Proxy {
                                           bool animate) = 0;
 
   virtual void RequestBeginMainFrameNotExpected(bool new_state) = 0;
+
+  // See description in LayerTreeHost
+  virtual uint32_t GenerateChildSurfaceSequenceNumberSync() = 0;
 
   // Testing hooks
   virtual bool MainFrameWillHappenForTesting() = 0;

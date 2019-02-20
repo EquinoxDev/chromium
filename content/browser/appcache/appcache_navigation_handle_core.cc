@@ -5,6 +5,7 @@
 #include "content/browser/appcache/appcache_navigation_handle_core.h"
 
 #include <map>
+#include <string>
 #include <utility>
 
 #include "base/bind.h"
@@ -14,6 +15,10 @@
 #include "content/browser/appcache/appcache_service_impl.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/child_process_host.h"
+#include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
+#include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 
 namespace {
 
@@ -30,8 +35,11 @@ namespace content {
 
 AppCacheNavigationHandleCore::AppCacheNavigationHandleCore(
     ChromeAppCacheService* appcache_service,
-    int appcache_host_id)
-    : appcache_service_(appcache_service), appcache_host_id_(appcache_host_id) {
+    int appcache_host_id,
+    int process_id)
+    : appcache_service_(appcache_service),
+      appcache_host_id_(appcache_host_id),
+      process_id_(process_id) {
   // The AppCacheNavigationHandleCore is created on the UI thread but
   // should only be accessed from the IO thread afterwards.
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -46,8 +54,9 @@ AppCacheNavigationHandleCore::~AppCacheNavigationHandleCore() {
 void AppCacheNavigationHandleCore::Initialize() {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(precreated_host_.get() == nullptr);
-  precreated_host_.reset(
-      new AppCacheHost(appcache_host_id_, this, GetAppCacheService()));
+  precreated_host_ = std::make_unique<AppCacheHost>(
+      appcache_host_id_, process_id_, MSG_ROUTING_NONE, this,
+      GetAppCacheService());
 
   DCHECK(g_appcache_handle_map.Get().find(appcache_host_id_) ==
          g_appcache_handle_map.Get().end());
@@ -71,26 +80,28 @@ AppCacheServiceImpl* AppCacheNavigationHandleCore::GetAppCacheService() {
   return static_cast<AppCacheServiceImpl*>(appcache_service_.get());
 }
 
-void AppCacheNavigationHandleCore::OnCacheSelected(int host_id,
-                                                   const AppCacheInfo& info) {
+void AppCacheNavigationHandleCore::SetProcessId(int process_id) {
+  DCHECK_EQ(process_id_, ChildProcessHost::kInvalidUniqueID);
+  DCHECK_NE(process_id, ChildProcessHost::kInvalidUniqueID);
+  DCHECK(precreated_host_);
+  process_id_ = process_id;
+  precreated_host_->SetProcessId(process_id);
+}
+
+void AppCacheNavigationHandleCore::CacheSelected(
+    int host_id,
+    blink::mojom::AppCacheInfoPtr info) {
   DCHECK(false);
 }
 
-void AppCacheNavigationHandleCore::OnStatusChanged(
+void AppCacheNavigationHandleCore::EventRaised(
     const std::vector<int>& host_ids,
-    AppCacheStatus status) {
+    blink::mojom::AppCacheEventID event_id) {
   // Should never be called.
   DCHECK(false);
 }
 
-void AppCacheNavigationHandleCore::OnEventRaised(
-    const std::vector<int>& host_ids,
-    AppCacheEventID event_id) {
-  // Should never be called.
-  DCHECK(false);
-}
-
-void AppCacheNavigationHandleCore::OnProgressEventRaised(
+void AppCacheNavigationHandleCore::ProgressEventRaised(
     const std::vector<int>& host_ids,
     const GURL& url,
     int num_total,
@@ -99,27 +110,22 @@ void AppCacheNavigationHandleCore::OnProgressEventRaised(
   DCHECK(false);
 }
 
-void AppCacheNavigationHandleCore::OnErrorEventRaised(
+void AppCacheNavigationHandleCore::ErrorEventRaised(
     const std::vector<int>& host_ids,
-    const AppCacheErrorDetails& details) {
+    blink::mojom::AppCacheErrorDetailsPtr details) {
   // Should never be called.
   DCHECK(false);
 }
 
-void AppCacheNavigationHandleCore::OnLogMessage(int host_id,
-                                                AppCacheLogLevel log_level,
-                                                const std::string& message) {
+void AppCacheNavigationHandleCore::LogMessage(
+    int host_id,
+    blink::mojom::ConsoleMessageLevel log_level,
+    const std::string& message) {
   // Should never be called.
   DCHECK(false);
 }
 
-void AppCacheNavigationHandleCore::OnContentBlocked(int host_id,
-                                                    const GURL& manifest_url) {
-  // Should never be called.
-  DCHECK(false);
-}
-
-void AppCacheNavigationHandleCore::OnSetSubresourceFactory(
+void AppCacheNavigationHandleCore::SetSubresourceFactory(
     int host_id,
     network::mojom::URLLoaderFactoryPtr url_loader_factory) {
   // Should never be called.

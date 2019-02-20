@@ -200,7 +200,6 @@ bool Font::DrawBidiText(cc::PaintCanvas* canvas,
     subrun.SetDirectionalOverride(bidi_run->DirOverride(false));
 
     TextRunPaintInfo subrun_info(subrun);
-    subrun_info.bounds = run_info.bounds;
 
     ShapeResultBloberizer bloberizer(*this, device_scale_factor);
     ShapeResultBuffer buffer;
@@ -290,8 +289,8 @@ unsigned InterceptsFromBlobs(const ShapeResultBloberizer::BlobBuffer& blobs,
     SkScalar* offset_intercepts_buffer = nullptr;
     if (intercepts_buffer)
       offset_intercepts_buffer = &intercepts_buffer[num_intervals];
-    num_intervals += paint.getTextBlobIntercepts(
-        blob_info.blob.get(), bounds_array, offset_intercepts_buffer);
+    num_intervals += blob_info.blob->getIntercepts(
+        bounds_array, offset_intercepts_buffer, &paint);
   }
   return num_intervals;
 }
@@ -401,7 +400,7 @@ bool Font::CanShapeWordByWord() const {
     shape_word_by_word_computed_ = true;
   }
   return can_shape_word_by_word_;
-};
+}
 
 bool Font::ComputeCanShapeWordByWord() const {
   if (!GetFontDescription().GetTypesettingFeatures())
@@ -413,7 +412,7 @@ bool Font::ComputeCanShapeWordByWord() const {
   const FontPlatformData& platform_data = PrimaryFont()->PlatformData();
   TypesettingFeatures features = GetFontDescription().GetTypesettingFeatures();
   return !platform_data.HasSpaceInLigaturesOrKerning(features);
-};
+}
 
 void Font::ReportNotDefGlyph() const {
   FontSelector* fontSelector = font_fallback_list_->GetFontSelector();

@@ -46,7 +46,6 @@
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "content/browser/gpu/gpu_process_host.h"
-#include "content/browser/media/android/media_web_contents_observer_android.h"
 #include "content/browser/renderer_host/compositor_impl_android.h"
 #include "content/browser/renderer_host/delegated_frame_host_client_android.h"
 #include "content/browser/renderer_host/dip_util.h"
@@ -502,22 +501,6 @@ gfx::Size RenderWidgetHostViewAndroid::GetCompositorViewportPixelSize() const {
   }
 
   return view_.GetPhysicalBackingSize();
-}
-
-bool RenderWidgetHostViewAndroid::DoBrowserControlsShrinkRendererSize() const {
-  auto* delegate_view = GetRenderViewHostDelegateView();
-  return delegate_view ? delegate_view->DoBrowserControlsShrinkRendererSize()
-                       : false;
-}
-
-float RenderWidgetHostViewAndroid::GetTopControlsHeight() const {
-  auto* delegate_view = GetRenderViewHostDelegateView();
-  return delegate_view ? delegate_view->GetTopControlsHeight() : 0.f;
-}
-
-float RenderWidgetHostViewAndroid::GetBottomControlsHeight() const {
-  auto* delegate_view = GetRenderViewHostDelegateView();
-  return delegate_view ? delegate_view->GetBottomControlsHeight() : 0.f;
 }
 
 int RenderWidgetHostViewAndroid::GetMouseWheelMinimumGranularity() const {
@@ -1553,8 +1536,12 @@ void RenderWidgetHostViewAndroid::RequestDisallowInterceptTouchEvent() {
 
 void RenderWidgetHostViewAndroid::TransformPointToRootSurface(
     gfx::PointF* point) {
-  *point += gfx::Vector2d(
-      0, DoBrowserControlsShrinkRendererSize() ? GetTopControlsHeight() : 0);
+  if (!host()->delegate())
+    return;
+  RenderViewHostDelegateView* rvh_delegate_view =
+      host()->delegate()->GetDelegateView();
+  if (rvh_delegate_view->DoBrowserControlsShrinkRendererSize())
+    *point += gfx::Vector2d(0, rvh_delegate_view->GetTopControlsHeight());
 }
 
 // TODO(jrg): Find out the implications and answer correctly here,
@@ -1595,12 +1582,6 @@ void RenderWidgetHostViewAndroid::GestureEventAck(
   if (!gesture_listener_manager_)
     return;
   gesture_listener_manager_->GestureEventAck(event, ack_result);
-}
-
-RenderViewHostDelegateView*
-RenderWidgetHostViewAndroid::GetRenderViewHostDelegateView() const {
-  RenderWidgetHostDelegate* delegate = host()->delegate();
-  return delegate ? delegate->GetDelegateView() : nullptr;
 }
 
 InputEventAckState RenderWidgetHostViewAndroid::FilterInputEvent(

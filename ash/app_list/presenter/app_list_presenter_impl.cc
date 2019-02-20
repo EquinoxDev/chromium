@@ -12,9 +12,10 @@
 #include "ash/app_list/views/app_list_main_view.h"
 #include "ash/app_list/views/app_list_view.h"
 #include "ash/app_list/views/contents_view.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/app_list/app_list_switches.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "ui/aura/client/focus_client.h"
@@ -101,7 +102,6 @@ AppListPresenterImpl::AppListPresenterImpl(
 
 AppListPresenterImpl::~AppListPresenterImpl() {
   Dismiss(base::TimeTicks());
-  delegate_.reset();
   // Ensures app list view goes before the controller since pagination model
   // lives in the controller and app list view would access it on destruction.
   if (view_) {
@@ -169,7 +169,6 @@ void AppListPresenterImpl::Dismiss(base::TimeTicks event_time_stamp) {
   delegate_->OnClosing();
   ScheduleAnimation();
   NotifyTargetVisibilityChanged(GetTargetVisibility());
-  NotifyVisibilityChanged(GetTargetVisibility(), display_id);
   base::RecordAction(base::UserMetricsAction("Launcher_Dismiss"));
 }
 
@@ -183,13 +182,29 @@ bool AppListPresenterImpl::CloseOpenedPage() {
   return view_->CloseOpenedPage();
 }
 
-void AppListPresenterImpl::ToggleAppList(int64_t display_id,
-                                         base::TimeTicks event_time_stamp) {
+ash::ShelfAction AppListPresenterImpl::ToggleAppList(
+    int64_t display_id,
+    app_list::AppListShowSource show_source,
+    base::TimeTicks event_time_stamp) {
+  bool request_fullscreen = show_source == kSearchKeyFullscreen ||
+                            show_source == kShelfButtonFullscreen;
   if (IsVisible()) {
+    if (request_fullscreen) {
+      if (view_->app_list_state() == AppListViewState::PEEKING) {
+        view_->SetState(AppListViewState::FULLSCREEN_ALL_APPS);
+        return ash::SHELF_ACTION_APP_LIST_SHOWN;
+      } else if (view_->app_list_state() == AppListViewState::HALF) {
+        view_->SetState(AppListViewState::FULLSCREEN_SEARCH);
+        return ash::SHELF_ACTION_APP_LIST_SHOWN;
+      }
+    }
     Dismiss(event_time_stamp);
-    return;
+    return ash::SHELF_ACTION_APP_LIST_DISMISSED;
   }
   Show(display_id, event_time_stamp);
+  if (request_fullscreen)
+    view_->SetState(AppListViewState::FULLSCREEN_ALL_APPS);
+  return ash::SHELF_ACTION_APP_LIST_SHOWN;
 }
 
 bool AppListPresenterImpl::IsVisible() const {
@@ -267,6 +282,28 @@ void AppListPresenterImpl::ScheduleOverviewModeAnimation(bool start,
       animate ? base::BindRepeating(&UpdateOverviewSettings,
                                     state_animation_metrics_reporter_.get())
               : base::NullCallback());
+}
+
+void AppListPresenterImpl::ShowEmbeddedAssistantUI(bool show) {
+  if (view_)
+    view_->app_list_main_view()->contents_view()->ShowEmbeddedAssistantUI(show);
+}
+
+bool AppListPresenterImpl::IsShowingEmbeddedAssistantUI() const {
+  if (view_) {
+    return view_->app_list_main_view()
+        ->contents_view()
+        ->IsShowingEmbeddedAssistantUI();
+  }
+
+  return false;
+}
+
+void AppListPresenterImpl::SetExpandArrowViewVisibility(bool show) {
+  if (view_) {
+    view_->app_list_main_view()->contents_view()->SetExpandArrowViewVisibility(
+        show);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -351,8 +388,7 @@ void AppListPresenterImpl::NotifyVisibilityChanged(bool visible,
   last_display_id_ = display_id;
 
   // Notify the Shell and its observers of the app list visibility change.
-  delegate_->OnVisibilityChanged(
-      visible, delegate_->GetRootWindowForDisplayId(display_id));
+  delegate_->OnVisibilityChanged(visible, display_id);
 }
 
 void AppListPresenterImpl::NotifyTargetVisibilityChanged(bool visible) {
@@ -390,6 +426,8 @@ void AppListPresenterImpl::OnWindowFocused(aura::Window* gained_focus,
 // AppListPresenterImpl, ui::ImplicitAnimationObserver implementation:
 
 void AppListPresenterImpl::OnImplicitAnimationsCompleted() {
+  NotifyVisibilityChanged(GetTargetVisibility(), GetDisplayId());
+
   if (is_visible_) {
     view_->GetWidget()->Activate();
   } else {

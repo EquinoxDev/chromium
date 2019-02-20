@@ -26,52 +26,19 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_INDEXEDDB_WEB_IDB_CALLBACKS_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_INDEXEDDB_WEB_IDB_CALLBACKS_H_
 
-#include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-shared.h"
+#include "base/memory/weak_ptr.h"
+#include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
-#include "third_party/blink/renderer/platform/wtf/vector.h"
-
-namespace WTF {
-class String;
-}
 
 namespace blink {
 
-class IDBDatabaseError;
-class IDBKey;
-class IDBValue;
-class WebIDBCursor;
-class WebIDBDatabase;
-struct IDBDatabaseMetadata;
-struct IDBNameAndVersion;
+class WebIDBCursorImpl;
 
-class WebIDBCallbacks {
+class WebIDBCallbacks : public mojom::blink::IDBCallbacks {
  public:
-  virtual ~WebIDBCallbacks() = default;
-
-  // Pointers transfer ownership.
-  virtual void OnError(const IDBDatabaseError&) = 0;
-  virtual void OnSuccess(const Vector<IDBNameAndVersion>&) = 0;
-  virtual void OnSuccess(const Vector<WTF::String>&) = 0;
-  virtual void OnSuccess(WebIDBCursor*,
-                         std::unique_ptr<IDBKey>,
-                         std::unique_ptr<IDBKey> primary_key,
-                         std::unique_ptr<IDBValue>) = 0;
-  virtual void OnSuccess(WebIDBDatabase*, const IDBDatabaseMetadata&) = 0;
-  virtual void OnSuccess(std::unique_ptr<IDBKey>) = 0;
-  virtual void OnSuccess(std::unique_ptr<IDBValue>) = 0;
-  virtual void OnSuccess(Vector<std::unique_ptr<IDBValue>>) = 0;
-  virtual void OnSuccess(long long) = 0;
-  virtual void OnSuccess() = 0;
-  virtual void OnSuccess(std::unique_ptr<IDBKey>,
-                         std::unique_ptr<IDBKey> primary_key,
-                         std::unique_ptr<IDBValue>) = 0;
-  virtual void OnBlocked(long long old_version) = 0;
-  virtual void OnUpgradeNeeded(long long old_version,
-                               WebIDBDatabase*,
-                               const IDBDatabaseMetadata&,
-                               mojom::IDBDataLoss data_loss,
-                               WTF::String data_loss_message) = 0;
-  virtual void Detach() = 0;
+  virtual void DetachRequestFromCallback() = 0;
+  virtual void SetState(base::WeakPtr<WebIDBCursorImpl> cursor,
+                        int64_t transaction_id) = 0;
 };
 
 }  // namespace blink

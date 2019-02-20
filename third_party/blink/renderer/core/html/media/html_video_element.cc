@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 
 #include <memory>
+#include "base/bind_helpers.h"
 #include "cc/paint/paint_canvas.h"
 #include "third_party/blink/public/platform/web_fullscreen_video_status.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -53,6 +54,7 @@
 #include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_video.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/extensions_3d_util.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
@@ -103,11 +105,11 @@ inline HTMLVideoElement::HTMLVideoElement(Document& document)
 HTMLVideoElement* HTMLVideoElement::Create(Document& document) {
   HTMLVideoElement* video = MakeGarbageCollected<HTMLVideoElement>(document);
   video->EnsureUserAgentShadowRoot();
-  video->PauseIfNeeded();
+  video->UpdateStateIfNeeded();
   return video;
 }
 
-void HTMLVideoElement::Trace(blink::Visitor* visitor) {
+void HTMLVideoElement::Trace(Visitor* visitor) {
   visitor->Trace(image_loader_);
   visitor->Trace(custom_controls_fullscreen_detector_);
   visitor->Trace(wake_lock_);
@@ -236,6 +238,16 @@ void HTMLVideoElement::ParseAttribute(
     if (intrinsic_size_changed && GetLayoutObject() &&
         GetLayoutObject()->IsVideo())
       ToLayoutVideo(GetLayoutObject())->IntrinsicSizeChanged();
+  } else if (params.name == kAutopictureinpictureAttr &&
+             origin_trials::AutoPictureInPictureEnabled(
+                 GetExecutionContext())) {
+    if (!params.new_value.IsNull()) {
+      PictureInPictureController::From(GetDocument())
+          .AddToAutoPictureInPictureElementsList(this);
+    } else {
+      PictureInPictureController::From(GetDocument())
+          .RemoveFromAutoPictureInPictureElementsList(this);
+    }
   } else {
     HTMLMediaElement::ParseAttribute(params);
   }
@@ -490,8 +502,10 @@ bool HTMLVideoElement::UsesOverlayFullscreenVideo() const {
 void HTMLVideoElement::DidEnterFullscreen() {
   UpdateControlsVisibility();
 
-  if (DisplayType() == WebMediaPlayer::DisplayType::kPictureInPicture)
-    exitPictureInPicture(base::DoNothing());
+  if (DisplayType() == WebMediaPlayer::DisplayType::kPictureInPicture) {
+    PictureInPictureController::From(GetDocument())
+        .ExitPictureInPicture(this, nullptr);
+  }
 
   if (GetWebMediaPlayer()) {
     // FIXME: There is no embedder-side handling in web test mode.
@@ -649,45 +663,14 @@ bool HTMLVideoElement::SupportsPictureInPicture() const {
          PictureInPictureController::Status::kEnabled;
 }
 
-void HTMLVideoElement::enterPictureInPicture(
-    WebMediaPlayer::PipWindowOpenedCallback callback) {
-  if (DisplayType() == WebMediaPlayer::DisplayType::kFullscreen)
-    Fullscreen::ExitFullscreen(GetDocument());
-
-  if (GetWebMediaPlayer())
-    GetWebMediaPlayer()->EnterPictureInPicture(std::move(callback));
-}
-
-void HTMLVideoElement::exitPictureInPicture(
-    WebMediaPlayer::PipWindowClosedCallback callback) {
-  if (GetWebMediaPlayer())
-    GetWebMediaPlayer()->ExitPictureInPicture(std::move(callback));
-}
-
-void HTMLVideoElement::SendCustomControlsToPipWindow() {
-  // TODO(sawtelle): Allow setting controls multiple times for a video, even
-  // when not active, https://crbug.com/869133
-  if (!GetWebMediaPlayer() || !HasPictureInPictureCustomControls())
-    return;
-  GetWebMediaPlayer()->SetPictureInPictureCustomControls(
-      GetPictureInPictureCustomControls());
-}
-
 void HTMLVideoElement::PictureInPictureStopped() {
   PictureInPictureController::From(GetDocument())
       .OnExitedPictureInPicture(nullptr);
 }
 
-void HTMLVideoElement::PictureInPictureControlClicked(
-    const WebString& control_id) {
-  PictureInPictureController::From(GetDocument())
-      .OnPictureInPictureControlClicked(control_id);
-}
-
 WebMediaPlayer::DisplayType HTMLVideoElement::DisplayType() const {
   if (is_auto_picture_in_picture_ ||
-      PictureInPictureController::From(GetDocument())
-          .IsPictureInPictureElement(this)) {
+      PictureInPictureController::IsElementInPictureInPicture(this)) {
     return WebMediaPlayer::DisplayType::kPictureInPicture;
   }
 
@@ -699,6 +682,16 @@ WebMediaPlayer::DisplayType HTMLVideoElement::DisplayType() const {
 
 bool HTMLVideoElement::IsInAutoPIP() const {
   return is_auto_picture_in_picture_;
+}
+
+void HTMLVideoElement::OnPictureInPictureStateChange() {
+  if (DisplayType() != WebMediaPlayer::DisplayType::kPictureInPicture ||
+      IsInAutoPIP()) {
+    return;
+  }
+
+  PictureInPictureController::From(GetDocument())
+      .OnPictureInPictureStateChange();
 }
 
 void HTMLVideoElement::OnEnteredPictureInPicture() {
@@ -722,20 +715,6 @@ void HTMLVideoElement::OnExitedPictureInPicture() {
 
   if (GetWebMediaPlayer())
     GetWebMediaPlayer()->OnDisplayTypeChanged(DisplayType());
-}
-
-void HTMLVideoElement::SetPictureInPictureCustomControls(
-    const std::vector<PictureInPictureControlInfo>& pip_custom_controls) {
-  pip_custom_controls_ = pip_custom_controls;
-}
-
-const std::vector<PictureInPictureControlInfo>&
-HTMLVideoElement::GetPictureInPictureCustomControls() const {
-  return pip_custom_controls_;
-}
-
-bool HTMLVideoElement::HasPictureInPictureCustomControls() const {
-  return !pip_custom_controls_.empty();
 }
 
 void HTMLVideoElement::SetIsEffectivelyFullscreen(

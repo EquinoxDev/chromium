@@ -18,7 +18,7 @@
 #include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wallpaper/wallpaper_controller.h"
-#include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/backdrop_delegate.h"
@@ -73,14 +73,22 @@ BackdropController::BackdropController(aura::Window* container)
     : container_(container) {
   DCHECK(container_);
   Shell::Get()->AddShellObserver(this);
+  Shell::Get()->overview_controller()->AddObserver(this);
   Shell::Get()->accessibility_controller()->AddObserver(this);
+  Shell::Get()->app_list_controller()->AddObserver(this);
   Shell::Get()->wallpaper_controller()->AddObserver(this);
 }
 
 BackdropController::~BackdropController() {
   Shell::Get()->accessibility_controller()->RemoveObserver(this);
   Shell::Get()->wallpaper_controller()->RemoveObserver(this);
+  if (Shell::Get()->overview_controller())
+    Shell::Get()->overview_controller()->RemoveObserver(this);
   Shell::Get()->RemoveShellObserver(this);
+  // AppListController is destroyed early when Shell is being destroyed, it may
+  // not exist.
+  if (Shell::Get()->app_list_controller())
+    Shell::Get()->app_list_controller()->RemoveObserver(this);
   // TODO(oshima): animations won't work right with mus:
   // http://crbug.com/548396.
   Hide();
@@ -121,10 +129,9 @@ void BackdropController::SetBackdropDelegate(
 
 void BackdropController::UpdateBackdrop() {
   // No need to continue update for recursive calls or in overview mode.
-  WindowSelectorController* window_selector_controller =
-      Shell::Get()->window_selector_controller();
-  if (pause_update_ || (window_selector_controller &&
-                        window_selector_controller->IsSelecting())) {
+  OverviewController* overview_controller = Shell::Get()->overview_controller();
+  if (pause_update_ ||
+      (overview_controller && overview_controller->IsSelecting())) {
     return;
   }
 
@@ -155,13 +162,22 @@ void BackdropController::UpdateBackdrop() {
   container_->StackChildAbove(window, backdrop_window_);
 }
 
+void BackdropController::OnSplitViewModeStarting() {
+  Shell::Get()->split_view_controller()->AddObserver(this);
+}
+
+void BackdropController::OnSplitViewModeEnded() {
+  Shell::Get()->split_view_controller()->RemoveObserver(this);
+}
+
 void BackdropController::OnOverviewModeStarting() {
   if (backdrop_window_)
     backdrop_window_->SetProperty(aura::client::kAnimationsDisabledKey, true);
   Hide();
 }
 
-void BackdropController::OnOverviewModeEnding() {
+void BackdropController::OnOverviewModeEnding(
+    OverviewSession* overview_session) {
   pause_update_ = true;
 }
 
@@ -173,16 +189,8 @@ void BackdropController::OnOverviewModeEndingAnimationComplete(bool canceled) {
 }
 
 void BackdropController::OnAppListVisibilityChanged(bool shown,
-                                                    aura::Window* root_window) {
+                                                    int64_t display_id) {
   UpdateBackdrop();
-}
-
-void BackdropController::OnSplitViewModeStarting() {
-  Shell::Get()->split_view_controller()->AddObserver(this);
-}
-
-void BackdropController::OnSplitViewModeEnded() {
-  Shell::Get()->split_view_controller()->RemoveObserver(this);
 }
 
 void BackdropController::OnAccessibilityStatusChanged() {

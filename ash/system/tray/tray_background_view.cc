@@ -11,6 +11,7 @@
 #include "ash/login/ui/lock_screen.h"
 #include "ash/public/cpp/ash_constants.h"
 #include "ash/public/cpp/shell_window_ids.h"
+#include "ash/shelf/login_shelf_view.h"
 #include "ash/shelf/shelf_constants.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
@@ -71,14 +72,13 @@ gfx::Insets GetMirroredBackgroundInsets(bool is_shelf_horizontal) {
   // "Primary" is the same direction as the shelf, "secondary" is orthogonal.
   const int primary_padding = 0;
   const int secondary_padding = -ash::kHitRegionPadding;
-  const int separator_width = ash::TrayConstants::separator_width();
 
   if (is_shelf_horizontal) {
     insets.Set(secondary_padding, primary_padding, secondary_padding,
-               primary_padding + separator_width);
+               primary_padding + ash::kTraySeparatorWidth);
   } else {
     insets.Set(primary_padding, secondary_padding,
-               primary_padding + separator_width, secondary_padding);
+               primary_padding + ash::kTraySeparatorWidth, secondary_padding);
   }
   MirrorInsetsIfNecessary(&insets);
   return insets;
@@ -115,12 +115,9 @@ class TrayBackgroundView::TrayWidgetObserver : public views::WidgetObserver {
 class TrayBackground : public views::Background {
  public:
   explicit TrayBackground(TrayBackgroundView* tray_background_view)
-      : tray_background_view_(tray_background_view),
-        color_(SK_ColorTRANSPARENT) {}
+      : tray_background_view_(tray_background_view) {}
 
   ~TrayBackground() override = default;
-
-  void set_color(SkColor color) { color_ = color; }
 
  private:
   // Overridden from views::Background.
@@ -140,8 +137,6 @@ class TrayBackground : public views::Background {
 
   // Reference to the TrayBackgroundView for which this is a background.
   TrayBackgroundView* tray_background_view_;
-
-  SkColor color_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayBackground);
 };
@@ -274,15 +269,23 @@ void TrayBackgroundView::AboutToRequestFocusFromTabTraversal(bool reverse) {
       shelf->GetStatusAreaWidget()->status_area_widget_delegate();
   if (!delegate || !delegate->ShouldFocusOut(reverse))
     return;
-  // Focus shelf widget when shift+tab is used and views-based shelf is shown.
-  if (reverse && ShelfWidget::IsUsingViewsShelf()) {
+
+  // At this point, we know we should focus out of the status widget.
+  // If we're not using a views-based shelf, delegate to system tray focus
+  // observers to decide where the focus goes next.
+  if (!ShelfWidget::IsUsingViewsShelf()) {
+    Shell::Get()->system_tray_notifier()->NotifyFocusOut(reverse);
+    return;
+  }
+
+  // If we are using a views-based shelf:
+  // * If we're going in reverse, always focus the shelf.
+  // * If we're going forward, focus the shelf in an active session, and let
+  //   the system tray focus observers focus the lock/login view otherwise.
+  if (reverse) {
     shelf->shelf_widget()->set_default_last_focusable_child(reverse);
     Shell::Get()->focus_cycler()->FocusWidget(shelf->shelf_widget());
   } else {
-    // Focus should leave the system tray if:
-    // 1) Tab is used, or
-    // 2) Shift+tab is used but views-based shelf is disabled. The shelf is not
-    // part of the system tray in this case.
     Shell::Get()->system_tray_notifier()->NotifyFocusOut(reverse);
   }
 }
@@ -424,11 +427,6 @@ void TrayBackgroundView::UpdateBubbleViewArrow(TrayBubbleView* bubble_view) {
   // Nothing to do here.
 }
 
-void TrayBackgroundView::UpdateShelfItemBackground(SkColor color) {
-  background_->set_color(color);
-  SchedulePaint();
-}
-
 views::View* TrayBackgroundView::GetBubbleAnchor() const {
   return tray_container_;
 }
@@ -463,14 +461,8 @@ void TrayBackgroundView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   path->addRoundRect(gfx::RectToSkRect(GetBackgroundBounds()), border_radius,
                      border_radius);
   SetProperty(views::kHighlightPathKey, path.release());
-  ActionableView::OnBoundsChanged(previous_bounds);
-}
-
-std::unique_ptr<views::InkDropMask> TrayBackgroundView::CreateInkDropMask()
-    const {
-  // Bypass ActionableView to use the default ink-drop mask created from the
-  // highlight path.
-  return Button::CreateInkDropMask();
+  // Bypass ActionableView::OnBoundsChanged which sets its own highlight path.
+  Button::OnBoundsChanged(previous_bounds);
 }
 
 bool TrayBackgroundView::ShouldEnterPushedState(const ui::Event& event) {

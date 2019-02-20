@@ -19,7 +19,7 @@
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_delegate.h"
@@ -263,28 +263,6 @@ TEST_F(NonClientFrameViewAshTest, AvatarIcon) {
   EXPECT_FALSE(non_client_frame_view->GetAvatarIconViewForTest());
 }
 
-// The visibility of the size button is updated when tablet mode is toggled.
-// Verify that the layout of the HeaderView is updated for the size button's
-// new visibility.
-TEST_F(NonClientFrameViewAshTest, HeaderViewNotifiedOfChildSizeChange) {
-  TestWidgetConstraintsDelegate* delegate = new TestWidgetConstraintsDelegate;
-  std::unique_ptr<views::Widget> widget = CreateTestWidget(
-      delegate, kShellWindowId_DefaultContainer, gfx::Rect(0, 0, 400, 500));
-
-  const gfx::Rect initial =
-      delegate->GetFrameCaptionButtonContainerViewBounds();
-  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(true);
-  delegate->EndFrameCaptionButtonContainerViewAnimations();
-  const gfx::Rect tablet_mode_bounds =
-      delegate->GetFrameCaptionButtonContainerViewBounds();
-  EXPECT_GT(initial.width(), tablet_mode_bounds.width());
-  Shell::Get()->tablet_mode_controller()->EnableTabletModeWindowManager(false);
-  delegate->EndFrameCaptionButtonContainerViewAnimations();
-  const gfx::Rect after_restore =
-      delegate->GetFrameCaptionButtonContainerViewBounds();
-  EXPECT_EQ(initial, after_restore);
-}
-
 // Tests that a window is minimized, toggling tablet mode doesn't trigger
 // caption button update (https://crbug.com/822890).
 TEST_F(NonClientFrameViewAshTest, ToggleTabletModeOnMinimizedWindow) {
@@ -431,10 +409,10 @@ TEST_F(NonClientFrameViewAshTest, HeaderVisibilityInOverviewMode) {
 
   // Verify the header is not painted in overview mode and painted when not in
   // overview mode.
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
   EXPECT_FALSE(delegate->header_view()->should_paint());
 
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
   EXPECT_TRUE(delegate->header_view()->should_paint());
 }
 
@@ -458,7 +436,7 @@ TEST_F(NonClientFrameViewAshTest, HeaderVisibilityInSplitview) {
 
   // Verify that when one window is snapped, the header is drawn for the snapped
   // window, but not drawn for the window still in overview.
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
   Shell::Get()->split_view_controller()->SnapWindow(widget1->GetNativeWindow(),
                                                     SplitViewController::LEFT);
   EXPECT_TRUE(delegate1->header_view()->should_paint());
@@ -476,7 +454,7 @@ TEST_F(NonClientFrameViewAshTest, HeaderVisibilityInSplitview) {
   // Toggle overview mode so we return back to left snapped mode. Verify that
   // the header is again drawn for the snapped window, but not for the unsnapped
   // window.
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
   ASSERT_EQ(SplitViewController::LEFT_SNAPPED,
             Shell::Get()->split_view_controller()->state());
   EXPECT_TRUE(delegate1->header_view()->should_paint());
@@ -722,9 +700,9 @@ TEST_F(NonClientFrameViewAshTest, WideFrame) {
   EXPECT_FALSE(header_view->should_paint());
   EXPECT_TRUE(wide_header_view->should_paint());
 
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
   EXPECT_FALSE(wide_header_view->should_paint());
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
   EXPECT_TRUE(wide_header_view->should_paint());
 
   // Test immersive.
@@ -926,6 +904,8 @@ TEST_P(NonClientFrameViewAshFrameColorTest, WideFrameInitialColor) {
 }
 
 // Run frame color tests with and without custom wm::WindowStateDelegate.
-INSTANTIATE_TEST_CASE_P(, NonClientFrameViewAshFrameColorTest, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(,
+                         NonClientFrameViewAshFrameColorTest,
+                         testing::Bool());
 
 }  // namespace ash

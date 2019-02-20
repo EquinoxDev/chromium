@@ -6,10 +6,15 @@
 #define CHROME_BROWSER_CHROMEOS_CHILD_ACCOUNTS_SCREEN_TIME_CONTROLLER_H_
 
 #include <memory>
+#include <string>
 
+#include "base/memory/scoped_refptr.h"
+#include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "base/time/time.h"
 #include "chrome/browser/chromeos/child_accounts/time_limit_notifier.h"
 #include "chrome/browser/chromeos/child_accounts/usage_time_limit_processor.h"
+#include "chrome/browser/chromeos/child_accounts/usage_time_state_notifier.h"
 #include "chromeos/dbus/system_clock_client.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -22,6 +27,7 @@ namespace base {
 class Clock;
 class TickClock;
 class OneShotTimer;
+class SequencedTaskRunner;
 }  // namespace base
 
 namespace content {
@@ -36,9 +42,17 @@ namespace chromeos {
 // Schedule notifications and lock/unlock screen based on the processor output.
 class ScreenTimeController : public KeyedService,
                              public session_manager::SessionManagerObserver,
+                             public UsageTimeStateNotifier::Observer,
                              public system::TimezoneSettings::Observer,
                              public chromeos::SystemClockClient::Observer {
  public:
+  class Observer : public base::CheckedObserver {
+   public:
+    // Called when daily screen time limit is |kUsageTimeLimitWarningTime| or
+    // less to finish.
+    virtual void UsageTimeLimitWarning() = 0;
+  };
+
   // Registers preferences.
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
@@ -47,10 +61,20 @@ class ScreenTimeController : public KeyedService,
 
   // Returns the child's screen time duration. This is how long the child has
   // used the device today (since the last reset).
-  base::TimeDelta GetScreenTimeDuration();
+  virtual base::TimeDelta GetScreenTimeDuration();
 
-  void SetClocksForTesting(const base::Clock* clock,
-                           const base::TickClock* tick_clock);
+  // Method intended for testing purposes only.
+  void SetClocksForTesting(
+      const base::Clock* clock,
+      const base::TickClock* tick_clock,
+      scoped_refptr<base::SequencedTaskRunner> task_runner);
+
+  // Call UsageTimeLimitWarning for each observer for testing.
+  void NotifyUsageTimeLimitWarningForTesting();
+
+  // Adds or removes an observer.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
 
  private:
   // Call time limit processor for new state.
@@ -76,6 +100,10 @@ class ScreenTimeController : public KeyedService,
   // Reset any currently running timers.
   void ResetStateTimers();
   void ResetInSessionTimers();
+  void ResetWarningTimers();
+
+  // Schedule a call for UsageTimeLimitWarning.
+  void ScheduleUsageTimeLimitWarning(const usage_time_limit::State& state);
 
   // Save the |state| to |prefs::kScreenTimeLastState|.
   void SaveCurrentStateToPref(const usage_time_limit::State& state);
@@ -84,8 +112,16 @@ class ScreenTimeController : public KeyedService,
   // exists.
   base::Optional<usage_time_limit::State> GetLastStateFromPref();
 
+  // Called when the usage time limit is |kUsageTimeLimitWarningTime| or less to
+  // finish. It should call the method UsageTimeLimitWarning for each observer.
+  void UsageTimeLimitWarning();
+
   // session_manager::SessionManagerObserver:
   void OnSessionStateChanged() override;
+
+  // UsageTimeStateNotifier::Observer:
+  void OnUsageTimeStateChange(
+      const UsageTimeStateNotifier::UsageTimeState state) override;
 
   // system::TimezoneSettings::Observer:
   void TimezoneChanged(const icu::TimeZone& timezone) override;
@@ -96,12 +132,20 @@ class ScreenTimeController : public KeyedService,
   content::BrowserContext* context_;
   PrefService* pref_service_;
 
+  base::ObserverList<Observer> observers_;
+
   // Points to the base::DefaultClock by default.
   const base::Clock* clock_;
 
   // Timer scheduled for when the next lock screen state change event is
   // expected to happen, e.g. when bedtime is over or the usage limit ends.
   std::unique_ptr<base::OneShotTimer> next_state_timer_;
+
+  // Timer to schedule the usage time limit warning and call the
+  // UsageTimeLimitWarning for each observer. This should happen
+  // |kUsageTimeLimitWarningTime| minutes or less before the device is locked by
+  // usage limit.
+  std::unique_ptr<base::OneShotTimer> usage_time_limit_warning_timer_;
 
   // Used to set up timers when a time limit is approaching.
   TimeLimitNotifier time_limit_notifier_;

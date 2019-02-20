@@ -5,6 +5,7 @@
 #include "media/base/android/media_drm_bridge.h"
 
 #include <stddef.h>
+#include <sys/system_properties.h>
 #include <algorithm>
 #include <memory>
 #include <utility>
@@ -14,7 +15,6 @@
 #include "base/android/jni_string.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/containers/hash_tables.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -264,6 +264,12 @@ bool AreMediaDrmApisAvailable() {
   return true;
 }
 
+int GetFirstApiLevel() {
+  JNIEnv* env = AttachCurrentThread();
+  int first_api_level = Java_MediaDrmBridge_getFirstApiLevel(env);
+  return first_api_level;
+}
+
 }  // namespace
 
 // MediaDrm is not generally usable without MediaCodec. Thus, both the MediaDrm
@@ -285,6 +291,22 @@ bool MediaDrmBridge::IsKeySystemSupported(const std::string& key_system) {
 bool MediaDrmBridge::IsPerOriginProvisioningSupported() {
   return base::android::BuildInfo::GetInstance()->sdk_int() >=
          base::android::SDK_VERSION_MARSHMALLOW;
+}
+
+// static
+bool MediaDrmBridge::IsPerApplicationProvisioningSupported() {
+  // Start by checking "ro.product.first_api_level", which may not exist.
+  // If it is non-zero, then it is the API level.
+  static int first_api_level = GetFirstApiLevel();
+  DVLOG(1) << "first_api_level = " << first_api_level;
+  if (first_api_level >= base::android::SDK_VERSION_OREO)
+    return true;
+
+  // If "ro.product.first_api_level" does not match, then check build number.
+  DVLOG(1) << "api_level = "
+           << base::android::BuildInfo::GetInstance()->sdk_int();
+  return base::android::BuildInfo::GetInstance()->sdk_int() >=
+         base::android::SDK_VERSION_OREO;
 }
 
 // static
@@ -339,12 +361,15 @@ scoped_refptr<MediaDrmBridge> MediaDrmBridge::CreateInternal(
   DCHECK(AreMediaDrmApisAvailable());
   DCHECK(!scheme_uuid.empty());
 
+  // TODO(crbug.com/917527): Check that |origin_id| is specified on devices
+  // that support it.
+
   scoped_refptr<MediaDrmBridge> media_drm_bridge(new MediaDrmBridge(
       scheme_uuid, origin_id, security_level, requires_media_crypto,
       std::move(storage), create_fetcher_cb, session_message_cb,
       session_closed_cb, session_keys_change_cb, session_expiration_update_cb));
 
-  if (media_drm_bridge->j_media_drm_.is_null())
+  if (!media_drm_bridge->j_media_drm_)
     return nullptr;
 
   return media_drm_bridge;
@@ -434,7 +459,7 @@ void MediaDrmBridge::CreateSessionAndGenerateRequest(
     }
   }
 
-  if (j_init_data.is_null()) {
+  if (!j_init_data) {
     j_init_data =
         base::android::ToJavaByteArray(env, init_data.data(), init_data.size());
   }
@@ -563,6 +588,17 @@ bool MediaDrmBridge::IsSecureCodecRequired() {
   return true;
 }
 
+void MediaDrmBridge::Provision(
+    base::OnceCallback<void(bool)> provisioning_complete_cb) {
+  DVLOG(1) << __func__;
+  DCHECK(provisioning_complete_cb);
+  DCHECK(!provisioning_complete_cb_);
+  provisioning_complete_cb_ = std::move(provisioning_complete_cb);
+
+  JNIEnv* env = AttachCurrentThread();
+  Java_MediaDrmBridge_provision(env, j_media_drm_);
+}
+
 void MediaDrmBridge::Unprovision() {
   DVLOG(1) << __func__;
 
@@ -634,7 +670,7 @@ void MediaDrmBridge::OnMediaCryptoReady(
                      base::Passed(CreateJavaObjectPtr(j_media_crypto.obj()))));
 }
 
-void MediaDrmBridge::OnStartProvisioning(
+void MediaDrmBridge::OnProvisionRequest(
     JNIEnv* env,
     const JavaParamRef<jobject>& j_media_drm,
     const JavaParamRef<jstring>& j_default_url,
@@ -648,6 +684,18 @@ void MediaDrmBridge::OnStartProvisioning(
                                 weak_factory_.GetWeakPtr(),
                                 ConvertJavaStringToUTF8(env, j_default_url),
                                 std::move(request_data)));
+}
+
+void MediaDrmBridge::OnProvisioningComplete(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& j_media_drm,
+    bool success) {
+  DVLOG(1) << __func__;
+
+  // This should only be called as result of a call to Provision().
+  DCHECK(provisioning_complete_cb_);
+  task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(std::move(provisioning_complete_cb_), success));
 }
 
 void MediaDrmBridge::OnPromiseResolved(JNIEnv* env,
@@ -854,7 +902,7 @@ MediaDrmBridge::~MediaDrmBridge() {
 
   // After the call to Java_MediaDrmBridge_destroy() Java won't call native
   // methods anymore, this is ensured by MediaDrmBridge.java.
-  if (!j_media_drm_.is_null())
+  if (j_media_drm_)
     Java_MediaDrmBridge_destroy(env, j_media_drm_);
 
   player_tracker_.NotifyCdmUnset();

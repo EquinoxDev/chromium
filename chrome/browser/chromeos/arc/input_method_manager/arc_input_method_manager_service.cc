@@ -8,8 +8,10 @@
 #include <utility>
 
 #include "ash/public/cpp/ash_pref_names.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
@@ -21,7 +23,6 @@
 #include "chrome/browser/ui/ash/tablet_mode_client_observer.h"
 #include "chrome/common/pref_names.h"
 #include "components/arc/arc_browser_context_keyed_service_factory_base.h"
-#include "components/arc/arc_features.h"
 #include "components/arc/common/ime_struct_traits.h"
 #include "components/crx_file/id_util.h"
 #include "components/prefs/pref_service.h"
@@ -263,20 +264,7 @@ ArcInputMethodManagerService::ArcInputMethodManagerService(
   }
 }
 
-ArcInputMethodManagerService::~ArcInputMethodManagerService() {
-  // Remove any Arc IME entry from preferences before shutting down.
-  // IME states (installed/enabled/disabled) are stored in Android's settings,
-  // that will be restored after Arc container starts next time.
-  RemoveArcIMEFromPrefs();
-  profile_->GetPrefs()->CommitPendingWrite();
-
-  if (TabletModeClient::Get())
-    TabletModeClient::Get()->RemoveObserver(tablet_mode_observer_.get());
-
-  auto* imm = chromeos::input_method::InputMethodManager::Get();
-  imm->RemoveImeMenuObserver(this);
-  imm->RemoveObserver(this);
-}
+ArcInputMethodManagerService::~ArcInputMethodManagerService() = default;
 
 void ArcInputMethodManagerService::SetInputMethodManagerBridgeForTesting(
     std::unique_ptr<ArcInputMethodManagerBridge> test_bridge) {
@@ -289,6 +277,21 @@ void ArcInputMethodManagerService::AddObserver(Observer* observer) {
 
 void ArcInputMethodManagerService::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
+}
+
+void ArcInputMethodManagerService::Shutdown() {
+  // Remove any Arc IME entry from preferences before shutting down.
+  // IME states (installed/enabled/disabled) are stored in Android's settings,
+  // that will be restored after Arc container starts next time.
+  RemoveArcIMEFromPrefs();
+  profile_->GetPrefs()->CommitPendingWrite();
+
+  if (TabletModeClient::Get())
+    TabletModeClient::Get()->RemoveObserver(tablet_mode_observer_.get());
+
+  auto* imm = chromeos::input_method::InputMethodManager::Get();
+  imm->RemoveImeMenuObserver(this);
+  imm->RemoveObserver(this);
 }
 
 void ArcInputMethodManagerService::OnActiveImeChanged(
@@ -314,8 +317,6 @@ void ArcInputMethodManagerService::OnActiveImeChanged(
 }
 
 void ArcInputMethodManagerService::OnImeDisabled(const std::string& ime_id) {
-  if (!base::FeatureList::IsEnabled(kEnableInputMethodFeature))
-    return;
 
   const std::string component_id =
       chromeos::extension_ime_util::GetArcInputMethodID(proxy_ime_extension_id_,
@@ -338,9 +339,6 @@ void ArcInputMethodManagerService::OnImeInfoChanged(
   using chromeos::input_method::InputMethodDescriptor;
   using chromeos::input_method::InputMethodDescriptors;
   using chromeos::input_method::InputMethodManager;
-
-  if (!base::FeatureList::IsEnabled(kEnableInputMethodFeature))
-    return;
 
   is_removing_imm_entry_ = true;
   scoped_refptr<InputMethodManager::State> state =
@@ -389,6 +387,8 @@ void ArcInputMethodManagerService::OnImeInfoChanged(
 
   // Refresh allowed IME list.
   UpdateArcIMEAllowed();
+
+  UMA_HISTOGRAM_COUNTS_100("Arc.ImeCount", descriptors.size());
 }
 
 void ArcInputMethodManagerService::OnConnectionClosed() {

@@ -17,10 +17,6 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/profiles/profile_helper.h"
-#endif  // OS_CHROMEOS
-
 namespace web_app {
 
 namespace {
@@ -40,7 +36,11 @@ PendingAppManager::AppInfo CreateAppInfoForSystemApp(const GURL& url) {
 
 SystemWebAppManager::SystemWebAppManager(Profile* profile,
                                          PendingAppManager* pending_app_manager)
-    : profile_(profile), pending_app_manager_(pending_app_manager) {
+    : pending_app_manager_(pending_app_manager) {}
+
+SystemWebAppManager::~SystemWebAppManager() = default;
+
+void SystemWebAppManager::Start() {
   content::BrowserThread::PostAfterStartupTask(
       FROM_HERE,
       base::CreateSingleThreadTaskRunnerWithTraits(
@@ -49,21 +49,14 @@ SystemWebAppManager::SystemWebAppManager(Profile* profile,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
-SystemWebAppManager::~SystemWebAppManager() = default;
-
 // static
-bool SystemWebAppManager::ShouldEnableForProfile(Profile* profile) {
-  bool is_enabled = base::FeatureList::IsEnabled(features::kSystemWebApps);
-#if defined(OS_CHROMEOS)
-  // System Apps should not be installed to the signin profile.
-  is_enabled = is_enabled && !chromeos::ProfileHelper::IsSigninProfile(profile);
-#endif
-  return is_enabled;
+bool SystemWebAppManager::IsEnabled() {
+  return base::FeatureList::IsEnabled(features::kSystemWebApps);
 }
 
 void SystemWebAppManager::StartAppInstallation() {
   std::vector<GURL> urls_to_install;
-  if (ShouldEnableForProfile(profile_)) {
+  if (IsEnabled()) {
     // Skipping this will uninstall all System Apps currently installed.
     urls_to_install = CreateSystemWebApps();
   }

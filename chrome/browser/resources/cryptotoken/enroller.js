@@ -859,25 +859,66 @@ Enroller.prototype.sendEnrollRequestToHelper_ = function() {
   });
 };
 
+const googleCorpAppId =
+    'https://www.gstatic.com/securitykey/a/google.com/origins.json';
+
 /**
  * Proxies the registration request over the WebAuthn API.
  * @private
  */
 Enroller.prototype.doRegisterWebAuthn_ = function(appId, challenge, request) {
+  if (appId == googleCorpAppId) {
+    this.doRegisterWebAuthnContinue_(appId, challenge, request, true);
+    return;
+  }
+
+  if (!chrome.cryptotokenPrivate) {
+    this.doRegisterWebAuthnContinue_(appId, challenge, request, false);
+    return;
+  }
+
+  chrome.cryptotokenPrivate.isAppIdHashInEnterpriseContext(
+      decodeWebSafeBase64ToArray(B64_encode(sha256HashOfString(appId))),
+      this.doRegisterWebAuthnContinue_.bind(this, appId, challenge, request));
+};
+
+Enroller.prototype.doRegisterWebAuthnContinue_ = function(
+    appId, challenge, request, useIndividualAttestation) {
   // Set a random ID.
   const randomId = new Uint8Array(new ArrayBuffer(16));
   crypto.getRandomValues(randomId);
 
+  const decodedChallenge = B64_decode(challenge);
+  if (decodedChallenge.length == 0) {
+    this.notifyError_({
+      errorCode: ErrorCodes.BAD_REQUEST,
+      errorMessage: 'challenge must be base64url encoded',
+    });
+    return;
+  }
+
   const excludeList = [];
   for (let index = 0; index < request['signData'].length; index++) {
     const element = request['signData'][index];
+    const decodedKeyHandle = B64_decode(element['keyHandle']);
+    if (decodedKeyHandle.length == 0) {
+      this.notifyError_({
+        errorCode: ErrorCodes.BAD_REQUEST,
+        errorMessage: 'keyHandle must be base64url encoded',
+      });
+      return;
+    }
     excludeList.push({
       type: 'public-key',
-      id: new Uint8Array(B64_decode(element['keyHandle'])).buffer,
+      id: new Uint8Array(decodedKeyHandle).buffer,
       transports: ['usb'],
     });
   }
 
+  // Request enterprise attestation for the gstatic corp App ID and domains
+  // whitelisted via enterprise policy. Otherwise request 'direct' attestation
+  // (which might later get stripped).
+  const attestationMode = useIndividualAttestation ? 'enterprise' : 'direct';
   const options = {
     publicKey: {
       rp: {
@@ -889,7 +930,7 @@ Enroller.prototype.doRegisterWebAuthn_ = function(appId, challenge, request) {
         displayName: this.sender_.origin,
         name: this.sender_.origin,
       },
-      challenge: new Uint8Array(B64_decode(challenge)).buffer,
+      challenge: new Uint8Array(decodedChallenge).buffer,
       pubKeyCredParams: [{
         type: 'public-key',
         alg: -7,  // ES-256
@@ -901,7 +942,7 @@ Enroller.prototype.doRegisterWebAuthn_ = function(appId, challenge, request) {
         requireResidentKey: false,
         userVerification: 'discouraged',
       },
-      attestation: 'direct',
+      attestation: attestationMode,
     },
   };
   navigator.credentials.create(options)

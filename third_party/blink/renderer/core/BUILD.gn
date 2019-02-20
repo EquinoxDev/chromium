@@ -4,6 +4,7 @@
 
 import("//build/config/chromecast_build.gni")
 import("//build/config/compiler/compiler.gni")
+import("//build/config/dcheck_always_on.gni")
 import("//build/config/ui.gni")
 import("//build/split_static_library.gni")
 import("//build/toolchain/toolchain.gni")
@@ -28,9 +29,6 @@ rel_blink_core_gen_dir = rebase_path(blink_core_output_dir, root_build_dir)
 # Config for code that builds as part of core.
 config("config") {
   defines = [ "BLINK_CORE_IMPLEMENTATION=1" ]
-  if (is_chromecast) {
-    defines += [ "BLINK_MEDIA_LOG=LOG(INFO)" ]
-  }
   if (blink_animation_use_time_delta) {
     defines += [ "BLINK_ANIMATION_USE_TIME_DELTA" ]
   }
@@ -120,6 +118,7 @@ source_set("prerequisites") {
     "//third_party/ots",
     "//third_party/snappy",
     "//third_party/zlib",
+    "//ui/events:dom_keycode_converter",
     "//ui/gfx/geometry",
     "//ui/native_theme",
     "//url",
@@ -309,6 +308,8 @@ jumbo_source_set("testing") {
     "testing/use_mock_scrollbar_settings.h",
     "testing/v8/web_core_test_support.cc",
     "testing/v8/web_core_test_support.h",
+    "testing/wait_for_event.cc",
+    "testing/wait_for_event.h",
     "testing/worker_internals.cc",
     "testing/worker_internals.h",
   ]
@@ -333,6 +334,7 @@ generate_event_interfaces("core_event_interfaces") {
   sources = [
     "css/font_face_set_load_event.idl",
     "css/media_query_list_event.idl",
+    "display_lock/before_activate_event.idl",
     "dom/events/custom_event.idl",
     "dom/events/event.idl",
     "events/animation_event.idl",
@@ -352,7 +354,6 @@ generate_event_interfaces("core_event_interfaces") {
     "events/mutation_event.idl",
     "events/overscroll_event.idl",
     "events/page_transition_event.idl",
-    "events/picture_in_picture_control_event.idl",
     "events/pointer_event.idl",
     "events/pop_state_event.idl",
     "events/progress_event.idl",
@@ -1631,6 +1632,7 @@ target("jumbo_" + core_link_small_target_type, "core_generated") {
   foreach(current, targets_generating_sources) {
     sources += get_target_outputs(current)
   }
+  deps = []
   public_deps = [
     ":all_generators",
     "//third_party/blink/renderer/bindings/core/v8:bindings_core_impl",
@@ -1681,6 +1683,10 @@ target("jumbo_" + core_link_small_target_type, "core_generated") {
       "/wd4701",
       "/wd4702",
     ]
+  }
+
+  if (is_debug || dcheck_always_on) {
+    deps += [ "//components/crash/core/common:crash_key" ]
   }
 }
 
@@ -1744,6 +1750,7 @@ jumbo_source_set("unit_tests") {
     "css/css_test_helpers.cc",
     "css/css_test_helpers.h",
     "css/css_value_test_helper.h",
+    "css/cssom/cross_thread_style_value_test.cc",
     "css/cssom/css_math_invert_test.cc",
     "css/cssom/css_math_negate_test.cc",
     "css/cssom/css_numeric_value_type_test.cc",
@@ -1798,10 +1805,12 @@ jumbo_source_set("unit_tests") {
     "css/threaded/font_object_threaded_test.cc",
     "css/threaded/text_renderer_threaded_test.cc",
     "display_lock/display_lock_budget_test.cc",
+    "display_lock/display_lock_context_test.cc",
     "dom/attr_test.cc",
     "dom/document_statistics_collector_test.cc",
     "dom/document_test.cc",
     "dom/dom_implementation_test.cc",
+    "dom/dom_node_ids_test.cc",
     "dom/element_test.cc",
     "dom/element_visibility_observer_test.cc",
     "dom/events/event_path_test.cc",
@@ -1816,7 +1825,6 @@ jumbo_source_set("unit_tests") {
     "dom/names_map_test.cc",
     "dom/node_test.cc",
     "dom/nth_index_cache_test.cc",
-    "dom/pausable_object_test.cc",
     "dom/range_test.cc",
     "dom/scripted_animation_controller_test.cc",
     "dom/scripted_idle_task_controller_test.cc",
@@ -1828,6 +1836,7 @@ jumbo_source_set("unit_tests") {
     "dom/tree_scope_adopter_test.cc",
     "dom/tree_scope_test.cc",
     "dom/user_gesture_indicator_test.cc",
+    "dom/weak_identifier_map_test.cc",
     "dom/whitespace_attacher_test.cc",
     "editing/caret_display_item_client_test.cc",
     "editing/finder/text_finder_test.cc",
@@ -1836,6 +1845,7 @@ jumbo_source_set("unit_tests") {
     "events/pointer_event_factory_test.cc",
     "events/touch_event_test.cc",
     "events/web_input_event_conversion_test.cc",
+    "execution_context/context_lifecycle_state_observer_test.cc",
     "exported/local_frame_client_impl_test.cc",
     "exported/prerendering_test.cc",
     "exported/web_associated_url_loader_impl_test.cc",
@@ -1861,19 +1871,15 @@ jumbo_source_set("unit_tests") {
     "feature_policy/policy_test.cc",
     "fetch/blob_bytes_consumer_test.cc",
     "fetch/body_stream_buffer_test.cc",
-    "fetch/buffering_bytes_consumer_test.cc",
-    "fetch/bytes_consumer_for_data_consumer_handle_test.cc",
-    "fetch/bytes_consumer_test.cc",
+    "fetch/bytes_consumer_tee_test.cc",
     "fetch/bytes_consumer_test_util.cc",
     "fetch/bytes_consumer_test_util.h",
-    "fetch/data_consumer_handle_test_util.cc",
-    "fetch/data_consumer_handle_test_util.h",
-    "fetch/data_pipe_bytes_consumer_test.cc",
     "fetch/fetch_data_loader_test.cc",
     "fetch/fetch_header_list_test.cc",
     "fetch/fetch_response_data_test.cc",
     "fetch/form_data_bytes_consumer_test.cc",
     "fetch/multipart_parser_test.cc",
+    "fetch/place_holder_bytes_consumer_test.cc",
     "fetch/readable_stream_bytes_consumer_test.cc",
     "fetch/request_test.cc",
     "fetch/response_test.cc",
@@ -1924,6 +1930,7 @@ jumbo_source_set("unit_tests") {
     "html/forms/email_input_type_test.cc",
     "html/forms/external_popup_menu_test.cc",
     "html/forms/file_input_type_test.cc",
+    "html/forms/form_controller_test.cc",
     "html/forms/form_data_test.cc",
     "html/forms/html_form_control_element_test.cc",
     "html/forms/html_form_element_test.cc",
@@ -1952,6 +1959,7 @@ jumbo_source_set("unit_tests") {
     "html/image_document_test.cc",
     "html/imports/html_import_sheets_test.cc",
     "html/lazy_load_frame_observer_test.cc",
+    "html/lazy_load_image_observer_test.cc",
     "html/link_element_loading_test.cc",
     "html/link_rel_attribute_test.cc",
     "html/list_item_ordinal_test.cc",
@@ -1971,6 +1979,7 @@ jumbo_source_set("unit_tests") {
     "html/parser/html_document_parser_test.cc",
     "html/parser/html_entity_parser_test.cc",
     "html/parser/html_parser_idioms_test.cc",
+    "html/parser/html_preload_scanner_document_test.cc",
     "html/parser/html_preload_scanner_test.cc",
     "html/parser/html_resource_preloader_test.cc",
     "html/parser/html_srcset_parser_test.cc",
@@ -1996,6 +2005,7 @@ jumbo_source_set("unit_tests") {
     "inspector/protocol_parser_test.cc",
     "inspector/protocol_unittest.cc",
     "intersection_observer/intersection_observer_test.cc",
+    "invisible_dom/find_invisible_test.cc",
     "layout/api/selection_state_test.cc",
     "layout/collapsed_border_value_test.cc",
     "layout/custom/layout_worklet_test.cc",
@@ -2040,6 +2050,7 @@ jumbo_source_set("unit_tests") {
     "layout/ng/geometry/ng_physical_offset_test.cc",
     "layout/ng/geometry/ng_physical_rect_test.cc",
     "layout/ng/inline/ng_baseline_test.cc",
+    "layout/ng/inline/ng_caret_navigator_test.cc",
     "layout/ng/inline/ng_caret_position_test.cc",
     "layout/ng/inline/ng_inline_fragment_traversal_test.cc",
     "layout/ng/inline/ng_inline_items_builder_test.cc",
@@ -2111,6 +2122,7 @@ jumbo_source_set("unit_tests") {
     "page/focus_controller_test.cc",
     "page/page_popup_client_test.cc",
     "page/print_context_test.cc",
+    "page/scrolling/element_fragment_anchor_test.cc",
     "page/scrolling/main_thread_scrolling_reasons_test.cc",
     "page/scrolling/root_scroller_test.cc",
     "page/scrolling/scroll_into_view_test.cc",
@@ -2118,6 +2130,7 @@ jumbo_source_set("unit_tests") {
     "page/scrolling/scroll_state_test.cc",
     "page/scrolling/scrolling_coordinator_test.cc",
     "page/scrolling/snap_coordinator_test.cc",
+    "page/scrolling/text_fragment_anchor_test.cc",
     "page/slot_scoped_traversal_test.cc",
     "page/spatial_navigation_test.cc",
     "page/touch_adjustment_test.cc",
@@ -2138,6 +2151,7 @@ jumbo_source_set("unit_tests") {
     "paint/first_meaningful_paint_detector_test.cc",
     "paint/fragment_data_test.cc",
     "paint/html_canvas_painter_test.cc",
+    "paint/image_element_timing_test.cc",
     "paint/image_paint_timing_detector_test.cc",
     "paint/link_highlight_impl_test.cc",
     "paint/ng/ng_paint_fragment_test.cc",
@@ -2176,12 +2190,16 @@ jumbo_source_set("unit_tests") {
     "script/layered_api_test.cc",
     "script/mock_script_element_base.h",
     "script/module_map_test.cc",
+    "script/module_script_test.cc",
     "script/script_module_resolver_impl_test.cc",
     "script/script_runner_test.cc",
     "scroll/scrollable_area_test.cc",
     "scroll/scrollbar_theme_overlay_test.cc",
+    "streams/miscellaneous_operations_test.cc",
+    "streams/queue_with_sizes_test.cc",
     "streams/readable_stream_operations_test.cc",
     "streams/readable_stream_test.cc",
+    "streams/stream_promise_resolver_test.cc",
     "streams/test_underlying_source.h",
     "streams/transform_stream_test.cc",
     "streams/writable_stream_test.cc",
@@ -2225,6 +2243,7 @@ jumbo_source_set("unit_tests") {
     "workers/worker_thread_test_helper.h",
     "workers/worklet_module_responses_map_test.cc",
     "xml/parser/shared_buffer_reader_test.cc",
+    "xml/parser/xml_document_parser_test.cc",
     "xml/xpath_functions_test.cc",
   ]
 

@@ -25,5 +25,11 @@ const base::Feature kEnforceTLS13Downgrade{"EnforceTLS13Downgrade",
 const base::Feature kSplitCacheByTopFrameOrigin{
     "SplitCacheByTopFrameOrigin", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kTLS13KeyUpdate{"TLS13KeyUpdate",
+                                    base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kPostQuantumCECPQ2{"PostQuantumCECPQ2",
+                                       base::FEATURE_DISABLED_BY_DEFAULT};
+
 }  // namespace features
 }  // namespace net

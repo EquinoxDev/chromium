@@ -16,11 +16,10 @@ cr.define('cloudprint', function() {
      *     'https://www.google.com/cloudprint'.
      * @param {!print_preview.NativeLayer} nativeLayer Native layer used to get
      *     Auth2 tokens.
-     * @param {!print_preview.UserInfo} userInfo User information repository.
      * @param {boolean} isInAppKioskMode Whether the print preview is in App
      *     Kiosk mode.
      */
-    constructor(baseUrl, nativeLayer, userInfo, isInAppKioskMode) {
+    constructor(baseUrl, nativeLayer, isInAppKioskMode) {
       /**
        * The base URL of the Google Cloud Print API.
        * @private {string}
@@ -32,12 +31,6 @@ cr.define('cloudprint', function() {
        * @private {!print_preview.NativeLayer}
        */
       this.nativeLayer_ = nativeLayer;
-
-      /**
-       * User information repository.
-       * @private {!print_preview.UserInfo}
-       */
-      this.userInfo_ = userInfo;
 
       /**
        * Whether Print Preview is in App Kiosk mode, basically, use only
@@ -66,6 +59,7 @@ cr.define('cloudprint', function() {
        */
       this.outstandingCloudSearchRequests_ = [];
 
+      // <if expr="chromeos">
       /**
        * Promise that will be resolved when the access token for
        * DestinationOrigin.DEVICE is available. Null if there is no request
@@ -73,6 +67,7 @@ cr.define('cloudprint', function() {
        * @private {?Promise<string>}
        */
       this.accessTokenRequestPromise_ = null;
+      // </if>
 
       /** @private {!cr.EventTarget} */
       this.eventTarget_ = new cr.EventTarget();
@@ -91,7 +86,7 @@ cr.define('cloudprint', function() {
     /** @override */
     search(opt_account, opt_origin) {
       const account = opt_account || '';
-      let origins = opt_origin && [opt_origin] || CLOUD_ORIGINS_;
+      let origins = opt_origin ? [opt_origin] : print_preview.CloudOrigins;
       if (this.isInAppKioskMode_) {
         origins = origins.filter(function(origin) {
           return origin != print_preview.DestinationOrigin.COOKIES;
@@ -266,13 +261,15 @@ cr.define('cloudprint', function() {
         return;
       }
 
+      // <if expr="chromeos">
+      assert(request.origin == print_preview.DestinationOrigin.DEVICE);
       if (this.accessTokenRequestPromise_ == null) {
-        this.accessTokenRequestPromise_ =
-            this.nativeLayer_.getAccessToken(request.origin);
+        this.accessTokenRequestPromise_ = this.nativeLayer_.getAccessToken();
       }
 
       this.accessTokenRequestPromise_.then(
           this.onAccessTokenReady_.bind(this, request));
+      // </if>
     }
 
     /**
@@ -291,10 +288,7 @@ cr.define('cloudprint', function() {
      * request.
      * @param {!cloudprint.CloudPrintRequest} request Request that has been
      *     completed.
-     * @return {!{ status: number,
-     *             errorCode: number,
-     *             message: string,
-     *             origin: !print_preview.DestinationOrigin }} Information
+     * @return {!cloudprint.CloudPrintInterfaceErrorEventDetail} Information
      *     about the error.
      * @private
      */
@@ -306,6 +300,20 @@ cr.define('cloudprint', function() {
         message: status200 ? request.result['message'] : '',
         origin: request.origin,
       };
+    }
+
+    /**
+     * Fires an event with information about the new active user and logged in
+     * users.
+     * @param {string} activeUser The active user account.
+     * @param {Array<string>=} users The currently logged in users. Omitted
+     *     if the list of users has not changed.
+     * @private
+     */
+    dispatchUserUpdateEvent_(activeUser, users) {
+      this.eventTarget_.dispatchEvent(new CustomEvent(
+          CloudPrintInterfaceEventType.UPDATE_USERS,
+          {detail: {activeUser: activeUser, users: users}}));
     }
 
     /**
@@ -321,7 +329,6 @@ cr.define('cloudprint', function() {
         for (let i = 0; i < users.length; i++) {
           this.userSessionIndex_[users[i]] = i;
         }
-        this.userInfo_.setUsers(request.result['request']['user'], users);
       }
     }
 
@@ -342,6 +349,7 @@ cr.define('cloudprint', function() {
           });
     }
 
+    // <if expr="chromeos">
     /**
      * Called when a native layer receives access token. Assumes that the
      * destination type for this token is DestinationOrigin.DEVICE.
@@ -362,6 +370,7 @@ cr.define('cloudprint', function() {
       }
       this.accessTokenRequestPromise_ = null;
     }
+    // </if>
 
     /**
      * Called when the ready-state of a XML http request changes.
@@ -420,6 +429,8 @@ cr.define('cloudprint', function() {
         });
         // Extract and store users.
         this.setUsers_(request);
+        this.dispatchUserUpdateEvent_(
+            activeUser, request.result['request']['users']);
         // Dispatch SEARCH_DONE event.
         this.eventTarget_.dispatchEvent(
             new CustomEvent(CloudPrintInterfaceEventType.SEARCH_DONE, {
@@ -539,15 +550,15 @@ cr.define('cloudprint', function() {
       // Special handling of the first printer request. It does not matter at
       // this point, whether printer was found or not.
       if (request.origin == print_preview.DestinationOrigin.COOKIES &&
-          request.result && request.account &&
-          request.result['request']['user'] &&
+          request.result && request.result['request']['user'] &&
           request.result['request']['users'] &&
           request.account != request.result['request']['user']) {
+        const users = request.result['request']['users'];
         this.setUsers_(request);
         // In case the user account is known, but not the primary one,
         // activate it.
-        if (this.userSessionIndex_[request.account] > 0) {
-          this.userInfo_.activeUser = request.account;
+        if (this.userSessionIndex_[request.account] > 0 && request.account) {
+          this.dispatchUserUpdateEvent_(request.account, users);
           // Repeat the request for the newly activated account.
           this.printer(
               request.result['request']['params']['printerid'], request.origin,
@@ -555,6 +566,7 @@ cr.define('cloudprint', function() {
           // Stop processing this request, wait for the new response.
           return;
         }
+        this.dispatchUserUpdateEvent_(request.result['request']['user'], users);
       }
       // Process response.
       if (request.xhr.status == 200 && request.result['success']) {
@@ -614,16 +626,6 @@ cr.define('cloudprint', function() {
    * @private
    */
   const VERSION_REGEXP_ = /.*Chrome\/([\d\.]+)/i;
-
-  /**
-   * Could Print origins used to search printers.
-   * @const {!Array<!print_preview.DestinationOrigin>}
-   * @private
-   */
-  const CLOUD_ORIGINS_ = [
-    print_preview.DestinationOrigin.COOKIES,
-    print_preview.DestinationOrigin.DEVICE
-  ];
 
   class CloudPrintRequest {
     /**

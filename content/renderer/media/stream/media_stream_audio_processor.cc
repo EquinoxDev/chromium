@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
@@ -36,7 +37,6 @@
 #include "third_party/webrtc/api/audio/echo_canceller3_config.h"
 #include "third_party/webrtc/api/audio/echo_canceller3_config_json.h"
 #include "third_party/webrtc/api/audio/echo_canceller3_factory.h"
-#include "third_party/webrtc/api/mediaconstraintsinterface.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing_statistics.h"
 #include "third_party/webrtc/modules/audio_processing/typing_detection.h"
 
@@ -592,6 +592,10 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
         base::FeatureList::IsEnabled(features::kWebRtcHybridAgc);
 
     config.Set<webrtc::ExperimentalAgc>(experimental_agc);
+#if defined(IS_CHROMECAST)
+  } else {
+    config.Set<webrtc::ExperimentalAgc>(new webrtc::ExperimentalAgc(false));
+#endif  // defined(IS_CHROMECAST)
   }
 
   // Create and configure the webrtc::AudioProcessing.
@@ -806,11 +810,13 @@ int MediaStreamAudioProcessor::ProcessData(const float* const* process_ptrs,
   DCHECK_EQ(err, 0) << "ProcessStream() error: " << err;
 
   if (typing_detector_) {
-    webrtc::VoiceDetection* vad = ap->voice_detection();
-    DCHECK(vad->is_enabled());
-    bool detected = typing_detector_->Process(key_pressed,
-                                              vad->stream_has_voice());
-    base::subtle::Release_Store(&typing_detected_, detected);
+    // Ignore remote tracks to avoid unnecessary stats computation.
+    auto voice_detected =
+        ap->GetStatistics(false /* has_remote_tracks */).voice_detected;
+    DCHECK(voice_detected.has_value());
+    bool typing_detected =
+        typing_detector_->Process(key_pressed, *voice_detected);
+    base::subtle::Release_Store(&typing_detected_, typing_detected);
   }
 
   main_thread_runner_->PostTask(

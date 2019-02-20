@@ -161,7 +161,6 @@ Polymer({
     // </if>
   ],
 
-
   /** @private {?settings.AboutPageBrowserProxy} */
   aboutBrowserProxy_: null,
 
@@ -194,6 +193,7 @@ Polymer({
     this.aboutBrowserProxy_.getHasEndOfLife().then(result => {
       this.hasEndOfLife_ = result;
     });
+
     // </if>
     // <if expr="not chromeos">
     this.startListening_();

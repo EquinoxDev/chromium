@@ -44,6 +44,13 @@ html {
   height: 100%;
 }
 
+html[darkmode=true] {
+  /* These can be overridden by themes. */
+  --text-color: rgb(var(--GG200-rgb));
+  --text-color-light: rgb(var(--GG200-rgb));
+  --text-color-link: rgb(var(--GB400-dark-rgb));
+}
+
 /* width >= (3 cols * (16px + 154px) - 16px + 200px) */
 @media (min-width: 694px) {
   html {
@@ -122,8 +129,12 @@ body.hide-fakebox #fakebox {
   width: var(--content-width);
 }
 
+body.remove-fakebox #fakebox-container {
+  display: none;
+}
+
 #fakebox {
-  background-color: rgb(241, 243, 244);
+  background-color: rgb(var(--GG100-rgb));
   border-radius: 22px;
   cursor: text;
   font-size: 18px;
@@ -137,8 +148,16 @@ body.hide-fakebox #fakebox {
   transition: background-color 300ms ease-in-out, opacity 200ms
 }
 
+html[darkmode=true] #fakebox {
+  background-color: rgb(var(--GG900-rgb));
+}
+
 #fakebox:hover {
-  background-color: rgb(232, 234, 237);
+  background-color: rgb(var(--GG200-rgb));
+}
+
+html[darkmode=true] #fakebox:hover {
+  background-color: rgb(42, 43, 46);
 }
 
 .non-google-page #fakebox-container {
@@ -151,27 +170,25 @@ body.hide-fakebox #fakebox {
   left: 0;
   margin: 0;
   opacity: 0;
-  padding-left: 20px;
+  padding-inline-start: 20px;
   position: absolute;
   top: 0;
   width: 100%;
 }
 
 html[dir=rtl] #fakebox > input {
-  padding-left: 0;
-  padding-right: 20px;
   right: 0;
 }
 
 #fakebox-text {
   bottom: 4px;
-  color: rgb(128, 134, 139);
+  color: rgb(var(--GG600-rgb));
   font-family: 'Roboto', arial, sans-serif;
   font-size: 14px;
   left: 0;
   margin-top: 1px;
   overflow: hidden;
-  padding-left: 20px;
+  padding-inline-start: 20px;
   position: absolute;
   right: 13px;
   text-align: initial;
@@ -182,9 +199,12 @@ html[dir=rtl] #fakebox > input {
   white-space: nowrap;
 }
 
+html[darkmode=true] #fakebox-text {
+  color: rgb(var(--GG200-rgb));
+}
+
 html[dir=rtl] #fakebox-text {
   left: auto;
-  padding-right: 20px;
   right: 0;
 }
 
@@ -203,12 +223,16 @@ html[dir=rtl] #fakebox-cursor {
   right: 20px;
 }
 
+html[darkmode=true] #fakebox-cursor {
+  background: rgb(var(--GB300-rgb));
+}
+
 #fakebox-microphone {
   background: url(icons/googlemic_clr_24px.svg) no-repeat center;
   background-size: 24px 24px;
   bottom: 0;
   cursor: pointer;
-  margin-right: 12px;
+  margin-inline-end: 12px;
   padding: 22px 12px 0;
   position: absolute;
   right: 0;
@@ -218,7 +242,6 @@ html[dir=rtl] #fakebox-cursor {
 
 html[dir=rtl] #fakebox-microphone {
   left: 0;
-  margin-left: 12px;
   right: auto;
 }
 
@@ -243,6 +266,12 @@ body.fakebox-drag-focused #fakebox-cursor {
 body.fakebox-focused #fakebox-cursor {
   animation: blink 1.3s step-end infinite;
   visibility: inherit;
+}
+
+body.remove-fakebox #user-content {
+  /* Total of 48px margin between the logo and MV tiles/suggestions: 29px logo
+   * margin-bottom + 32px margin (from #most-visited or #suggestions) - 13px */
+  margin-top: -13px;
 }
 
 #most-visited {
@@ -290,28 +319,32 @@ body.fakebox-focused #fakebox-cursor {
   -webkit-mask-position: 3px 3px;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-size: 10px 10px;
-  background-color: rgba(90,90,90,0.7);
+  background-color: rgba(90, 90, 90, 0.7);
   cursor: pointer;
   display: inline-block;
   filter: var(--theme-filter, 'none');
   height: 16px;
-  margin-left: 20px;
+  margin-inline-start: 20px;
   outline: none;
   vertical-align: middle;
   width: 16px;
 }
 
-html[dir=rtl] #mv-notice-x {
-  margin-left: 0;
-  margin-right: 20px;
+html[darkmode=true] #mv-notice-x {
+  background-color: rgb(var(--GG200-rgb));
 }
 
 #mv-notice-x:hover {
-  background-color: rgba(90,90,90,1.0);
+  background-color: rgba(90, 90, 90, 1.0);
 }
 
 #mv-notice-x:active {
-  background-color: rgb(66,133,244);
+  background-color: rgb(var(--GB500-rgb));
+}
+
+html[darkmode=true] #mv-notice-x:hover,
+html[darkmode=true] #mv-notice-x:active {
+  background-color: rgb(var(--GG400-rgb));
 }
 
 .md-icons #mv-notice-x {
@@ -359,7 +392,7 @@ html[dir=rtl] #mv-notice-x {
 
 .md-icons #mv-notice {
   background-color: white;
-  border: 1px solid rgb(218, 220, 224);
+  border: 1px solid rgb(var(--GG300-rgb));
   /* Necessary for a "pill" shape. Using 50% creates an oval. */
   border-radius: 16px;
   font-family: 'Roboto', arial, sans-serif;
@@ -368,6 +401,11 @@ html[dir=rtl] #mv-notice-x {
   margin: 0 auto;
   padding: 0;
   width: fit-content;
+}
+
+html[darkmode=true] .md-icons #mv-notice {
+  background-color: rgb(var(--GG900-rgb));
+  border-color: rgba(0, 0, 0, 0.1);
 }
 
 #mv-notice span {
@@ -379,10 +417,14 @@ html[dir=rtl] #mv-notice-x {
 }
 
 .md-icons #mv-notice span {
-  color: rgb(95,99,104);
+  color: rgb(var(--GG700-rgb));
   height: auto;
   line-height: 32px;
   vertical-align: unset;
+}
+
+html[darkmode=true] .md-icons #mv-notice span {
+  color: rgb(var(--GG200-rgb));
 }
 
 /* Links in the notification. */
@@ -397,10 +439,14 @@ html[dir=rtl] #mv-notice-x {
 .md-icons #mv-notice-links span {
   /* Necessary for a "pill" shape. Using 50% creates an oval. */
   border-radius: 16px;
-  color: rgb(26, 115, 232);
+  color: rgb(var(--GB600-rgb));
   margin-inline-start: 0;
   padding: 0 16px;
   position: relative;
+}
+
+html[darkmode=true] .md-icons #mv-notice-links span {
+  color: rgb(var(--GB400-dark-rgb));
 }
 
 #mv-notice-links span:hover,
@@ -410,9 +456,14 @@ html[dir=rtl] #mv-notice-x {
 
 .md-icons #mv-notice-links span:hover,
 .md-icons #mv-notice-links span:active {
-  background-color: rgba(26,115,232, 0.1);
+  background-color: rgba(var(--GB600-rgb), 0.1);
   text-decoration: none;
   transition: background-color 200ms;
+}
+
+html[darkmode=true] .md-icons #mv-notice-links span:hover,
+html[darkmode=true] .md-icons #mv-notice-links span:active {
+  background-color: rgba(var(--GB400-dark-rgb), 0.1);
 }
 
 #mv-msg {
@@ -429,6 +480,11 @@ html[dir=rtl] #mv-notice-x {
 
 .default-theme.dark #mv-notice-links :not(.md-icons) span {
   color: #fff;
+}
+
+html[darkmode=true] .default-theme.dark #mv-msg :not(.md-icons),
+html[darkmode=true] .default-theme.dark #mv-notice-links :not(.md-icons) span {
+  color: rgb(var(--GG200-rgb));
 }
 
 #mv-notice.mv-notice-delayed-hide:not(:focus-within) {
@@ -450,7 +506,7 @@ html[dir=rtl] #mv-notice-x {
   left: auto;
   position: fixed;
   right: 8px;
-  text-align: left;
+  text-align: start;
   user-select: none;
   z-index: -1;
 }
@@ -459,13 +515,22 @@ html[dir=rtl] #attribution,
 #attribution.left-align-attribution {
   left: 8px;
   right: auto;
-  text-align: right;
+  text-align: end;
 }
 
 #mv-single {
   border: none;
+  display: block;
   height: 100%;
   width: 100%;
+}
+
+.customize-dialog::backdrop {
+  background-color: rgba(255, 255, 255, .75);
+}
+
+html[darkmode=true] .customize-dialog::backdrop {
+  background-color: rgba(0, 0, 0, 0.4);
 }
 
 #custom-links-edit-dialog {
@@ -476,10 +541,6 @@ html[dir=rtl] #attribution,
   position: fixed;
   top: 0;
   width: 100%;
-}
-
-#custom-links-edit-dialog::backdrop {
-  background-color: rgba(255, 255, 255, .75);
 }
 
 #custom-links-edit {
@@ -555,7 +616,7 @@ html[dir=rtl] #attribution,
 }
 
 input:checked + .toggle {
-  background-color: rgba(26, 115, 232, .5);
+  background-color: rgba(var(--GB600-rgb), .5);
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
 }
 
@@ -565,7 +626,7 @@ input:focus + .toggle {
 
 input:checked + .toggle::before {
   -webkit-transform: translateX(26px);
-  background-color: rgb(26, 115, 232);
+  background-color: rgb(var(--GB600-rgb));
   transform: translateX(26px);
 }
 
@@ -584,10 +645,10 @@ input:checked + .toggle::before {
 
 #error-notice {
   background-color: white;
-  border: 1px solid rgb(218, 220, 224);
+  border: 1px solid rgb(var(--GG300-rgb));
   /* Necessary for a "pill" shape. Using 50% creates an oval. */
   border-radius: 16px;
-  color: rgb(217, 48, 37);
+  color: rgb(var(--GR600-rgb));
   display: flex;
   font-family: 'Roboto', arial, sans-serif;
   font-size: 12px;
@@ -598,6 +659,12 @@ input:checked + .toggle::before {
   padding: 0;
   position: relative;
   width: fit-content;
+}
+
+html[darkmode=true] #error-notice {
+  background-color: rgb(var(--GG900-rgb));
+  border-color: rgba(0, 0, 0, 0.1);
+  color: rgb(var(--GR500-dark-rgb));
 }
 
 #error-notice.notice-hide {
@@ -620,16 +687,11 @@ input:checked + .toggle::before {
 
 #error-notice-msg {
   cursor: default;
-  padding-right: 16px;
-}
-
-html[dir=rtl] #error-notice-msg {
-  padding-left: 16px;
-  padding-right: 0;
+  padding-inline-end: 16px;
 }
 
 #error-notice.has-link #error-notice-msg {
-  padding-right: 0;
+  padding-inline-end: 0;
 }
 
 html[dir=rtl] #error-notice.has-link #error-notice-msg {
@@ -639,12 +701,16 @@ html[dir=rtl] #error-notice.has-link #error-notice-msg {
 #error-notice-link {
   /* Necessary for a "pill" shape. Using 50% creates an oval. */
   border-radius: 16px;
-  color: rgb(26, 115, 232);
+  color: rgb(var(--GB600-rgb));
   cursor: pointer;
   display: none;
   outline: none;
   padding: 0 16px;
   position: relative;
+}
+
+html[darkmode=true] #error-notice-link {
+  color: rgb(var(--GB400-dark-rgb));
 }
 
 #error-notice:not(.has-link) #error-notice-link {
@@ -658,9 +724,14 @@ html[dir=rtl] #error-notice.has-link #error-notice-msg {
 
 #error-notice-link:hover,
 #error-notice-link:active {
-  background-color: rgba(26,115,232, 0.1);
+  background-color: rgba(var(--GB600-rgb), 0.1);
   text-decoration: none;
   transition: background-color 200ms;
+}
+
+html[darkmode=true] #error-notice-link:hover,
+html[darkmode=true] #error-notice-link:active {
+  background-color: rgba(var(--GB400-dark-rgb), 0.1);
 }
 
 #promo {
@@ -679,10 +750,10 @@ html[dir=rtl] #error-notice.has-link #error-notice-msg {
 
 #promo > div {
   background-color: #FFF;
-  border: 1px solid rgb(218, 220, 224);
+  border: 1px solid rgb(var(--GG300-rgb));
   border-radius: 16px;
   box-sizing: border-box;
-  color: rgb(95, 99, 104);
+  color: rgb(var(--GG700-rgb));
   display: inline-block;
   font-family: 'Roboto', arial, sans-serif;
   font-size: 12px;
@@ -694,6 +765,12 @@ html[dir=rtl] #error-notice.has-link #error-notice-msg {
   pointer-events: all;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+html[darkmode=true] #promo > div {
+  background-color: rgb(var(--GG900-rgb));
+  border-color: rgba(0, 0, 0, 0.1);
+  color: rgb(var(--GG200-rgb));
 }
 
 /**
@@ -717,13 +794,22 @@ html[dir=rtl] #error-notice.has-link #error-notice-msg {
   color: rgb(51, 103, 214) !important;
 }
 
+html[darkmode=true] #promo > div > a,
+html[darkmode=true] #promo > div > a:visited {
+  color: rgb(var(--GB400-dark-rgb)) !important;
+}
+
 #promo > div > img {
   border-radius: 50%;
   height: 24px;
-  margin: 0 8px 0 -12px;
+  margin: 0 8px 2px -12px;
   object-fit: cover;
   vertical-align: middle;
   width: 24px;
+}
+
+html[darkmode=true] #promo > div > img {
+  background-color: rgb(var(--GG200-rgb));
 }
 
 #promo.notice-hide {

@@ -136,8 +136,7 @@ static const int kBookmarkBarAppsShortcutButtonTag = 2;
 
 namespace {
 
-// To enable/disable BookmarkBar animations during testing. In production
-// animations are enabled by default.
+// Used to globally disable rich animations.
 bool animations_enabled = true;
 
 gfx::ImageSkia* GetImageSkiaNamed(int id) {
@@ -560,6 +559,8 @@ BookmarkBarView::BookmarkBarView(Browser* browser, BrowserView* browser_view)
   SetPaintToLayer();
 
   size_animation_.Reset(1);
+  if (!gfx::Animation::ShouldRenderRichAnimation())
+    animations_enabled = false;
 }
 
 BookmarkBarView::~BookmarkBarView() {
@@ -993,7 +994,7 @@ void BookmarkBarView::PaintChildren(const views::PaintInfo& paint_info) {
 
 bool BookmarkBarView::GetDropFormats(
     int* formats,
-    std::set<ui::Clipboard::FormatType>* format_types) {
+    std::set<ui::ClipboardFormatType>* format_types) {
   if (!model_ || !model_->loaded())
     return false;
   *formats = ui::OSExchangeData::URL;

@@ -11,6 +11,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/flat_set.h"
 #include "base/files/file_util.h"
@@ -125,11 +126,11 @@ const char kPDFPluginOutOfProcessMimeType[] =
     "application/x-google-chrome-pdf";
 const uint32_t kPDFPluginPermissions = ppapi::PERMISSION_PDF |
                                        ppapi::PERMISSION_DEV;
-#endif  // BUILDFLAG(ENABLE_PDF)
 
 content::PepperPluginInfo::GetInterfaceFunc g_pdf_get_interface;
 content::PepperPluginInfo::PPP_InitializeModuleFunc g_pdf_initialize_module;
 content::PepperPluginInfo::PPP_ShutdownModuleFunc g_pdf_shutdown_module;
+#endif  // BUILDFLAG(ENABLE_PDF)
 
 #if BUILDFLAG(ENABLE_NACL)
 content::PepperPluginInfo::GetInterfaceFunc g_nacl_get_interface;
@@ -263,8 +264,9 @@ bool TryCreatePepperFlashInfo(const base::FilePath& flash_filename,
   if (!base::ReadFileToString(manifest_path, &manifest_data))
     return false;
 
-  std::unique_ptr<base::DictionaryValue> manifest = base::DictionaryValue::From(
-      base::JSONReader::Read(manifest_data, base::JSON_ALLOW_TRAILING_COMMAS));
+  std::unique_ptr<base::DictionaryValue> manifest =
+      base::DictionaryValue::From(base::JSONReader::ReadDeprecated(
+          manifest_data, base::JSON_ALLOW_TRAILING_COMMAS));
   if (!manifest)
     return false;
 
@@ -411,7 +413,7 @@ void ChromeContentClient::SetNaClEntryFunctions(
 }
 #endif
 
-#if BUILDFLAG(ENABLE_PLUGINS)
+#if BUILDFLAG(ENABLE_PLUGINS) && BUILDFLAG(ENABLE_PDF)
 void ChromeContentClient::SetPDFEntryFunctions(
     content::PepperPluginInfo::GetInterfaceFunc get_interface,
     content::PepperPluginInfo::PPP_InitializeModuleFunc initialize_module,
@@ -700,9 +702,9 @@ std::string ChromeContentClient::GetProcessTypeNameInEnglish(int type) {
 }
 
 bool ChromeContentClient::AllowScriptExtensionForServiceWorker(
-    const GURL& script_url) {
+    const url::Origin& script_origin) {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  return script_url.SchemeIs(extensions::kExtensionScheme);
+  return script_origin.scheme() == extensions::kExtensionScheme;
 #else
   return false;
 #endif

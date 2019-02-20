@@ -4,6 +4,7 @@
 
 #include "net/base/network_change_notifier_fuchsia.h"
 
+#include <fuchsia/hardware/ethernet/cpp/fidl.h>
 #include <fuchsia/netstack/cpp/fidl_test_base.h>
 #include <memory>
 #include <utility>
@@ -81,11 +82,9 @@ fuchsia::netstack::NetInterface CreateNetInterface(
   output.features = features;
   output.addr = std::move(address);
   output.netmask = std::move(netmask);
-  output.hwaddr = fidl::VectorPtr<uint8_t>::New(0);
 
   output.addr.Clone(&output.broadaddr);
 
-  output.ipv6addrs = fidl::VectorPtr<fuchsia::net::Subnet>::New(0);
   for (auto& x : ipv6) {
     output.ipv6addrs.push_back(std::move(x));
   }
@@ -107,17 +106,17 @@ class FakeNetstack : public fuchsia::netstack::testing::Netstack_TestBase {
 
   // Adds |interface| to the interface query response list.
   void PushInterface(fuchsia::netstack::NetInterface&& interface) {
-    interfaces_->push_back(std::move(interface));
+    interfaces_.push_back(std::move(interface));
   }
 
   void PushRouteTableEntry(fuchsia::netstack::RouteTableEntry&& interface) {
-    route_table_->push_back(std::move(interface));
+    route_table_.push_back(std::move(interface));
   }
 
   // Sends the accumulated |interfaces_| to the OnInterfacesChanged event.
   void NotifyInterfaces() {
     binding_.events().OnInterfacesChanged(std::move(interfaces_));
-    interfaces_ = fidl::VectorPtr<fuchsia::netstack::NetInterface>::New(0);
+    interfaces_.clear();
   }
 
   fidl::Binding<fuchsia::netstack::Netstack>& binding() { return binding_; }
@@ -128,11 +127,9 @@ class FakeNetstack : public fuchsia::netstack::testing::Netstack_TestBase {
   }
 
   void GetRouteTable(GetRouteTableCallback callback) override {
-    fidl::VectorPtr<fuchsia::netstack::RouteTableEntry> table =
-        fidl::VectorPtr<fuchsia::netstack::RouteTableEntry>::New(2);
-    (*table)[0] = CreateRouteTableEntry(kDefaultNic, true);
-    (*table)[1] = CreateRouteTableEntry(kSecondaryNic, true);
-
+    std::vector<fuchsia::netstack::RouteTableEntry> table(2);
+    table[0] = CreateRouteTableEntry(kDefaultNic, true);
+    table[1] = CreateRouteTableEntry(kSecondaryNic, false);
     callback(std::move(table));
   }
 
@@ -140,10 +137,8 @@ class FakeNetstack : public fuchsia::netstack::testing::Netstack_TestBase {
     LOG(FATAL) << "Unimplemented function called: " << name;
   }
 
-  ::fidl::VectorPtr<fuchsia::netstack::NetInterface> interfaces_ =
-      fidl::VectorPtr<fuchsia::netstack::NetInterface>::New(0);
-  ::fidl::VectorPtr<fuchsia::netstack::RouteTableEntry> route_table_ =
-      fidl::VectorPtr<fuchsia::netstack::RouteTableEntry>::New(0);
+  std::vector<fuchsia::netstack::NetInterface> interfaces_;
+  std::vector<fuchsia::netstack::RouteTableEntry> route_table_;
 
   fidl::Binding<fuchsia::netstack::Netstack> binding_;
 
@@ -166,8 +161,9 @@ class NetworkChangeNotifierFuchsiaTest : public testing::Test {
 
   // Creates a NetworkChangeNotifier, which will be seeded with the list of
   // interfaces which have already been added to |netstack_|.
-  void CreateNotifier() {
-    notifier_.reset(new NetworkChangeNotifierFuchsia(std::move(netstack_ptr_)));
+  void CreateNotifier(uint32_t required_features = 0) {
+    notifier_.reset(new NetworkChangeNotifierFuchsia(std::move(netstack_ptr_),
+                                                     required_features));
     NetworkChangeNotifier::AddNetworkChangeObserver(&observer_);
   }
 
@@ -471,6 +467,27 @@ TEST_F(NetworkChangeNotifierFuchsiaTest, FoundWiFi) {
                          CreateIPv4Address(255, 255, 255, 0), {}));
   CreateNotifier();
   EXPECT_EQ(NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI,
+            notifier_->GetCurrentConnectionType());
+}
+
+TEST_F(NetworkChangeNotifierFuchsiaTest, FindsInterfaceWithRequiredFeature) {
+  netstack_.PushInterface(
+      CreateNetInterface(kDefaultNic, fuchsia::netstack::NetInterfaceFlagUp,
+                         fuchsia::hardware::ethernet::INFO_FEATURE_WLAN,
+                         CreateIPv4Address(169, 254, 0, 1),
+                         CreateIPv4Address(255, 255, 255, 0), {}));
+  CreateNotifier(fuchsia::hardware::ethernet::INFO_FEATURE_WLAN);
+  EXPECT_EQ(NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI,
+            notifier_->GetCurrentConnectionType());
+}
+
+TEST_F(NetworkChangeNotifierFuchsiaTest, IgnoresInterfaceWithMissingFeature) {
+  netstack_.PushInterface(
+      CreateNetInterface(kDefaultNic, fuchsia::netstack::NetInterfaceFlagUp, 0,
+                         CreateIPv4Address(169, 254, 0, 1),
+                         CreateIPv4Address(255, 255, 255, 0), {}));
+  CreateNotifier(fuchsia::hardware::ethernet::INFO_FEATURE_WLAN);
+  EXPECT_EQ(NetworkChangeNotifier::ConnectionType::CONNECTION_NONE,
             notifier_->GetCurrentConnectionType());
 }
 

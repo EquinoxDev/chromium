@@ -8,6 +8,7 @@
 
 #include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/public/cpp/app_list/app_list_switches.h"
+#include "base/bind.h"
 #include "base/metrics/user_metrics.h"
 #include "chrome/browser/extensions/chrome_app_icon.h"
 #include "chrome/browser/extensions/chrome_app_icon_service.h"
@@ -92,8 +93,7 @@ void ExtensionAppResult::Open(int event_flags) {
 void ExtensionAppResult::GetContextMenuModel(GetMenuModelCallback callback) {
   if (!context_menu_) {
     context_menu_ = std::make_unique<ExtensionAppContextMenu>(
-        this, profile(), app_id(), controller());
-    context_menu_->set_is_platform_app(is_platform_app_);
+        this, profile(), app_id(), controller(), is_platform_app_);
   }
 
   context_menu_->GetMenuModel(std::move(callback));

@@ -421,7 +421,8 @@ void ResourceMultiBufferDataProvider::DidReceiveData(const char* data,
   // Beware, this object might be deleted here.
 }
 
-void ResourceMultiBufferDataProvider::DidDownloadData(int dataLength) {
+void ResourceMultiBufferDataProvider::DidDownloadData(
+    unsigned long long dataLength) {
   NOTIMPLEMENTED();
 }
 
@@ -451,8 +452,8 @@ void ResourceMultiBufferDataProvider::DidFinishLoading() {
       retries_++;
       base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
           FROM_HERE,
-          base::Bind(&ResourceMultiBufferDataProvider::Start,
-                     weak_factory_.GetWeakPtr()),
+          base::BindOnce(&ResourceMultiBufferDataProvider::Start,
+                         weak_factory_.GetWeakPtr()),
           base::TimeDelta::FromMilliseconds(kLoaderPartialRetryDelayMs));
       return;
     } else {
@@ -483,8 +484,8 @@ void ResourceMultiBufferDataProvider::DidFail(const WebURLError& error) {
     retries_++;
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
         FROM_HERE,
-        base::Bind(&ResourceMultiBufferDataProvider::Start,
-                   weak_factory_.GetWeakPtr()),
+        base::BindOnce(&ResourceMultiBufferDataProvider::Start,
+                       weak_factory_.GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(
             kLoaderFailedRetryDelayMs + kAdditionalDelayPerRetryMs * retries_));
   } else {

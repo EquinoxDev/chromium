@@ -4,6 +4,7 @@
 
 #include "content/browser/service_worker/service_worker_context_watcher.h"
 
+#include "base/bind.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -70,7 +71,7 @@ class WatcherCallback {
     return errors_;
   }
 
-  int callback_count() const { return callback_count_; };
+  int callback_count() const { return callback_count_; }
 
  private:
   void OnRegistrationUpdated(

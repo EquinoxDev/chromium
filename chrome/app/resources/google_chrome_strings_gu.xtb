@@ -4,6 +4,7 @@
 <translation id="1001534784610492198">ઇન્સ્ટૉલર આર્કાઇવ ખરાબ છે અથવા અમાન્ય છે. કૃપા કરીને Google Chrome ફરીથી ડાઉનલોડ કરો.</translation>
 <translation id="102763973188675173">Google Chromeને કસ્ટમાઇઝ અને નિયંત્રિત કરો. અપડેટ ઉપલબ્ધ છે.</translation>
 <translation id="1035334672863811645">Chrome માં સાઇન ઇન કરો</translation>
+<translation id="1051826050538111504">તમારા કમ્પ્યુટરમાં નુકસાનકારક સૉફ્ટવેર છે. Chrome તે કાઢી નાખી શકે છે, તમારી સેટિંગ પાછી મેળવી શકે છે અને એક્સ્ટેંશન બંધ કરી શકે છે જેથી તમારું બ્રાઉઝર ફરી સામાન્ય રીતે કામ કરી શકે.</translation>
 <translation id="1065672644894730302">તમારી પસંદગીઓને વાંચી શકાતી નથી.
 
 કેટલીક સુવિધાઓ ઉપલબ્ધ હોઈ શકે છે અને પસંદગીઓ પરના ફેરફારોને સાચવવામાં આવશે નહીં.</translation>
@@ -72,6 +73,7 @@
 <translation id="2580411288591421699">હાલમાં ચાલી રહ્યું છે તે જ Google Chrome વર્ઝનને ઇન્સ્ટૉલ કરી શકાતું નથી. કૃપા કરીને Google Chrome બંધ કરો અને ફરીથી પ્રયાસ કરો.</translation>
 <translation id="2586406160782125153">આ, તમારા બ્રાઉઝિંગ ડેટાને આ ડિવાઇસમાંથી ડિલીટ કરશે. પછીથી તમારો ડેટા ફરીથી મેળવવા માટે, Chromeમાં <ph name="USER_EMAIL" /> તરીકે સાઇન ઇન કરો.</translation>
 <translation id="2588322182880276190">Chrome લૉગો</translation>
+<translation id="2644798301485385923">Chrome OS સિસ્ટમ</translation>
 <translation id="2652691236519827073">નવા Chrome &amp;ટૅબમાં લિંક ખોલો</translation>
 <translation id="2665296953892887393">ક્રૅશ રિપોર્ટ અને <ph name="UMA_LINK" /> Googleને મોકલીને Google Chromeને વધુ સારું બનાવવામાં મદદ કરો.</translation>
 <translation id="2689103672227170538">જ્યારે તમે Chrome શરૂ કરો છો ત્યારે જે પૃષ્ઠ દર્શાવવામાં આવે છે તે આ એક્સટેન્શને બદલ્યું છે.</translation>
@@ -88,7 +90,6 @@
 <translation id="3080151273017101988">જ્યારે Google Chrome બંધ થાય ત્યારે પૃષ્ઠભૂમિમાં  ઍપ્લિકેશનો ચલાવવાનું ચાલુ રાખો </translation>
 <translation id="3089968997497233615">Google Chromeનું નવું, સુરક્ષિત વર્ઝન ઉપલબ્ધ છે.</translation>
 <translation id="3149510190863420837">Chrome ઍપ્લિકેશનો</translation>
-<translation id="3180085900771989961">તમારા મેનેજરે તમને Chrome પરથી કાઢીને પાછા ઉમેરવા જરૂરી છે.</translation>
 <translation id="3251381707915721925">કઈ વેબસાઇટને <ph name="NEW_PROFILE_NAME" /> જોઈ શકે એ સેટ કરવા માટે, તમે <ph name="BEGIN_LINK_1" /><ph name="DISPLAY_LINK" /><ph name="END_LINK_1" />ની મુલાકાત લઈને પ્રતિબંધો અને સેટિંગને ગોઠવી શકો છો. જો તમે ડિફોલ્ટ સેટિંગમાં ફેરફાર કરતા નથી, તો <ph name="NEW_PROFILE_NAME" />, વેબ પર બધું જ બ્રાઉઝ કરી શકે છે.
 
 <ph name="NEW_PROFILE_NAME" />ને તમારું એકાઉન્ટ ઍક્સેસ કરવાથી અટકાવવા માટે, જ્યારે તમે Chromeનો ઉપયોગ કરી રહ્યા ન હો, ત્યારે તમે તમારી પ્રોફાઇલને લૉક કરી હોવાની ખાતરી કરો. આ કરવા માટે, બ્રાઉઝરના ઉપલા-જમણા ખૂણામાં તમારા પ્રોફાઇલ નામને ક્લિક કરો અને "બહાર નીકળો અને ચાઇલ્ડ લૉક" પસંદ કરો.
@@ -103,6 +104,7 @@
 <translation id="3451115285585441894">Chrome માં ઉમેરી રહ્યું છે...</translation>
 <translation id="345171907106878721">સ્વયંને Chrome માં ઉમેરો</translation>
 <translation id="3479552764303398839">હમણાં નહીં</translation>
+<translation id="34857402635545079">Chromeમાંથી પણ ડેટા કાઢી નાખો (<ph name="URL" />)</translation>
 <translation id="3503306920980160878">Chromeને આ સાઇટ સાથે તમારું સ્થાન શેર કરવા માટે તમારા સ્થાનના ઍક્સેસની જરૂર પડે છે</translation>
 <translation id="3582972582564653026">તમારા બધા ડિવાઇસ પર Chromeને સિંક કરો અને મનગમતું બનાવો</translation>
 <translation id="3622797965165704966">હવે તમારા Google એકાઉન્ટ સાથે અને શેર કરેલા કમ્પ્યુટર પર Chromeનો ઉપયોગ કરવો વધુ સરળ છે.</translation>
@@ -112,7 +114,6 @@
 <translation id="3735758079232443276">જ્યારે તમે Chrome શરૂ કરો છો ત્યારે જે પૃષ્ઠ દર્શાવવામાં આવે છે તે <ph name="EXTENSION_NAME" /> એક્સટેન્શને બદલ્યું છે.</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Chrome માંથી દૂર કરો</translation>
-<translation id="3844992844761326777">તમારા કમ્પ્યુટરમાં નુકસાનકારક સૉફ્ટવેર છે. તમારું બ્રાઉઝર ફરીથી સામાન્ય રીતે કાર્ય કરે તે માટે Chrome તેને કાઢી નાખીને તમારી સેટિંગ પુનઃસ્થાપિત કરી શકે છે.</translation>
 <translation id="386202838227397562">કૃપા કરીને બધી Google Chrome વિંડોઝ બંધ કરો અને ફરીથી પ્રયાસ કરો.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Chrome છુ&amp;પી વિંડોમાં લિંક ખોલો</translation>
@@ -158,7 +159,6 @@
 <translation id="5062123544085870375">Chrome OS ફરી શરૂ કરો</translation>
 <translation id="5090044601776247154">Google Chrome 70 શરૂ થવાથી, નિરીક્ષિત વપરાશકર્તા પ્રોફાઇલો હવેથી ઉપલબ્ધ નહીં રહે.</translation>
 <translation id="5132929315877954718">Google Chrome માટે શ્રેષ્ઠ ઍપ્લિકેશનો, રમતો, એક્સટેન્શન્સ અને થીમ્સ શોધો</translation>
-<translation id="5166975452760862670">આ ભાષામાં Google Chrome પ્રદર્શિત થાય છે</translation>
 <translation id="5170938038195470297">તમારી પ્રોફાઇલનો ઉપયોગ કરી શકાતો નથી કારણ કે તે Google Chromeના નવા વર્ઝન તરફથી છે.
 
 કેટલીક સુવિધાઓ ઉપલબ્ધ થઈ શકે છે. કૃપા કરીને અલગ પ્રોફાઇલ ડિરેક્ટરીનો ઉલ્લેખ કરો અથવા Chromeના નવા વર્ઝનનો ઉપયોગ કરો.</translation>
@@ -174,9 +174,9 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="556024056938947818">Google Chrome પાસવર્ડ્સ બતાવવાનો પ્રયાસ કરી રહ્યું છે.</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> જોખમી હોઈ શકે છે, તેથી Chrome એ તેને અવરોધિત કરેલ છે.</translation>
+<translation id="5686916850681061684">Google Chromeને કસ્ટમાઇઝ કરો અને તેનું નિયંત્રણ કરો. તમારે ક્યાંક ધ્યાન આપવાની જરૂર છે - વિગતો માટે ક્લિક કરો.</translation>
 <translation id="5715063361988620182">{SECONDS,plural, =1{Google Chrome 1 સેકન્ડમાં ફરી શરૂ થશે}one{Google Chrome # સેકન્ડમાં ફરી શરૂ થશે}other{Google Chrome # સેકન્ડમાં ફરી શરૂ થશે}}</translation>
 <translation id="573759479754913123">Chrome OS વિશે</translation>
-<translation id="5774845247549698882">આ ભાષામાં Chrome OS પ્રદર્શિત થાય છે</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> - Google Chrome Canary</translation>
 <translation id="5804318322022881572">Chrome લૉન્ચ કરી શકાયું નથી. ફરી પ્રયાસ કરો.</translation>
 <translation id="5877064549588274448">ચેનલ બદલી. ફેરફારો લાગુ કરવા માટે તમારા ઉપકરણને પુનઃપ્રારંભ કરો.</translation>
@@ -201,6 +201,7 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="6566149418543181476">Google Chrome અપડેટ થઈ રહ્યું છે (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">તમે તમારી Chrome સામગ્રીને સિંક કરવા માટે <ph name="PROFILE_EMAIL" />નો ઉપયોગ કરી રહ્યાં છો. તમારા સિંકની પસંદગીને અપડેટ કરવા માટે અથવા Chromeને Google એકાઉન્ટ વગર ઉપયોગ કરવા માટે, <ph name="SETTINGS_LINK" />ની મુલાકાત લો.</translation>
 <translation id="6600954340915313787">Chrome માં કોપી કરાયું</translation>
+<translation id="6609605543612238677">તમારા સિસ્ટમ વ્યવસ્થાપકે <ph name="URL" />ને ઍક્સેસ કરવા Google Chromeને વૈકલ્પિક બ્રાઉઝર ખોલવા માટે ગોઠવેલું છે.</translation>
 <translation id="6634887557811630702">Google Chrome અપ ટૂ ડેટ છે.</translation>
 <translation id="6676384891291319759">ઇંટરનેટ ઍક્સેસ કરો</translation>
 <translation id="6679975945624592337">Google Chromeને બૅકગ્રાઉન્ડમાં ચાલવા દો</translation>
@@ -208,6 +209,7 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="683440813066116847">mDNS ટ્રાફિકને મંજૂરી આપવા માટે Google Chrome કૅનેરી માટે ઇનબાઉન્ડ નિયમ.</translation>
 <translation id="686561893457936865">Chrome ને સર્વત્ર લઈ જાઓ</translation>
 <translation id="6885412569789873916">Chrome બીટા ઍપ્લિકેશનો</translation>
+<translation id="6943584222992551122">આ વ્યક્તિનો બ્રાઉઝિંગ ડેટા આ ડિવાઇસમાંથી ડિલીટ કરવામાં આવશે. આ ડેટા પાછો મેળવવા માટે, Chromeમાં <ph name="USER_EMAIL" /> તરીકે સાઇન ઇન કરો.</translation>
 <translation id="6964107240822114422">{0,plural, =0{Chrome અપડેટ ઉપલબ્ધ છે}=1{Chrome અપડેટ ઉપલબ્ધ છે}one{Chrome અપડેટ # દિવસ માટે ઉપલબ્ધ છે}other{Chrome અપડેટ # દિવસ માટે ઉપલબ્ધ છે}}</translation>
 <translation id="6967962315388095737">mDNS ટ્રાફિકને મંજૂરી આપવા માટે Google Chrome બીટા માટે ઇનબાઉન્ડ નિયમ.</translation>
 <translation id="6970811910055250180">તમારા ઉપકરણને અપડેટ કરી રહ્યાં છે...</translation>
@@ -218,6 +220,7 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="7106741999175697885">કાર્ય વ્યવસ્થાપક - Google Chrome</translation>
 <translation id="7164397146364144019">તમે Google ને સંભવિત સુરક્ષા ઘટનાઓની વિગતોની જાણ આપમેળે કરીને Chrome ને વધુ સલામત અને ઉપયોગમાં વધુ સરળ બનાવવામાં સહાય કરી શકો છો.</translation>
 <translation id="7242029209006116544">તમે મેનેજ કરેલા એકાઉન્ટ સાથે સાઇન ઇન કરી રહ્યાં છો અને તમારી Google Chrome પ્રોફાઇલ પર એડમિનને એનું નિયંત્રણ આપી રહ્યાં છો. તમારો Chrome ડેટા, જેમ કે તમારી ઍપ, બુકમાર્ક, ઇતિહાસ, પાસવર્ડ અને બીજા સેટિંગ, કાયમ માટે <ph name="USER_NAME" /> પર બંધાયેલ રહેશે. તમે Google એકાઉન્ટ ડૅશબોર્ડ દ્વારા આ ડેટાને કાઢી શકશો, પરંતુ તમે આ ડેટાને બીજા એકાઉન્ટ સાથે સાંકળી શકશો નહિ. તમારા અસ્તિત્વમાં છે તે Chrome ડેટાને અલગ રાખવા માટે, તમે વૈકલ્પિક રૂપે એક નવી પ્રોફાઇલ બનાવી શકો છો. <ph name="LEARN_MORE" /></translation>
+<translation id="7295052994004373688">આ ભાષાનો ઉપયોગ Google Chrome UI પ્રદર્શિત કરવા માટે થાય છે</translation>
 <translation id="7296210096911315575">મહત્વપૂર્ણ ઉપયોગ અને સુરક્ષા માહિતી</translation>
 <translation id="7308322188646931570">ફાઇલો ડાઉનલોડ કરવા માટે Chromeને સ્ટોરેજના ઍક્સેસની જરૂર પડે છે</translation>
 <translation id="7339898014177206373">નવી વિંડો</translation>
@@ -280,6 +283,7 @@ Google Chrome તમારી સેટિંગ્સને પુનઃપ્�
 <translation id="870251953148363156">&amp;Google Chrome ને અપડેટ કરો</translation>
 <translation id="873133009373065397">Google Chrome ડિફૉલ્ટ બ્રાઉઝરને નિર્ધારિત અથવા સેટ કરી શકતું નથી</translation>
 <translation id="8736674169840206667">અપડેટ લાગુ કરવા માટે તમે Chromeને ફરીથી લૉન્ચ કરો તે તમારા વ્યવસ્થાપક માટે જરૂરી છે</translation>
+<translation id="8788264404293392165">આ ભાષાનો ઉપયોગ Chrome OS UI પ્રદર્શિત કરવા માટે થાય છે</translation>
 <translation id="8791470158600044404">{0,plural, =1{Chrome OS 1 મિનિટમાં ફરી શરૂ થશે}one{Chrome OS # મિનિટમાં ફરી શરૂ થશે}other{Chrome OS # મિનિટમાં ફરી શરૂ થશે}}</translation>
 <translation id="8823341990149967727">Chrome જૂનું થઈ ગયું છે</translation>
 <translation id="884296878221830158">જ્યારે તમે Chrome શરૂ કરો અથવા હોમ બટન ક્લિક કરો ત્યારે કયું પૃષ્ઠ બતાવવામાં આવે તે તેનું પણ નિયંત્રણ કરે છે.</translation>

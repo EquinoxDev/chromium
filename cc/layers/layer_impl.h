@@ -167,9 +167,7 @@ class CC_EXPORT LayerImpl {
 
   // True if either the layer draws content or has been marked as hit testable
   // without draws_content.
-  bool should_hit_test() const {
-    return draws_content_ || hit_testable_without_draws_content_;
-  }
+  bool ShouldHitTest() const;
 
   LayerImplTestProperties* test_properties() {
     if (!test_properties_)
@@ -195,9 +193,6 @@ class CC_EXPORT LayerImpl {
   // Stable identifier for clients. See comment in cc/trees/element_id.h.
   void SetElementId(ElementId element_id);
   ElementId element_id() const { return element_id_; }
-
-  void SetPosition(const gfx::PointF& position);
-  gfx::PointF position() const { return position_; }
 
   bool IsAffectedByPageScale() const;
 
@@ -544,8 +539,6 @@ class CC_EXPORT LayerImpl {
   Region wheel_event_handler_region_;
   SkColor background_color_;
   SkColor safe_opaque_background_color_;
-
-  gfx::PointF position_;
 
   int transform_tree_index_;
   int effect_tree_index_;

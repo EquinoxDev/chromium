@@ -5,6 +5,7 @@
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
 
 #include "base/barrier_closure.h"
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
@@ -19,6 +20,7 @@
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_pending_connection.h"
+#include "content/browser/indexed_db/leveldb/leveldb_env.h"
 #include "content/browser/indexed_db/mock_mojo_indexed_db_callbacks.h"
 #include "content/browser/indexed_db/mock_mojo_indexed_db_database_callbacks.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -66,7 +68,7 @@ ACTION_TEMPLATE(MoveArg,
                 HAS_1_TEMPLATE_PARAMS(int, k),
                 AND_1_VALUE_PARAMS(out)) {
   *out = std::move(*::testing::get<k>(args));
-};
+}
 
 ACTION_P(RunClosure, closure) {
   closure.Run();
@@ -107,7 +109,7 @@ struct TestDatabaseConnection {
         upgrade_txn_id(upgrade_txn_id),
         open_callbacks(new StrictMock<MockMojoIndexedDBCallbacks>()),
         connection_callbacks(
-            new StrictMock<MockMojoIndexedDBDatabaseCallbacks>()){};
+            new StrictMock<MockMojoIndexedDBDatabaseCallbacks>()) {}
   ~TestDatabaseConnection() {}
 
   void Open(IDBFactory* factory) {
@@ -170,7 +172,8 @@ class IndexedDBDispatcherHostTest : public testing::Test {
         context_impl_(base::MakeRefCounted<IndexedDBContextImpl>(
             CreateAndReturnTempDir(&temp_dir_),
             special_storage_policy_,
-            quota_manager_->proxy())),
+            quota_manager_->proxy(),
+            indexed_db::GetDefaultLevelDBFactory())),
         host_(new IndexedDBDispatcherHost(
             kFakeProcessId,
             context_impl_,
@@ -190,6 +193,11 @@ class IndexedDBDispatcherHostTest : public testing::Test {
   }
 
   void SetUp() override {
+    // ChromeBlobStorageContext::GetFor() issues PostTask() calls to the IO
+    // thread.  Let those run before calling AddBinding().
+    base::RunLoop loop;
+    loop.RunUntilIdle();
+
     host_->AddBinding(::mojo::MakeRequest(&idb_mojo_factory_),
                       {url::Origin::Create(GURL(kOrigin))});
   }
@@ -288,7 +296,7 @@ TEST_F(IndexedDBDispatcherHostTest, CloseAfterUpgrade) {
     connection.database->CreateObjectStore(kTransactionId, kObjectStoreId,
                                            base::UTF8ToUTF16(kObjectStoreName),
                                            blink::IndexedDBKeyPath(), false);
-    connection.database->Commit(kTransactionId);
+    connection.database->Commit(kTransactionId, 0);
     loop.Run();
   }
 }
@@ -355,7 +363,7 @@ TEST_F(IndexedDBDispatcherHostTest, OpenNewConnectionWhileUpgrading) {
     connection1.database->CreateObjectStore(kTransactionId, kObjectStoreId,
                                             base::UTF8ToUTF16(kObjectStoreName),
                                             blink::IndexedDBKeyPath(), false);
-    connection1.database->Commit(kTransactionId);
+    connection1.database->Commit(kTransactionId, 0);
     loop.Run();
   }
 
@@ -448,7 +456,7 @@ TEST_F(IndexedDBDispatcherHostTest, PutWithInvalidBlob) {
         IndexedDBKey(base::UTF8ToUTF16("hello")),
         blink::mojom::IDBPutMode::AddOnly, std::vector<IndexedDBIndexKeys>(),
         put_callbacks->CreateInterfacePtrAndBind());
-    connection.database->Commit(kTransactionId);
+    connection.database->Commit(kTransactionId, 0);
     loop.Run();
   }
 }
@@ -500,7 +508,7 @@ TEST_F(IndexedDBDispatcherHostTest, CompactDatabaseWithConnection) {
         .Times(1)
         .WillOnce(RunClosure(quit_closure));
 
-    connection.database->Commit(kTransactionId);
+    connection.database->Commit(kTransactionId, 0);
     idb_mojo_factory_->AbortTransactionsAndCompactDatabase(base::BindOnce(
         &StatusCallback, std::move(quit_closure), &callback_result));
 
@@ -685,10 +693,9 @@ TEST_F(IndexedDBDispatcherHostTest,
         .Times(1)
         .WillOnce(RunClosure(quit_closure));
 
-    connection.database->Commit(kTransactionId);
+    connection.database->Commit(kTransactionId, 0);
     idb_mojo_factory_->AbortTransactionsForDatabase(base::BindOnce(
         &StatusCallback, std::move(quit_closure), &callback_result));
-
     loop.Run();
   }
   EXPECT_EQ(blink::mojom::IDBStatus::OK, callback_result);
@@ -884,7 +891,7 @@ TEST_F(IndexedDBDispatcherHostTest, DISABLED_NotifyIndexedDBListChanged) {
     connection1.database->CreateIndex(kTransactionId1, kObjectStoreId, kIndexId,
                                       base::UTF8ToUTF16(kIndexName),
                                       blink::IndexedDBKeyPath(), false, false);
-    connection1.database->Commit(kTransactionId1);
+    connection1.database->Commit(kTransactionId1, 0);
     loop.Run();
   }
   EXPECT_EQ(2, observer.notify_list_changed_count);
@@ -934,7 +941,7 @@ TEST_F(IndexedDBDispatcherHostTest, DISABLED_NotifyIndexedDBListChanged) {
     ASSERT_TRUE(connection2.database.is_bound());
     connection2.database->DeleteIndex(kTransactionId2, kObjectStoreId,
                                       kIndexId);
-    connection2.database->Commit(kTransactionId2);
+    connection2.database->Commit(kTransactionId2, 0);
     loop.Run();
   }
   EXPECT_EQ(3, observer.notify_list_changed_count);
@@ -983,7 +990,7 @@ TEST_F(IndexedDBDispatcherHostTest, DISABLED_NotifyIndexedDBListChanged) {
 
     ASSERT_TRUE(connection3.database.is_bound());
     connection3.database->DeleteObjectStore(kTransactionId3, kObjectStoreId);
-    connection3.database->Commit(kTransactionId3);
+    connection3.database->Commit(kTransactionId3, 0);
     loop.Run();
   }
   EXPECT_EQ(4, observer.notify_list_changed_count);
@@ -1069,7 +1076,7 @@ TEST_F(IndexedDBDispatcherHostTest, NotifyIndexedDBContentChanged) {
         IndexedDBKey(base::UTF8ToUTF16("key")),
         blink::mojom::IDBPutMode::AddOnly, std::vector<IndexedDBIndexKeys>(),
         put_callbacks->CreateInterfacePtrAndBind());
-    connection1.database->Commit(kTransactionId1);
+    connection1.database->Commit(kTransactionId1, 0);
     loop.Run();
   }
   EXPECT_EQ(2, observer.notify_list_changed_count);
@@ -1126,7 +1133,7 @@ TEST_F(IndexedDBDispatcherHostTest, NotifyIndexedDBContentChanged) {
     ASSERT_TRUE(connection2.database.is_bound());
     connection2.database->Clear(kTransactionId2, kObjectStoreId,
                                 clear_callbacks->CreateInterfacePtrAndBind());
-    connection2.database->Commit(kTransactionId2);
+    connection2.database->Commit(kTransactionId2, 0);
     loop.Run();
   }
   EXPECT_EQ(3, observer.notify_list_changed_count);

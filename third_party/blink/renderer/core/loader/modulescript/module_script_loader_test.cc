@@ -32,6 +32,8 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/loader/testing/fetch_testing_platform_support.h"
 #include "third_party/blink/renderer/platform/loader/testing/mock_fetch_context.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_loader_factory.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 
@@ -122,7 +124,6 @@ class ModuleScriptLoaderTest : public PageTestBase {
 
  public:
   ModuleScriptLoaderTest();
-  void SetUp() override;
 
   void InitializeForDocument();
   void InitializeForWorklet();
@@ -138,9 +139,8 @@ class ModuleScriptLoaderTest : public PageTestBase {
   ModuleScriptLoaderTestModulator* GetModulator() { return modulator_.Get(); }
 
   void RunUntilIdle() {
-    base::SingleThreadTaskRunner* runner =
-        fetcher_->Context().GetLoadingTaskRunner().get();
-    static_cast<scheduler::FakeTaskRunner*>(runner)->RunUntilIdle();
+    static_cast<scheduler::FakeTaskRunner*>(fetcher_->GetTaskRunner().get())
+        ->RunUntilIdle();
   }
 
  protected:
@@ -157,28 +157,34 @@ class ModuleScriptLoaderTest : public PageTestBase {
 
 ModuleScriptLoaderTest::ModuleScriptLoaderTest()
     : url_("https://example.test"),
-      security_origin_(SecurityOrigin::Create(url_)) {}
-
-void ModuleScriptLoaderTest::SetUp() {
+      security_origin_(SecurityOrigin::Create(url_)) {
   platform_->AdvanceClockSeconds(1.);  // For non-zero DocumentParserTimings
-  PageTestBase::SetUp(IntSize(500, 500));
 }
 
 void ModuleScriptLoaderTest::InitializeForDocument() {
-  auto* fetch_context = MakeGarbageCollected<MockFetchContext>(
-      MockFetchContext::kShouldLoadNewResource, nullptr, security_origin_);
-  fetcher_ = MakeGarbageCollected<ResourceFetcher>(fetch_context);
+  auto* fetch_context = MakeGarbageCollected<MockFetchContext>();
+  auto* properties =
+      MakeGarbageCollected<TestResourceFetcherProperties>(security_origin_);
+  fetcher_ = MakeGarbageCollected<ResourceFetcher>(
+      ResourceFetcherInit(*properties, fetch_context,
+                          base::MakeRefCounted<scheduler::FakeTaskRunner>(),
+                          MakeGarbageCollected<TestLoaderFactory>()));
   modulator_ = MakeGarbageCollected<ModuleScriptLoaderTestModulator>(
       ToScriptStateForMainWorld(&GetFrame()));
 }
 
 void ModuleScriptLoaderTest::InitializeForWorklet() {
-  auto* fetch_context = MakeGarbageCollected<MockFetchContext>(
-      MockFetchContext::kShouldLoadNewResource, nullptr, security_origin_);
-  fetcher_ = MakeGarbageCollected<ResourceFetcher>(fetch_context);
+  auto* fetch_context = MakeGarbageCollected<MockFetchContext>();
+  auto* properties =
+      MakeGarbageCollected<TestResourceFetcherProperties>(security_origin_);
+  fetcher_ = MakeGarbageCollected<ResourceFetcher>(
+      ResourceFetcherInit(*properties, fetch_context,
+                          base::MakeRefCounted<scheduler::FakeTaskRunner>(),
+                          MakeGarbageCollected<TestLoaderFactory>()));
   reporting_proxy_ = std::make_unique<MockWorkerReportingProxy>();
   auto creation_params = std::make_unique<GlobalScopeCreationParams>(
-      url_, mojom::ScriptType::kModule, "UserAgent",
+      url_, mojom::ScriptType::kModule,
+      OffMainThreadWorkerScriptFetchOption::kEnabled, "UserAgent",
       nullptr /* web_worker_fetch_context */, Vector<CSPHeaderAndType>(),
       network::mojom::ReferrerPolicy::kDefault, security_origin_.get(),
       true /* is_secure_context */, HttpsState::kModern,
@@ -188,8 +194,8 @@ void ModuleScriptLoaderTest::InitializeForWorklet() {
       MakeGarbageCollected<WorkletModuleResponsesMap>());
   global_scope_ = MakeGarbageCollected<WorkletGlobalScope>(
       std::move(creation_params), *reporting_proxy_, &GetFrame());
-  global_scope_->ScriptController()->InitializeContextIfNeeded("Dummy Context",
-                                                               NullURL());
+  ASSERT_TRUE(global_scope_->ScriptController()->InitializeContext(
+      "Dummy Context", NullURL()));
   modulator_ = MakeGarbageCollected<ModuleScriptLoaderTestModulator>(
       global_scope_->ScriptController()->GetScriptState());
 }

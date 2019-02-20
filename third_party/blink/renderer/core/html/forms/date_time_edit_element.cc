@@ -522,7 +522,7 @@ DateTimeEditElement::DateTimeEditElement(Document& document,
 
 DateTimeEditElement::~DateTimeEditElement() = default;
 
-void DateTimeEditElement::Trace(blink::Visitor* visitor) {
+void DateTimeEditElement::Trace(Visitor* visitor) {
   visitor->Trace(fields_);
   visitor->Trace(edit_control_owner_);
   HTMLDivElement::Trace(visitor);
@@ -586,7 +586,7 @@ scoped_refptr<ComputedStyle> DateTimeEditElement::CustomStyleForLayoutObject() {
           *style, child_element->textContent());
     }
   }
-  style->SetWidth(Length(ceilf(width), kFixed));
+  style->SetWidth(Length::Fixed(ceilf(width)));
   return style;
 }
 

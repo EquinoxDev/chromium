@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/dump_without_crashing.h"
@@ -136,7 +137,7 @@ void GetFontInfo(gfx::PlatformFontWin::SystemFont system_font,
 }
 #endif  // OS_WIN
 
-void GetPlatformSpecificPrefs(RendererPreferences* prefs) {
+void GetPlatformSpecificPrefs(blink::mojom::RendererPreferences* prefs) {
 #if defined(OS_WIN)
   // Note that what is called "height" in this struct is actually the font size;
   // font "height" typically includes ascender, descender, and padding and is
@@ -338,15 +339,22 @@ bool RenderViewHostImpl::CreateRenderView(
 
   mojom::CreateViewParamsPtr params = mojom::CreateViewParams::New();
   params->renderer_preferences =
-      delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
-  GetPlatformSpecificPrefs(&params->renderer_preferences);
+      delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext()).Clone();
+  GetPlatformSpecificPrefs(params->renderer_preferences.get());
   params->web_preferences = GetWebkitPreferences();
   params->view_id = GetRoutingID();
   params->main_frame_routing_id = main_frame_routing_id_;
   params->main_frame_widget_routing_id = render_widget_host_->GetRoutingID();
   if (main_rfh) {
-    main_rfh->BindInterfaceProviderRequest(
-        mojo::MakeRequest(&params->main_frame_interface_provider));
+    params->main_frame_interface_bundle =
+        mojom::DocumentScopedInterfaceBundle::New();
+    main_rfh->BindInterfaceProviderRequest(mojo::MakeRequest(
+        &params->main_frame_interface_bundle->interface_provider));
+    main_rfh->BindDocumentInterfaceBrokerRequest(
+        mojo::MakeRequest(&params->main_frame_interface_bundle
+                               ->document_interface_broker_content),
+        mojo::MakeRequest(&params->main_frame_interface_bundle
+                               ->document_interface_broker_blink));
     RenderWidgetHostImpl* main_rwh = main_rfh->GetRenderWidgetHost();
     params->main_frame_widget_routing_id = main_rwh->GetRoutingID();
   }
@@ -356,8 +364,7 @@ bool RenderViewHostImpl::CreateRenderView(
   params->opener_frame_route_id = opener_frame_route_id;
   params->replicated_frame_state = replicated_frame_state;
   params->proxy_routing_id = proxy_route_id;
-  params->hidden = is_active() ? GetWidget()->is_hidden()
-                               : GetWidget()->delegate()->IsHidden();
+  params->hidden = GetWidget()->delegate()->IsHidden();
   params->never_visible = delegate_->IsNeverVisible();
   params->window_was_created_with_opener = window_was_created_with_opener;
   if (main_rfh) {
@@ -368,6 +375,7 @@ bool RenderViewHostImpl::CreateRenderView(
   // GuestViews in the same StoragePartition need to find each other's frames.
   params->renderer_wide_named_frame_lookup =
       GetSiteInstance()->GetSiteURL().SchemeIs(kGuestScheme);
+  params->inside_portal = delegate_->IsPortal();
 
   bool needs_ack = false;
   GetWidget()->GetVisualProperties(&params->visual_properties, &needs_ack);
@@ -399,7 +407,7 @@ bool RenderViewHostImpl::IsRenderViewLive() const {
 }
 
 void RenderViewHostImpl::SyncRendererPrefs() {
-  RendererPreferences renderer_preferences =
+  blink::mojom::RendererPreferences renderer_preferences =
       delegate_->GetRendererPrefs(GetProcess()->GetBrowserContext());
   GetPlatformSpecificPrefs(&renderer_preferences);
   Send(new ViewMsg_SetRendererPrefs(GetRoutingID(), renderer_preferences));
@@ -409,16 +417,35 @@ void RenderViewHostImpl::SetBackgroundOpaque(bool opaque) {
   Send(new ViewMsg_SetBackgroundOpaque(GetRoutingID(), opaque));
 }
 
-RenderViewHost* RenderViewHostImpl::GetRenderViewHost() {
-  return this;
+bool RenderViewHostImpl::IsMainFrameActive() {
+  return is_active();
 }
 
-WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
+bool RenderViewHostImpl::IsNeverVisible() {
+  return GetDelegate()->IsNeverVisible();
+}
+
+WebPreferences RenderViewHostImpl::GetWebkitPreferencesForWidget() {
+  return GetWebkitPreferences();
+}
+
+FrameTreeNode* RenderViewHostImpl::GetFocusedFrame() {
+  return GetDelegate()->GetFrameTree()->GetFocusedFrame();
+}
+
+void RenderViewHostImpl::ShowContextMenu(RenderFrameHost* render_frame_host,
+                                         const ContextMenuParams& params) {
+  GetDelegate()->GetDelegateView()->ShowContextMenu(render_frame_host, params);
+}
+
+const WebPreferences RenderViewHostImpl::ComputeWebPreferences() {
   TRACE_EVENT0("browser", "RenderViewHostImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
+
+  SetSlowWebPreferences(command_line, &prefs);
 
   prefs.web_security_enabled =
       !command_line.HasSwitch(switches::kDisableWebSecurity);
@@ -491,50 +518,12 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
     NOTREACHED();
   }
 
-  // On Android, Touch event feature detection is enabled by default,
-  // Otherwise default is disabled.
-  std::string touch_enabled_default_switch =
-      switches::kTouchEventFeatureDetectionDisabled;
-#if defined(OS_ANDROID)
-  touch_enabled_default_switch = switches::kTouchEventFeatureDetectionEnabled;
-#endif  // defined(OS_ANDROID)
-  const std::string touch_enabled_switch =
-      command_line.HasSwitch(switches::kTouchEventFeatureDetection)
-          ? command_line.GetSwitchValueASCII(
-                switches::kTouchEventFeatureDetection)
-          : touch_enabled_default_switch;
-  prefs.touch_event_feature_detection_enabled =
-      (touch_enabled_switch == switches::kTouchEventFeatureDetectionAuto)
-          ? (ui::GetTouchScreensAvailability() ==
-             ui::TouchScreensAvailability::ENABLED)
-          : (touch_enabled_switch.empty() ||
-             touch_enabled_switch ==
-                 switches::kTouchEventFeatureDetectionEnabled);
-
-  std::tie(prefs.available_pointer_types, prefs.available_hover_types) =
-      ui::GetAvailablePointerAndHoverTypes();
-  prefs.primary_pointer_type =
-      ui::GetPrimaryPointerType(prefs.available_pointer_types);
-  prefs.primary_hover_type =
-      ui::GetPrimaryHoverType(prefs.available_hover_types);
-
 // TODO(dtapuska): Enable barrel button selection drag support on Android.
 // crbug.com/758042
 #if defined(OS_WIN)
   prefs.barrel_button_for_drag_enabled =
       base::FeatureList::IsEnabled(features::kDirectManipulationStylus);
 #endif  // defined(OS_WIN)
-
-#if defined(OS_ANDROID)
-  prefs.video_fullscreen_orientation_lock_enabled =
-      base::FeatureList::IsEnabled(media::kVideoFullscreenOrientationLock) &&
-      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_PHONE;
-  prefs.video_rotate_to_fullscreen_enabled =
-      base::FeatureList::IsEnabled(media::kVideoRotateToFullscreen) &&
-      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_PHONE;
-#endif
-
-  prefs.pointer_events_max_touch_points = ui::MaxTouchPoints();
 
   prefs.touch_adjustment_enabled =
       !command_line.HasSwitch(switches::kDisableTouchAdjustment);
@@ -544,13 +533,13 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
       (!command_line.HasSwitch(switches::kDisableSmoothScrolling) &&
       gfx::Animation::ScrollAnimationsEnabledBySystem());
 
+  prefs.prefers_reduced_motion = gfx::Animation::PrefersReducedMotion();
+
   if (ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
           GetProcess()->GetID())) {
     prefs.loads_images_automatically = true;
     prefs.javascript_enabled = true;
   }
-
-  prefs.number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
 
   prefs.viewport_enabled = command_line.HasSwitch(switches::kEnableViewport);
 
@@ -596,6 +585,75 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
 
   GetContentClient()->browser()->OverrideWebkitPrefs(this, &prefs);
   return prefs;
+}
+
+void RenderViewHostImpl::SetSlowWebPreferences(
+    const base::CommandLine& command_line,
+    WebPreferences* prefs) {
+  if (web_preferences_.get()) {
+#define SET_FROM_CACHE(prefs, field) prefs->field = web_preferences_->field
+
+    SET_FROM_CACHE(prefs, touch_event_feature_detection_enabled);
+    SET_FROM_CACHE(prefs, available_pointer_types);
+    SET_FROM_CACHE(prefs, available_hover_types);
+    SET_FROM_CACHE(prefs, primary_pointer_type);
+    SET_FROM_CACHE(prefs, primary_hover_type);
+    SET_FROM_CACHE(prefs, pointer_events_max_touch_points);
+    SET_FROM_CACHE(prefs, number_of_cpu_cores);
+
+#if defined(OS_ANDROID)
+    SET_FROM_CACHE(prefs, video_fullscreen_orientation_lock_enabled);
+    SET_FROM_CACHE(prefs, video_rotate_to_fullscreen_enabled);
+#endif
+
+#undef SET_FROM_CACHE
+  } else {
+    // Every prefs->field modified below should have a SET_FROM_CACHE entry
+    // above.
+
+    // On Android, Touch event feature detection is enabled by default,
+    // Otherwise default is disabled.
+    std::string touch_enabled_default_switch =
+        switches::kTouchEventFeatureDetectionDisabled;
+#if defined(OS_ANDROID)
+    touch_enabled_default_switch = switches::kTouchEventFeatureDetectionEnabled;
+#endif  // defined(OS_ANDROID)
+    const std::string touch_enabled_switch =
+        command_line.HasSwitch(switches::kTouchEventFeatureDetection)
+            ? command_line.GetSwitchValueASCII(
+                  switches::kTouchEventFeatureDetection)
+            : touch_enabled_default_switch;
+
+    prefs->touch_event_feature_detection_enabled =
+        (touch_enabled_switch == switches::kTouchEventFeatureDetectionAuto)
+            ? (ui::GetTouchScreensAvailability() ==
+               ui::TouchScreensAvailability::ENABLED)
+            : (touch_enabled_switch.empty() ||
+               touch_enabled_switch ==
+                   switches::kTouchEventFeatureDetectionEnabled);
+
+    std::tie(prefs->available_pointer_types, prefs->available_hover_types) =
+        ui::GetAvailablePointerAndHoverTypes();
+    prefs->primary_pointer_type =
+        ui::GetPrimaryPointerType(prefs->available_pointer_types);
+    prefs->primary_hover_type =
+        ui::GetPrimaryHoverType(prefs->available_hover_types);
+
+    prefs->pointer_events_max_touch_points = ui::MaxTouchPoints();
+
+    prefs->number_of_cpu_cores = base::SysInfo::NumberOfProcessors();
+
+#if defined(OS_ANDROID)
+    const bool device_is_phone =
+        ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_PHONE;
+    prefs->video_fullscreen_orientation_lock_enabled =
+        base::FeatureList::IsEnabled(media::kVideoFullscreenOrientationLock) &&
+        device_is_phone;
+    prefs->video_rotate_to_fullscreen_enabled =
+        base::FeatureList::IsEnabled(media::kVideoRotateToFullscreen) &&
+        device_is_phone;
+#endif
+  }
 }
 
 void RenderViewHostImpl::DispatchRenderViewCreated() {
@@ -929,11 +987,19 @@ void RenderViewHostImpl::OnWebkitPreferencesChanged() {
   if (updating_web_preferences_)
     return;
   updating_web_preferences_ = true;
-  UpdateWebkitPreferences(ComputeWebkitPrefs());
+  UpdateWebkitPreferences(ComputeWebPreferences());
 #if defined(OS_ANDROID)
   GetWidget()->SetForceEnableZoom(web_preferences_->force_enable_zoom);
 #endif
   updating_web_preferences_ = false;
+}
+
+void RenderViewHostImpl::OnHardwareConfigurationChanged() {
+  // OnWebkitPreferencesChanged is a no-op when this is true.
+  if (updating_web_preferences_)
+    return;
+  web_preferences_.reset();
+  OnWebkitPreferencesChanged();
 }
 
 void RenderViewHostImpl::EnablePreferredSizeMode() {
@@ -961,7 +1027,7 @@ void RenderViewHostImpl::PostRenderViewReady() {
 }
 
 void RenderViewHostImpl::OnGpuSwitched() {
-  OnWebkitPreferencesChanged();
+  OnHardwareConfigurationChanged();
 }
 
 void RenderViewHostImpl::RenderViewReady() {

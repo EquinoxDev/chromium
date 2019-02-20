@@ -118,10 +118,10 @@
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/time.h"
-#include "third_party/webrtc/api/dtlstransportinterface.h"
+#include "third_party/webrtc/api/dtls_transport_interface.h"
 #include "third_party/webrtc/api/jsep.h"
-#include "third_party/webrtc/api/peerconnectioninterface.h"
-#include "third_party/webrtc/pc/sessiondescription.h"
+#include "third_party/webrtc/api/peer_connection_interface.h"
+#include "third_party/webrtc/pc/session_description.h"
 
 namespace blink {
 
@@ -226,9 +226,9 @@ scoped_refptr<WebRTCICECandidate> ConvertToWebRTCIceCandidate(
       UseCounter::Count(context,
                         WebFeature::kRTCIceCandidateDefaultSdpMLineIndex);
     }
-    return WebRTCICECandidate::Create(ice_candidate_init->candidate(),
-                                      ice_candidate_init->sdpMid(),
-                                      sdp_m_line_index);
+    return WebRTCICECandidate::Create(
+        ice_candidate_init->candidate(), ice_candidate_init->sdpMid(),
+        sdp_m_line_index, ice_candidate_init->usernameFragment());
   }
 
   DCHECK(candidate.IsRTCIceCandidate());
@@ -256,6 +256,24 @@ SdpSemanticRequested GetSdpSemanticRequested(
 
   NOTREACHED();
   return kSdpSemanticRequestedDefault;
+}
+
+enum class OfferExtmapAllowMixedSetting {
+  kDefault,
+  kEnabled,
+  kDisabled,
+  kMaxValue = kDisabled
+};
+
+OfferExtmapAllowMixedSetting GetOfferExtmapAllowMixedSetting(
+    const blink::RTCConfiguration* configuration) {
+  if (!configuration->hasOfferExtmapAllowMixed()) {
+    return OfferExtmapAllowMixedSetting::kDefault;
+  }
+
+  return configuration->offerExtmapAllowMixed()
+             ? OfferExtmapAllowMixedSetting::kEnabled
+             : OfferExtmapAllowMixedSetting::kDisabled;
 }
 
 // Helper class for RTCPeerConnection::generateCertificate.
@@ -344,6 +362,14 @@ webrtc::PeerConnectionInterface::RTCConfiguration ParseConfiguration(
       // --enable-blink-features=RTCUnifiedPlanByDefault.
       web_configuration.sdp_semantics = webrtc::SdpSemantics::kUnifiedPlan;
     }
+  }
+
+  if (configuration->hasOfferExtmapAllowMixed()) {
+    web_configuration.offer_extmap_allow_mixed =
+        configuration->offerExtmapAllowMixed();
+  } else {
+    web_configuration.offer_extmap_allow_mixed =
+        base::FeatureList::IsEnabled(features::kRTCOfferExtmapAllowMixed);
   }
 
   if (configuration->hasIceServers()) {
@@ -435,6 +461,11 @@ webrtc::PeerConnectionInterface::RTCConfiguration ParseConfiguration(
     UseCounter::Count(context, WebFeature::kRTCMaxAudioBufferSize);
     web_configuration.audio_jitter_buffer_min_delay_ms =
         static_cast<int>(configuration->rtcAudioJitterBufferMinDelayMs());
+  }
+
+  if (origin_trials::RtcAudioJitterBufferRtxHandlingEnabled(context)) {
+    UseCounter::Count(context, WebFeature::kRTCAudioJitterBufferRtxHandling);
+    web_configuration.audio_jitter_buffer_enable_rtx_handling = true;
   }
 
   return web_configuration;
@@ -676,6 +707,9 @@ RTCPeerConnection* RTCPeerConnection::Create(
                             GetSdpSemanticRequested(rtc_configuration),
                             kSdpSemanticRequestedMax);
 
+  UMA_HISTOGRAM_ENUMERATION("WebRTC.PeerConnection.OfferExtmapAllowMixed",
+                            GetOfferExtmapAllowMixedSetting(rtc_configuration));
+
   return peer_connection;
 }
 
@@ -814,7 +848,10 @@ ScriptPromise RTCPeerConnection::createOffer(ScriptState* script_state,
         context,
         WebFeature::kRTCPeerConnectionCreateOfferOptionsOfferToReceive);
   }
-  peer_handler_->CreateOffer(request, ConvertToWebRTCOfferOptions(options));
+  auto web_transceivers =
+      peer_handler_->CreateOffer(request, ConvertToWebRTCOfferOptions(options));
+  for (auto& web_transceiver : web_transceivers)
+    CreateOrUpdateTransceiver(std::move(web_transceiver));
   return promise;
 }
 
@@ -844,6 +881,7 @@ ScriptPromise RTCPeerConnection::createOffer(
           RTCCreateSessionDescriptionOperation::kCreateOffer, this,
           success_callback, error_callback);
 
+  std::vector<std::unique_ptr<WebRTCRtpTransceiver>> web_transceivers;
   if (offer_options) {
     if (offer_options->OfferToReceiveAudio() != -1 ||
         offer_options->OfferToReceiveVideo() != -1) {
@@ -854,7 +892,8 @@ ScriptPromise RTCPeerConnection::createOffer(
           context, WebFeature::kRTCPeerConnectionCreateOfferLegacyCompliant);
     }
 
-    peer_handler_->CreateOffer(request, WebRTCOfferOptions(offer_options));
+    web_transceivers =
+        peer_handler_->CreateOffer(request, WebRTCOfferOptions(offer_options));
   } else {
     MediaErrorState media_error_state;
     WebMediaConstraints constraints = media_constraints_impl::Create(
@@ -878,8 +917,10 @@ ScriptPromise RTCPeerConnection::createOffer(
           context, WebFeature::kRTCPeerConnectionCreateOfferLegacyCompliant);
     }
 
-    peer_handler_->CreateOffer(request, constraints);
+    web_transceivers = peer_handler_->CreateOffer(request, constraints);
   }
+  for (auto& web_transceiver : web_transceivers)
+    CreateOrUpdateTransceiver(std::move(web_transceiver));
 
   return ScriptPromise::CastUndefined(script_state);
 }
@@ -1143,15 +1184,15 @@ RTCDtlsTransport* RTCPeerConnection::LookupDtlsTransportByMid(String mid) {
     return nullptr;
   // Check for previously created RTCDtlsTransport objects referencing
   // this transport.
-  auto transport_iterator = dtls_transports_by_mid_.find(mid);
-  if (transport_iterator != dtls_transports_by_mid_.end()) {
-    if (transport_iterator->value->native_transport() !=
+  auto transport_lookup_result = dtls_transports_by_mid_.find(mid);
+  if (transport_lookup_result != dtls_transports_by_mid_.end()) {
+    if (transport_lookup_result->value->native_transport() !=
         native_transport.get()) {
       // The mid's transport has changed. Erase the reference to
       // the old transport, and continue.
-      dtls_transports_by_mid_.erase(transport_iterator);
+      dtls_transports_by_mid_.erase(transport_lookup_result);
     } else {
-      return transport_iterator->value;
+      return transport_lookup_result->value;
     }
   }
 

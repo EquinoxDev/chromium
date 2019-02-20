@@ -125,7 +125,7 @@ void OscillatorHandler::SetType(const String& type,
   }
 }
 
-bool OscillatorHandler::SetType(unsigned type) {
+bool OscillatorHandler::SetType(uint8_t type) {
   PeriodicWave* periodic_wave = nullptr;
 
   switch (type) {
@@ -523,11 +523,6 @@ OscillatorNode* OscillatorNode::Create(BaseAudioContext& context,
                                        PeriodicWave* wave_table,
                                        ExceptionState& exception_state) {
   DCHECK(IsMainThread());
-
-  if (context.IsContextClosed()) {
-    context.ThrowExceptionForClosedState(exception_state);
-    return nullptr;
-  }
 
   return MakeGarbageCollected<OscillatorNode>(context, oscillator_type,
                                               wave_table);

@@ -160,11 +160,21 @@ void ResetWheelAndTouchEventHandlerProperties(LocalFrame& frame) {
 
 }  // namespace
 
-LocalFrameClientImpl::LocalFrameClientImpl(WebLocalFrameImpl* frame)
-    : web_frame_(frame) {}
+LocalFrameClientImpl::LocalFrameClientImpl(
+    WebLocalFrameImpl* frame,
+    mojo::ScopedMessagePipeHandle document_interface_broker_handle)
+    : web_frame_(frame) {
+  DCHECK(document_interface_broker_handle.is_valid());
+  document_interface_broker_.Bind(mojom::blink::DocumentInterfaceBrokerPtrInfo(
+      std::move(document_interface_broker_handle),
+      mojom::blink::DocumentInterfaceBroker::Version_));
+}
 
-LocalFrameClientImpl* LocalFrameClientImpl::Create(WebLocalFrameImpl* frame) {
-  return MakeGarbageCollected<LocalFrameClientImpl>(frame);
+LocalFrameClientImpl* LocalFrameClientImpl::Create(
+    WebLocalFrameImpl* frame,
+    mojo::ScopedMessagePipeHandle document_interface_broker_handle) {
+  return MakeGarbageCollected<LocalFrameClientImpl>(
+      frame, std::move(document_interface_broker_handle));
 }
 
 LocalFrameClientImpl::~LocalFrameClientImpl() = default;
@@ -446,8 +456,17 @@ void LocalFrameClientImpl::DispatchDidCommitLoad(
   }
 
   if (web_frame_->Client()) {
+    mojom::blink::DocumentInterfaceBrokerRequest
+        document_interface_broker_request;
+    if (global_object_reuse_policy !=
+        WebGlobalObjectReusePolicy::kUseExisting) {
+      document_interface_broker_request =
+          mojo::MakeRequest(&document_interface_broker_);
+    }
+
     web_frame_->Client()->DidCommitProvisionalLoad(
-        WebHistoryItem(item), commit_type, global_object_reuse_policy);
+        WebHistoryItem(item), commit_type,
+        document_interface_broker_request.PassMessagePipe());
     if (web_frame_->GetFrame()->IsLocalRoot()) {
       // This update should be sent as soon as loading the new document begins
       // so that the browser and compositor could reset their states. However,
@@ -497,6 +516,7 @@ void LocalFrameClientImpl::BeginNavigation(
     mojom::blink::BlobURLTokenPtr blob_url_token,
     base::TimeTicks input_start_time,
     const String& href_translate,
+    WebContentSecurityPolicyList initiator_csp,
     mojom::blink::NavigationInitiatorPtr navigation_initiator) {
   if (!web_frame_->Client())
     return;
@@ -516,6 +536,7 @@ void LocalFrameClientImpl::BeginNavigation(
           : kWebContentSecurityPolicyDispositionDoNotCheck;
   navigation_info->blob_url_token = blob_url_token.PassInterface().PassHandle();
   navigation_info->input_start = input_start_time;
+  navigation_info->initiator_csp = std::move(initiator_csp);
   navigation_info->navigation_initiator_handle =
       navigation_initiator.PassInterface().PassHandle();
 
@@ -547,8 +568,10 @@ void LocalFrameClientImpl::BeginNavigation(
       origin_document->GetFrame()->Client()->Opener() ==
           ToCoreFrame(web_frame_);
 
-  navigation_info->blocking_downloads_in_sandbox_enabled =
-      RuntimeEnabledFeatures::BlockingDownloadsInSandboxEnabled();
+  navigation_info
+      ->blocking_downloads_in_sandbox_without_user_activation_enabled =
+      RuntimeEnabledFeatures::
+          BlockingDownloadsInSandboxWithoutUserActivationEnabled();
 
   // The frame has navigated either by itself or by the action of the
   // |origin_document| when it is defined. |source_location| represents the
@@ -683,12 +706,6 @@ void LocalFrameClientImpl::DidRunContentWithCertificateErrors() {
     web_frame_->Client()->DidRunContentWithCertificateErrors();
 }
 
-void LocalFrameClientImpl::ReportLegacySymantecCert(const KURL& url,
-                                                    bool did_fail) {
-  if (web_frame_->Client())
-    web_frame_->Client()->ReportLegacySymantecCert(url, did_fail);
-}
-
 void LocalFrameClientImpl::ReportLegacyTLSVersion(const KURL& url) {
   if (web_frame_->Client())
     web_frame_->Client()->ReportLegacyTLSVersion(url);
@@ -739,6 +756,12 @@ void LocalFrameClientImpl::SelectorMatchChanged(
   }
 }
 
+void LocalFrameClientImpl::VisibilityChanged(
+    blink::mojom::FrameVisibility visibility) {
+  if (WebLocalFrameClient* client = web_frame_->Client())
+    client->VisibilityChanged(visibility);
+}
+
 DocumentLoader* LocalFrameClientImpl::CreateDocumentLoader(
     LocalFrame* frame,
     WebNavigationType navigation_type,
@@ -770,6 +793,13 @@ String LocalFrameClientImpl::UserAgent() {
   if (user_agent_.IsEmpty())
     user_agent_ = Platform::Current()->UserAgent();
   return user_agent_;
+}
+
+blink::UserAgentMetadata LocalFrameClientImpl::UserAgentMetadata() {
+  // TODO(mkwst): Support devtools override.
+  if (user_agent_metadata_.brand.empty())
+    user_agent_metadata_ = Platform::Current()->UserAgentMetadata();
+  return user_agent_metadata_;
 }
 
 String LocalFrameClientImpl::DoNotTrackValue() {
@@ -1051,6 +1081,12 @@ LocalFrameClientImpl::GetInterfaceProvider() {
   return web_frame_->Client()->GetInterfaceProvider();
 }
 
+mojom::blink::DocumentInterfaceBroker*
+LocalFrameClientImpl::GetDocumentInterfaceBroker() {
+  DCHECK(document_interface_broker_.is_bound());
+  return document_interface_broker_.get();
+}
+
 AssociatedInterfaceProvider*
 LocalFrameClientImpl::GetRemoteNavigationAssociatedInterfaces() {
   return web_frame_->Client()->GetRemoteNavigationAssociatedInterfaces();
@@ -1119,6 +1155,8 @@ bool LocalFrameClientImpl::IsPluginHandledExternally(
     HTMLPlugInElement& plugin_element,
     const KURL& resource_url,
     const String& suggesed_mime_type) {
+  if (!RuntimeEnabledFeatures::MimeHandlerViewInCrossProcessFrameEnabled())
+    return false;
   return web_frame_->Client()->IsPluginHandledExternally(
       &plugin_element, resource_url, suggesed_mime_type);
 }
@@ -1142,6 +1180,12 @@ void LocalFrameClientImpl::SetMouseCapture(bool capture) {
 bool LocalFrameClientImpl::UsePrintingLayout() const {
   return web_frame_->UsePrintingLayout();
 }
+
+const FeaturePolicy::FeatureState& LocalFrameClientImpl::GetOpenerFeatureState()
+    const {
+  DCHECK(web_frame_->GetFrame()->IsMainFrame());
+  return web_frame_->OpenerFeatureState();
+};
 
 STATIC_ASSERT_ENUM(DownloadCrossOriginRedirects::kFollow,
                    WebLocalFrameClient::CrossOriginRedirects::kFollow);

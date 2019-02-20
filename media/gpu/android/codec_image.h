@@ -17,6 +17,12 @@
 #include "media/gpu/android/surface_texture_gl_owner.h"
 #include "media/gpu/media_gpu_export.h"
 
+namespace base {
+namespace android {
+class ScopedHardwareBufferFenceSync;
+}  // namespace android
+}  // namespace base
+
 namespace media {
 
 // A GLImage that renders MediaCodec buffers to a TextureOwner or overlay
@@ -36,6 +42,7 @@ class MEDIA_GPU_EXPORT CodecImage : public gpu::gles2::GLStreamTextureImage {
   // gl::GLImage implementation
   gfx::Size GetSize() override;
   unsigned GetInternalFormat() override;
+  BindOrCopy ShouldBindOrCopy() override;
   bool BindTexImage(unsigned target) override;
   void ReleaseTexImage(unsigned target) override;
   bool CopyTexImage(unsigned target) override;
@@ -54,7 +61,8 @@ class MEDIA_GPU_EXPORT CodecImage : public gpu::gles2::GLStreamTextureImage {
   void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                     uint64_t process_tracing_id,
                     const std::string& dump_name) override;
-  std::unique_ptr<ScopedHardwareBuffer> GetAHardwareBuffer() override;
+  std::unique_ptr<base::android::ScopedHardwareBufferFenceSync>
+  GetAHardwareBuffer() override;
   // gpu::gles2::GLStreamTextureMatrix implementation
   void GetTextureMatrix(float xform[16]) override;
   void NotifyPromotionHint(bool promotion_hint,
@@ -101,11 +109,14 @@ class MEDIA_GPU_EXPORT CodecImage : public gpu::gles2::GLStreamTextureImage {
   // frame available event before calling UpdateTexImage(). Passing
   // BindingsMode::kDontRestore skips the work of restoring the current texture
   // bindings if the texture owner's context is already current. Otherwise,
-  // this switches contexts and preserves the texture bindings.
-  // Returns true if the buffer is in the front buffer. Returns false if the
-  // buffer was invalidated.
+  // this switches contexts and preserves the texture bindings. Setting
+  // |bind_egl_image| = false skips doing the egl bindings to the texture target
+  // during texture update. |bind_egl_image| must always be true when using a
+  // SurfaceTexture backed CodecImage(TextureOwner). Returns true if the buffer
+  // is in the front buffer. Returns false if the buffer was invalidated.
   enum class BindingsMode { kRestore, kDontRestore };
-  bool RenderToTextureOwnerFrontBuffer(BindingsMode bindings_mode);
+  bool RenderToTextureOwnerFrontBuffer(BindingsMode bindings_mode,
+                                       bool bind_egl_image = true);
 
   // Renders this image to the overlay. Returns true if the buffer is in the
   // overlay front buffer. Returns false if the buffer was invalidated.

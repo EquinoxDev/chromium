@@ -78,7 +78,7 @@ EditingViewPortElement::CustomStyleForLayoutObject() {
   style->InheritFrom(OwnerShadowHost()->ComputedStyleRef());
 
   style->SetFlexGrow(1);
-  style->SetMinWidth(Length(0, kFixed));
+  style->SetMinWidth(Length::Fixed(0));
   style->SetDisplay(EDisplay::kBlock);
   style->SetDirection(TextDirection::kLtr);
 
@@ -180,7 +180,7 @@ TextControlInnerEditorElement::CreateInnerEditorStyle() const {
 
     // We'd like to remove line-height if it's unnecessary because
     // overflow:scroll clips editing text by line-height.
-    Length logical_height = start_style.LogicalHeight();
+    const Length& logical_height = start_style.LogicalHeight();
     // Here, we remove line-height if the INPUT fixed height is taller than the
     // line-height.  It's not the precise condition because logicalHeight
     // includes border and padding if box-sizing:border-box, and there are cases

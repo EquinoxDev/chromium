@@ -89,6 +89,7 @@ class AccessibilityTreeFormatterWin : public AccessibilityTreeFormatter {
   const std::string GetAllowEmptyString() override;
   const std::string GetAllowString() override;
   const std::string GetDenyString() override;
+  const std::string GetDenyNodeString() override;
   void AddProperties(const Microsoft::WRL::ComPtr<IAccessible>,
                      base::DictionaryValue* dict,
                      LONG root_x,
@@ -724,7 +725,6 @@ static base::string16 ProcessAccessiblesArray(IUnknown** accessibles,
     return related_accessibles_string;
 
   base::win::ScopedVariant variant_self(CHILDID_SELF);
-
   for (int index = 0; index < num_accessibles; index++) {
     related_accessibles_string += index > 0 ? L"," : L"<";
     Microsoft::WRL::ComPtr<IUnknown> unknown = accessibles[index];
@@ -823,7 +823,7 @@ void AccessibilityTreeFormatterWin::AddIA2TextProperties(
     if (hr == S_OK && temp_bstr && wcslen(temp_bstr)) {
       // Append offset:<number>.
       base::string16 offset_str =
-          base::ASCIIToUTF16("offset:") + base::IntToString16(start_offset);
+          base::ASCIIToUTF16("offset:") + base::NumberToString16(start_offset);
       text_attributes->AppendString(offset_str);
       // Append name:value pairs.
       std::vector<base::string16> name_val_pairs =
@@ -982,6 +982,10 @@ const std::string AccessibilityTreeFormatterWin::GetAllowString() {
 
 const std::string AccessibilityTreeFormatterWin::GetDenyString() {
   return "@WIN-DENY:";
+}
+
+const std::string AccessibilityTreeFormatterWin::GetDenyNodeString() {
+  return "@WIN-DENY-NODE:";
 }
 
 }  // namespace content

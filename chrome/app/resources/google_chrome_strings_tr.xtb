@@ -4,6 +4,7 @@
 <translation id="1001534784610492198">Yükleyici arşivi bozuk veya geçersiz. Lütfen Google Chrome'u yeniden indirin.</translation>
 <translation id="102763973188675173">Google Chrome'u özelleştirin ve kontrol edin. Güncelleme mevcut.</translation>
 <translation id="1035334672863811645">Chrome'da oturum açın</translation>
+<translation id="1051826050538111504">Bilgisayarınızda zararlı yazılım var. Chrome, tarayıcınızın tekrar normal şekilde çalışmasını sağlamak için bunu kaldırabilir, ayarlarınızı geri yükleyebilir ve uzantıları devre dışı bırakabilir.</translation>
 <translation id="1065672644894730302">Tercihleriniz okunamıyor. Bazı özellikler kullanılamayabilir. Tercihlerde yapılan değişiklikler kaydedilmeyecektir.</translation>
 <translation id="1088300314857992706"><ph name="USER_EMAIL_ADDRESS" /> önceden Chrome kullanıyordu</translation>
 <translation id="1104959162601287462">&amp;Chrome OS hakkında</translation>
@@ -68,6 +69,7 @@ Yine de oturum açarsanız, yer işaretleriniz, geçmişiniz ve diğer ayarları
 <translation id="2580411288591421699">Şu anda çalışmakta olan Google Chrome ile aynı sürüm yüklenemez. Lütfen Google Chrome'u kapatın ve tekrar deneyin.</translation>
 <translation id="2586406160782125153">Bu işlem, tarama verilerinizi bu cihazdan silecektir. Verilerinizi daha sonra geri almak için Chrome'da <ph name="USER_EMAIL" /> hesabıyla oturum açın.</translation>
 <translation id="2588322182880276190">Chrome logosu</translation>
+<translation id="2644798301485385923">Chrome OS Sistemi</translation>
 <translation id="2652691236519827073">Bağlantıyı Yeni Chrome &amp;sekmesinde aç</translation>
 <translation id="2665296953892887393">Kilitlenme raporlarını ve <ph name="UMA_LINK" /> bilgilerini Google'a göndererek Google Chrome'u daha iyi hale getirmeye yardımcı olun</translation>
 <translation id="2689103672227170538">Bu uzantı, Chrome'u başlattığınızda gösterilen sayfayı değiştirdi.</translation>
@@ -84,7 +86,6 @@ Yine de oturum açarsanız, yer işaretleriniz, geçmişiniz ve diğer ayarları
 <translation id="3080151273017101988">Google Chrome kapandığında arka plan uygulamaları çalıştırmaya devam et</translation>
 <translation id="3089968997497233615">Google Chrome'un kullanabileceğiniz yeni, daha güvenli bir sürümü var.</translation>
 <translation id="3149510190863420837">Chrome Uygulamaları</translation>
-<translation id="3180085900771989961">Yöneticinizin sizi Chrome'dan kaldırması ve tekrar eklemesi gerekir.</translation>
 <translation id="3251381707915721925"><ph name="NEW_PROFILE_NAME" /> kullanıcısının hangi web sitelerini görüntüleyebileceğini ayarlamak için <ph name="BEGIN_LINK_1" /><ph name="DISPLAY_LINK" /><ph name="END_LINK_1" /> bağlantısını ziyaret ederek kısıtlamaları ve ayarları yapılandırabilirsiniz. Varsayılan ayarları değiştirmezseniz <ph name="NEW_PROFILE_NAME" /> web'de bulunan her şeye göz atabilir.
 
 
@@ -100,6 +101,7 @@ Daha fazla talimat için lütfen e-postanızı <ph name="ACCOUNT_EMAIL" /> kontr
 <translation id="3451115285585441894">Chrome'a ekleniyor...</translation>
 <translation id="345171907106878721">Kendinizi Chrome'a ekleyin</translation>
 <translation id="3479552764303398839">Şimdi değil</translation>
+<translation id="34857402635545079">Chrome'daki verileri de temizle (<ph name="URL" />)</translation>
 <translation id="3503306920980160878">Konumunuzu bu siteyle paylaşabilmek için Chrome'un konum bilgilerinize erişmesi gerekiyor</translation>
 <translation id="3582972582564653026">Chrome'u cihazlarınız arasında senkronize edin ve kişiselleştirin</translation>
 <translation id="3622797965165704966">Chrome'u Google Hesabınızla ve paylaşılan bilgisayarlarda kullanmak artık daha kolay.</translation>
@@ -109,7 +111,6 @@ Daha fazla talimat için lütfen e-postanızı <ph name="ACCOUNT_EMAIL" /> kontr
 <translation id="3735758079232443276">"<ph name="EXTENSION_NAME" />" uzantısı, Chrome'u başlattığınızda gösterilen sayfayı değiştirdi.</translation>
 <translation id="3780814664026482060">Chrome - <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Chrome'dan Kaldır...</translation>
-<translation id="3844992844761326777">Bilgisayarınızda zararlı yazılım var. Chrome bunu kaldırabilir ve tarayıcınızın tekrar normal şekilde çalışması için ayarlarınızı geri yükleyebilir.</translation>
 <translation id="386202838227397562">Lütfen tüm Google Chrome pencerelerini kapatıp tekrar deneyin.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Bağlantıyı Chrome &amp;gizli penceresinde aç</translation>
@@ -155,7 +156,6 @@ Daha fazla talimat için lütfen e-postanızı <ph name="ACCOUNT_EMAIL" /> kontr
 <translation id="5062123544085870375">Chrome OS'i yeniden başlat</translation>
 <translation id="5090044601776247154">Google Chrome 70 sürümünden itibaren denetlenen kullanıcı profilleri artık kullanılmayacaktır.</translation>
 <translation id="5132929315877954718">Google Chrome'a özgü harika uygulamaları, oyunları, uzantıları ve temaları keşfedin.</translation>
-<translation id="5166975452760862670">Google Chrome bu dilde görüntüleniyor</translation>
 <translation id="5170938038195470297">Profiliniz daha yeni bir Google Chrome sürümünden geldiği için kullanılamıyor.
 
 Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirtin veya daha yeni bir Chrome sürümü kullanın.</translation>
@@ -169,9 +169,9 @@ Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirti
 <translation id="556024056938947818">Google Chrome şifreleri göstermeyi deniyor.</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> tehlikeli olabileceği için Chrome tarafından engellendi.</translation>
+<translation id="5686916850681061684">Google Chrome'u özelleştirin ve kontrol edin. İlgilenmeniz gereken bir konu var. Ayrıntılar için tıklayın.</translation>
 <translation id="5715063361988620182">{SECONDS,plural, =1{Google Chrome 1 saniye içinde yeniden başlatılacak}other{Google Chrome # saniye içinde yeniden başlatılacak}}</translation>
 <translation id="573759479754913123">Chrome OS hakkında</translation>
-<translation id="5774845247549698882">Chrome OS bu dilde görüntüleniyor</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> - Google Chrome Canary</translation>
 <translation id="5804318322022881572">Chrome başlatılamadı. Tekrar deneyin.</translation>
 <translation id="5877064549588274448">Kanal değişti. Değişikliklerin uygulanması için cihazınızı yeniden başlatın.</translation>
@@ -196,6 +196,7 @@ Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirti
 <translation id="6566149418543181476">Google Chrome güncelleniyor (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">Chrome öğelerinizi senkronize etmek için <ph name="PROFILE_EMAIL" /> adresini kullanıyorsunuz. Senkronizasyon tercihinizi güncellemek veya Chrome'u bir Google Hesabı olmadan kullanmak için şunu ziyaret edin: <ph name="SETTINGS_LINK" />.</translation>
 <translation id="6600954340915313787">Chrome'a kopyalandı</translation>
+<translation id="6609605543612238677">Sistem yöneticiniz Google Chrome'u <ph name="URL" /> adresine erişmek için alternatif bir tarayıcıyı açacak şekilde yapılandırmış.</translation>
 <translation id="6634887557811630702">Google Chrome güncel durumda.</translation>
 <translation id="6676384891291319759">İnternet'e erişin</translation>
 <translation id="6679975945624592337">Google Chrome'un Arka Planda Çalışmasına İzin Ver</translation>
@@ -203,6 +204,7 @@ Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirti
 <translation id="683440813066116847">Google Chrome Canary'nin mDNS trafiğine izin vermeyi sağlayan gelen trafik kuralı.</translation>
 <translation id="686561893457936865">Chrome'u her yere götürün</translation>
 <translation id="6885412569789873916">Chrome Beta Uygulamaları</translation>
+<translation id="6943584222992551122">Bu kullanıcının göz atma verileri bu cihazdan silinecektir. Verileri kurtarmak için Chrome'da <ph name="USER_EMAIL" /> olarak oturum açın.</translation>
 <translation id="6964107240822114422">{0,plural, =0{Bir Chrome güncellemesi var}=1{Bir Chrome güncellemesi var}other{# gün önce kullanıma sunulmuş bir Chrome güncellemesi var}}</translation>
 <translation id="6967962315388095737">Google Chrome Beta'nın mDNS trafiğine izin vermeyi sağlayan gelen trafik kuralı.</translation>
 <translation id="6970811910055250180">Cihazınız güncelleniyor...</translation>
@@ -213,6 +215,7 @@ Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirti
 <translation id="7106741999175697885">Görev Yöneticisi - Google Chrome</translation>
 <translation id="7164397146364144019">Olası güvenlik olaylarının ayrıntılarını Google'a otomatik olarak bildirerek Chrome'un daha güvenli ve kullanımı kolay bir hale gelmesine yardımcı olabilirsiniz.</translation>
 <translation id="7242029209006116544">Yönetilen bir hesapla oturum açıyor ve hesabın yöneticisine Google Chrome profilinizi denetleme izni veriyorsunuz. Uygulamalarınız, yer işaretleriniz, geçmişiniz, şifreleriniz ve diğer ayarlarınız gibi Chrome verileriniz kalıcı olarak <ph name="USER_NAME" /> ile bağlantılandırılacaktır. Google Hesapları Hesap Özeti'ni kullanarak bu verileri silebilecek, ancak bu verileri başka bir hesapla ilişkilendiremeyeceksiniz. İsterseniz mevcut Chrome verilerinizi ayrı tutmak için yeni bir profil oluşturabilirsiniz.<ph name="LEARN_MORE" /></translation>
+<translation id="7295052994004373688">Bu dil, Google Chrome kullanıcı arayüzünü görüntülemek için kullanılır</translation>
 <translation id="7296210096911315575">Önemli kullanım ve güvenlik bilgileri</translation>
 <translation id="7308322188646931570">Dosya indirmek için Chrome'un depolama alanına erişmesi gerekiyor</translation>
 <translation id="7339898014177206373">Yeni pencere</translation>
@@ -275,6 +278,7 @@ Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirti
 <translation id="870251953148363156">&amp;Google Chrome'u güncelle</translation>
 <translation id="873133009373065397">Google Chrome, varsayılan tarayıcıyı tespit edemiyor veya ayarlayamıyor</translation>
 <translation id="8736674169840206667">Yöneticiniz bir güncellemeyi uygulamak için Chrome'u yeniden başlatmanızı gerektiriyor</translation>
+<translation id="8788264404293392165">Bu dil, Chrome OS kullanıcı arayüzünü görüntülemek için kullanılır</translation>
 <translation id="8791470158600044404">{0,plural, =1{Chrome OS 1 dakika içinde yeniden başlatılacak}other{Chrome OS # dakika içinde yeniden başlatılacak}}</translation>
 <translation id="8823341990149967727">Chrome Sürümü Eski</translation>
 <translation id="884296878221830158">Ayrıca Chrome'u başlattığınızda veya Ana Sayfa düğmesini tıkladığınızda gösterilecek sayfayı da denetler.</translation>

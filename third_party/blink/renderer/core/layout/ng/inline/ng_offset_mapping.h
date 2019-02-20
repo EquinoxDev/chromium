@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/ng_caret_navigator.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
@@ -99,6 +100,8 @@ class NGMappingUnitRange {
 // in the text content string of the context.
 // See design doc https://goo.gl/CJbxky for details.
 class CORE_EXPORT NGOffsetMapping {
+  USING_FAST_MALLOC(NGOffsetMapping);
+
  public:
   using UnitVector = Vector<NGOffsetMappingUnit>;
   using RangeMap =
@@ -139,6 +142,9 @@ class CORE_EXPORT NGOffsetMapping {
   // NG layout, while NGOffsetMapping is supported on both of them.
   static LayoutBlockFlow* GetInlineFormattingContextOf(const LayoutObject&);
 
+  // Variants taking position instead of |LayoutObject|.
+  static LayoutBlockFlow* GetInlineFormattingContextOf(const Position&);
+
   // ------ Mapping APIs from DOM to text content ------
 
   // Returns the NGOffsetMappingUnit whose DOM range contains the position.
@@ -146,9 +152,11 @@ class CORE_EXPORT NGOffsetMapping {
   const NGOffsetMappingUnit* GetMappingUnitForPosition(const Position&) const;
 
   // Returns all NGOffsetMappingUnits whose DOM ranges has non-empty (but
-  // possibly collapsed) intersections with the passed in DOM range. This API
-  // only accepts ranges whose start and end have the same anchor node.
-  NGMappingUnitRange GetMappingUnitsForDOMRange(const EphemeralRange&) const;
+  // possibly collapsed) intersections with the passed in DOM range. If a unit
+  // partially intersects the range, it is clamped with only the part within the
+  // range returned. This API only accepts ranges whose start and end have the
+  // same anchor node.
+  UnitVector GetMappingUnitsForDOMRange(const EphemeralRange&) const;
 
   // Returns all NGOffsetMappingUnits associated to |node|. Note: |node| should
   // have associated mapping.
@@ -191,6 +199,13 @@ class CORE_EXPORT NGOffsetMapping {
   // the layout order, aka the flat tree order.
   Position GetFirstPosition(unsigned) const;
   Position GetLastPosition(unsigned) const;
+
+  // Converts the given caret position on text content to a PositionWithAffinity
+  // in DOM. If |position| is before a character, the function creates a
+  // downstream position before |GetLastPosition()| of the character; otherwise,
+  // it returns an upstream position after |GetFirstPosition()| of the character
+  PositionWithAffinity GetPositionWithAffinity(
+      const NGCaretNavigator::Position& position) const;
 
   // Returns all NGOffsetMappingUnits whose text content ranges has non-empty
   // (but possibly collapsed) intersection with (start, end). Note that units

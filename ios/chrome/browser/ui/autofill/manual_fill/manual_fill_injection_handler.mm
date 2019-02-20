@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/json/string_escape.h"
 #include "base/mac/foundation_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -26,7 +27,7 @@
 #include "ios/web/public/web_state/web_frame.h"
 #include "ios/web/public/web_state/web_frame_util.h"
 #include "ios/web/public/web_state/web_frames_manager.h"
-#include "ios/web/public/web_state/web_state.h"
+#import "ios/web/public/web_state/web_state.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "url/gurl.h"
 
@@ -125,9 +126,12 @@ const int64_t kJavaScriptExecutionTimeoutInSeconds = 1;
 }
 
 - (void)generateAndOfferPassword {
+  if (![self isLastFocusedElementPasswordField])
+    return;
   web::WebState* webState = self.webStateList->GetActiveWebState();
   PasswordTabHelper::FromWebState(webState)->GenerateAndOfferPassword(
-      base::SysUTF8ToNSString(self.lastFocusedFormName));
+      base::SysUTF8ToNSString(self.lastFocusedFormName),
+      base::SysUTF8ToNSString(self.lastFocusedElementIdentifier), nil);
 }
 
 #pragma mark - FormActivityObserver

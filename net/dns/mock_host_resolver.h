@@ -10,7 +10,9 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
+#include <vector>
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -30,6 +32,8 @@ class TickClock;
 namespace net {
 
 class HostCache;
+class HostPortPair;
+class IPEndPoint;
 class RuleBasedHostResolverProc;
 
 // Fills |*addrlist| with a socket address for |host_list| which should be a
@@ -77,7 +81,7 @@ class MockHostResolverBase
       public base::SupportsWeakPtr<MockHostResolverBase> {
  private:
   class RequestImpl;
-  class LegacyRequestImpl;
+  class MdnsListenerImpl;
 
  public:
   ~MockHostResolverBase() override;
@@ -125,11 +129,20 @@ class MockHostResolverBase
                             AddressList* addresses,
                             HostCache::EntryStaleness* stale_info,
                             const NetLogWithSource& source_net_log) override;
+  std::unique_ptr<MdnsListener> CreateMdnsListener(
+      const HostPortPair& host,
+      DnsQueryType query_type) override;
   HostCache* GetHostCache() override;
   bool HasCached(base::StringPiece hostname,
                  HostCache::Entry::Source* source_out,
                  HostCache::EntryStaleness* stale_out) const override;
   void SetDnsConfigOverrides(const DnsConfigOverrides& overrides) override {}
+
+  // Preloads the cache with what would currently be the result of a request
+  // with the given parameters. Returns the net error of the cached result.
+  int LoadIntoCache(
+      const HostPortPair& host,
+      const base::Optional<ResolveHostParameters>& optional_parameters);
 
   // Returns true if there are pending requests that can be resolved by invoking
   // ResolveAllPending().
@@ -144,6 +157,10 @@ class MockHostResolverBase
   // for async resolution, starting with 1. IDs are not reused. Once a request
   // completes, it is destroyed, and can no longer be accessed.
 
+  // Returns the ID of the most recently started still-active request. Zero if
+  // no requests are currently active.
+  size_t last_id();
+
   // Resolve request stored in |requests_|. Pass rv to callback.
   void ResolveNow(size_t id);
 
@@ -156,6 +173,10 @@ class MockHostResolverBase
   // Returns the priority of the request with the given id.
   RequestPriority request_priority(size_t id);
 
+  // Like ResolveNow, but doesn't take an ID. DCHECKs if there's more than one
+  // pending request.
+  void ResolveOnlyRequestNow();
+
   // The number of times that Resolve() has been called.
   size_t num_resolve() const {
     return num_resolve_;
@@ -166,11 +187,30 @@ class MockHostResolverBase
     return num_resolve_from_cache_;
   }
 
+  // The number of times resolve was attempted non-locally.
+  size_t num_non_local_resolves() const { return num_non_local_resolves_; }
+
   // Returns the RequestPriority of the last call to Resolve() (or
   // DEFAULT_PRIORITY if Resolve() hasn't been called yet).
   RequestPriority last_request_priority() const {
     return last_request_priority_;
   }
+
+  void TriggerMdnsListeners(const HostPortPair& host,
+                            DnsQueryType query_type,
+                            MdnsListener::Delegate::UpdateType update_type,
+                            const IPEndPoint& address_result);
+  void TriggerMdnsListeners(const HostPortPair& host,
+                            DnsQueryType query_type,
+                            MdnsListener::Delegate::UpdateType update_type,
+                            const std::vector<std::string>& text_result);
+  void TriggerMdnsListeners(const HostPortPair& host,
+                            DnsQueryType query_type,
+                            MdnsListener::Delegate::UpdateType update_type,
+                            const HostPortPair& host_result);
+  void TriggerMdnsListeners(const HostPortPair& host,
+                            DnsQueryType query_type,
+                            MdnsListener::Delegate::UpdateType update_type);
 
   void set_tick_clock(const base::TickClock* tick_clock) {
     tick_clock_ = tick_clock;
@@ -193,9 +233,9 @@ class MockHostResolverBase
       DnsQueryType dns_query_type,
       HostResolverFlags flags,
       HostResolverSource source,
-      bool allow_cache,
+      HostResolver::ResolveHostParameters::CacheUsage cache_usage,
       AddressList* addresses,
-      HostCache::EntryStaleness* stale_info = nullptr);
+      base::Optional<HostCache::EntryStaleness>* stale_info);
   // Resolve via |proc_|.
   int ResolveProc(const HostPortPair& host,
                   AddressFamily requested_address_family,
@@ -203,17 +243,27 @@ class MockHostResolverBase
                   HostResolverSource source,
                   AddressList* addresses);
 
+  void AddListener(MdnsListenerImpl* listener);
+  void RemoveCancelledListener(MdnsListenerImpl* listener);
+
   RequestPriority last_request_priority_;
   bool synchronous_mode_;
   bool ondemand_mode_;
   std::map<HostResolverSource, scoped_refptr<RuleBasedHostResolverProc>>
       rules_map_;
   std::unique_ptr<HostCache> cache_;
+
+  // Maintain non-owning pointers to outstanding requests and listeners to allow
+  // completing/notifying them. The objects are owned by callers, and should be
+  // removed from |this| on destruction by calling DetachRequest() or
+  // RemoveCancelledListener().
   RequestMap requests_;
   size_t next_request_id_;
+  std::set<MdnsListenerImpl*> listeners_;
 
   size_t num_resolve_;
   size_t num_resolve_from_cache_;
+  size_t num_non_local_resolves_;
 
   const base::TickClock* tick_clock_;
 
@@ -349,7 +399,9 @@ class RuleBasedHostResolverProc : public HostResolverProc {
 // Create rules that map all requests to localhost.
 RuleBasedHostResolverProc* CreateCatchAllHostResolverProc();
 
-// HangingHostResolver never completes its |Resolve| request.
+// HangingHostResolver never completes its |Resolve| request. As LOCAL_ONLY
+// requests are not allowed to complete asynchronously, they will always result
+// in |ERR_DNS_CACHE_MISS|.
 class HangingHostResolver : public HostResolver {
  public:
   HangingHostResolver();

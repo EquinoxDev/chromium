@@ -7,7 +7,7 @@
 #include <memory>
 
 #import "ios/web/public/web_state/navigation_context.h"
-#include "ios/web/public/web_state/web_state.h"
+#import "ios/web/public/web_state/web_state.h"
 #include "ios/web/web_state/navigation_context_impl.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,15 +40,6 @@ void TestWebStateObserver::WasHidden(WebState* web_state) {
   ASSERT_EQ(web_state_, web_state);
   was_hidden_info_ = std::make_unique<web::TestWasHiddenInfo>();
   was_hidden_info_->web_state = web_state;
-}
-
-void TestWebStateObserver::NavigationItemCommitted(
-    WebState* web_state,
-    const LoadCommittedDetails& load_details) {
-  ASSERT_EQ(web_state_, web_state);
-  commit_navigation_info_ = std::make_unique<web::TestCommitNavigationInfo>();
-  commit_navigation_info_->web_state = web_state;
-  commit_navigation_info_->load_details = load_details;
 }
 
 void TestWebStateObserver::PageLoaded(

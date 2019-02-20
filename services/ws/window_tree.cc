@@ -41,6 +41,7 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/hit_test.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_type.h"
 #include "ui/display/display.h"
@@ -53,6 +54,10 @@
 #include "ui/wm/core/window_modality_controller.h"
 #include "ui/wm/core/window_util.h"
 #include "ui/wm/public/activation_client.h"
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/cursor_factory_ozone.h"
+#endif
 
 namespace ws {
 namespace {
@@ -141,10 +146,10 @@ void WindowTree::InitForEmbed(aura::Window* root,
   const ClientWindowId focused_window_id =
       root->HasFocus() ? ClientWindowIdForWindow(root) : ClientWindowId();
   const bool drawn = root->IsVisible() && root->GetHost();
-  window_tree_client_->OnEmbed(WindowToWindowData(root),
-                               std::move(window_tree_ptr), display_id,
-                               ClientWindowIdToTransportId(focused_window_id),
-                               drawn, proxy_window->local_surface_id());
+  window_tree_client_->OnEmbed(
+      WindowToWindowData(root), std::move(window_tree_ptr), display_id,
+      ClientWindowIdToTransportId(focused_window_id), drawn,
+      proxy_window->local_surface_id_allocation());
 
   // Reset the frame sink id locally (after calling OnEmbed()). This is
   // needed so that the id used by the client matches the id used locally.
@@ -194,21 +199,15 @@ void WindowTree::SendEventToClient(aura::Window* window,
 
   std::unique_ptr<ui::Event> event_to_send = ui::Event::Clone(event);
   if (event.IsLocatedEvent()) {
+    ui::LocatedEvent* located_event = event_to_send->AsLocatedEvent();
     // Translate the root location for located events. Event's root location
     // should be in the coordinate of the root window, however the root for the
     // target window in the client can be different from the one in the server,
     // thus the root location needs to be converted from the original coordinate
     // to the one used in the client. See also 'WindowTreeTest.EventLocation'
     // test case.
-    ClientRoot* client_root = FindClientRootContaining(window);
-    // The |client_root| may have been removed on shutdown.
-    if (client_root) {
-      gfx::PointF root_location =
-          event_to_send->AsLocatedEvent()->root_location_f();
-      aura::Window::ConvertPointToTarget(window->GetRootWindow(),
-                                         client_root->window(), &root_location);
-      event_to_send->AsLocatedEvent()->set_root_location_f(root_location);
-    }
+    located_event->set_root_location_f(
+        ConvertRootLocationForClient(window, located_event->root_location_f()));
   }
   DVLOG(4) << "SendEventToClient window="
            << ProxyWindow::GetMayBeNull(window)->GetIdForDebugging()
@@ -294,9 +293,9 @@ void WindowTree::CompleteScheduleEmbedForExistingClient(
 
   const int64_t display_id =
       display::Screen::GetScreen()->GetDisplayNearestWindow(window).id();
-  window_tree_client_->OnEmbedFromToken(token, WindowToWindowData(window),
-                                        display_id,
-                                        proxy_window->local_surface_id());
+  window_tree_client_->OnEmbedFromToken(
+      token, WindowToWindowData(window), display_id,
+      proxy_window->local_surface_id_allocation());
 
   // Reset the frame sink id locally (after calling OnEmbedFromToken()). This is
   // needed so that the id used by the client matches the id used locally.
@@ -305,14 +304,14 @@ void WindowTree::CompleteScheduleEmbedForExistingClient(
   client_root->RegisterVizEmbeddingSupport();
 }
 
-bool WindowTree::HasAtLeastOneRootWithCompositorFrameSink() {
+ClientRoot* WindowTree::GetFirstRootWithCompositorFrameSink() {
   for (auto& client_root : client_roots_) {
     if (ProxyWindow::GetMayBeNull(client_root->window())
             ->attached_compositor_frame_sink()) {
-      return true;
+      return client_root.get();
     }
   }
-  return false;
+  return nullptr;
 }
 
 bool WindowTree::IsWindowKnown(aura::Window* window) const {
@@ -333,6 +332,24 @@ ClientWindowId WindowTree::ClientWindowIdForWindow(aura::Window* window) const {
 ClientRoot* WindowTree::GetClientRootForWindow(aura::Window* window) {
   auto iter = FindClientRootWithRoot(window);
   return iter == client_roots_.end() ? nullptr : iter->get();
+}
+
+gfx::PointF WindowTree::ConvertRootLocationForClient(
+    aura::Window* window,
+    const gfx::PointF& root_location) {
+  ClientRoot* client_root = FindClientRootContaining(window);
+  // The |client_root| may have been removed on shutdown.
+  if (!client_root)
+    return root_location;
+  gfx::PointF client_root_location = root_location;
+  aura::Window::ConvertPointToTarget(
+      window->GetRootWindow(), client_root->window(), &client_root_location);
+  return client_root_location;
+}
+
+void WindowTree::CleanupGestureState(aura::Window* window) {
+  DCHECK(IsWindowKnown(window));
+  window_tree_client_->CleanupGestureState(TransportIdForWindow(window));
 }
 
 ClientRoot* WindowTree::CreateClientRoot(aura::Window* window,
@@ -651,10 +668,6 @@ ClientWindowId WindowTree::MakeClientWindowId(Id transport_window_id) const {
                         ClientWindowIdFromTransportId(transport_window_id));
 }
 
-bool WindowTree::IsLocalSurfaceIdAssignedByClient(aura::Window* window) {
-  return !IsTopLevel(window) && IsClientCreatedWindow(window);
-}
-
 std::vector<mojom::WindowDataPtr> WindowTree::WindowsToWindowDatas(
     const std::vector<aura::Window*>& windows) {
   std::vector<mojom::WindowDataPtr> array(windows.size());
@@ -674,6 +687,7 @@ mojom::WindowDataPtr WindowTree::WindowToWindowData(aura::Window* window) {
     parent = nullptr;
   if (!IsWindowKnown(transient_parent))
     transient_parent = nullptr;
+  const bool is_top_level = IsTopLevel(window);
   mojom::WindowDataPtr window_data(mojom::WindowData::New());
   window_data->parent_id =
       parent ? TransportIdForWindow(parent) : kInvalidTransportId;
@@ -683,10 +697,12 @@ mojom::WindowDataPtr WindowTree::WindowToWindowData(aura::Window* window) {
       transient_parent ? TransportIdForWindow(transient_parent)
                        : kInvalidTransportId;
   window_data->bounds =
-      IsTopLevel(window) ? window->GetBoundsInScreen() : window->bounds();
+      is_top_level ? window->GetBoundsInScreen() : window->bounds();
   window_data->properties =
       window_service_->property_converter()->GetTransportProperties(window);
-  window_data->visible = window->TargetVisibility();
+  window_data->visible = (!IsClientRootWindow(window) || is_top_level)
+                             ? window->TargetVisibility()
+                             : window->IsVisible();
   return window_data;
 }
 
@@ -1060,7 +1076,8 @@ bool WindowTree::SetWindowPropertyImpl(
     const base::Optional<std::vector<uint8_t>>& value) {
   aura::Window* window = GetWindowByClientId(window_id);
   DVLOG(3) << "SetWindowProperty client=" << client_id_
-           << " client window_id=" << window_id.ToString();
+           << " client window_id=" << window_id.ToString()
+           << " property=" << name;
   if (!window) {
     DVLOG(1) << "SetWindowProperty failed (no window)";
     return false;
@@ -1153,12 +1170,15 @@ bool WindowTree::SetWindowOpacityImpl(const ClientWindowId& window_id,
 bool WindowTree::SetWindowBoundsImpl(
     const ClientWindowId& window_id,
     const gfx::Rect& bounds,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   aura::Window* window = GetWindowByClientId(window_id);
 
   DVLOG(3) << "SetWindowBounds window_id=" << window_id
            << " bounds=" << bounds.ToString() << " local_surface_id="
-           << (local_surface_id ? local_surface_id->ToString() : "null");
+           << (local_surface_id_allocation
+                   ? local_surface_id_allocation->ToString()
+                   : "null");
 
   if (!window) {
     DVLOG(1) << "SetWindowBounds failed (invalid window id)";
@@ -1172,10 +1192,13 @@ bool WindowTree::SetWindowBoundsImpl(
   }
 
   ProxyWindow* proxy_window = ProxyWindow::GetMayBeNull(window);
+  DCHECK(proxy_window);  // Earlier checks mean this should be true.
+  const bool local_surface_id_changed =
+      proxy_window->local_surface_id_allocation() !=
+      local_surface_id_allocation;
+
   const gfx::Rect original_bounds =
       IsTopLevel(window) ? window->GetBoundsInScreen() : window->bounds();
-  const bool local_surface_id_changed =
-      proxy_window->local_surface_id() != local_surface_id;
 
   if (original_bounds == bounds && !local_surface_id_changed)
     return true;
@@ -1183,27 +1206,26 @@ bool WindowTree::SetWindowBoundsImpl(
   ClientChange change(property_change_tracker_.get(), window,
                       ClientChangeType::kBounds);
 
-  if (IsLocalSurfaceIdAssignedByClient(window))
-    proxy_window->set_local_surface_id(local_surface_id);
-
+  ClientRoot* client_root = GetClientRootForWindow(window);
   if (IsTopLevel(window)) {
-    display::Display dst_display =
-        display::Screen::GetScreen()->GetDisplayMatching(bounds);
-    window->SetBoundsInScreen(bounds, dst_display);
-  } else {
-    window->SetBounds(bounds);
+    // If IsTopLevel() returns true, there should be a ClientRoot.
+    DCHECK(client_root);
+    if (local_surface_id_allocation &&
+        local_surface_id_allocation->local_surface_id().embed_token() !=
+            proxy_window->local_surface_id_allocation()
+                ->local_surface_id()
+                .embed_token()) {
+      DVLOG(1) << "SetWindowBounds failed (embed token changed)";
+      return false;
+    }
+    return client_root->SetBoundsInScreenFromClient(
+        bounds, local_surface_id_allocation);
   }
+  proxy_window->set_local_surface_id_allocation(local_surface_id_allocation);
+  window->SetBounds(bounds);
+
   if (!change.window())
     return true;  // Return value doesn't matter if window destroyed.
-
-  if (IsClientRootWindow(window)) {
-    // ClientRoot handles notification in this case. Note that this
-    // unconditionally returns false, because the LocalSurfaceId changes with
-    // the bounds. Returning false ensures the client applies the LocalSurfaceId
-    // assigned by ClientRoot and sent to the client in
-    // ClientRoot::OnWindowBoundsChanged().
-    return false;
-  }
 
   if (window->bounds() == original_bounds) {
     if (local_surface_id_changed) {
@@ -1222,7 +1244,8 @@ bool WindowTree::SetWindowBoundsImpl(
   }
 
   if (window->bounds() == bounds &&
-      proxy_window->local_surface_id() == local_surface_id) {
+      proxy_window->local_surface_id_allocation() ==
+          local_surface_id_allocation) {
     return true;
   }
 
@@ -1230,9 +1253,24 @@ bool WindowTree::SetWindowBoundsImpl(
   // Tell the client the new value, and return false, which triggers the client
   // to use the value supplied to OnWindowBoundsChanged().
   window_tree_client_->OnWindowBoundsChanged(TransportIdForWindow(window),
-                                             original_bounds, window->bounds(),
-                                             local_surface_id);
+                                             window->bounds(),
+                                             local_surface_id_allocation);
   return false;
+}
+
+bool WindowTree::SetWindowTransformImpl(const ClientWindowId& window_id,
+                                        const gfx::Transform& transform) {
+  DVLOG(3) << "SetWindowTransform window_id=" << window_id;
+  aura::Window* window = GetWindowByClientId(window_id);
+  // This doesn't allow setting the transform on top-levels as that may conflict
+  // with top-level animations done by the window-manager. Additionally the
+  // window-manager is really the one that should be animating top-levels.
+  if (!window || !IsClientCreatedWindow(window) || IsTopLevel(window)) {
+    DVLOG(1) << "SetWindowTransform failed (invalid window)";
+    return false;
+  }
+  window->SetTransform(transform);
+  return true;
 }
 
 bool WindowTree::ReorderWindowImpl(const ClientWindowId& window_id,
@@ -1273,7 +1311,7 @@ bool WindowTree::SetFocusImpl(const ClientWindowId& window_id) {
 }
 
 bool WindowTree::SetCursorImpl(const ClientWindowId& window_id,
-                               ui::CursorData cursor) {
+                               ui::Cursor cursor) {
   aura::Window* window = GetWindowByClientId(window_id);
   if (!window) {
     DVLOG(1) << "SetCursor failed (no window)";
@@ -1286,16 +1324,26 @@ bool WindowTree::SetCursorImpl(const ClientWindowId& window_id,
 
   auto* proxy_window = ProxyWindow::GetMayBeNull(window);
 
-  ui::Cursor old_cursor_type = cursor.ToNativeCursor();
+#if defined(USE_OZONE)
+  auto* factory = ui::CursorFactoryOzone::GetInstance();
+  if (cursor.native_type() != ui::CursorType::kCustom) {
+    cursor.SetPlatformCursor(factory->GetDefaultCursor(cursor.native_type()));
+  } else {
+    cursor.SetPlatformCursor(factory->CreateImageCursor(
+        cursor.GetBitmap(), cursor.GetHotspot(), cursor.device_scale_factor()));
+    cursor.UnrefCustomCursor();
+  }
+#else
+  NOTIMPLEMENTED();
+#endif
 
   // Ask our delegate to set the cursor. This will save the cursor for toplevels
   // and also update the active cursor if appropriate (i.e. if |window| is the
   // last to have set the cursor/is currently hovered).
-  if (!window_service_->delegate()->StoreAndSetCursor(window,
-                                                      old_cursor_type)) {
+  if (!window_service_->delegate()->StoreAndSetCursor(window, cursor)) {
     // Store the cursor on ProxyWindow. This will later be accessed by the
     // WindowDelegate for non-toplevels, i.e. WindowDelegateImpl.
-    proxy_window->StoreCursor(old_cursor_type);
+    proxy_window->StoreCursor(cursor);
   }
 
   return true;
@@ -1481,9 +1529,12 @@ void WindowTree::NewTopLevelWindow(
   // already been given the mojom::WindowTreePtr that is backed by this
   // WindowTree.
   CreateClientRoot(top_level, is_top_level)->RegisterVizEmbeddingSupport();
+  // Creating the ClientRoot should trigger setting a LocalSurfaceIdAllocation.
+  DCHECK(top_level_proxy_window->local_surface_id_allocation());
   window_tree_client_->OnTopLevelCreated(
       change_id, WindowToWindowData(top_level), display_id,
-      top_level->IsVisible(), top_level_proxy_window->local_surface_id());
+      top_level->IsVisible(),
+      *(top_level_proxy_window->local_surface_id_allocation()));
 }
 
 void WindowTree::DeleteWindow(uint32_t change_id, Id transport_window_id) {
@@ -1519,19 +1570,60 @@ void WindowTree::SetWindowBounds(
     uint32_t change_id,
     Id window_id,
     const gfx::Rect& bounds,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   window_tree_client_->OnChangeCompleted(
       change_id, SetWindowBoundsImpl(MakeClientWindowId(window_id), bounds,
-                                     local_surface_id));
+                                     local_surface_id_allocation));
+}
+
+void WindowTree::UpdateLocalSurfaceIdFromChild(
+    Id transport_window_id,
+    const viz::LocalSurfaceIdAllocation& local_surface_id_allocation) {
+  const ClientWindowId window_id = MakeClientWindowId(transport_window_id);
+  aura::Window* window = GetWindowByClientId(window_id);
+
+  DVLOG(3) << "UpdateLocalSurfaceIdFromChild window_id=" << window_id
+           << " local_surface_id=" << local_surface_id_allocation.ToString();
+
+  ClientRoot* client_root = GetClientRootForWindow(window);
+  if (!client_root || !client_root->ShouldAssignLocalSurfaceId()) {
+    DVLOG(1) << "UpdateLocalSurfaceIdFromChild failed (invalid window id)";
+    return;
+  }
+
+  ProxyWindow* proxy_window = ProxyWindow::GetMayBeNull(window);
+  DCHECK(window);  // Earlier checks ensure this is non-null.
+  if (local_surface_id_allocation.local_surface_id().embed_token() !=
+      proxy_window->local_surface_id_allocation()
+          ->local_surface_id()
+          .embed_token()) {
+    DVLOG(1) << "UpdateLocalSurfaceIdFromChild failed (embed token changed)";
+    return;
+  }
+  client_root->UpdateLocalSurfaceIdFromChild(local_surface_id_allocation);
+}
+
+void WindowTree::AllocateLocalSurfaceId(Id transport_window_id) {
+  const ClientWindowId window_id = MakeClientWindowId(transport_window_id);
+  aura::Window* window = GetWindowByClientId(window_id);
+  DVLOG(3) << "AllocateLocalSurfaceId client window_id="
+           << window_id.ToString();
+  if (!window || !IsTopLevel(window)) {
+    DVLOG(1) << "AllocateLocalSurfaceId failed (invalid window id)";
+    return;
+  }
+  ClientRoot* client_root = GetClientRootForWindow(window);
+  DCHECK(client_root);
+  client_root->AllocateLocalSurfaceIdAndNotifyClient();
 }
 
 void WindowTree::SetWindowTransform(uint32_t change_id,
-                                    Id window_id,
+                                    Id transport_window_id,
                                     const gfx::Transform& transform) {
-  // NOTE: Tests may time out if they trigger this NOTIMPLEMENTED because
-  // the change is not ack'd. The code under test may need to change to
-  // avoid triggering window transforms outside the window manager.
-  NOTIMPLEMENTED_LOG_ONCE();
+  window_tree_client_->OnChangeCompleted(
+      change_id, SetWindowTransformImpl(MakeClientWindowId(transport_window_id),
+                                        transform));
 }
 
 void WindowTree::SetClientArea(
@@ -1626,6 +1718,9 @@ void WindowTree::UnattachFrameSinkId(Id transport_window_id) {
 }
 
 void WindowTree::SetCanAcceptDrops(Id window_id, bool accepts_drops) {
+  DVLOG(3) << "SetCanAcceptDrops id="
+           << MakeClientWindowId(window_id).ToString()
+           << " value=" << accepts_drops;
   aura::Window* window = GetWindowByTransportId(window_id);
   if (!window) {
     DVLOG(1) << "SetCanAcceptDrops failed (no window)";
@@ -1640,7 +1735,7 @@ void WindowTree::SetCanAcceptDrops(Id window_id, bool accepts_drops) {
   DCHECK(proxy_window);  // Must exist because of preceding conditionals.
   if (accepts_drops && !proxy_window->HasDragDropDelegate()) {
     auto drag_drop_delegate = std::make_unique<DragDropDelegate>(
-        window_tree_client_, window, window_id);
+        this, window_tree_client_, window, window_id);
     aura::client::SetDragDropDelegate(window, drag_drop_delegate.get());
     proxy_window->SetDragDropDelegate(std::move(drag_drop_delegate));
   } else if (!accepts_drops && proxy_window->HasDragDropDelegate()) {
@@ -1855,7 +1950,7 @@ void WindowTree::SetCanFocus(Id transport_window_id, bool can_focus) {
 
 void WindowTree::SetCursor(uint32_t change_id,
                            Id transport_window_id,
-                           ui::CursorData cursor) {
+                           ui::Cursor cursor) {
   window_tree_client_->OnChangeCompleted(
       change_id,
       SetCursorImpl(MakeClientWindowId(transport_window_id), cursor));
@@ -1987,9 +2082,12 @@ void WindowTree::GetCursorLocationMemory(
 void WindowTree::PerformWindowMove(uint32_t change_id,
                                    Id transport_window_id,
                                    mojom::MoveLoopSource source,
-                                   const gfx::Point& cursor) {
+                                   const gfx::Point& cursor,
+                                   int hit_test) {
   DVLOG(3) << "PerformWindowMove id="
-           << MakeClientWindowId(transport_window_id).ToString();
+           << MakeClientWindowId(transport_window_id).ToString()
+           << " source=" << source << " cursor=" << cursor.ToString()
+           << " hit_test=" << hit_test;
   aura::Window* window = GetWindowByTransportId(transport_window_id);
   if (!IsClientCreatedWindow(window) || !IsTopLevel(window) ||
       !window->IsVisible() || window_moving_) {
@@ -2007,7 +2105,7 @@ void WindowTree::PerformWindowMove(uint32_t change_id,
 
   window_moving_ = window;
   window_service_->delegate()->RunWindowMoveLoop(
-      window, source, cursor,
+      window, source, cursor, hit_test,
       base::BindOnce(&WindowTree::OnPerformWindowMoveDone,
                      weak_factory_.GetWeakPtr(), change_id));
 }
@@ -2099,6 +2197,23 @@ void WindowTree::StopObservingTopmostWindow() {
     return;
   }
   topmost_window_observer_.reset();
+}
+
+void WindowTree::SetWindowResizeShadow(Id window_id, int hit_test) {
+  DVLOG(3) << "SetWindowResizeShadow id="
+           << MakeClientWindowId(window_id).ToString()
+           << " hit_test=" << hit_test;
+  aura::Window* window = GetWindowByTransportId(window_id);
+  if (!IsClientCreatedWindow(window) || !IsTopLevel(window) ||
+      !window->IsVisible()) {
+    DVLOG(1) << "SetWindowResizeShadow failed (invalid window)";
+    return;
+  }
+  if (hit_test != HTNOWHERE && !ui::IsResizingComponent(hit_test)) {
+    DVLOG(1) << "SetWindowResizeShadow failed (invalid hit_test)";
+    return;
+  }
+  window_service_->delegate()->SetWindowResizeShadow(window, hit_test);
 }
 
 void WindowTree::CancelActiveTouchesExcept(Id not_cancelled_window_id) {

@@ -202,6 +202,14 @@ static const gfx::Transform& Transform(LayerImpl* layer) {
   return layer->test_properties()->transform;
 }
 
+static const gfx::PointF& Position(Layer* layer) {
+  return layer->position();
+}
+
+static const gfx::PointF& Position(LayerImpl* layer) {
+  return layer->test_properties()->position;
+}
+
 // Methods to query state from the AnimationHost ----------------------
 template <typename LayerType>
 bool OpacityIsAnimating(const MutatorHost& host, LayerType* layer) {
@@ -472,8 +480,8 @@ bool PropertyTreeBuilderContext<LayerType>::AddTransformNodeIfNeeded(
 
   if (!requires_node) {
     data_for_children->should_flatten |= ShouldFlattenTransform(layer);
-    gfx::Vector2dF local_offset = layer->position().OffsetFromOrigin() +
-                                  Transform(layer).To2dTranslation();
+    gfx::Vector2dF local_offset =
+        Position(layer).OffsetFromOrigin() + Transform(layer).To2dTranslation();
     gfx::Vector2dF source_to_parent;
     if (source_index != parent_index) {
       gfx::Transform to_parent;
@@ -539,14 +547,13 @@ bool PropertyTreeBuilderContext<LayerType>::AddTransformNodeIfNeeded(
         is_page_scale_layer ? page_scale_factor_ : 1.f;
     // SetRootTransformsAndScales will be incorrect if the root layer has
     // non-zero position, so ensure it is zero.
-    DCHECK(layer->position().IsOrigin());
+    DCHECK(Position(layer).IsOrigin());
     transform_tree_.SetRootTransformsAndScales(
         transform_tree_.device_scale_factor(), page_scale_factor_for_root,
         device_transform_);
   } else {
     node->source_offset = source_offset;
-    node->update_post_local_transform(layer->position(),
-                                      TransformOrigin(layer));
+    node->update_post_local_transform(Position(layer), TransformOrigin(layer));
   }
 
   if (is_overscroll_elasticity_layer) {
@@ -751,11 +758,11 @@ static inline const FilterOperations& BackdropFilters(LayerImpl* layer) {
   return layer->test_properties()->backdrop_filters;
 }
 
-static inline const gfx::RectF& BackdropFilterBounds(Layer* layer) {
+static inline const gfx::RRectF& BackdropFilterBounds(Layer* layer) {
   return layer->backdrop_filter_bounds();
 }
 
-static inline const gfx::RectF& BackdropFilterBounds(LayerImpl* layer) {
+static inline const gfx::RRectF& BackdropFilterBounds(LayerImpl* layer) {
   return layer->test_properties()->backdrop_filter_bounds;
 }
 
@@ -813,7 +820,12 @@ bool ShouldCreateRenderSurface(const MutatorHost& mutator_host,
   }
 
   // If the layer uses a CSS filter.
-  if (!Filters(layer).IsEmpty() || !BackdropFilters(layer).IsEmpty()) {
+  if (!Filters(layer).IsEmpty()) {
+    return true;
+  }
+
+  // If the layer uses a CSS backdrop-filter.
+  if (!BackdropFilters(layer).IsEmpty()) {
     return true;
   }
 
@@ -981,7 +993,8 @@ bool PropertyTreeBuilderContext<LayerType>::AddEffectNodeIfNeeded(
 
   bool requires_node =
       is_root || has_transparency || has_potential_opacity_animation ||
-      has_non_axis_aligned_clip || should_create_render_surface;
+      has_potential_filter_animation || has_non_axis_aligned_clip ||
+      should_create_render_surface;
 
   int parent_id = data_from_ancestor.effect_tree_parent;
 
@@ -1368,7 +1381,7 @@ void PropertyTreeBuilderContext<LayerType>::BuildPropertyTrees(
         page_scale_is_root_layer ? page_scale_factor_ : 1.f;
     // SetRootTransformsAndScales will be incorrect if the root layer has
     // non-zero position, so ensure it is zero.
-    DCHECK(root_layer_->position().IsOrigin());
+    DCHECK(Position(root_layer_).IsOrigin());
     transform_tree_.SetRootTransformsAndScales(
         device_scale_factor, page_scale_factor_for_root, device_transform_);
     return;

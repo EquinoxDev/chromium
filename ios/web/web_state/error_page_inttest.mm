@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #import "base/test/ios/wait_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "ios/testing/embedded_test_server_handlers.h"
@@ -256,8 +257,8 @@ TEST_P(ErrorPageTest, FormSubmissionError) {
       web_state(), "domain: NSURLErrorDomain code: -1005 post: 1 otr: 0"));
 }
 
-INSTANTIATE_TEST_CASE_P(ProgrammaticErrorPageTest,
-                        ErrorPageTest,
-                        ::testing::Values(NavigationManagerChoice::LEGACY,
-                                          NavigationManagerChoice::WK_BASED));
+INSTANTIATE_TEST_SUITE_P(ProgrammaticErrorPageTest,
+                         ErrorPageTest,
+                         ::testing::Values(NavigationManagerChoice::LEGACY,
+                                           NavigationManagerChoice::WK_BASED));
 }  // namespace web

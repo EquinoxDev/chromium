@@ -21,6 +21,7 @@
 #include "base/callback_list.h"
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
@@ -51,6 +52,7 @@
 #include "chrome/browser/ui/app_list/search/extension_app_result.h"
 #include "chrome/browser/ui/app_list/search/internal_app_result.h"
 #include "chrome/browser/ui/app_list/search/search_result_ranker/app_search_result_ranker.h"
+#include "chrome/browser/ui/app_list/search/search_result_ranker/ranking_item_util.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
@@ -165,11 +167,12 @@ class AppSearchProvider::App {
   bool MatchSearchableText(const TokenizedString& query) {
     if (searchable_text_.empty())
       return false;
-    if (tokenized_indexed_searchable_text_.empty())
+    if (tokenized_indexed_searchable_text_.empty()) {
       for (const base::string16& curr_text : searchable_text_) {
         tokenized_indexed_searchable_text_.push_back(
             std::make_unique<TokenizedString>(curr_text));
       }
+    }
     TokenizedStringMatch match;
     for (auto& curr_text : tokenized_indexed_searchable_text_) {
       match.Calculate(query, *curr_text);
@@ -256,12 +259,15 @@ class AppSearchProvider::DataSource {
 
 namespace {
 
-class AppServiceDataSource : public AppSearchProvider::DataSource {
+class AppServiceDataSource : public AppSearchProvider::DataSource,
+                             public apps::AppRegistryCache::Observer {
  public:
   AppServiceDataSource(Profile* profile, AppSearchProvider* owner)
       : AppSearchProvider::DataSource(profile, owner) {
-    // TODO(crbug.com/826982): observe the cache for apps being installed and
-    // uninstalled, and in the callback, call RefreshAppsAndUpdateResultsXxx().
+    apps::AppServiceProxy* proxy = apps::AppServiceProxy::Get(profile);
+    if (proxy) {
+      Observe(&proxy->Cache());
+    }
   }
 
   ~AppServiceDataSource() override = default;
@@ -272,27 +278,30 @@ class AppServiceDataSource : public AppSearchProvider::DataSource {
     if (!proxy) {
       return;
     }
-    proxy->Cache().ForEachApp(
-        [this, apps_vector](const apps::AppUpdate& update) {
-          if (update.ShowInSearch() != apps::mojom::OptionalBool::kTrue) {
-            return;
-          }
+    proxy->Cache().ForEachApp([this,
+                               apps_vector](const apps::AppUpdate& update) {
+      if (update.ShowInSearch() != apps::mojom::OptionalBool::kTrue) {
+        return;
+      }
 
-          // TODO(crbug.com/826982): add the "can load in incognito" concept to
-          // the App Service and use it here, similar to ExtensionDataSource.
+      // TODO(crbug.com/826982): add the "can load in incognito" concept to
+      // the App Service and use it here, similar to ExtensionDataSource.
 
-          apps_vector->emplace_back(std::make_unique<AppSearchProvider::App>(
-              this, update.AppId(),
-              // TODO(crbug.com/826982): add the "short name" concept to the App
-              // Service, and use it here.
-              update.Name(),
-              // TODO(crbug.com/826982): add the "last launch time" and "install
-              // time" concepts to the App Service, and use them here.
-              base::Time(), base::Time(),
-              // TODO(crbug.com/826982): add the "installed internally" concept
-              // to the App Service, and use it here.
-              true));
-        });
+      apps_vector->emplace_back(std::make_unique<AppSearchProvider::App>(
+          this, update.AppId(), update.ShortName(), update.LastLaunchTime(),
+          update.InstallTime(),
+          update.InstalledInternally() == apps::mojom::OptionalBool::kTrue));
+
+      // Until it's been installed, the Crostini Terminal is hidden and
+      // requires a few characters before being shown in search results.
+      if ((update.AppType() == apps::mojom::AppType::kCrostini) &&
+          (update.AppId() == crostini::kCrostiniTerminalId) &&
+          !crostini::IsCrostiniEnabled(profile())) {
+        apps_vector->back()->set_recommendable(false);
+        apps_vector->back()->set_relevance_threshold(
+            kCrostiniTerminalRelevanceThreshold);
+      }
+    });
   }
 
   std::unique_ptr<AppResult> CreateResult(
@@ -304,6 +313,15 @@ class AppServiceDataSource : public AppSearchProvider::DataSource {
   }
 
  private:
+  // apps::AppRegistryCache::Observer overrides:
+  void OnAppUpdate(const apps::AppUpdate& update) override {
+    if (update.Readiness() == apps::mojom::Readiness::kReady) {
+      owner()->RefreshAppsAndUpdateResultsDeferred();
+    } else {
+      owner()->RefreshAppsAndUpdateResults();
+    }
+  }
+
   DISALLOW_COPY_AND_ASSIGN(AppServiceDataSource);
 };
 
@@ -609,7 +627,7 @@ AppSearchProvider::AppSearchProvider(Profile* profile,
       refresh_apps_factory_(this),
       update_results_factory_(this) {
   bool app_service_enabled =
-      base::FeatureList::IsEnabled(features::kAppService);
+      base::FeatureList::IsEnabled(features::kAppServiceAsh);
   if (app_service_enabled) {
     data_sources_.emplace_back(
         std::make_unique<AppServiceDataSource>(profile, this));
@@ -633,6 +651,9 @@ AppSearchProvider::~AppSearchProvider() {}
 
 void AppSearchProvider::Start(const base::string16& query) {
   query_ = query;
+  query_start_time_ = base::TimeTicks::Now();
+  // We only need to record app search latency for queries started by user.
+  record_query_uma_ = true;
   const bool show_recommendations = query.empty();
   // Refresh list of apps to ensure we have the latest launch time information.
   // This will also cause the results to update.
@@ -642,8 +663,9 @@ void AppSearchProvider::Start(const base::string16& query) {
     UpdateResults();
 }
 
-void AppSearchProvider::Train(const std::string& id) {
-  ranker_->Train(id);
+void AppSearchProvider::Train(const std::string& id, RankingItemType type) {
+  if (type == RankingItemType::kApp)
+    ranker_->Train(id);
 }
 
 void AppSearchProvider::RefreshAppsAndUpdateResults() {
@@ -724,6 +746,8 @@ void AppSearchProvider::UpdateRecommendedResults(
     MaybeAddResult(&new_results, std::move(result), &seen_or_filtered_apps);
   }
 
+  MaybeRecordQueryLatencyHistogram(false /* empty query */);
+
   SwapResults(&new_results);
   update_results_factory_.InvalidateWeakPtrs();
 }
@@ -760,8 +784,27 @@ void AppSearchProvider::UpdateQueriedResults() {
     MaybeAddResult(&new_results, std::move(result), &seen_or_filtered_apps);
   }
 
+  MaybeRecordQueryLatencyHistogram(true /* queried search */);
+
   SwapResults(&new_results);
   update_results_factory_.InvalidateWeakPtrs();
+}
+
+void AppSearchProvider::MaybeRecordQueryLatencyHistogram(
+    bool is_queried_search) {
+  // Record the query latency only if search provider is queried by user
+  // initiating a search or getting zero state suggestions.
+  if (!record_query_uma_)
+    return;
+
+  if (is_queried_search) {
+    UMA_HISTOGRAM_TIMES("Apps.AppList.AppSearchProvider.QueryTime",
+                        base::TimeTicks::Now() - query_start_time_);
+  } else {
+    UMA_HISTOGRAM_TIMES("Apps.AppList.AppSearchProvider.ZeroStateLatency",
+                        base::TimeTicks::Now() - query_start_time_);
+  }
+  record_query_uma_ = false;
 }
 
 void AppSearchProvider::UpdateResults() {

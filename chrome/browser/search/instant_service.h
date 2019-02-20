@@ -25,12 +25,14 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "ui/native_theme/native_theme.h"
 #include "url/gurl.h"
 
 #if defined(OS_ANDROID)
 #error "Instant is only used on desktop";
 #endif
 
+class DarkModeObserver;
 class InstantIOContext;
 class InstantServiceObserver;
 class NtpBackgroundService;
@@ -108,6 +110,10 @@ class InstantService : public KeyedService,
   // necessary. Investigate more and remove this from here.
   void UpdateThemeInfo();
 
+  // Invoked when a background pref update is received via sync, triggering
+  // an update of theme info.
+  void UpdateBackgroundFromSync();
+
   // Invoked by the InstantController to update most visited items details for
   // NTP.
   void UpdateMostVisitedItemsInfo();
@@ -131,6 +137,10 @@ class InstantService : public KeyedService,
   // Used for testing.
   ThemeBackgroundInfo* GetThemeInfoForTesting() { return theme_info_.get(); }
 
+  // Used for testing.
+  void SetDarkModeThemeForTesting(ui::NativeTheme* theme);
+
+  // Used for testing.
   void AddValidBackdropUrlForTesting(const GURL& url) const;
 
   // Check if a custom background has been set by the user.
@@ -161,6 +171,10 @@ class InstantService : public KeyedService,
   // search provider is not Google.
   void OnSearchProviderChanged(bool is_google);
 
+  // Called when dark mode changes. Updates current theme info as necessary and
+  // notifies that the theme has changed.
+  void OnDarkModeChanged(bool dark_mode);
+
   // ntp_tiles::MostVisitedSites::Observer implementation.
   void OnURLsAvailable(
       const std::map<ntp_tiles::SectionType, ntp_tiles::NTPTilesVector>&
@@ -175,7 +189,6 @@ class InstantService : public KeyedService,
   void ApplyOrResetCustomBackgroundThemeInfo();
 
   void ApplyCustomBackgroundThemeInfo();
-  void ApplyCustomBackgroundThemeInfoFromLocalFile(bool file_exists);
 
   void ResetCustomBackgroundThemeInfo();
 
@@ -198,6 +211,8 @@ class InstantService : public KeyedService,
   // Update the background pref to point to
   // chrome-search://local-ntp/background.jpg
   void SetBackgroundToLocalResource();
+
+  void CreateDarkModeObserver(ui::NativeTheme* theme);
 
   Profile* const profile_;
 
@@ -225,6 +240,9 @@ class InstantService : public KeyedService,
   PrefChangeRegistrar pref_change_registrar_;
 
   PrefService* pref_service_;
+
+  // Keeps track of any changes to system dark mode.
+  std::unique_ptr<DarkModeObserver> dark_mode_observer_;
 
   NtpBackgroundService* background_service_;
 

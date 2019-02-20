@@ -7,19 +7,21 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/task/post_task.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_utils.h"
-#include "components/printing/common/printer_capabilities.h"
+#include "components/printing/browser/printer_capabilities.h"
 #include "content/public/browser/browser_thread.h"
 #include "printing/backend/print_backend.h"
 
 #if defined(OS_MACOSX)
 #include "components/printing/browser/features.h"
-#include "components/printing/common/printer_capabilities_mac.h"
+#include "components/printing/browser/printer_capabilities_mac.h"
 #endif
 
 namespace printing {
@@ -58,8 +60,8 @@ base::Value FetchCapabilitiesAsync(const std::string& device_name) {
   if (!print_backend->GetPrinterBasicInfo(device_name, &basic_info))
     return base::Value();
 
-  return std::move(*GetSettingsOnBlockingPool(
-      device_name, basic_info, additional_papers, print_backend));
+  return GetSettingsOnBlockingPool(device_name, basic_info, additional_papers,
+                                   print_backend);
 }
 
 std::string GetDefaultPrinterAsync() {
@@ -117,15 +119,12 @@ void LocalPrinterHandlerDefault::StartGetCapability(
 }
 
 void LocalPrinterHandlerDefault::StartPrint(
-    const std::string& destination_id,
-    const std::string& capability,
     const base::string16& job_title,
-    const std::string& ticket_json,
-    const gfx::Size& page_size,
-    const scoped_refptr<base::RefCountedMemory>& print_data,
+    base::Value settings,
+    scoped_refptr<base::RefCountedMemory> print_data,
     PrintCallback callback) {
-  StartLocalPrint(ticket_json, print_data, preview_web_contents_,
-                  std::move(callback));
+  StartLocalPrint(std::move(settings), std::move(print_data),
+                  preview_web_contents_, std::move(callback));
 }
 
 }  // namespace printing

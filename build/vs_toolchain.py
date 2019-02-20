@@ -42,7 +42,10 @@ def SetEnvironmentAndGetRuntimeDllDirs():
   if ((sys.platform in ('win32', 'cygwin') or os.path.exists(json_data_file))
       and depot_tools_win_toolchain):
     if ShouldUpdateToolchain():
-      update_result = Update()
+      if len(sys.argv) > 1 and sys.argv[1] == 'update':
+        update_result = Update()
+      else:
+        update_result = Update(no_download=True)
       if update_result != 0:
         raise Exception('Failed to update, error code %d.' % update_result)
     with open(json_data_file, 'r') as tempf:
@@ -364,9 +367,8 @@ def _GetDesiredVsToolchainHashes():
   to build with."""
   env_version = GetVisualStudioVersion()
   if env_version == '2017':
-    # VS 2017 Update 7.1 (15.7.1) with 10.0.17134.12 SDK, rebuilt with
-    # dbghelp.dll fix.
-    toolchain_hash = '3bc0ec615cf20ee342f3bc29bc991b5ad66d8d2c'
+    # VS 2017 Update 9 (15.9.3) with 10.0.17763.132 SDK with ARM64 libraries.
+    toolchain_hash = 'e04af53255fe13c130e9cfde7d9ac861b9fb674a'
     # Third parties that do not have access to the canonical toolchain can map
     # canonical toolchain version to their own toolchain versions.
     toolchain_hash_mapping_key = 'GYP_MSVS_HASH_%s' % toolchain_hash
@@ -387,10 +389,12 @@ def ShouldUpdateToolchain():
   return version != env_version
 
 
-def Update(force=False):
+def Update(force=False, no_download=False):
   """Requests an update of the toolchain to the specific hashes we have at
   this revision. The update outputs a .json of the various configuration
   information required to pass to gyp which we use in |GetToolchainDir()|.
+  If no_download is true then the toolchain will be configured if present but
+  will not be downloaded.
   """
   if force != False and force != '--force':
     print >>sys.stderr, 'Unknown parameter "%s"' % force
@@ -441,6 +445,8 @@ def Update(force=False):
       ] + _GetDesiredVsToolchainHashes()
     if force:
       get_toolchain_args.append('--force')
+    if no_download:
+      get_toolchain_args.append('--no-download')
     subprocess.check_call(get_toolchain_args)
 
   return 0

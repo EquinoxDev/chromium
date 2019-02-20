@@ -5,13 +5,17 @@
 #ifndef BASE_TEST_SCOPED_TASK_ENVIRONMENT_H_
 #define BASE_TEST_SCOPED_TASK_ENVIRONMENT_H_
 
+#include <memory>
+
+#include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
 #include "base/task/lazy_task_runner.h"
 #include "base/task/sequence_manager/sequence_manager.h"
-#include "base/task/task_traits.h"
 #include "base/time/time.h"
+#include "base/traits_bag.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -62,6 +66,14 @@ namespace test {
 // Design and future improvements documented in
 // https://docs.google.com/document/d/1QabRo8c7D9LsYY3cEcaPQbOCLo8Tu-6VLykYXyl3Pkk/edit
 class ScopedTaskEnvironment {
+ protected:
+  // This enables a two-phase initialization for sub classes such as
+  // content::TestBrowserThreadBundle which need to provide the default task
+  // queue because they instantiate a scheduler on the same thread. Subclasses
+  // using this trait must invoke DeferredInitFromSubclass() before running the
+  // task environment.
+  struct SubclassCreatesDefaultTaskRunner {};
+
  public:
   enum class MainThreadType {
     // The main thread doesn't pump system messages.
@@ -98,11 +110,12 @@ class ScopedTaskEnvironment {
   };
 
   enum class NowSource {
-    // base::TimeTicks::Now is real time.
+    // base::Time::Now() and base::TimeTicks::Now() are real time.
     REAL_TIME,
 
-    // base::TimeTicks::Now is driven from the main thread's MOCK_TIME. This
-    // may alter the order of delayed and non-delayed tasks on other threads.
+    // base::Time::Now() and base::TimeTicks::Now() are driven from the main
+    // thread's MOCK_TIME. This may alter the order of delayed and non-delayed
+    // tasks on other threads.
     //
     // Warning some platform APIs are still real time, and don't interact with
     // MOCK_TIME as expected, e.g.:
@@ -114,10 +127,11 @@ class ScopedTaskEnvironment {
   };
 
   // List of traits that are valid inputs for the constructor below.
-  struct ValidTrait : public base::TaskTraits::ValidTrait {
+  struct ValidTrait {
     ValidTrait(MainThreadType);
     ValidTrait(ExecutionMode);
     ValidTrait(NowSource);
+    ValidTrait(SubclassCreatesDefaultTaskRunner);
   };
 
   // Constructor accepts zero or more traits which customize the testing
@@ -125,32 +139,19 @@ class ScopedTaskEnvironment {
   template <class... ArgTypes,
             class CheckArgumentsAreValid = std::enable_if_t<
                 trait_helpers::AreValidTraits<ValidTrait, ArgTypes...>::value>>
-  ScopedTaskEnvironment(ArgTypes... args)
+  NOINLINE ScopedTaskEnvironment(ArgTypes... args)
       : ScopedTaskEnvironment(
-            GetEnum<MainThreadType, MainThreadType::DEFAULT>(args...),
-            GetEnum<ExecutionMode, ExecutionMode::ASYNC>(args...),
-            GetEnum<NowSource, NowSource::REAL_TIME>(args...),
-            NotATraitTag()) {}
+            trait_helpers::GetEnum<MainThreadType, MainThreadType::DEFAULT>(
+                args...),
+            trait_helpers::GetEnum<ExecutionMode, ExecutionMode::ASYNC>(
+                args...),
+            trait_helpers::GetEnum<NowSource, NowSource::REAL_TIME>(args...),
+            trait_helpers::HasTrait<SubclassCreatesDefaultTaskRunner>(args...),
+            trait_helpers::NotATraitTag()) {}
 
   // Waits until no undelayed TaskScheduler tasks remain. Then, unregisters the
   // TaskScheduler and the (Thread|Sequenced)TaskRunnerHandle.
   virtual ~ScopedTaskEnvironment();
-
-  class LifetimeObserver {
-   public:
-    virtual ~LifetimeObserver() = default;
-
-    virtual void OnScopedTaskEnvironmentCreated(
-        MainThreadType main_thread_type,
-        scoped_refptr<SingleThreadTaskRunner> task_runner) = 0;
-    virtual void OnScopedTaskEnvironmentDestroyed() = 0;
-  };
-
-  // Set a thread-local observer which will get notifications when
-  // a new ScopedTaskEnvironment is created or destroyed.
-  // This is needed due to peculiarities of Blink initialisation
-  // (Blink is per-test suite and ScopedTaskEnvironment is per-test).
-  static void SetLifetimeObserver(LifetimeObserver* lifetime_observer);
 
   // Returns a TaskRunner that schedules tasks on the main thread.
   scoped_refptr<base::SingleThreadTaskRunner> GetMainThreadTaskRunner();
@@ -201,11 +202,23 @@ class ScopedTaskEnvironment {
   TimeDelta NextMainThreadPendingTaskDelay() const;
 
  protected:
-  MainThreadType main_thread_type() const { return main_thread_type_; }
+  explicit ScopedTaskEnvironment(ScopedTaskEnvironment&& other);
 
-  ExecutionMode execution_control_mode() const {
+  constexpr MainThreadType main_thread_type() const {
+    return main_thread_type_;
+  }
+
+  constexpr ExecutionMode execution_control_mode() const {
     return execution_control_mode_;
   }
+
+  // Returns the TimeDomain driving this ScopedTaskEnvironment.
+  sequence_manager::TimeDomain* GetTimeDomain() const;
+
+  sequence_manager::SequenceManager* sequence_manager() const;
+
+  void DeferredInitFromSubclass(
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   // Derived classes may need to control when the sequence manager goes away.
   void NotifyDestructionObserversAndReleaseSequenceManager();
@@ -214,37 +227,32 @@ class ScopedTaskEnvironment {
   class MockTimeDomain;
   class TestTaskTracker;
 
-  // Helper to make the template constructor more readable.
-  template <typename Enum, Enum DefaultValue, typename... Args>
-  static constexpr auto GetEnum(Args... args) {
-    return trait_helpers::GetTraitFromArgList<
-        trait_helpers::EnumTraitFilter<Enum, DefaultValue>>(args...);
-  }
+  void CompleteInitialization();
 
-  // Here to make sure the compiler always uses the template constructor.
-  struct NotATraitTag {};
-
+  // The template constructor has to be in the header but it delegates to this
+  // constructor to initialize all other members out-of-line.
   ScopedTaskEnvironment(MainThreadType main_thread_type,
                         ExecutionMode execution_control_mode,
                         NowSource now_source,
-                        NotATraitTag tag);
-
-  scoped_refptr<sequence_manager::TaskQueue> CreateDefaultTaskQueue();
+                        bool subclass_creates_default_taskrunner,
+                        trait_helpers::NotATraitTag tag);
 
   const MainThreadType main_thread_type_;
   const ExecutionMode execution_control_mode_;
+  const bool subclass_creates_default_taskrunner_;
 
-  const std::unique_ptr<MockTimeDomain> mock_time_domain_;
   std::unique_ptr<sequence_manager::SequenceManager> sequence_manager_;
+  std::unique_ptr<MockTimeDomain> mock_time_domain_;
 
   scoped_refptr<sequence_manager::TaskQueue> task_queue_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // Only set for instances with a MOCK_TIME MainThreadType.
-  const std::unique_ptr<Clock> mock_clock_;
+  std::unique_ptr<Clock> mock_clock_;
 
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
   // Enables the FileDescriptorWatcher API iff running a MainThreadType::IO.
-  const std::unique_ptr<FileDescriptorWatcher> file_descriptor_watcher_;
+  std::unique_ptr<FileDescriptorWatcher> file_descriptor_watcher_;
 #endif
 
   const TaskScheduler* task_scheduler_ = nullptr;
@@ -253,8 +261,13 @@ class ScopedTaskEnvironment {
   TestTaskTracker* const task_tracker_;
 
   // Ensures destruction of lazy TaskRunners when this is destroyed.
-  internal::ScopedLazyTaskRunnerListForTesting
+  std::unique_ptr<internal::ScopedLazyTaskRunnerListForTesting>
       scoped_lazy_task_runner_list_for_testing_;
+
+  // Sets RunLoop::Run() to LOG(FATAL) if not Quit() in a timely manner.
+  std::unique_ptr<RunLoop::ScopedRunTimeoutForTest> run_loop_timeout_;
+
+  std::unique_ptr<bool> owns_instance_ = std::make_unique<bool>(true);
 
   DISALLOW_COPY_AND_ASSIGN(ScopedTaskEnvironment);
 };

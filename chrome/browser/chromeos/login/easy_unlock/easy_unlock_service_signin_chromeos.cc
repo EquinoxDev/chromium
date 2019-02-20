@@ -382,6 +382,10 @@ void EasyUnlockServiceSignin::OnScreenDidUnlock(
 
   // Only record metrics for users who have enabled the feature.
   if (IsEnabled()) {
+    if (will_authenticate_using_easy_unlock()) {
+      SmartLockMetricsRecorder::RecordAuthResultSignInSuccess();
+    }
+
     EasyUnlockAuthEvent event = GetPasswordAuthEvent();
     if (event == PASSWORD_ENTRY_PHONE_LOCKED ||
         event == PASSWORD_ENTRY_PHONE_NOT_LOCKABLE ||
@@ -646,10 +650,10 @@ void EasyUnlockServiceSignin::ShowInitialUserPodState() {
     return;
 
   if (!pref_manager_->IsChromeOSLoginEnabled()) {
-    // Show a hardlock state if the user has not enabled the login flow.
-    SetHardlockStateForUser(
-        account_id_,
-        EasyUnlockScreenlockStateHandler::PASSWORD_REQUIRED_FOR_LOGIN);
+    // Show a hardlock state if the user has not enabled Smart Lock to the log
+    // in to the user's Google account.
+    SetHardlockStateForUser(account_id_,
+                            EasyUnlockScreenlockStateHandler::LOGIN_DISABLED);
   } else {
     // This UI is simply a placeholder until the RemoteDevices are loaded from
     // cryptohome and the ProximityAuthSystem is started. Hardlock states are

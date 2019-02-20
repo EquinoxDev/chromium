@@ -26,6 +26,7 @@
 #include "services/network/cross_origin_read_blocking.h"
 #include "services/network/initiator_lock_compatibility.h"
 #include "services/network/keepalive_statistics_recorder.h"
+#include "services/network/public/mojom/fetch_api.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/resource_scheduler.h"
@@ -68,15 +69,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
       scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
       base::WeakPtr<KeepaliveStatisticsRecorder> keepalive_statistics_recorder,
       base::WeakPtr<NetworkUsageAccumulator> network_usage_accumulator,
-      mojom::TrustedURLLoaderHeaderClient* header_client);
+      mojom::TrustedURLLoaderHeaderClient* url_loader_header_client);
   ~URLLoader() override;
 
   // mojom::URLLoader implementation:
-  void FollowRedirect(
-      const base::Optional<std::vector<std::string>>&
-          to_be_removed_request_headers,
-      const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
-      const base::Optional<GURL>& new_url) override;
+  void FollowRedirect(const std::vector<std::string>& removed_headers,
+                      const net::HttpRequestHeaders& modified_headers,
+                      const base::Optional<GURL>& new_url) override;
   void ProceedWithResponse() override;
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override;
@@ -201,6 +200,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
       const base::Optional<std::string>& headers,
       const GURL& allowed_unsafe_redirect_url);
 
+  void CompleteBlockedResponse(int error_code,
+                               bool should_report_corb_blocking);
+
   enum BlockResponseForCorbResult {
     // Returned when caller of BlockResponseForCorb doesn't need to continue,
     // because the request will be cancelled soon.
@@ -249,7 +251,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
 
   // Sniffing state.
   std::unique_ptr<CrossOriginReadBlocking::ResponseAnalyzer> corb_analyzer_;
-  InitiatorLockCompatibility initiator_lock_compatibility_;
   bool is_more_corb_sniffing_needed_ = false;
   bool is_more_mime_sniffing_needed_ = false;
 
@@ -296,6 +297,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   // CORB-excluded requests must be blocked if the CORS check fails.
   bool is_nocors_corb_excluded_request_ = false;
 
+  mojom::FetchRequestMode fetch_request_mode_;
+
   scoped_refptr<ResourceSchedulerClient> resource_scheduler_client_;
 
   mojom::SSLPrivateKeyPtr ssl_private_key_;
@@ -316,7 +319,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
   // network::ResourceRequest::fetch_window_id for details.
   base::Optional<base::UnguessableToken> fetch_window_id_;
 
-  mojom::TrustedURLLoaderHeaderClient* header_client_ = nullptr;
+  mojom::TrustedHeaderClientPtr header_client_;
 
   base::WeakPtrFactory<URLLoader> weak_ptr_factory_;
 

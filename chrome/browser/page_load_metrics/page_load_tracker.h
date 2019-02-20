@@ -13,7 +13,6 @@
 #include "base/time/time.h"
 #include "chrome/browser/page_load_metrics/page_load_metrics_observer.h"
 #include "chrome/browser/page_load_metrics/page_load_metrics_update_dispatcher.h"
-#include "chrome/browser/page_load_metrics/user_input_tracker.h"
 #include "chrome/common/page_load_metrics/page_load_timing.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -192,6 +191,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client {
   void DidCommitSameDocumentNavigation(
       content::NavigationHandle* navigation_handle);
   void DidInternalNavigationAbort(content::NavigationHandle* navigation_handle);
+  void ReadyToCommitNavigation(content::NavigationHandle* navigation_handle);
   void DidFinishSubFrameNavigation(
       content::NavigationHandle* navigation_handle);
   void FailedProvisionalLoad(content::NavigationHandle* navigation_handle,
@@ -211,6 +211,12 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client {
 
   void OnLoadedResource(
       const ExtraRequestCompleteInfo& extra_request_complete_info);
+
+  void FrameReceivedFirstUserActivation(content::RenderFrameHost* rfh);
+  void FrameDisplayStateChanged(content::RenderFrameHost* render_frame_host,
+                                bool is_display_none);
+  void FrameSizeChanged(content::RenderFrameHost* render_frame_host,
+                        const gfx::Size& frame_size);
 
   // Signals that we should stop tracking metrics for the associated page load.
   // We may stop tracking a page load if it doesn't meet the criteria for
@@ -263,8 +269,6 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client {
 
   UserInitiatedInfo user_initiated_info() const { return user_initiated_info_; }
 
-  UserInputTracker* input_tracker() { return &input_tracker_; }
-
   PageLoadMetricsUpdateDispatcher* metrics_update_dispatcher() {
     return &metrics_update_dispatcher_;
   }
@@ -304,8 +308,6 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client {
   // and represents a sequence of provisional aborts that never ends with a
   // committed load.
   void LogAbortChainHistograms(content::NavigationHandle* final_navigation);
-
-  UserInputTracker input_tracker_;
 
   // Whether we stopped tracking this navigation after it was initiated. We may
   // stop tracking a navigation if it doesn't meet the criteria for tracking

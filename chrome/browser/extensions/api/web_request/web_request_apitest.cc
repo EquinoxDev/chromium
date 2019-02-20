@@ -5,6 +5,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/macros.h"
@@ -89,6 +90,7 @@
 #include "google_apis/gaia/gaia_switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_util.h"
+#include "net/test/embedded_test_server/default_handlers.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -285,6 +287,10 @@ class ExtensionWebRequestApiTest : public ExtensionApiTest {
       const char* expected_content_regular_window,
       const char* exptected_content_incognito_window);
 
+  // Ensures requests made by the |worker_script_name| service worker can be
+  // intercepted by extensions.
+  void RunServiceWorkerFetchTest(const std::string& worker_script_name);
+
   network::mojom::URLLoaderFactoryPtr CreateURLLoaderFactory() {
     network::mojom::URLLoaderFactoryParamsPtr params =
         network::mojom::URLLoaderFactoryParams::New();
@@ -444,9 +450,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, WebRequestComplex) {
 #define MAYBE_WebRequestTypes WebRequestTypes
 #endif
 IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, MAYBE_WebRequestTypes) {
-  // TODO(crbug.com/914232): flaky.
-  if (features::IsSingleProcessMash())
-    return;
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionSubtest("webrequest", "test_types.html")) << message_;
 }
@@ -512,14 +515,23 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
       message_;
 }
 
-// Flaky (sometimes crash): http://crbug.com/140976
-IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
-                       DISABLED_WebRequestAuthRequired) {
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, WebRequestAuthRequired) {
   CancelLoginDialog login_dialog_helper;
 
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionSubtest("webrequest", "test_auth_required.html")) <<
       message_;
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
+                       WebRequestAuthRequiredIncognito) {
+  CancelLoginDialog login_dialog_helper;
+
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  ASSERT_TRUE(RunExtensionSubtestWithArgAndFlags(
+      "webrequest", "test_auth_required.html", nullptr,
+      kFlagEnableIncognito | kFlagUseIncognito | kFlagEnableFileAccess))
+      << message_;
 }
 
 // This test times out regularly on win_rel trybots. See http://crbug.com/122178
@@ -556,6 +568,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, WebRequestRedirects) {
       << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
+                       WebRequestRedirectsWithExtraHeaders) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  ASSERT_TRUE(RunExtensionSubtestWithArg("webrequest", "test_redirects.html",
+                                         "useExtraHeaders"))
+      << message_;
+}
+
 // Tests that redirects from secure to insecure don't send the referrer header.
 IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
                        WebRequestRedirectsToInsecure) {
@@ -585,6 +605,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(
       RunExtensionSubtest("webrequest", "test_subresource_redirects.html"))
+      << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
+                       WebRequestSubresourceRedirectsWithExtraHeaders) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  ASSERT_TRUE(RunExtensionSubtestWithArg(
+      "webrequest", "test_subresource_redirects.html", "useExtraHeaders"))
       << message_;
 }
 
@@ -714,6 +742,48 @@ void ExtensionWebRequestApiTest::RunPermissionTest(
       "window.domAutomationController.send(document.body.textContent)",
       &body));
   EXPECT_EQ(exptected_content_incognito_window, body);
+}
+
+void ExtensionWebRequestApiTest::RunServiceWorkerFetchTest(
+    const std::string& worker_script_name) {
+  embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  TestExtensionDir test_dir;
+  test_dir.WriteManifest(R"({
+        "name": "Web Request Service Worker Test",
+        "manifest_version": 2,
+        "version": "0.1",
+        "background": { "scripts": ["background.js"] },
+        "permissions": ["<all_urls>", "webRequest", "webRequestBlocking"]
+      })");
+  test_dir.WriteFile(FILE_PATH_LITERAL("background.js"), R"(
+        chrome.webRequest.onBeforeSendHeaders.addListener(function(details) {
+          details.requestHeaders.push({name: 'foo', value: 'bar'});
+          return {requestHeaders: details.requestHeaders};
+        }, {urls: ['*://*/echoheader*']}, ['blocking', 'requestHeaders']);
+
+        chrome.test.sendMessage('ready');
+      )");
+
+  ExtensionTestMessageListener listener("ready", false);
+  ASSERT_TRUE(LoadExtension(test_dir.UnpackedPath()));
+  EXPECT_TRUE(listener.WaitUntilSatisfied());
+
+  // Register the |worker_script_name| as a service worker.
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL(
+                     "/service_worker/create_service_worker.html")));
+  EXPECT_EQ("DONE", EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
+                           "register('" + worker_script_name + "');"));
+
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(
+      browser(),
+      embedded_test_server()->GetURL("/service_worker/fetch_from_page.html")));
+  // Ensure the extension was able to intercept the service worker request and
+  // modify the request headers.
+  EXPECT_EQ("bar", EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
+                          "fetch_from_page('/echoheader?foo');"));
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
@@ -920,7 +990,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
       .SetWithholdHostPermissions(true);
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 
-  // Navigate the browser to a page in a new tab.
+  // Navigate the browser to a page in a new tab. The page at "a.com" has two
+  // two cross-origin iframes to "b.com" and "c.com".
   const std::string kHost = "a.com";
   GURL url = embedded_test_server()->GetURL(kHost, "/iframe_cross_site.html");
   NavigateParams params(browser(), url, ui::PAGE_TRANSITION_LINK);
@@ -934,17 +1005,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
       ExtensionActionRunner::GetForWebContents(web_contents);
   ASSERT_TRUE(runner);
 
-  int port = embedded_test_server()->port();
-  const std::string kXhrPath = "simple.html";
-
   // The extension shouldn't have currently received any webRequest events,
-  // since it doesn't have permission (and shouldn't receive any from an XHR).
+  // since it doesn't have any permissions.
   EXPECT_EQ(0, GetWebRequestCountFromBackgroundPage(extension, profile()));
-  EXPECT_FALSE(
-      HasSeenWebRequestInBackgroundPage(extension, profile(), "b.com"));
 
-  content::RenderFrameHost* main_frame = nullptr;
-  content::RenderFrameHost* child_frame = nullptr;
   auto get_main_and_child_frame = [](content::WebContents* web_contents,
                                      content::RenderFrameHost** main_frame,
                                      content::RenderFrameHost** child_frame) {
@@ -957,42 +1021,56 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
     ASSERT_TRUE(*child_frame);
   };
 
+  content::RenderFrameHost* main_frame = nullptr;
+  content::RenderFrameHost* child_frame = nullptr;
   get_main_and_child_frame(web_contents, &main_frame, &child_frame);
   const std::string kMainHost = main_frame->GetLastCommittedURL().host();
   const std::string kChildHost = child_frame->GetLastCommittedURL().host();
 
+  int port = embedded_test_server()->port();
+  const std::string kXhrPath = "simple.html";
+
+  // The extension shouldn't be able to intercept the xhr requests since it
+  // doesn't have any permissions.
   PerformXhrInFrame(main_frame, kHost, port, kXhrPath);
   PerformXhrInFrame(child_frame, kChildHost, port, kXhrPath);
   EXPECT_EQ(0, GetWebRequestCountFromBackgroundPage(extension, profile()));
   EXPECT_EQ(BLOCKED_ACTION_WEB_REQUEST, runner->GetBlockedActions(extension));
 
-  // Grant activeTab permission, and perform another XHR. The extension should
-  // receive the event.
+  // Grant activeTab permission.
   runner->set_default_bubble_close_action_for_testing(
       base::WrapUnique(new ToolbarActionsBarBubbleDelegate::CloseAction(
           ToolbarActionsBarBubbleDelegate::CLOSE_EXECUTE)));
   runner->RunAction(extension, true);
   base::RunLoop().RunUntilIdle();
   EXPECT_TRUE(content::WaitForLoadStop(web_contents));
-  // The runner will have refreshed the page...
+
+  // The runner will have refreshed the page, and the extension will have
+  // received access to the main-frame ("a.com"). It should still not be able to
+  // intercept the cross-origin sub-frame requests to "b.com" and "c.com".
   get_main_and_child_frame(web_contents, &main_frame, &child_frame);
+  EXPECT_TRUE(HasSeenWebRequestInBackgroundPage(extension, profile(), "a.com"));
+  EXPECT_FALSE(
+      HasSeenWebRequestInBackgroundPage(extension, profile(), "b.com"));
+  EXPECT_FALSE(
+      HasSeenWebRequestInBackgroundPage(extension, profile(), "c.com"));
+
+  // The withheld sub-frame requests should not show up as a blocked action.
   EXPECT_EQ(BLOCKED_ACTION_NONE, runner->GetBlockedActions(extension));
 
-  int xhr_count = GetWebRequestCountFromBackgroundPage(extension, profile());
-  // ... which means that we should have a non-zero xhr count, and the extension
-  // should see the request for the cross-site subframe...
-  EXPECT_GT(xhr_count, 0);
-  EXPECT_TRUE(HasSeenWebRequestInBackgroundPage(extension, profile(), "b.com"));
+  int request_count =
+      GetWebRequestCountFromBackgroundPage(extension, profile());
+
   // ... and the extension should receive future events.
   PerformXhrInFrame(main_frame, kHost, port, kXhrPath);
-  ++xhr_count;
-  EXPECT_EQ(xhr_count,
+  ++request_count;
+  EXPECT_EQ(request_count,
             GetWebRequestCountFromBackgroundPage(extension, profile()));
 
   // However, activeTab only grants access to the main frame, not to child
   // frames. As such, trying to XHR in the child frame should still fail.
   PerformXhrInFrame(child_frame, kChildHost, port, kXhrPath);
-  EXPECT_EQ(xhr_count,
+  EXPECT_EQ(request_count,
             GetWebRequestCountFromBackgroundPage(extension, profile()));
   // But since there's no way for the user to currently grant access to child
   // frames, this shouldn't show up as a blocked action.
@@ -1014,7 +1092,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
   action_updated_waiter.Wait();
   EXPECT_EQ(web_contents, action_updated_waiter.last_web_contents());
 
-  EXPECT_EQ(xhr_count,
+  EXPECT_EQ(request_count,
             GetWebRequestCountFromBackgroundPage(extension, profile()));
   EXPECT_EQ(BLOCKED_ACTION_WEB_REQUEST, runner->GetBlockedActions(extension));
 }
@@ -1674,8 +1752,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, InitiatorAccessRequired) {
 
 IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
                        WebRequestApiClearsBindingOnFirstListener) {
-  if (!base::FeatureList::IsEnabled(network::features::kNetworkService))
+  // Skip if network service is disabled since the proxy is not used. Also skip
+  // if the proxy is forced since the bindings will never be cleared in that
+  // case.
+  if (!base::FeatureList::IsEnabled(network::features::kNetworkService) ||
+      base::FeatureList::IsEnabled(
+          extensions_features::kForceWebRequestProxyForTest)) {
     return;
+  }
 
   auto loader_factory = CreateURLLoaderFactory();
   bool has_connection_error = false;
@@ -2425,6 +2509,19 @@ IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, RemoveHeaderUMAs) {
       WebRequestSpecialRequestHeaderModification::kNone, 1);
   tester.ExpectUniqueSample(
       "Extensions.WebRequest.SetCookieResponseHeaderChanged", false, 1);
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, ServiceWorkerFetch) {
+  RunServiceWorkerFetchTest("fetch_event_respond_with_fetch.js");
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest, ServiceWorkerFallback) {
+  RunServiceWorkerFetchTest("fetch_event_pass_through.js");
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionWebRequestApiTest,
+                       ServiceWorkerNoFetchHandler) {
+  RunServiceWorkerFetchTest("empty.js");
 }
 
 }  // namespace extensions

@@ -169,12 +169,14 @@ const FindInPageEntry kFindInPageEntryZero = {{0.0, 0.0}, 0};
 #pragma mark FindInPageEntry
 
 - (BOOL)processFindInPageResult:(id)result scrollPosition:(CGPoint*)point {
-  if (!result)
+  NSString* result_str = base::mac::ObjCCastStrict<NSString>(result);
+  if (!result_str)
     return NO;
 
   // Parse JSONs.
-  std::string json = base::SysNSStringToUTF8(result);
-  std::unique_ptr<base::Value> root(base::JSONReader::Read(json, false));
+  std::string json = base::SysNSStringToUTF8(result_str);
+  std::unique_ptr<base::Value> root(
+      base::JSONReader::ReadDeprecated(json, false));
   if (!root.get())
     return YES;
   if (!root->is_list())
@@ -208,6 +210,7 @@ const FindInPageEntry kFindInPageEntryZero = {{0.0, 0.0}, 0};
   CGPoint point = CGPointZero;
   if ([result isEqual:kFindInPagePending]) {
     completionHandler(NO, point);
+    return;
   }
   BOOL processFIPResult =
       [self processFindInPageResult:result scrollPosition:&point];
@@ -220,7 +223,8 @@ const FindInPageEntry kFindInPageEntryZero = {{0.0, 0.0}, 0};
 
 - (FindInPageEntry)findInPageEntryForJson:(NSString*)jsonStr {
   std::string json = base::SysNSStringToUTF8(jsonStr);
-  std::unique_ptr<base::Value> root(base::JSONReader::Read(json, false));
+  std::unique_ptr<base::Value> root(
+      base::JSONReader::ReadDeprecated(json, false));
   if (!root.get())
     return kFindInPageEntryZero;
 

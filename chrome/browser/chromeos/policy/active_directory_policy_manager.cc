@@ -16,7 +16,7 @@
 #include "chromeos/dbus/auth_policy_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/login_manager/policy_descriptor.pb.h"
-#include "chromeos/tools/variable_expander.h"
+#include "chromeos/network/onc/variable_expander.h"
 #include "components/policy/core/common/cloud/cloud_external_data_manager.h"
 #include "components/policy/core/common/cloud/component_cloud_policy_store.h"
 #include "components/policy/core/common/policy_bundle.h"
@@ -224,11 +224,8 @@ void ActiveDirectoryPolicyManager::ExpandVariables(PolicyMap* policy_map) {
     return;
   }
 
-  // TODO(rsorokin): remove "machine_name" in M72 (see
-  // https://crbug.com/875876).
   chromeos::VariableExpander expander(
-      {{"MACHINE_NAME", policy->machine_name()},
-       {"machine_name", policy->machine_name()}});
+      {{"MACHINE_NAME", policy->machine_name()}});
   for (const char* policy_name : kPoliciesToExpand) {
     base::Value* value = policy_map->GetMutableValue(policy_name);
     if (value) {

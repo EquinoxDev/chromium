@@ -132,12 +132,13 @@ void ServiceWorkerGlobalScope::ReadyToEvaluateScript() {
 }
 
 bool ServiceWorkerGlobalScope::ShouldInstallV8Extensions() const {
-  return Platform::Current()->AllowScriptExtensionForServiceWorker(Url());
+  return Platform::Current()->AllowScriptExtensionForServiceWorker(
+      WebSecurityOrigin(GetSecurityOrigin()));
 }
 
 void ServiceWorkerGlobalScope::ImportModuleScript(
     const KURL& module_url_record,
-    FetchClientSettingsObjectSnapshot* outside_settings_object,
+    const FetchClientSettingsObjectSnapshot& outside_settings_object,
     network::mojom::FetchCredentialsMode credentials_mode) {
   Modulator* modulator = Modulator::From(ScriptController()->GetScriptState());
 
@@ -436,6 +437,11 @@ void ServiceWorkerGlobalScope::ExceptionThrown(ErrorEvent* event) {
   if (WorkerThreadDebugger* debugger =
           WorkerThreadDebugger::From(GetThread()->GetIsolate()))
     debugger->ExceptionThrown(GetThread(), event);
+}
+
+mojom::RequestContextType
+ServiceWorkerGlobalScope::GetDestinationForMainScript() {
+  return mojom::RequestContextType::SERVICE_WORKER;
 }
 
 void ServiceWorkerGlobalScope::CountCacheStorageInstalledScript(

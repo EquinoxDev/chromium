@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/single_thread_task_runner.h"
@@ -186,7 +187,7 @@ class ResourceFetcherImpl::ClientImpl : public network::mojom::URLLoaderClient {
       const net::RedirectInfo& redirect_info,
       const network::ResourceResponseHead& response_head) override {
     DCHECK_EQ(Status::kStarted, status_);
-    loader_->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
+    loader_->FollowRedirect({}, {}, base::nullopt);
     response_.SetCurrentRequestUrl(redirect_info.new_url);
   }
   void OnUploadProgress(int64_t current_position,

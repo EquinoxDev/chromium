@@ -79,7 +79,7 @@ ScriptedIdleTaskController::V8IdleTask::V8IdleTask(
     V8IdleRequestCallback* callback)
     : callback_(callback) {}
 
-void ScriptedIdleTaskController::V8IdleTask::Trace(blink::Visitor* visitor) {
+void ScriptedIdleTaskController::V8IdleTask::Trace(Visitor* visitor) {
   visitor->Trace(callback_);
   ScriptedIdleTaskController::IdleTask::Trace(visitor);
 }
@@ -90,18 +90,16 @@ void ScriptedIdleTaskController::V8IdleTask::invoke(IdleDeadline* deadline) {
 
 ScriptedIdleTaskController::ScriptedIdleTaskController(
     ExecutionContext* context)
-    : PausableObject(context),
+    : ContextLifecycleStateObserver(context),
       scheduler_(ThreadScheduler::Current()),
       next_callback_id_(0),
-      paused_(false) {
-  PauseIfNeeded();
-}
+      paused_(false) {}
 
 ScriptedIdleTaskController::~ScriptedIdleTaskController() = default;
 
-void ScriptedIdleTaskController::Trace(blink::Visitor* visitor) {
+void ScriptedIdleTaskController::Trace(Visitor* visitor) {
   visitor->Trace(idle_tasks_);
-  PausableObject::Trace(visitor);
+  ContextLifecycleStateObserver::Trace(visitor);
 }
 
 int ScriptedIdleTaskController::NextCallbackId() {
@@ -226,11 +224,19 @@ void ScriptedIdleTaskController::ContextDestroyed(ExecutionContext*) {
   idle_tasks_.clear();
 }
 
-void ScriptedIdleTaskController::Pause() {
+void ScriptedIdleTaskController::ContextLifecycleStateChanged(
+    mojom::FrameLifecycleState state) {
+  if (state != mojom::FrameLifecycleState::kRunning)
+    ContextPaused();
+  else
+    ContextUnpaused();
+}
+
+void ScriptedIdleTaskController::ContextPaused() {
   paused_ = true;
 }
 
-void ScriptedIdleTaskController::Unpause() {
+void ScriptedIdleTaskController::ContextUnpaused() {
   DCHECK(paused_);
   paused_ = false;
 

@@ -11,7 +11,6 @@
 #include "base/allocator/allocator_shim.h"
 #include "base/allocator/buildflags.h"
 #include "base/allocator/partition_allocator/partition_alloc.h"
-#include "base/atomicops.h"
 #include "base/debug/stack_trace.h"
 #include "base/macros.h"
 #include "base/no_destructor.h"
@@ -47,16 +46,12 @@ uint32_t SamplingHeapProfiler::Start() {
     return 0;
   }
 #endif
-  auto* sampler = PoissonAllocationSampler::Get();
-  sampler->AddSamplesObserver(this);
-  sampler->Start();
+  PoissonAllocationSampler::Get()->AddSamplesObserver(this);
   return last_sample_ordinal_;
 }
 
 void SamplingHeapProfiler::Stop() {
-  auto* sampler = PoissonAllocationSampler::Get();
-  sampler->Stop();
-  sampler->RemoveSamplesObserver(this);
+  PoissonAllocationSampler::Get()->RemoveSamplesObserver(this);
 }
 
 void SamplingHeapProfiler::SetSamplingInterval(size_t sampling_interval) {

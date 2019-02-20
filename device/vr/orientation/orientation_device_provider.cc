@@ -4,6 +4,7 @@
 
 #include "device/vr/orientation/orientation_device_provider.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "device/vr/orientation/orientation_device.h"
 #include "services/device/public/mojom/sensor_provider.mojom.h"
@@ -44,7 +45,7 @@ void VROrientationDeviceProvider::Initialize(
 
 bool VROrientationDeviceProvider::Initialized() {
   return initialized_;
-};
+}
 
 void VROrientationDeviceProvider::DeviceInitialized() {
   // This should only be called after the device is initialized.

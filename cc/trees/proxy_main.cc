@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <string>
 
+#include "base/bind.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
 #include "cc/base/completion_event.h"
@@ -38,6 +39,7 @@ ProxyMain::ProxyMain(LayerTreeHost* layer_tree_host,
       commit_waits_for_activation_(false),
       started_(false),
       defer_main_frame_update_(false),
+      defer_commits_(false),
       frame_sink_bound_weak_factory_(this),
       weak_factory_(this) {
   TRACE_EVENT0("cc", "ProxyMain::ProxyMain");
@@ -181,13 +183,14 @@ void ProxyMain::BeginMainFrame(
                          TRACE_EVENT_SCOPE_THREAD);
     std::vector<std::unique_ptr<SwapPromise>> empty_swap_promises;
     ImplThreadTaskRunner()->PostTask(
-        FROM_HERE, base::BindOnce(&ProxyImpl::BeginMainFrameAbortedOnImpl,
-                                  base::Unretained(proxy_impl_.get()),
-                                  CommitEarlyOutReason::ABORTED_DEFERRED_COMMIT,
-                                  begin_main_frame_start_time,
-                                  base::Passed(&empty_swap_promises)));
-    // When we stop deferring commits, we should resume any previously requested
-    // pipeline stages.
+        FROM_HERE,
+        base::BindOnce(&ProxyImpl::BeginMainFrameAbortedOnImpl,
+                       base::Unretained(proxy_impl_.get()),
+                       CommitEarlyOutReason::ABORTED_DEFERRED_MAIN_FRAME_UPDATE,
+                       begin_main_frame_start_time,
+                       base::Passed(&empty_swap_promises)));
+    // When we stop deferring main frame updates, we should resume any
+    // previously requested pipeline stages.
     deferred_final_pipeline_stage_ =
         std::max(final_pipeline_stage_, deferred_final_pipeline_stage_);
     return;
@@ -206,6 +209,7 @@ void ProxyMain::BeginMainFrame(
       begin_main_frame_state->scroll_info.get());
 
   layer_tree_host_->WillBeginMainFrame();
+  layer_tree_host_->RecordStartOfFrameMetrics();
 
   // See LayerTreeHostClient::BeginMainFrame for more documentation on
   // what this does.
@@ -224,15 +228,12 @@ void ProxyMain::BeginMainFrame(
 
   // See LayerTreeHostClient::MainFrameUpdate for more documentation on
   // what this does.
-  layer_tree_host_->RequestMainFrameUpdate(
-      true /* record_main_frame_metrics */);
+  layer_tree_host_->RequestMainFrameUpdate();
 
-  // TODO(schenney) This will be changed to defer_commits_ when we introduce
-  // the separation between deferring of main frame updates and deferring of
-  // commits.
   // At this point the main frame may have deferred commits to avoid committing
-  // right now.
-  skip_commit |= defer_main_frame_update_;
+  // right now, or we may be deferring commits but not deferring main
+  // frame updates.
+  skip_commit |= defer_main_frame_update_ || defer_commits_;
 
   if (skip_commit) {
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_DeferCommit_InsideBeginMainFrame",
@@ -348,6 +349,11 @@ void ProxyMain::DidPresentCompositorFrame(
                                               feedback);
 }
 
+void ProxyMain::DidGenerateLocalSurfaceIdAllocation(
+    const viz::LocalSurfaceIdAllocation& allocation) {
+  layer_tree_host_->DidGenerateLocalSurfaceIdAllocation(allocation);
+}
+
 bool ProxyMain::IsStarted() const {
   DCHECK(IsMainThread());
   return started_;
@@ -449,10 +455,23 @@ void ProxyMain::SetDeferMainFrameUpdate(bool defer_main_frame_update) {
   else
     TRACE_EVENT_ASYNC_END0("cc", "ProxyMain::SetDeferMainFrameUpdate", this);
 
+  // The impl thread needs to know that it should not issue BeginMainFrame.
   ImplThreadTaskRunner()->PostTask(
-      FROM_HERE, base::BindOnce(&ProxyImpl::SetDeferMainFrameUpdateOnImpl,
+      FROM_HERE, base::BindOnce(&ProxyImpl::SetDeferBeginMainFrameOnImpl,
                                 base::Unretained(proxy_impl_.get()),
                                 defer_main_frame_update));
+}
+
+void ProxyMain::SetDeferCommits(bool defer_commits) {
+  DCHECK(IsMainThread());
+  if (defer_commits_ == defer_commits)
+    return;
+
+  defer_commits_ = defer_commits;
+  if (defer_commits_)
+    TRACE_EVENT_ASYNC_BEGIN0("cc", "ProxyMain::SetDeferCommits", this);
+  else
+    TRACE_EVENT_ASYNC_END0("cc", "ProxyMain::SetDeferCommits", this);
 }
 
 bool ProxyMain::CommitRequested() const {
@@ -531,6 +550,12 @@ void ProxyMain::SetPaintWorkletLayerPainter(
 
 bool ProxyMain::SupportsImplScrolling() const {
   return true;
+}
+
+uint32_t ProxyMain::GenerateChildSurfaceSequenceNumberSync() {
+  // This function only makes sense for single-threaded mode.
+  NOTREACHED();
+  return 0u;
 }
 
 bool ProxyMain::MainFrameWillHappenForTesting() {

@@ -50,6 +50,7 @@
 #include "net/third_party/quic/core/quic_sent_packet_manager.h"
 #include "net/third_party/quic/core/quic_types.h"
 #include "net/third_party/quic/platform/api/quic_export.h"
+#include "net/third_party/quic/platform/api/quic_mem_slice_span.h"
 
 namespace quic {
 
@@ -210,7 +211,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
 
   // Tries to add a message frame containing |message| and returns the status.
   MessageStatus AddMessageFrame(QuicMessageId message_id,
-                                QuicStringPiece message);
+                                QuicMemSliceSpan message);
 
   // Returns the largest payload that will fit into a single MESSAGE frame.
   QuicPacketLength GetLargestMessagePayload() const;
@@ -220,6 +221,14 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   }
 
   bool should_send_ack() const { return should_send_ack_; }
+
+  void set_fully_pad_crypto_hadshake_packets(bool new_value) {
+    fully_pad_crypto_handshake_packets_ = new_value;
+  }
+
+  bool fully_pad_crypto_handshake_packets() const {
+    return fully_pad_crypto_handshake_packets_;
+  }
 
  private:
   friend class test::QuicPacketGeneratorPeer;
@@ -249,6 +258,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   QuicPacketCreator packet_creator_;
   QuicFrames queued_control_frames_;
 
+  // Transmission type of the next serialized packet.
+  TransmissionType next_transmission_type_;
+
   // True if packet flusher is currently attached.
   bool flusher_attached_;
 
@@ -262,6 +274,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketGenerator {
   QuicStopWaitingFrame pending_stop_waiting_frame_;
 
   QuicRandom* random_generator_;
+
+  // Whether crypto handshake packets should be fully padded.
+  bool fully_pad_crypto_handshake_packets_;
 };
 
 }  // namespace quic

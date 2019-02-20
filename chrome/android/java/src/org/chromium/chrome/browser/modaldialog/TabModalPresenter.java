@@ -21,7 +21,6 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.compositor.bottombar.OverlayPanel;
 import org.chromium.chrome.browser.contextualsearch.ContextualSearchManager;
-import org.chromium.chrome.browser.modelutil.PropertyModelChangeProcessor;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabBrowserControlsOffsetHelper;
 import org.chromium.chrome.browser.widget.bottomsheet.BottomSheet;
@@ -37,6 +36,7 @@ import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modaldialog.ModalDialogProperties;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel;
+import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
 /**
  * The presenter that displays a single tab modal dialog.
@@ -141,10 +141,10 @@ public class TabModalPresenter
     @Override
     protected void addDialogView(PropertyModel model) {
         if (mDialogContainer == null) initDialogContainer();
-        mDialogView =
-                (ModalDialogView) LayoutInflater
-                        .from(new ContextThemeWrapper(mChromeActivity, R.style.ModalDialogTheme))
-                        .inflate(R.layout.modal_dialog_view, null);
+        mDialogView = (ModalDialogView) LayoutInflater
+                              .from(new ContextThemeWrapper(
+                                      mChromeActivity, R.style.Theme_Chromium_ModalDialog))
+                              .inflate(R.layout.modal_dialog_view, null);
         mModelChangeProcessor =
                 PropertyModelChangeProcessor.create(model, mDialogView, new ViewBinder());
 
@@ -354,7 +354,7 @@ public class TabModalPresenter
         FrameLayout.LayoutParams params =
                 new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-        dialogView.setBackgroundResource(R.drawable.popup_bg);
+        dialogView.setBackgroundResource(R.drawable.popup_bg_tinted);
         mDialogContainer.addView(dialogView, params);
         mDialogContainer.setAlpha(0f);
         mDialogContainer.setVisibility(View.VISIBLE);

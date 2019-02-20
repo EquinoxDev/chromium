@@ -70,8 +70,6 @@ class UserBoardView;
 class UserImageView;
 class UpdateView;
 class UpdateRequiredView;
-class VoiceInteractionValuePropScreenView;
-class WaitForContainerReadyScreenView;
 class SupervisionTransitionScreenView;
 class WelcomeView;
 class WrongHWIDScreenView;
@@ -136,8 +134,6 @@ class OobeUI : public ui::MojoWebUIController,
   HIDDetectionView* GetHIDDetectionView();
   DeviceDisabledScreenView* GetDeviceDisabledScreenView();
   EncryptionMigrationScreenView* GetEncryptionMigrationScreenView();
-  VoiceInteractionValuePropScreenView* GetVoiceInteractionValuePropScreenView();
-  WaitForContainerReadyScreenView* GetWaitForContainerReadyScreenView();
   SupervisionTransitionScreenView* GetSupervisionTransitionScreenView();
   UpdateRequiredView* GetUpdateRequiredScreenView();
   AssistantOptInFlowScreenView* GetAssistantOptInFlowScreenView();
@@ -284,7 +280,7 @@ class OobeUI : public ui::MojoWebUIController,
 
   // Store the deferred JS calls before the screen handler instance is
   // initialized.
-  std::unique_ptr<JSCallsContainer> js_calls_container;
+  std::unique_ptr<JSCallsContainer> js_calls_container_;
 
   DISALLOW_COPY_AND_ASSIGN(OobeUI);
 };

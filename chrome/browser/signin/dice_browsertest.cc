@@ -28,7 +28,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/chrome_device_id_helper.h"
 #include "chrome/browser/signin/chrome_signin_client.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
@@ -51,7 +50,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_reconcilor.h"
-#include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/dice_header_helper.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_header_helper.h"
@@ -364,11 +362,6 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
     ui_test_utils::NavigateToURL(browser(), https_server_.GetURL(path));
   }
 
-  // Returns the account tracker service.
-  AccountTrackerService* GetAccountTrackerService() {
-    return AccountTrackerServiceFactory::GetForProfile(browser()->profile());
-  }
-
   // Returns the identity manager.
   identity::IdentityManager* GetIdentityManager() {
     return IdentityManagerFactory::GetForProfile(browser()->profile());
@@ -377,14 +370,14 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
   // Returns the account ID associated with |main_email_| and its associated
   // gaia ID.
   std::string GetMainAccountID() {
-    return GetAccountTrackerService()->PickAccountIdForAccount(
+    return GetIdentityManager()->LegacyPickAccountIdForAccount(
         identity::GetTestGaiaIdForEmail(main_email_), main_email_);
   }
 
   // Returns the account ID associated with kSecondaryEmail and its associated
   // gaia ID.
   std::string GetSecondaryAccountID() {
-    return GetAccountTrackerService()->PickAccountIdForAccount(
+    return GetIdentityManager()->LegacyPickAccountIdForAccount(
         identity::GetTestGaiaIdForEmail(kSecondaryEmail), kSecondaryEmail);
   }
 
@@ -451,10 +444,10 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
 
     GetIdentityManager()->AddObserver(this);
     // Wait for the token service to be ready.
-    if (!identity::AreAllCredentialsLoaded(GetIdentityManager())) {
+    if (!GetIdentityManager()->AreRefreshTokensLoaded()) {
       WaitForClosure(&tokens_loaded_quit_closure_);
     }
-    ASSERT_TRUE(identity::AreAllCredentialsLoaded(GetIdentityManager()));
+    ASSERT_TRUE(GetIdentityManager()->AreRefreshTokensLoaded());
 
     AccountReconcilor* reconcilor =
         AccountReconcilorFactory::GetForProfile(browser()->profile());
@@ -528,12 +521,13 @@ class DiceBrowserTestBase : public InProcessBrowserTest,
   void OnStartReconcile() override { ++reconcilor_started_count_; }
 
   // identity::IdentityManager::Observer
-  void OnPrimaryAccountSet(const AccountInfo& primary_account_info) override {
+  void OnPrimaryAccountSet(
+      const CoreAccountInfo& primary_account_info) override {
     RunClosureIfValid(std::move(on_primary_account_set_quit_closure_));
   }
 
   void OnRefreshTokenUpdatedForAccount(
-      const AccountInfo& account_info) override {
+      const CoreAccountInfo& account_info) override {
     if (account_info.account_id == GetMainAccountID()) {
       refresh_token_available_ = true;
       RunClosureIfValid(std::move(refresh_token_available_quit_closure_));
@@ -665,10 +659,6 @@ IN_PROC_BROWSER_TEST_F(DiceBrowserTest, Signin) {
       GetIdentityManager()->HasAccountWithRefreshToken(GetMainAccountID()));
   // Sync should not be enabled.
   EXPECT_TRUE(GetIdentityManager()->GetPrimaryAccountId().empty());
-  EXPECT_TRUE(GetIdentityManager()
-                  ->GetPrimaryAccountMutator()
-                  ->LegacyPrimaryAccountForAuthInProgress()
-                  .account_id.empty());
 
   EXPECT_EQ(1, reconcilor_blocked_count_);
   WaitForReconcilorUnblockedCount(1);
@@ -912,13 +902,9 @@ IN_PROC_BROWSER_TEST_F(DiceBrowserTest, PRE_TurnOffDice) {
       browser()->profile()));
 
   EXPECT_FALSE(GetIdentityManager()->GetPrimaryAccountId().empty());
-  EXPECT_TRUE(GetIdentityManager()
-                  ->GetPrimaryAccountMutator()
-                  ->LegacyPrimaryAccountForAuthInProgress()
-                  .account_id.empty());
   EXPECT_TRUE(
       GetIdentityManager()->HasAccountWithRefreshToken(GetMainAccountID()));
-  EXPECT_FALSE(GetAccountTrackerService()->GetAccounts().empty());
+  EXPECT_FALSE(GetIdentityManager()->GetAccountsWithRefreshTokens().empty());
 
   // Turn off Dice for this profile.
   browser()->profile()->GetPrefs()->SetBoolean(
@@ -935,13 +921,9 @@ IN_PROC_BROWSER_TEST_F(DiceBrowserTest, TurnOffDice) {
       browser()->profile()));
 
   EXPECT_TRUE(GetIdentityManager()->GetPrimaryAccountId().empty());
-  EXPECT_TRUE(GetIdentityManager()
-                  ->GetPrimaryAccountMutator()
-                  ->LegacyPrimaryAccountForAuthInProgress()
-                  .account_id.empty());
   EXPECT_FALSE(
       GetIdentityManager()->HasAccountWithRefreshToken(GetMainAccountID()));
-  EXPECT_TRUE(GetAccountTrackerService()->GetAccounts().empty());
+  EXPECT_TRUE(GetIdentityManager()->GetAccountsWithRefreshTokens().empty());
 
   // Navigate to Gaia and sign in.
   NavigateToURL(kSigninURL);

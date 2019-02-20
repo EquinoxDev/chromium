@@ -128,6 +128,7 @@ void AwAutofillClient::ShowLocalCardMigrationDialog(
 
 void AwAutofillClient::ConfirmMigrateLocalCardToCloud(
     std::unique_ptr<base::DictionaryValue> legal_message,
+    const std::string& user_email,
     const std::vector<autofill::MigratableCreditCard>& migratable_credit_cards,
     LocalCardMigrationCallback start_migrating_cards_callback) {
   NOTIMPLEMENTED();
@@ -158,6 +159,12 @@ void AwAutofillClient::ConfirmSaveCreditCardLocally(
 
 void AwAutofillClient::ConfirmAccountNameFixFlow(
     base::OnceCallback<void(const base::string16&)> callback) {
+  NOTIMPLEMENTED();
+}
+
+void AwAutofillClient::ConfirmExpirationDateFixFlow(
+    base::OnceCallback<void(const base::string16&, const base::string16&)>
+        callback) {
   NOTIMPLEMENTED();
 }
 

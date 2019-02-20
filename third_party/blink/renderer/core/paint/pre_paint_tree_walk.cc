@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
@@ -59,15 +60,15 @@ void PrePaintTreeWalk::WalkTree(LocalFrameView& root_frame_view) {
   context_storage_.pop_back();
 
 #if DCHECK_IS_ON()
-  if (!needs_tree_builder_context_update)
-    return;
-  if (VLOG_IS_ON(2) && root_frame_view.GetLayoutView()) {
-    LOG(ERROR) << "PrePaintTreeWalk::Walk(root_frame_view=" << &root_frame_view
-               << ")\nPaintLayer tree:";
-    showLayerTree(root_frame_view.GetLayoutView()->Layer());
+  if (needs_tree_builder_context_update) {
+    if (VLOG_IS_ON(2) && root_frame_view.GetLayoutView()) {
+      LOG(ERROR) << "PrePaintTreeWalk::Walk(root_frame_view="
+                 << &root_frame_view << ")\nPaintLayer tree:";
+      showLayerTree(root_frame_view.GetLayoutView()->Layer());
+    }
+    if (VLOG_IS_ON(1))
+      showAllPropertyTrees(root_frame_view);
   }
-  if (VLOG_IS_ON(1))
-    showAllPropertyTrees(root_frame_view);
 #endif
 
   // If the frame is invalidated, we need to inform the frame's chrome client
@@ -134,7 +135,7 @@ void PrePaintTreeWalk::Walk(LocalFrameView& frame_view) {
 #endif
   }
 
-  if (RuntimeEnabledFeatures::JankTrackingEnabled())
+  if (origin_trials::JankTrackingEnabled(frame_view.GetFrame().GetDocument()))
     frame_view.GetJankTracker().NotifyPrePaintFinished();
   if (RuntimeEnabledFeatures::FirstContentfulPaintPlusPlusEnabled()) {
     frame_view.GetPaintTimingDetector().NotifyPrePaintFinished();
@@ -326,13 +327,16 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
   UpdateAuxiliaryObjectProperties(object, context);
 
   base::Optional<PaintPropertyTreeBuilder> property_tree_builder;
-  bool property_changed = false;
+  PaintPropertyChangedState property_changed =
+      PaintPropertyChangedState::kUnchanged;
   if (context.tree_builder_context) {
     property_tree_builder.emplace(object, *context.tree_builder_context);
-    property_changed = property_tree_builder->UpdateForSelf();
+    property_changed =
+        std::max(property_changed, property_tree_builder->UpdateForSelf());
 
-    if (property_changed && !context.tree_builder_context
-                                 ->supports_composited_raster_invalidation) {
+    if ((property_changed > PaintPropertyChangedState::kUnchanged) &&
+        !context.tree_builder_context
+             ->supports_composited_raster_invalidation) {
       paint_invalidator_context.subtree_flags |=
           PaintInvalidatorContext::kSubtreeFullInvalidation;
     }
@@ -350,19 +354,29 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
   InvalidatePaintForHitTesting(object, context);
 
   if (context.tree_builder_context) {
-    property_changed |= property_tree_builder->UpdateForChildren();
+    property_changed =
+        std::max(property_changed, property_tree_builder->UpdateForChildren());
     InvalidatePaintLayerOptimizationsIfNeeded(object, context);
 
-    if (property_changed) {
+    if (property_changed > PaintPropertyChangedState::kUnchanged) {
+      if (property_changed >
+          PaintPropertyChangedState::kChangedOnlyDueToAnimations) {
+        object.GetFrameView()->SetPaintArtifactCompositorNeedsUpdate();
+      }
+
       if (!RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
-        const auto* paint_invalidation_layer =
-            paint_invalidator_context.paint_invalidation_container->Layer();
-        if (!paint_invalidation_layer->NeedsRepaint()) {
-          auto* mapping = paint_invalidation_layer->GetCompositedLayerMapping();
-          if (!mapping)
-            mapping = paint_invalidation_layer->GroupedMapping();
-          if (mapping)
-            mapping->SetNeedsCheckRasterInvalidation();
+        if (property_changed >
+            PaintPropertyChangedState::kChangedOnlyDueToAnimations) {
+          const auto* paint_invalidation_layer =
+              paint_invalidator_context.paint_invalidation_container->Layer();
+          if (!paint_invalidation_layer->NeedsRepaint()) {
+            auto* mapping =
+                paint_invalidation_layer->GetCompositedLayerMapping();
+            if (!mapping)
+              mapping = paint_invalidation_layer->GroupedMapping();
+            if (mapping)
+              mapping->SetNeedsCheckRasterInvalidation();
+          }
         }
       } else if (!context.tree_builder_context
                       ->supports_composited_raster_invalidation) {
@@ -374,7 +388,7 @@ void PrePaintTreeWalk::WalkInternal(const LayoutObject& object,
 
   CompositingLayerPropertyUpdater::Update(object);
 
-  if (RuntimeEnabledFeatures::JankTrackingEnabled()) {
+  if (origin_trials::JankTrackingEnabled(&object.GetDocument())) {
     object.GetFrameView()->GetJankTracker().NotifyObjectPrePaint(
         object, paint_invalidator_context.old_visual_rect,
         *paint_invalidator_context.painting_layer);
@@ -460,14 +474,6 @@ void PrePaintTreeWalk::Walk(const LayoutObject& object) {
       Walk(*local_frame_view);
     }
     // TODO(pdr): Investigate RemoteFrameView (crbug.com/579281).
-  }
-
-  // Because current |PrePaintTreeWalk| walks LayoutObject tree, NGPaintFragment
-  // that are not mapped to LayoutObject are not updated. Ensure they are
-  // updated after all descendants were updated.
-  if (RuntimeEnabledFeatures::LayoutNGEnabled() && object.IsLayoutNGMixin()) {
-    if (NGPaintFragment* fragment = ToLayoutBlockFlow(object).PaintFragment())
-      fragment->UpdateVisualRectForNonLayoutObjectChildren();
   }
 
   object.GetMutableForPainting().ClearPaintFlags();

@@ -92,7 +92,7 @@ void BlockPainter::Paint(const PaintInfo& paint_info) {
       if (const auto* properties = fragment->PaintProperties()) {
         if (const auto* overflow_clip = properties->OverflowClip()) {
           paint_chunk_properties.emplace(
-              paint_info.context.GetPaintController(), overflow_clip,
+              paint_info.context.GetPaintController(), *overflow_clip,
               layout_block_, DisplayItem::kCaret);
         }
       }
@@ -106,12 +106,22 @@ void BlockPainter::Paint(const PaintInfo& paint_info) {
     layout_block_.PaintObject(local_paint_info, paint_offset);
   }
 
-  // We paint scrollbars after we painted the other things, so that the
-  // scrollbars will sit above them.
+  // Our scrollbar widgets paint exactly when we tell them to, so that they work
+  // properly with z-index. We paint after we painted the background/border, so
+  // that the scrollbars will sit above the background/border.
   local_paint_info.phase = original_phase;
-  if (auto* scrollable_area = layout_block_.GetScrollableArea()) {
-    ScrollableAreaPainter(*scrollable_area)
-        .PaintOverflowControls(local_paint_info, RoundedIntPoint(paint_offset));
+  PaintOverflowControlsIfNeeded(local_paint_info, paint_offset);
+}
+
+void BlockPainter::PaintOverflowControlsIfNeeded(
+    const PaintInfo& paint_info,
+    const LayoutPoint& paint_offset) {
+  if (layout_block_.HasOverflowClip() &&
+      layout_block_.StyleRef().Visibility() == EVisibility::kVisible &&
+      ShouldPaintSelfBlockBackground(paint_info.phase)) {
+    ScrollableAreaPainter(*layout_block_.Layer()->GetScrollableArea())
+        .PaintOverflowControls(paint_info, RoundedIntPoint(paint_offset),
+                               false /* painting_overlay_controls */);
   }
 }
 
@@ -338,19 +348,11 @@ void BlockPainter::PaintCarets(const PaintInfo& paint_info,
   }
 }
 
-DISABLE_CFI_PERF
-bool BlockPainter::ShouldPaint(const ScopedPaintState& paint_state) const {
-  // If there is no fragment to paint for this block, we still need to continue
-  // the paint tree walk in case there are overflowing children that exist in
-  // the current painting fragment of the painting layer. In the case we can't
-  // check the overflow rect against the cull rect in the case because we don't
-  // know the paint offset.
-  if (!paint_state.FragmentToPaint())
-    return true;
-
+LayoutRect BlockPainter::OverflowRectForCullRectTesting(
+    bool is_printing) const {
   LayoutRect overflow_rect;
-  if (paint_state.GetPaintInfo().IsPrinting() &&
-      layout_block_.IsAnonymousBlock() && layout_block_.ChildrenInline()) {
+  if (is_printing && layout_block_.IsAnonymousBlock() &&
+      layout_block_.ChildrenInline()) {
     // For case <a href="..."><div>...</div></a>, when layout_block_ is the
     // anonymous container of <a>, the anonymous container's visual overflow is
     // empty, but we need to continue painting to output <a>'s PDF URL rect
@@ -362,22 +364,34 @@ bool BlockPainter::ShouldPaint(const ScopedPaintState& paint_state) const {
   }
   overflow_rect.Unite(layout_block_.VisualOverflowRect());
 
-  bool uses_composited_scrolling = layout_block_.HasOverflowModel() &&
-                                   layout_block_.UsesCompositedScrolling();
+  bool include_layout_overflow =
+      layout_block_.ScrollsOverflow() &&
+      (layout_block_.UsesCompositedScrolling() ||
+       RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
 
-  if (uses_composited_scrolling) {
+  if (include_layout_overflow) {
     LayoutRect layout_overflow_rect = layout_block_.LayoutOverflowRect();
     overflow_rect.Unite(layout_overflow_rect);
-  }
-  layout_block_.FlipForWritingMode(overflow_rect);
-
-  // Scrolling is applied in physical space, which is why it is after the flip
-  // above.
-  if (uses_composited_scrolling) {
+    layout_block_.FlipForWritingMode(overflow_rect);
     overflow_rect.Move(-layout_block_.ScrolledContentOffset());
+  } else {
+    layout_block_.FlipForWritingMode(overflow_rect);
   }
+  return overflow_rect;
+}
 
-  return paint_state.LocalRectIntersectsCullRect(overflow_rect);
+DISABLE_CFI_PERF
+bool BlockPainter::ShouldPaint(const ScopedPaintState& paint_state) const {
+  // If there is no fragment to paint for this block, we still need to continue
+  // the paint tree walk in case there are overflowing children that exist in
+  // the current painting fragment of the painting layer. In the case we can't
+  // check the overflow rect against the cull rect in the case because we don't
+  // know the paint offset.
+  if (!paint_state.FragmentToPaint())
+    return true;
+
+  return paint_state.LocalRectIntersectsCullRect(
+      OverflowRectForCullRectTesting(paint_state.GetPaintInfo().IsPrinting()));
 }
 
 void BlockPainter::PaintContents(const PaintInfo& paint_info,

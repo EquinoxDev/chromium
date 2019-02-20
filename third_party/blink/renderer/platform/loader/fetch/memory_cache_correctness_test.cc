@@ -39,6 +39,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/loader/testing/mock_fetch_context.h"
 #include "third_party/blink/renderer/platform/loader/testing/mock_resource.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support_with_mock_scheduler.h"
 
 namespace blink {
@@ -115,10 +116,13 @@ class MemoryCacheCorrectnessTest : public testing::Test {
         MemoryCache::Create(platform_->test_task_runner()));
 
     security_origin_ = SecurityOrigin::CreateUniqueOpaque();
-    MockFetchContext* context = MakeGarbageCollected<MockFetchContext>(
-        MockFetchContext::kShouldNotLoadNewResource, nullptr, security_origin_);
-
-    fetcher_ = MakeGarbageCollected<ResourceFetcher>(context);
+    MockFetchContext* context = MakeGarbageCollected<MockFetchContext>();
+    auto* properties =
+        MakeGarbageCollected<TestResourceFetcherProperties>(security_origin_);
+    properties->SetShouldBlockLoadingSubResource(true);
+    fetcher_ = MakeGarbageCollected<ResourceFetcher>(
+        ResourceFetcherInit(*properties, context,
+                            base::MakeRefCounted<scheduler::FakeTaskRunner>()));
   }
   void TearDown() override {
     GetMemoryCache()->EvictResources();
@@ -183,9 +187,7 @@ TEST_F(MemoryCacheCorrectnessTest, FreshFromMaxAge) {
   EXPECT_EQ(fresh200, fetched);
 }
 
-// The strong validator causes a revalidation to be launched, and the proxy and
-// original resources leak because of their reference loop.
-TEST_F(MemoryCacheCorrectnessTest, DISABLED_ExpiredFromLastModified) {
+TEST_F(MemoryCacheCorrectnessTest, ExpiredFromLastModified) {
   ResourceResponse expired200_response;
   expired200_response.SetHTTPStatusCode(200);
   expired200_response.SetHTTPHeaderField("Date", kOriginalRequestDateAsString);
@@ -197,8 +199,13 @@ TEST_F(MemoryCacheCorrectnessTest, DISABLED_ExpiredFromLastModified) {
   // Advance the clock beyond the implicit freshness period.
   AdvanceClock(24. * 60. * 60. * 0.2);
 
+  EXPECT_FALSE(expired200->ErrorOccurred());
   MockResource* fetched = FetchMockResource();
-  EXPECT_NE(expired200, fetched);
+  // We want to make sure that revalidation happens, and we are checking the
+  // ResourceStatus because in this case the revalidation request fails
+  // synchronously.
+  EXPECT_EQ(expired200, fetched);
+  EXPECT_TRUE(expired200->ErrorOccurred());
 }
 
 TEST_F(MemoryCacheCorrectnessTest, ExpiredFromExpires) {

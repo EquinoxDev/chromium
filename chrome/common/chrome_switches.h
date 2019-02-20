@@ -12,7 +12,7 @@
 #include "chrome/common/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
-#include "ui/base/ui_features.h"
+#include "ui/base/buildflags.h"
 
 // Don't add more switch files here. This is linked into some places like the
 // installer where dependencies should be limited. Instead, have files
@@ -66,7 +66,6 @@ extern const char kDiagnosticsFormat[];
 extern const char kDiagnosticsRecovery[];
 extern const char kDisableBackgroundNetworking[];
 extern const char kDisableBundledPpapiFlash[];
-extern const char kDisableCastStreamingHWEncoding[];
 extern const char kDisableClientSidePhishingDetection[];
 extern const char kDisableComponentExtensionsWithBackgroundPages[];
 extern const char kDisableComponentUpdate[];
@@ -96,15 +95,12 @@ extern const char kEnableDevToolsExperiments[];
 extern const char kEnableDomainReliability[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
-extern const char kEnableFastUnload[];
 extern const char kEnableNaCl[];
 extern const char kEnableNavigationTracing[];
 extern const char kEnableNetBenchmarking[];
 extern const char kEnableOfflineAutoReload[];
 extern const char kEnableOfflineAutoReloadVisibleOnly[];
 extern const char kEnablePotentiallyAnnoyingSecurityFeatures[];
-extern const char kEnablePowerOverlay[];
-extern const char kEnablePrintPreviewRegisterPromos[];
 extern const char kExtensionContentVerification[];
 extern const char kExtensionContentVerificationBootstrap[];
 extern const char kExtensionContentVerificationEnforce[];
@@ -146,6 +142,7 @@ extern const char kNoProxyServer[];
 extern const char kNoServiceAutorun[];
 extern const char kNoStartupWindow[];
 extern const char kNoSupervisedUserAcknowledgmentCheck[];
+extern const char kOnTheFlyMhtmlHashComputation[];
 extern const char kOpenInNewWindow[];
 extern const char kOriginalProcessStartTime[];
 extern const char kOriginTrialDisabledFeatures[];
@@ -166,6 +163,7 @@ extern const char kProxyPacUrl[];
 extern const char kRemoteDebuggingTargets[];
 extern const char kRestoreLastSession[];
 extern const char kSavePageAsMHTML[];
+extern const char kShortReportingDelay[];
 extern const char kShowAppList[];
 extern const char kSilentDebuggerExtensionAPI[];
 extern const char kSilentLaunch[];
@@ -204,19 +202,13 @@ extern const char kWindowWorkspace[];
 extern const char kWinHttpProxyResolver[];
 extern const char kWinJumplistAction[];
 
-#if defined(GOOGLE_CHROME_BUILD)
-extern const char kEnableGoogleBrandedContextMenu[];
-#endif  // defined(GOOGLE_CHROME_BUILD)
-
 #if !defined(GOOGLE_CHROME_BUILD)
 extern const char kLocalNtpReload[];
 #endif
 
 #if defined(OS_ANDROID)
 extern const char kAuthAndroidNegotiateAccountType[];
-extern const char kDisableContextualSearch[];
 extern const char kEnableAccessibilityTabSwitcher[];
-extern const char kEnableContextualSearch[];
 extern const char kEnableHungRendererInfoBar[];
 extern const char kForceShowUpdateMenuBadge[];
 extern const char kForceShowUpdateMenuItemCustomSummary[];
@@ -232,6 +224,10 @@ extern const char kCroshCommand[];
 extern const char kDisableLoggingRedirect[];
 extern const char kDisableLoginScreenApps[];
 extern const char kMashServiceName[];
+extern const char kShortMergeSessionTimeoutForTest[];
+extern const char kSchedulerConfiguration[];
+extern const char kSchedulerConfigurationConservative[];
+extern const char kSchedulerConfigurationPerformance[];
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)

@@ -7,6 +7,8 @@
 #include <set>
 #include <utility>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -36,7 +38,6 @@
 #include "components/offline_pages/core/prefetch/test_download_service.h"
 #include "components/offline_pages/core/prefetch/test_prefetch_network_request_factory.h"
 #include "components/offline_pages/core/stub_offline_page_model.h"
-#include "components/prefs/testing_pref_service.h"
 #include "components/version_info/channel.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_request_test_util.h"
@@ -218,8 +219,9 @@ class FakePrefetchNetworkRequestFactory
     : public TestPrefetchNetworkRequestFactory {
  public:
   FakePrefetchNetworkRequestFactory(
-      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory)
-      : TestPrefetchNetworkRequestFactory(url_loader_factory) {}
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      PrefService* prefs)
+      : TestPrefetchNetworkRequestFactory(url_loader_factory, prefs) {}
 
   void MakeGeneratePageBundleRequest(
       const std::vector<std::string>& prefetch_urls,
@@ -268,11 +270,10 @@ class PrefetchDispatcherTest : public PrefetchRequestTestBase {
   void Configure(PrefetchServiceTestTaco::SuggestionSource suggestion_source) {
     ASSERT_TRUE(archive_directory_.CreateUniqueTempDir());
 
-    dispatcher_ = new PrefetchDispatcherImpl(&prefs_);
-    network_request_factory_ =
-        new FakePrefetchNetworkRequestFactory(shared_url_loader_factory());
-    prefetch_prefs::RegisterPrefs(prefs_.registry());
     taco_ = std::make_unique<PrefetchServiceTestTaco>(suggestion_source);
+    dispatcher_ = new PrefetchDispatcherImpl(taco_->pref_service());
+    network_request_factory_ = new FakePrefetchNetworkRequestFactory(
+        shared_url_loader_factory(), taco_->pref_service());
     store_util_.BuildStore();
     taco_->SetPrefetchStore(store_util_.ReleaseStore());
     taco_->SetPrefetchDispatcher(base::WrapUnique(dispatcher_));
@@ -327,7 +328,8 @@ class PrefetchDispatcherTest : public PrefetchRequestTestBase {
   }
 
   void DisablePrefetchingInSettings() {
-    prefetch_prefs::SetPrefetchingEnabledInSettings(&prefs_, false);
+    prefetch_prefs::SetPrefetchingEnabledInSettings(taco_->pref_service(),
+                                                    false);
   }
 
   bool dispatcher_suspended() const { return dispatcher_->suspended_; }
@@ -362,11 +364,11 @@ class PrefetchDispatcherTest : public PrefetchRequestTestBase {
                                  const GURL& thumbnail_url) {
     ASSERT_TRUE(thumbnail_image_fetcher_) << "Not configured in kFeed mode";
     EXPECT_CALL(*thumbnail_image_fetcher_,
-                FetchImageAndData_(std::string(), thumbnail_url, _, _, _))
-        .WillOnce([=](const std::string& id, const GURL& image_url,
+                FetchImageAndData_(thumbnail_url, _, _, _))
+        .WillOnce([=](const GURL& image_url,
                       image_fetcher::ImageDataFetcherCallback* data_callback,
                       image_fetcher::ImageFetcherCallback* image_callback,
-                      const net::NetworkTrafficAnnotationTag&) {
+                      image_fetcher::ImageFetcherParams params) {
           ASSERT_TRUE(image_callback->is_null());
           std::move(*data_callback)
               .Run(thumbnail_data, image_fetcher::RequestMetadata());
@@ -390,7 +392,6 @@ class PrefetchDispatcherTest : public PrefetchRequestTestBase {
   PrefetchStoreTestUtil store_util_{task_runner()};
   MockPrefetchItemGenerator item_generator_;
   base::ScopedTempDir archive_directory_;
-  TestingPrefServiceSimple prefs_;
   std::unique_ptr<FakeSuggestionsProvider> suggestions_provider_;
 
  private:
@@ -423,6 +424,7 @@ void PrefetchDispatcherTest::TearDown() {
 }
 
 void PrefetchDispatcherTest::BeginBackgroundTask() {
+  CHECK(taco_->pref_service());
   dispatcher_->BeginBackgroundTask(std::make_unique<TestPrefetchBackgroundTask>(
       taco_->prefetch_service(),
       base::BindRepeating(&PrefetchDispatcherTest::SetReschedule,

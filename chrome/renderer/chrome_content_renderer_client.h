@@ -165,7 +165,6 @@ class ChromeContentRendererClient
   bool IsKeySystemsUpdateNeeded() override;
   bool IsPluginAllowedToUseDevChannelAPIs() override;
   bool IsPluginAllowedToUseCameraDeviceAPI(const GURL& url) override;
-  bool IsPluginAllowedToUseCompositorAPI(const GURL& url) override;
   content::BrowserPluginDelegate* CreateBrowserPluginDelegate(
       content::RenderFrame* render_frame,
       const content::WebPluginInfo& info,
@@ -202,9 +201,6 @@ class ChromeContentRendererClient
   GURL OverrideFlashEmbedWithHTML(const GURL& url) override;
   std::unique_ptr<base::TaskScheduler::InitParams> GetTaskSchedulerInitParams()
       override;
-  bool OverrideLegacySymantecCertConsoleMessage(
-      const GURL& url,
-      std::string* console_messsage) override;
   void CreateRendererService(
       service_manager::mojom::ServiceRequest service_request) override;
   std::unique_ptr<content::URLLoaderThrottleProvider>
@@ -238,6 +234,8 @@ class ChromeContentRendererClient
     return prerender_dispatcher_.get();
   }
 
+  base::WeakPtr<ChromeRenderThreadObserver> GetChromeObserver() const;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(ChromeContentRendererClientTest, NaClRestriction);
   FRIEND_TEST_ALL_PREFIXES(ChromeContentRendererClientTest,
@@ -262,8 +260,7 @@ class ChromeContentRendererClient
 #if BUILDFLAG(ENABLE_NACL)
   // Determines if a NaCl app is allowed, and modifies params to pass the app's
   // permissions to the trusted NaCl plugin.
-  static bool IsNaClAllowed(const GURL& manifest_url,
-                            const GURL& app_url,
+  static bool IsNaClAllowed(const GURL& app_url,
                             bool is_nacl_unrestricted,
                             const extensions::Extension* extension,
                             blink::WebPluginParams* params);
@@ -296,7 +293,6 @@ class ChromeContentRendererClient
 #endif
 #if BUILDFLAG(ENABLE_PLUGINS)
   std::set<std::string> allowed_camera_device_origins_;
-  std::set<std::string> allowed_compositor_origins_;
 #endif
 
 #if defined(OS_WIN)

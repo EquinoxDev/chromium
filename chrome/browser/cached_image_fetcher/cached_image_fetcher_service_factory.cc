@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/sequenced_task_runner.h"
 #include "base/task/post_task.h"
@@ -31,10 +32,6 @@ namespace {
 // will be stored.
 const base::FilePath::CharType kImageCacheSubdir[] =
     FILE_PATH_LITERAL("image_cache");
-
-std::unique_ptr<ImageDecoder> CreateImageDecoderImpl() {
-  return std::make_unique<suggestions::ImageDecoderImpl>();
-}
 
 }  // namespace
 
@@ -91,7 +88,7 @@ KeyedService* CachedImageFetcherServiceFactory::BuildServiceInstanceFor(
           ->GetURLLoaderFactoryForBrowserProcess();
 
   return new CachedImageFetcherService(
-      base::BindRepeating(CreateImageDecoderImpl),
+      std::make_unique<suggestions::ImageDecoderImpl>(),
       std::move(url_loader_factory), std::move(image_cache),
       context->IsOffTheRecord());
 }

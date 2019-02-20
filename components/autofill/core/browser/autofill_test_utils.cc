@@ -587,7 +587,7 @@ void InitializePossibleTypesAndValidities(
     std::vector<ServerFieldTypeValidityStatesMap>&
         possible_field_types_validities,
     const std::vector<ServerFieldType>& possible_types,
-    const std::vector<AutofillProfile::ValidityState>& validity_states) {
+    const std::vector<AutofillDataModel::ValidityState>& validity_states) {
   possible_field_types.push_back(ServerFieldTypeSet());
   possible_field_types_validities.push_back(ServerFieldTypeValidityStatesMap());
 
@@ -715,15 +715,20 @@ std::string ObfuscatedCardDigitsAsUTF8(const std::string& str) {
       internal::GetObfuscatedStringForCardDigits(base::ASCIIToUTF16(str)));
 }
 
+std::string LastYear() {
+  base::Time::Exploded now;
+  base::Time::Now().LocalExplode(&now);
+  return std::to_string(now.year - 1);
+}
 std::string NextYear() {
   base::Time::Exploded now;
   base::Time::Now().LocalExplode(&now);
   return std::to_string(now.year + 1);
 }
-std::string LastYear() {
+std::string TenYearsFromNow() {
   base::Time::Exploded now;
   base::Time::Now().LocalExplode(&now);
-  return std::to_string(now.year - 1);
+  return std::to_string(now.year + 10);
 }
 
 }  // namespace test

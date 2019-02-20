@@ -52,6 +52,7 @@
 #include "media/capture/video/chromeos/camera_buffer_factory.h"
 #include "media/capture/video/chromeos/camera_hal_dispatcher_impl.h"
 #include "media/capture/video/chromeos/local_gpu_memory_buffer_manager.h"
+#include "media/capture/video/chromeos/public/cros_features.h"
 #include "media/capture/video/chromeos/video_capture_device_chromeos_halv3.h"
 #include "media/capture/video/chromeos/video_capture_device_factory_chromeos.h"
 #endif
@@ -62,9 +63,12 @@
   DISABLED_UsingRealWebcam_AllocateBadSize
 // We will always get YUYV from the Mac AVFoundation implementations.
 #define MAYBE_UsingRealWebcam_CaptureMjpeg DISABLED_UsingRealWebcam_CaptureMjpeg
-#define MAYBE_UsingRealWebcam_TakePhoto UsingRealWebcam_TakePhoto
-#define MAYBE_UsingRealWebcam_GetPhotoState UsingRealWebcam_GetPhotoState
-#define MAYBE_UsingRealWebcam_CaptureWithSize UsingRealWebcam_CaptureWithSize
+// TODO(crbug.com/923874).
+#define MAYBE_UsingRealWebcam_TakePhoto DISABLED_UsingRealWebcam_TakePhoto
+  // TODO(crbug.com/923874).
+#define MAYBE_UsingRealWebcam_GetPhotoState DISABLED_UsingRealWebcam_GetPhotoState
+  // TODO(crbug.com/923874).
+#define MAYBE_UsingRealWebcam_CaptureWithSize DISABLED_UsingRealWebcam_CaptureWithSize
 #define MAYBE_UsingRealWebcam_CheckPhotoCallbackRelease \
   UsingRealWebcam_CheckPhotoCallbackRelease
 #elif defined(OS_WIN)
@@ -181,11 +185,12 @@ class MockImageCaptureClient
     if (strcmp("image/jpeg", blob->mime_type.c_str()) == 0) {
       ASSERT_GT(blob->data.size(), 4u);
       // Check some bytes that univocally identify |data| as a JPEG File.
-      // https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format#File_format_structure
+      // The first two bytes must be the SOI marker.
+      // The next two bytes must be a marker, such as APPn, DTH etc.
+      // cf. Section B.2 at https://www.w3.org/Graphics/JPEG/itu-t81.pdf
       EXPECT_EQ(0xFF, blob->data[0]);         // First SOI byte
       EXPECT_EQ(0xD8, blob->data[1]);         // Second SOI byte
-      EXPECT_EQ(0xFF, blob->data[2]);         // First JFIF-APP0 byte
-      EXPECT_EQ(0xE0, blob->data[3] & 0xF0);  // Second JFIF-APP0 byte
+      EXPECT_EQ(0xFF, blob->data[2]);         // First byte of the next marker
       OnCorrectPhotoTaken();
     } else if (strcmp("image/png", blob->mime_type.c_str()) == 0) {
       ASSERT_GT(blob->data.size(), 4u);
@@ -564,7 +569,7 @@ const VideoCaptureImplementationTweak kCaptureImplementationTweaks[] = {
 #endif
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     VideoCaptureDeviceTests,
     VideoCaptureDeviceTest,
     testing::Combine(testing::ValuesIn(kCaptureSizes),
@@ -657,6 +662,13 @@ WRAPPED_TEST_P(VideoCaptureDeviceTest, MAYBE_UsingRealWebcam_CaptureMjpeg) {
                              base::Unretained(this)));
 }
 void VideoCaptureDeviceTest::RunCaptureMjpegTestCase() {
+#if defined(OS_CHROMEOS)
+  if (media::ShouldUseCrosCameraService()) {
+    VLOG(1)
+        << "Skipped on Chrome OS device where HAL v3 camera service is used";
+    return;
+  }
+#endif
   std::unique_ptr<VideoCaptureDeviceDescriptor> device_descriptor =
       GetFirstDeviceDescriptorSupportingPixelFormat(PIXEL_FORMAT_MJPEG);
   ASSERT_TRUE(device_descriptor);
@@ -869,4 +881,4 @@ WRAPPED_TEST_P(VideoCaptureDeviceTest,
 }
 #endif
 
-};  // namespace media
+}  // namespace media

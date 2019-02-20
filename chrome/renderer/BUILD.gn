@@ -43,8 +43,6 @@ grit("resources") {
 
 jumbo_static_library("renderer") {
   sources = [
-    "app_categorizer.cc",
-    "app_categorizer.h",
     "benchmarking_extension.cc",
     "benchmarking_extension.h",
     "chrome_content_renderer_client.cc",
@@ -138,6 +136,7 @@ jumbo_static_library("renderer") {
     "//components/dom_distiller/content/renderer",
     "//components/network_hints/renderer",
     "//components/omnibox/common",
+    "//components/page_image_annotation/content/renderer",
     "//components/plugins/renderer",
     "//components/rappor/public/interfaces",
     "//components/resources:components_resources",
@@ -431,6 +430,15 @@ jumbo_static_library("renderer") {
       "net/available_offline_content_helper.h",
       "net/page_auto_fetcher_helper_android.cc",
       "net/page_auto_fetcher_helper_android.h",
+    ]
+  }
+
+  if (is_chromeos) {
+    sources += [
+      "chromeos_delayed_callback_group.cc",
+      "chromeos_delayed_callback_group.h",
+      "chromeos_merge_session_loader_throttle.cc",
+      "chromeos_merge_session_loader_throttle.h",
     ]
   }
 }

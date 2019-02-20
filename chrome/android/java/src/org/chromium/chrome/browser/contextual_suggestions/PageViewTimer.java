@@ -17,9 +17,9 @@ import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.Tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabObserver;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
+import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 import org.chromium.chrome.browser.util.UrlUtilities;
 import org.chromium.content_public.browser.NavigationController;
 import org.chromium.content_public.browser.NavigationEntry;
@@ -27,7 +27,6 @@ import org.chromium.content_public.browser.WebContents;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.concurrent.TimeUnit;
 
 /** Class allowing to measure and report a page view time in UMA. */
 public class PageViewTimer {
@@ -214,16 +213,15 @@ public class PageViewTimer {
 
     private void reportDurationRaw(long durationMs) {
         RecordHistogram.recordLongTimesHistogram100(
-                "ContextualSuggestions.PageViewTime", durationMs, TimeUnit.MILLISECONDS);
+                "ContextualSuggestions.PageViewTime", durationMs);
         if (mNavigationSource == NavigationSource.CONTEXTUAL_SUGGESTIONS) {
             RecordHistogram.recordLongTimesHistogram100(
-                    "ContextualSuggestions.PageViewTime.ContextualSuggestions", durationMs,
-                    TimeUnit.MILLISECONDS);
+                    "ContextualSuggestions.PageViewTime.ContextualSuggestions", durationMs);
             return;
         }
 
         RecordHistogram.recordLongTimesHistogram100(
-                "ContextualSuggestions.PageViewTime.Other", durationMs, TimeUnit.MILLISECONDS);
+                "ContextualSuggestions.PageViewTime.Other", durationMs);
     }
 
     private void reportDurationBucket(@DurationBucket int durationBucket) {

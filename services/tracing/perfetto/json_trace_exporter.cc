@@ -14,10 +14,6 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
-#include "build/build_config.h"
-#include "services/tracing/public/mojom/perfetto_service.mojom.h"
-#include "third_party/perfetto/include/perfetto/tracing/core/trace_config.h"
-#include "third_party/perfetto/include/perfetto/tracing/core/trace_packet.h"
 #include "third_party/perfetto/protos/perfetto/trace/chrome/chrome_trace_event.pbzero.h"
 #include "third_party/perfetto/protos/perfetto/trace/chrome/chrome_trace_packet.pb.h"
 
@@ -89,10 +85,65 @@ const char* GetStringFromStringTable(
   return it->second.c_str();
 }
 
+void OutputJSONFromArgumentValue(
+    const perfetto::protos::ChromeTraceEvent::Arg& arg,
+    std::string* out) {
+  TraceEvent::TraceValue value;
+  if (arg.has_bool_value()) {
+    value.as_bool = arg.bool_value();
+    TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_BOOL, value, out);
+    return;
+  }
+
+  if (arg.has_uint_value()) {
+    value.as_uint = arg.uint_value();
+    TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_UINT, value, out);
+    return;
+  }
+
+  if (arg.has_int_value()) {
+    value.as_int = arg.int_value();
+    TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_INT, value, out);
+    return;
+  }
+
+  if (arg.has_double_value()) {
+    value.as_double = arg.double_value();
+    TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_DOUBLE, value, out);
+    return;
+  }
+
+  if (arg.has_pointer_value()) {
+    value.as_pointer = reinterpret_cast<void*>(arg.pointer_value());
+    TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_POINTER, value, out);
+    return;
+  }
+
+  if (arg.has_string_value()) {
+    std::string str = arg.string_value();
+    value.as_string = &str[0];
+    TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_STRING, value, out);
+    return;
+  }
+
+  if (arg.has_json_value()) {
+    *out += arg.json_value();
+    return;
+  }
+
+  if (arg.has_traced_value()) {
+    AppendProtoDictAsJSON(out, arg.traced_value());
+    return;
+  }
+
+  NOTREACHED();
+}
+
 void OutputJSONFromTraceEventProto(
     const perfetto::protos::ChromeTraceEvent& event,
-    std::string* out,
-    const std::unordered_map<int, std::string>& string_table) {
+    const std::unordered_map<int, std::string>& string_table,
+    const JSONTraceExporter::ArgumentFilterPredicate& argument_filter_predicate,
+    std::string* out) {
   char phase = static_cast<char>(event.phase());
   const char* name =
       event.has_name_index()
@@ -193,72 +244,91 @@ void OutputJSONFromTraceEventProto(
     base::StringAppendF(out, ",\"s\":\"%c\"", scope);
   }
 
-  *out += ",\"args\":{";
-  for (int i = 0; i < event.args_size(); ++i) {
-    auto& arg = event.args(i);
+  *out += ",\"args\":";
 
-    if (i > 0) {
-      *out += ",";
+  JSONTraceExporter::ArgumentNameFilterPredicate argument_name_filter_predicate;
+  bool strip_args =
+      event.args_size() > 0 && !argument_filter_predicate.is_null() &&
+      !argument_filter_predicate.Run(category_group_name, name,
+                                     &argument_name_filter_predicate);
+
+  if (strip_args) {
+    *out += "\"__stripped__\"";
+  } else {
+    *out += "{";
+
+    for (int i = 0; i < event.args_size(); ++i) {
+      auto& arg = event.args(i);
+
+      if (i > 0) {
+        *out += ",";
+      }
+
+      *out += "\"";
+      std::string arg_name =
+          arg.has_name_index()
+              ? GetStringFromStringTable(string_table, arg.name_index())
+              : arg.name();
+      *out += arg_name;
+      *out += "\":";
+
+      if (!argument_name_filter_predicate.is_null() &&
+          !argument_name_filter_predicate.Run(arg_name.c_str())) {
+        *out += "\"__stripped__\"";
+        continue;
+      }
+      OutputJSONFromArgumentValue(arg, out);
     }
 
-    *out += "\"";
-    *out += arg.has_name_index()
-                ? GetStringFromStringTable(string_table, arg.name_index())
-                : arg.name();
-    *out += "\":";
-
-    TraceEvent::TraceValue value;
-    if (arg.has_bool_value()) {
-      value.as_bool = arg.bool_value();
-      TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_BOOL, value, out);
-      continue;
-    }
-
-    if (arg.has_uint_value()) {
-      value.as_uint = arg.uint_value();
-      TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_UINT, value, out);
-      continue;
-    }
-
-    if (arg.has_int_value()) {
-      value.as_int = arg.int_value();
-      TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_INT, value, out);
-      continue;
-    }
-
-    if (arg.has_double_value()) {
-      value.as_double = arg.double_value();
-      TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_DOUBLE, value, out);
-      continue;
-    }
-
-    if (arg.has_pointer_value()) {
-      value.as_pointer = reinterpret_cast<void*>(arg.pointer_value());
-      TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_POINTER, value, out);
-      continue;
-    }
-
-    if (arg.has_string_value()) {
-      std::string str = arg.string_value();
-      value.as_string = &str[0];
-      TraceEvent::AppendValueAsJSON(TRACE_VALUE_TYPE_STRING, value, out);
-      continue;
-    }
-
-    if (arg.has_json_value()) {
-      *out += arg.json_value();
-      continue;
-    }
-
-    if (arg.has_traced_value()) {
-      AppendProtoDictAsJSON(out, arg.traced_value());
-      continue;
-    }
-
-    NOTREACHED();
+    *out += "}";
   }
 
-  *out += "}}";
+  *out += "}";
+}
+
+std::unique_ptr<base::DictionaryValue> ConvertTraceStatsToDict(
+    const perfetto::protos::TraceStats& trace_stats) {
+  auto dict = std::make_unique<base::DictionaryValue>();
+  dict->SetInteger("producers_connected", trace_stats.producers_connected());
+  dict->SetInteger("producers_seen", trace_stats.producers_seen());
+  dict->SetInteger("data_sources_registered",
+                   trace_stats.data_sources_registered());
+  dict->SetInteger("data_sources_seen", trace_stats.data_sources_seen());
+  dict->SetInteger("tracing_sessions", trace_stats.tracing_sessions());
+  dict->SetInteger("total_buffers", trace_stats.total_buffers());
+  dict->SetInteger("chunks_discarded", trace_stats.chunks_discarded());
+  dict->SetInteger("patches_discarded", trace_stats.patches_discarded());
+  auto buf_list = std::make_unique<base::ListValue>();
+  for (const auto& buf_stats : trace_stats.buffer_stats()) {
+    base::Value buf_value(base::Value::Type::DICTIONARY);
+    base::DictionaryValue* buf_dict;
+    buf_value.GetAsDictionary(&buf_dict);
+    buf_dict->SetInteger("buffer_size", buf_stats.buffer_size());
+    buf_dict->SetInteger("bytes_written", buf_stats.bytes_written());
+    buf_dict->SetInteger("bytes_overwritten", buf_stats.bytes_overwritten());
+    buf_dict->SetInteger("bytes_read", buf_stats.bytes_read());
+    buf_dict->SetInteger("padding_bytes_written",
+                         buf_stats.padding_bytes_written());
+    buf_dict->SetInteger("padding_bytes_cleared",
+                         buf_stats.padding_bytes_cleared());
+    buf_dict->SetInteger("chunks_written", buf_stats.chunks_written());
+    buf_dict->SetInteger("chunks_rewritten", buf_stats.chunks_rewritten());
+    buf_dict->SetInteger("chunks_overwritten", buf_stats.chunks_overwritten());
+    buf_dict->SetInteger("chunks_discarded", buf_stats.chunks_discarded());
+    buf_dict->SetInteger("chunks_read", buf_stats.chunks_read());
+    buf_dict->SetInteger("chunks_committed_out_of_order",
+                         buf_stats.chunks_committed_out_of_order());
+    buf_dict->SetInteger("write_wrap_count", buf_stats.write_wrap_count());
+    buf_dict->SetInteger("patches_succeeded", buf_stats.patches_succeeded());
+    buf_dict->SetInteger("patches_failed", buf_stats.patches_failed());
+    buf_dict->SetInteger("readaheads_succeeded",
+                         buf_stats.readaheads_succeeded());
+    buf_dict->SetInteger("readaheads_failed", buf_stats.readaheads_failed());
+    buf_dict->SetInteger("abi_violations", buf_stats.abi_violations());
+    buf_list->GetList().push_back(std::move(buf_value));
+  }
+  dict->SetList("buffer_stats", std::move(buf_list));
+  return dict;
 }
 
 }  // namespace
@@ -282,65 +352,16 @@ void AppendProtoDictAsJSON(std::string* out,
   out->append("}");
 }
 
-JSONTraceExporter::JSONTraceExporter(const std::string& config,
-                                     perfetto::TracingService* service)
-    : config_(config), metadata_(std::make_unique<base::DictionaryValue>()) {
-  consumer_endpoint_ = service->ConnectConsumer(this, /*uid=*/0);
-
-  // Start tracing.
-  perfetto::TraceConfig trace_config;
-  trace_config.add_buffers()->set_size_kb(4096 * 100);
-
-  auto* trace_event_config = trace_config.add_data_sources()->mutable_config();
-  trace_event_config->set_name(mojom::kTraceEventDataSourceName);
-  trace_event_config->set_target_buffer(0);
-  auto* chrome_config = trace_event_config->mutable_chrome_config();
-  chrome_config->set_trace_config(config_);
-
-// Only CrOS and Cast support system tracing.
-#if defined(OS_CHROMEOS) || (defined(IS_CHROMECAST) && defined(OS_LINUX))
-  auto* system_trace_config = trace_config.add_data_sources()->mutable_config();
-  system_trace_config->set_name(mojom::kSystemTraceDataSourceName);
-  system_trace_config->set_target_buffer(0);
-  auto* system_chrome_config = system_trace_config->mutable_chrome_config();
-  system_chrome_config->set_trace_config(config_);
-#endif
-
-#if defined(OS_CHROMEOS)
-  auto* arc_trace_config = trace_config.add_data_sources()->mutable_config();
-  arc_trace_config->set_name(mojom::kArcTraceDataSourceName);
-  arc_trace_config->set_target_buffer(0);
-  auto* arc_chrome_config = arc_trace_config->mutable_chrome_config();
-  arc_chrome_config->set_trace_config(config_);
-#endif
-
-  auto* trace_metadata_config =
-      trace_config.add_data_sources()->mutable_config();
-  trace_metadata_config->set_name(mojom::kMetaDataSourceName);
-  trace_metadata_config->set_target_buffer(0);
-
-  consumer_endpoint_->EnableTracing(trace_config);
+JSONTraceExporter::JSONTraceExporter(
+    ArgumentFilterPredicate argument_filter_predicate,
+    OnTraceEventJSONCallback callback)
+    : json_callback_(callback),
+      metadata_(std::make_unique<base::DictionaryValue>()),
+      argument_filter_predicate_(argument_filter_predicate) {
+  DCHECK(json_callback_);
 }
 
 JSONTraceExporter::~JSONTraceExporter() = default;
-
-void JSONTraceExporter::OnConnect() {}
-
-void JSONTraceExporter::OnDisconnect() {}
-
-void JSONTraceExporter::OnTracingDisabled() {
-  consumer_endpoint_->ReadBuffers();
-}
-
-// This is called by the Coordinator interface, mainly used by the
-// TracingController which in turn is used by the tracing UI etc
-// to start/stop tracing.
-void JSONTraceExporter::StopAndFlush(OnTraceEventJSONCallback callback) {
-  DCHECK(!json_callback_ && callback);
-  json_callback_ = callback;
-
-  consumer_endpoint_->DisableTracing();
-}
 
 void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
                                     bool has_more) {
@@ -363,6 +384,12 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
     perfetto::protos::ChromeTracePacket packet;
     bool decoded = encoded_packet.Decode(&packet);
     DCHECK(decoded);
+
+    if (packet.has_trace_stats()) {
+      metadata_->SetDictionary("perfetto_trace_stats",
+                               ConvertTraceStatsToDict(packet.trace_stats()));
+      continue;
+    }
 
     if (!packet.has_chrome_events()) {
       continue;
@@ -387,7 +414,8 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
         has_output_first_event_ = true;
       }
 
-      OutputJSONFromTraceEventProto(event, &out, string_table);
+      OutputJSONFromTraceEventProto(event, string_table,
+                                    argument_filter_predicate_, &out);
     }
 
     for (auto& metadata : bundle.metadata()) {
@@ -399,7 +427,7 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
         metadata_->SetBoolean(metadata.name(), metadata.bool_value());
       } else if (metadata.has_json_value()) {
         std::unique_ptr<base::Value> value(
-            base::JSONReader::Read(metadata.json_value()));
+            base::JSONReader::ReadDeprecated(metadata.json_value()));
         metadata_->Set(metadata.name(), std::move(value));
       } else {
         NOTREACHED();
@@ -466,14 +494,6 @@ void JSONTraceExporter::OnTraceData(std::vector<perfetto::TracePacket> packets,
   }
 
   json_callback_.Run(out, metadata_.get(), has_more);
-}
-
-// Consumer Detach / Attach is not used in Chrome.
-void JSONTraceExporter::OnDetach(bool) {
-  NOTREACHED();
-}
-void JSONTraceExporter::OnAttach(bool, const perfetto::TraceConfig&) {
-  NOTREACHED();
 }
 
 }  // namespace tracing

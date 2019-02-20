@@ -12,12 +12,12 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
+#include "third_party/blink/renderer/bindings/core/v8/js_event_handler.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_configuration.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_element.h"
-#include "third_party/blink/renderer/bindings/core/v8/v8_event_listener_helper.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_iterator.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_node.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_test_interface.h"
@@ -32,11 +32,13 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_object_constructor.h"
+#include "third_party/blink/renderer/platform/bindings/v8_per_context_data.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/get_ptr.h"
 
@@ -1030,7 +1032,7 @@ static void ImplementsEventHandlerAttributeAttributeGetter(const v8::FunctionCal
 
   EventListener* cpp_value(WTF::GetPtr(impl->implementsEventHandlerAttribute()));
 
-  V8SetReturnValue(info, JSBasedEventListener::GetListenerOrNull(info.GetIsolate(), impl, cpp_value));
+  V8SetReturnValue(info, JSEventHandler::AsV8Value(info.GetIsolate(), impl, cpp_value));
 }
 
 static void ImplementsEventHandlerAttributeAttributeSetter(
@@ -1045,7 +1047,7 @@ static void ImplementsEventHandlerAttributeAttributeSetter(
 
   // Prepare the value to be set.
 
-  impl->setImplementsEventHandlerAttribute(V8EventListenerHelper::GetEventHandler(ScriptState::ForRelevantRealm(info), v8_value, JSEventHandler::HandlerType::kEventHandler, kListenerFindOrCreate));
+  impl->setImplementsEventHandlerAttribute(JSEventHandler::CreateOrNull(v8_value, JSEventHandler::HandlerType::kEventHandler));
 }
 
 static void ImplementsRuntimeEnabledNodeAttributeAttributeGetter(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -1743,6 +1745,12 @@ static void WindowExposedMethodMethod(const v8::FunctionCallbackInfo<v8::Value>&
   impl->windowExposedMethod();
 }
 
+static void OriginTrialWindowExposedMethodMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  TestInterfaceImplementation* impl = V8TestInterface::ToImpl(info.Holder());
+
+  impl->originTrialWindowExposedMethod();
+}
+
 static void AlwaysExposedStaticMethodMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
   TestInterfaceImplementation::alwaysExposedStaticMethod();
 }
@@ -2434,15 +2442,6 @@ static void ForEachMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (exception_state.HadException()) {
     return;
   }
-}
-
-static void ToJSONMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
-  TestInterfaceImplementation* impl = V8TestInterface::ToImpl(info.Holder());
-
-  ScriptState* script_state = ScriptState::ForRelevantRealm(info);
-
-  ScriptValue result = impl->toJSONForBinding(script_state);
-  V8SetReturnValue(info, result.V8Value());
 }
 
 static void ToStringMethod(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -3491,6 +3490,12 @@ void V8TestInterface::WindowExposedMethodMethodCallback(const v8::FunctionCallba
   test_interface_implementation_v8_internal::WindowExposedMethodMethod(info);
 }
 
+void V8TestInterface::OriginTrialWindowExposedMethodMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
+  RUNTIME_CALL_TIMER_SCOPE_DISABLED_BY_DEFAULT(info.GetIsolate(), "Blink_TestInterfaceImplementation_originTrialWindowExposedMethod");
+
+  test_interface_implementation_v8_internal::OriginTrialWindowExposedMethodMethod(info);
+}
+
 void V8TestInterface::AlwaysExposedStaticMethodMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
   RUNTIME_CALL_TIMER_SCOPE_DISABLED_BY_DEFAULT(info.GetIsolate(), "Blink_TestInterfaceImplementation_alwaysExposedStaticMethod");
 
@@ -3779,12 +3784,6 @@ void V8TestInterface::ForEachMethodCallback(const v8::FunctionCallbackInfo<v8::V
   test_interface_implementation_v8_internal::ForEachMethod(info);
 }
 
-void V8TestInterface::ToJSONMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
-  RUNTIME_CALL_TIMER_SCOPE_DISABLED_BY_DEFAULT(info.GetIsolate(), "Blink_TestInterfaceImplementation_toJSON");
-
-  test_interface_implementation_v8_internal::ToJSONMethod(info);
-}
-
 void V8TestInterface::ToStringMethodCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {
   RUNTIME_CALL_TIMER_SCOPE_DISABLED_BY_DEFAULT(info.GetIsolate(), "Blink_TestInterfaceImplementation_toString");
 
@@ -3971,7 +3970,6 @@ static constexpr V8DOMConfiguration::MethodConfiguration kV8TestInterfaceMethods
     {"keys", V8TestInterface::KeysMethodCallback, 0, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
     {"values", V8TestInterface::ValuesMethodCallback, 0, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
     {"forEach", V8TestInterface::ForEachMethodCallback, 1, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
-    {"toJSON", V8TestInterface::ToJSONMethodCallback, 0, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
     {"toString", V8TestInterface::ToStringMethodCallback, 0, static_cast<v8::PropertyAttribute>(v8::DontEnum), V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds},
 };
 
@@ -4189,6 +4187,45 @@ void V8TestInterface::InstallRuntimeEnabledFeaturesOnTemplate(
       }
     }
   }
+}
+
+void V8TestInterface::InstallTestFeature(
+    v8::Isolate* isolate,
+    const DOMWrapperWorld& world,
+    v8::Local<v8::Object> instance,
+    v8::Local<v8::Object> prototype,
+    v8::Local<v8::Function> interface) {
+  v8::Local<v8::FunctionTemplate> interface_template =
+      V8TestInterface::GetWrapperTypeInfo()->DomTemplate(isolate, world);
+  v8::Local<v8::Signature> signature = v8::Signature::New(isolate, interface_template);
+  ALLOW_UNUSED_LOCAL(signature);
+  ExecutionContext* execution_context = ToExecutionContext(isolate->GetCurrentContext());
+  if (execution_context && (execution_context->IsDocument())) {
+    static constexpr V8DOMConfiguration::MethodConfiguration
+    kOriginTrialWindowExposedMethodConfigurations[] = {
+        {"originTrialWindowExposedMethod", V8TestInterface::OriginTrialWindowExposedMethodMethodCallback, 0, v8::None, V8DOMConfiguration::kOnPrototype, V8DOMConfiguration::kCheckHolder, V8DOMConfiguration::kDoNotCheckAccess, V8DOMConfiguration::kHasSideEffect, V8DOMConfiguration::kAllWorlds}
+    };
+    for (const auto& config : kOriginTrialWindowExposedMethodConfigurations) {
+      V8DOMConfiguration::InstallMethod(
+          isolate, world, instance, prototype,
+          interface, signature, config);
+    }
+  }
+}
+
+void V8TestInterface::InstallTestFeature(
+    ScriptState* script_state, v8::Local<v8::Object> instance) {
+  V8PerContextData* per_context_data = script_state->PerContextData();
+  v8::Local<v8::Object> prototype = per_context_data->PrototypeForType(
+      V8TestInterface::GetWrapperTypeInfo());
+  v8::Local<v8::Function> interface = per_context_data->ConstructorForType(
+      V8TestInterface::GetWrapperTypeInfo());
+  ALLOW_UNUSED_LOCAL(interface);
+  InstallTestFeature(script_state->GetIsolate(), script_state->World(), instance, prototype, interface);
+}
+
+void V8TestInterface::InstallTestFeature(ScriptState* script_state) {
+  InstallTestFeature(script_state, v8::Local<v8::Object>());
 }
 
 v8::Local<v8::FunctionTemplate> V8TestInterface::DomTemplate(

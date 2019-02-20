@@ -30,18 +30,18 @@ class URLLoaderRelay : public network::mojom::URLLoaderClient,
         client_sink_(std::move(client_sink)) {}
 
   // network::mojom::URLLoader implementation:
-  void FollowRedirect(
-      const base::Optional<std::vector<std::string>>&
-          to_be_removed_request_headers,
-      const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
-      const base::Optional<GURL>& new_url) override {
-    DCHECK(!modified_request_headers.has_value())
-        << "Redirect with modified headers was not supported yet. "
+  void FollowRedirect(const std::vector<std::string>& removed_headers,
+                      const net::HttpRequestHeaders& modified_request_headers,
+                      const base::Optional<GURL>& new_url) override {
+    DCHECK(removed_headers.empty() && modified_request_headers.IsEmpty())
+        << "Redirect with removed or modified headers was not supported yet. "
            "crbug.com/845683";
     DCHECK(!new_url.has_value())
         << "Redirect with modified URL was not supported yet. "
            "crbug.com/845683";
-    loader_sink_->FollowRedirect(base::nullopt, base::nullopt, base::nullopt);
+    loader_sink_->FollowRedirect({} /* removed_headers */,
+                                 {} /* modified_headers */,
+                                 base::nullopt /* new_url */);
   }
 
   void ProceedWithResponse() override { loader_sink_->ProceedWithResponse(); }
@@ -168,7 +168,7 @@ ChildURLLoaderFactoryBundle::ChildURLLoaderFactoryBundle() = default;
 
 ChildURLLoaderFactoryBundle::ChildURLLoaderFactoryBundle(
     std::unique_ptr<ChildURLLoaderFactoryBundleInfo> info) {
-  Update(std::move(info), base::nullopt);
+  Update(std::move(info));
 }
 
 ChildURLLoaderFactoryBundle::ChildURLLoaderFactoryBundle(
@@ -245,9 +245,7 @@ ChildURLLoaderFactoryBundle::CloneWithoutAppCacheFactory() {
 }
 
 void ChildURLLoaderFactoryBundle::Update(
-    std::unique_ptr<ChildURLLoaderFactoryBundleInfo> info,
-    base::Optional<std::vector<mojom::TransferrableURLLoaderPtr>>
-        subresource_overrides) {
+    std::unique_ptr<ChildURLLoaderFactoryBundleInfo> info) {
   if (info->direct_network_factory_info()) {
     direct_network_factory_.Bind(
         std::move(info->direct_network_factory_info()));
@@ -257,12 +255,12 @@ void ChildURLLoaderFactoryBundle::Update(
         std::move(info->prefetch_loader_factory_info()));
   }
   URLLoaderFactoryBundle::Update(std::move(info));
+}
 
-  if (subresource_overrides) {
-    for (auto& element : *subresource_overrides) {
-      subresource_overrides_[element->url] = std::move(element);
-    }
-  }
+void ChildURLLoaderFactoryBundle::UpdateSubresourceOverrides(
+    std::vector<mojom::TransferrableURLLoaderPtr>* subresource_overrides) {
+  for (auto& element : *subresource_overrides)
+    subresource_overrides_[element->url] = std::move(element);
 }
 
 void ChildURLLoaderFactoryBundle::SetPrefetchLoaderFactory(

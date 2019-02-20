@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "content/public/renderer/render_thread.h"
 
 namespace content {
@@ -60,7 +61,7 @@ TrackedChildURLLoaderFactoryBundle::TrackedChildURLLoaderFactoryBundle(
     std::unique_ptr<TrackedChildURLLoaderFactoryBundleInfo> info) {
   DCHECK(info->main_thread_host_bundle());
   main_thread_host_bundle_ = std::move(info->main_thread_host_bundle());
-  Update(std::move(info), base::nullopt);
+  Update(std::move(info));
   AddObserverOnMainThread();
 }
 
@@ -117,8 +118,7 @@ void TrackedChildURLLoaderFactoryBundle::RemoveObserverOnMainThread() {
 void TrackedChildURLLoaderFactoryBundle::OnUpdate(
     std::unique_ptr<network::SharedURLLoaderFactoryInfo> info) {
   Update(base::WrapUnique(
-             static_cast<ChildURLLoaderFactoryBundleInfo*>(info.release())),
-         base::nullopt);
+      static_cast<ChildURLLoaderFactoryBundleInfo*>(info.release())));
 }
 
 // -----------------------------------------------------------------------------
@@ -187,7 +187,7 @@ void HostChildURLLoaderFactoryBundle::UpdateThisAndAllClones(
                                      partial_bundle->Clone());
   }
 
-  Update(partial_bundle->PassInterface(), base::nullopt);
+  Update(partial_bundle->PassInterface());
 }
 
 bool HostChildURLLoaderFactoryBundle::IsHostChildURLLoaderFactoryBundle()

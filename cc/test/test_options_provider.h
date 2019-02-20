@@ -61,7 +61,7 @@ class TestOptionsProvider : public ImageProvider,
   class DiscardableManager;
 
   // ImageProvider implementation.
-  ScopedDecodedDrawImage GetDecodedDrawImage(
+  ImageProvider::ScopedResult GetRasterContent(
       const DrawImage& draw_image) override;
 
   testing::StrictMock<MockCanvas> canvas_;
@@ -78,6 +78,7 @@ class TestOptionsProvider : public ImageProvider,
 
   ServicePaintCache service_paint_cache_;
   ClientPaintCache client_paint_cache_;
+  std::vector<uint8_t> scratch_buffer_;
 
   PaintOp::SerializeOptions serialize_options_;
   PaintOp::DeserializeOptions deserialize_options_;

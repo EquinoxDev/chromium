@@ -106,11 +106,13 @@ class WindowedAppShimLaunchObserver : public apps::AppShimHandler {
   void OnShimLaunchRequested(
       AppShimHost* host,
       bool recreate_shims,
-      apps::LaunchShimCallback launch_callback) override {
+      apps::ShimLaunchedCallback launch_callback,
+      apps::ShimTerminatedCallback terminated_callback) override {
     apps::AppShimHandler::RemoveHandler(app_mode_id_);
     apps::AppShimHandler::GetForAppMode(app_mode_id_)
         ->OnShimLaunchRequested(host, recreate_shims,
-                                std::move(launch_callback));
+                                std::move(launch_callback),
+                                std::move(terminated_callback));
     apps::AppShimHandler::RegisterHandler(app_mode_id_, this);
   }
   void OnShimProcessConnected(
@@ -259,7 +261,7 @@ base::FilePath GetAppShimPath(Profile* profile,
   web_app::WebAppShortcutCreator shortcut_creator(
       web_app::GetWebAppDataDirectory(profile->GetPath(), app->id(), GURL()),
       shortcut_info.get());
-  return shortcut_creator.GetInternalShortcutPath();
+  return shortcut_creator.GetApplicationsShortcutPath(false);
 }
 
 Browser* GetFirstHostedAppWindow() {
@@ -289,8 +291,8 @@ const extensions::Extension* AppShimInteractiveTest::InstallAppWithShim(
   // Note that usually an install triggers shim creation, but that's disabled
   // (always) in tests. If it wasn't the case, the following test would fail
   // (but flakily since the creation happens on the FILE thread).
-  shim_path_ = GetAppShimPath(profile(), app);
   base::ScopedAllowBlockingForTesting allow_blocking;
+  shim_path_ = GetAppShimPath(profile(), app);
   EXPECT_FALSE(base::PathExists(shim_path_));
 
   // To create a shim in a test, instead call UpdateAllShortcuts, which has been
@@ -366,9 +368,10 @@ IN_PROC_BROWSER_TEST_F(AppShimInteractiveTest, MAYBE_HostedAppLaunch) {
     HostedAppBrowserListObserver listener(app->id());
     base::CommandLine shim_cmdline(base::CommandLine::NO_PROGRAM);
     shim_cmdline.AppendSwitch(app_mode::kLaunchedForTest);
-    base::Process shim_process = base::mac::OpenApplicationWithPath(
+    NSRunningApplication* shim_app = base::mac::OpenApplicationWithPath(
         shim_path_, shim_cmdline, NSWorkspaceLaunchDefault);
-    ASSERT_TRUE(shim_process.IsValid());
+    ASSERT_TRUE(shim_app);
+    base::Process shim_process([shim_app processIdentifier]);
     listener.WaitUntilAdded();
 
     ASSERT_TRUE(GetFirstHostedAppWindow());
@@ -436,9 +439,10 @@ IN_PROC_BROWSER_TEST_F(AppShimInteractiveTest, MAYBE_Launch) {
     ExtensionTestMessageListener launched_listener("Launched", false);
     base::CommandLine shim_cmdline(base::CommandLine::NO_PROGRAM);
     shim_cmdline.AppendSwitch(app_mode::kLaunchedForTest);
-    base::Process shim_process = base::mac::OpenApplicationWithPath(
+    NSRunningApplication* shim_app = base::mac::OpenApplicationWithPath(
         shim_path_, shim_cmdline, NSWorkspaceLaunchDefault);
-    ASSERT_TRUE(shim_process.IsValid());
+    ASSERT_TRUE(shim_app);
+    base::Process shim_process([shim_app processIdentifier]);
     ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
     ASSERT_TRUE(GetFirstAppWindow());
@@ -607,7 +611,7 @@ IN_PROC_BROWSER_TEST_F(AppShimInteractiveTest, MAYBE_RebuildShim) {
       shortcut_info.get());
   std::vector<base::FilePath> updated_paths;
   shortcut_creator.UpdateShortcuts(false, &updated_paths);
-  base::FilePath shim_path = shortcut_creator.GetInternalShortcutPath();
+  base::FilePath shim_path = updated_paths.front();
   NSMutableDictionary* plist_64 = [NSMutableDictionary
       dictionaryWithContentsOfFile:base::mac::FilePathToNSString(
           shim_path.Append("Contents").Append("Info.plist"))];
@@ -655,9 +659,9 @@ IN_PROC_BROWSER_TEST_F(AppShimInteractiveTest, MAYBE_RebuildShim) {
   //     behave normally.
   ExtensionTestMessageListener launched_listener("Launched", false);
   base::CommandLine shim_cmdline(base::CommandLine::NO_PROGRAM);
-  base::Process shim_process = base::mac::OpenApplicationWithPath(
+  NSRunningApplication* shim_app = base::mac::OpenApplicationWithPath(
       shim_path, shim_cmdline, NSWorkspaceLaunchDefault);
-  ASSERT_TRUE(shim_process.IsValid());
+  ASSERT_TRUE(shim_app);
 
   // Wait for the app to start (1). At this point there is no shim host.
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());

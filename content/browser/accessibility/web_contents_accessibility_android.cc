@@ -631,7 +631,7 @@ jint WebContentsAccessibilityAndroid::GetEditableTextSelectionStart(
   if (!node)
     return false;
 
-  return node->GetIntAttribute(ax::mojom::IntAttribute::kTextSelStart);
+  return node->GetSelectionStart();
 }
 
 jint WebContentsAccessibilityAndroid::GetEditableTextSelectionEnd(
@@ -642,7 +642,7 @@ jint WebContentsAccessibilityAndroid::GetEditableTextSelectionEnd(
   if (!node)
     return false;
 
-  return node->GetIntAttribute(ax::mojom::IntAttribute::kTextSelEnd);
+  return node->GetSelectionEnd();
 }
 
 jboolean WebContentsAccessibilityAndroid::PopulateAccessibilityNodeInfo(
@@ -719,14 +719,12 @@ jboolean WebContentsAccessibilityAndroid::PopulateAccessibilityNodeInfo(
       base::android::ConvertUTF16ToJavaString(env, node->GetHint()),
       node->GetIntAttribute(ax::mojom::IntAttribute::kTextSelStart),
       node->GetIntAttribute(ax::mojom::IntAttribute::kTextSelEnd),
-      node->HasImage(), node->IsContentInvalid());
+      node->HasImage());
 
   Java_WebContentsAccessibilityImpl_setAccessibilityNodeInfoLollipopAttributes(
       env, obj, info, node->CanOpenPopup(), node->IsContentInvalid(),
       node->IsDismissable(), node->IsMultiLine(), node->AndroidInputType(),
-      node->AndroidLiveRegionType(),
-      base::android::ConvertUTF16ToJavaString(
-          env, node->GetContentInvalidErrorMessage()));
+      node->AndroidLiveRegionType());
 
   bool has_character_locations = node->HasCharacterLocations();
   Java_WebContentsAccessibilityImpl_setAccessibilityNodeInfoOAttributes(
@@ -879,8 +877,9 @@ void WebContentsAccessibilityAndroid::SetSelection(
 
   BrowserAccessibilityAndroid* node = GetAXFromUniqueID(unique_id);
   if (node) {
-    node->manager()->SetSelection(AXPlatformRange(node->CreatePositionAt(start),
-                                                  node->CreatePositionAt(end)));
+    node->manager()->SetSelection(
+        AXPlatformRange(node->CreatePositionForSelectionAt(start),
+                        node->CreatePositionForSelectionAt(end)));
   }
 }
 

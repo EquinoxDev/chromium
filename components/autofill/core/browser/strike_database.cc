@@ -15,7 +15,7 @@
 #include "base/time/time.h"
 #include "components/autofill/core/browser/proto/strike_data.pb.h"
 #include "components/autofill/core/common/autofill_clock.h"
-#include "components/leveldb_proto/proto_database_impl.h"
+#include "components/leveldb_proto/public/proto_database_provider.h"
 
 namespace autofill {
 
@@ -25,7 +25,7 @@ const int kMaxInitAttempts = 3;
 }  // namespace
 
 StrikeDatabase::StrikeDatabase(const base::FilePath& database_dir)
-    : db_(std::make_unique<leveldb_proto::ProtoDatabaseImpl<StrikeData>>(
+    : db_(leveldb_proto::ProtoDatabaseProvider::CreateUniqueDB<StrikeData>(
           base::CreateSequencedTaskRunnerWithTraits(
               {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
                base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN}))),
@@ -39,17 +39,20 @@ StrikeDatabase::StrikeDatabase(const base::FilePath& database_dir)
 
 StrikeDatabase::~StrikeDatabase() {}
 
-int StrikeDatabase::AddStrike(const std::string key) {
-  int num_strikes = strike_map_cache_.count(key)  // Cache has entry for |key|.
-                        ? strike_map_cache_[key].num_strikes() + 1
-                        : 1;
+int StrikeDatabase::AddStrikes(int strikes_increase, const std::string key) {
+  DCHECK(strikes_increase > 0);
+  int num_strikes =
+      strike_map_cache_.count(key)  // Cache has entry for |key|.
+          ? strike_map_cache_[key].num_strikes() + strikes_increase
+          : strikes_increase;
   SetStrikeData(key, num_strikes);
   return num_strikes;
 }
 
-int StrikeDatabase::RemoveStrike(const std::string key) {
+int StrikeDatabase::RemoveStrikes(int strikes_decrease, const std::string key) {
+  DCHECK(strikes_decrease > 0);
   DCHECK(strike_map_cache_.count(key));
-  int num_strikes = strike_map_cache_[key].num_strikes() - 1;
+  int num_strikes = strike_map_cache_[key].num_strikes() - strikes_decrease;
   if (num_strikes < 1) {
     ClearStrikes(key);
     return 0;
@@ -67,6 +70,17 @@ int StrikeDatabase::GetStrikes(const std::string key) {
 void StrikeDatabase::ClearStrikes(const std::string key) {
   strike_map_cache_.erase(key);
   ClearAllProtoStrikesForKey(key, base::DoNothing());
+}
+
+void StrikeDatabase::ClearAllStrikes(const std::string& project_prefix) {
+  std::vector<std::string> keys_to_delete;
+  for (std::pair<std::string, StrikeData> entry : strike_map_cache_) {
+    if (entry.first.find(project_prefix) == 0) {
+      keys_to_delete.push_back(entry.first);
+    }
+  }
+  for (std::string key : keys_to_delete)
+    ClearStrikes(key);
 }
 
 StrikeDatabase::StrikeDatabase()

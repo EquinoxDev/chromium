@@ -362,7 +362,8 @@ void FlexLine::ComputeLineItemsPosition(LayoutUnit main_axis_offset,
 
     LayoutUnit child_main_extent = flex_item.FlexedBorderBoxSize();
     // In an RTL column situation, this will apply the margin-right/margin-end
-    // on the left. This will be fixed later in flipForRightToLeftColumn.
+    // on the left. This will be fixed later in
+    // LayoutFlexibleBox::FlipForRightToLeftColumn.
     flex_item.desired_location = LayoutPoint(
         should_flip_main_axis
             ? container_logical_width - main_axis_offset - child_main_extent
@@ -473,9 +474,19 @@ FlexLayoutAlgorithm::ContentAlignmentNormalBehavior() {
 bool FlexLayoutAlgorithm::ShouldApplyMinSizeAutoForChild(
     const LayoutBox& child) const {
   // css-flexbox section 4.5
-  Length min = IsHorizontalFlow() ? child.StyleRef().MinWidth()
-                                  : child.StyleRef().MinHeight();
-  return min.IsAuto() && !child.ShouldApplySizeContainment() &&
+  const Length& min = IsHorizontalFlow() ? child.StyleRef().MinWidth()
+                                         : child.StyleRef().MinHeight();
+  if (!min.IsAuto())
+    return false;
+
+  // TODO(crbug.com/927066): We calculate an incorrect intrinsic logical height
+  // when percentages are involved, so for now don't apply min-height: auto
+  // in such cases.
+  if (IsColumnFlow() && child.IsFlexibleBox() &&
+      ToLayoutBlock(child).HasPercentHeightDescendants())
+    return false;
+
+  return !child.ShouldApplySizeContainment() &&
          MainAxisOverflowForChild(child) == EOverflow::kVisible;
 }
 

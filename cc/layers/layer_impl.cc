@@ -321,7 +321,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->wheel_event_handler_region_ = wheel_event_handler_region_;
   layer->background_color_ = background_color_;
   layer->safe_opaque_background_color_ = safe_opaque_background_color_;
-  layer->position_ = position_;
   layer->transform_tree_index_ = transform_tree_index_;
   layer->effect_tree_index_ = effect_tree_index_;
   layer->clip_tree_index_ = clip_tree_index_;
@@ -380,6 +379,8 @@ void LayerImpl::SetIsResizedByBrowserControls(bool resized) {
 std::unique_ptr<base::DictionaryValue> LayerImpl::LayerAsJson() const {
   std::unique_ptr<base::DictionaryValue> result(new base::DictionaryValue);
   result->SetInteger("LayerId", id());
+  if (element_id())
+    result->SetString("ElementId", element_id().ToString());
   result->SetString("LayerType", LayerTypeAsString());
 
   auto list = std::make_unique<base::ListValue>();
@@ -388,9 +389,9 @@ std::unique_ptr<base::DictionaryValue> LayerImpl::LayerAsJson() const {
   result->Set("Bounds", std::move(list));
 
   list = std::make_unique<base::ListValue>();
-  list->AppendDouble(position_.x());
-  list->AppendDouble(position_.y());
-  result->Set("Position", std::move(list));
+  list->AppendInteger(offset_to_transform_parent().x());
+  list->AppendInteger(offset_to_transform_parent().y());
+  result->Set("OffsetToTransformParent", std::move(list));
 
   const gfx::Transform& gfx_transform =
       const_cast<LayerImpl*>(this)->test_properties()->transform;
@@ -407,6 +408,11 @@ std::unique_ptr<base::DictionaryValue> LayerImpl::LayerAsJson() const {
   result->SetBoolean("Is3dSorted", Is3dSorted());
   result->SetDouble("Opacity", Opacity());
   result->SetBoolean("ContentsOpaque", contents_opaque_);
+
+  result->SetInteger("transform_tree_index", transform_tree_index());
+  result->SetInteger("clip_tree_index", clip_tree_index());
+  result->SetInteger("effect_tree_index", effect_tree_index());
+  result->SetInteger("scroll_tree_index", scroll_tree_index());
 
   if (scrollable())
     result->SetBoolean("Scrollable", true);
@@ -599,6 +605,15 @@ void LayerImpl::SetHitTestableWithoutDrawsContent(bool should_hit_test) {
   NoteLayerPropertyChanged();
 }
 
+bool LayerImpl::ShouldHitTest() const {
+  bool should_hit_test = draws_content_;
+  if (GetEffectTree().Node(effect_tree_index()))
+    should_hit_test &=
+        !GetEffectTree().Node(effect_tree_index())->subtree_hidden;
+  should_hit_test |= hit_testable_without_draws_content_;
+  return should_hit_test;
+}
+
 void LayerImpl::SetBackgroundColor(SkColor background_color) {
   if (background_color_ == background_color)
     return;
@@ -645,10 +660,6 @@ void LayerImpl::SetElementId(ElementId element_id) {
   layer_tree_impl_->RemoveFromElementLayerList(element_id_);
   element_id_ = element_id;
   layer_tree_impl_->AddToElementLayerList(element_id_, this);
-}
-
-void LayerImpl::SetPosition(const gfx::PointF& position) {
-  position_ = position;
 }
 
 void LayerImpl::SetUpdateRect(const gfx::Rect& update_rect) {
@@ -731,7 +742,8 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
 
   state->SetDouble("opacity", Opacity());
 
-  MathUtil::AddToTracedValue("position", position_, state);
+  // For backward-compatibility of DevTools front-end.
+  MathUtil::AddToTracedValue("position", gfx::PointF(), state);
 
   state->SetInteger("transform_tree_index", transform_tree_index());
   state->SetInteger("clip_tree_index", clip_tree_index());

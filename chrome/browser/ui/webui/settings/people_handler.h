@@ -22,11 +22,8 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/signin/core/browser/signin_buildflags.h"
 #include "components/sync/driver/sync_service_observer.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "services/identity/public/cpp/identity_manager.h"
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-#include "components/signin/core/browser/account_tracker_service.h"
-#endif
 
 class LoginUIService;
 
@@ -48,11 +45,9 @@ namespace settings {
 class PeopleHandler : public SettingsPageUIHandler,
                       public identity::IdentityManager::Observer,
                       public SyncStartupTracker::Observer,
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-                      public AccountTrackerService::Observer,
-#endif
                       public LoginUIService::LoginUI,
-                      public syncer::SyncServiceObserver {
+                      public syncer::SyncServiceObserver,
+                      public content::WebContentsObserver {
  public:
   // TODO(tommycli): Remove these strings and instead use WebUIListener events.
   // These string constants are used from JavaScript (sync_browser_proxy.js).
@@ -133,20 +128,20 @@ class PeopleHandler : public SettingsPageUIHandler,
   void FocusUI() override;
 
   // IdentityManager::Observer implementation.
-  void OnPrimaryAccountSet(const AccountInfo& primary_account_info) override;
+  void OnPrimaryAccountSet(
+      const CoreAccountInfo& primary_account_info) override;
   void OnPrimaryAccountCleared(
-      const AccountInfo& previous_primary_account_info) override;
+      const CoreAccountInfo& previous_primary_account_info) override;
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+  void OnExtendedAccountInfoUpdated(const AccountInfo& info) override;
+  void OnExtendedAccountInfoRemoved(const AccountInfo& info) override;
+#endif
 
   // syncer::SyncServiceObserver implementation.
   void OnStateChanged(syncer::SyncService* sync) override;
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  // AccountTrackerService::Observer implementation.
-  void OnAccountUpdated(const AccountInfo& info) override;
-  void OnAccountImageUpdated(const std::string& account_id,
-                             const gfx::Image& image) override;
-  void OnAccountRemoved(const AccountInfo& info) override;
-#endif
+  // content::WebContentsObserver implementation
+  void BeforeUnloadDialogCancelled() override;
 
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
@@ -193,7 +188,7 @@ class PeopleHandler : public SettingsPageUIHandler,
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   void HandleGetStoredAccounts(const base::ListValue* args);
   void HandleStartSyncingWithEmail(const base::ListValue* args);
-  std::unique_ptr<base::ListValue> GetStoredAccountsList();
+  base::Value GetStoredAccountsList();
 #endif
 
   // Displays spinner-only UI indicating that something is going on in the
@@ -254,11 +249,6 @@ class PeopleHandler : public SettingsPageUIHandler,
   ScopedObserver<identity::IdentityManager, PeopleHandler>
       identity_manager_observer_;
   ScopedObserver<syncer::SyncService, PeopleHandler> sync_service_observer_;
-
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-  ScopedObserver<AccountTrackerService, PeopleHandler>
-      account_tracker_observer_;
-#endif
 
 #if defined(OS_CHROMEOS)
   base::WeakPtrFactory<PeopleHandler> weak_factory_{this};

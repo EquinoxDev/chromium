@@ -105,11 +105,14 @@ struct UserInitiatedInfo {
 
   // Whether the associated action was initiated by a user, according to user
   // gesture tracking in content and Blink, as reported by NavigationHandle.
+  // This is based on the heuristic the popup blocker uses.
   bool user_gesture;
 
-  // Whether the associated action was initiated by a user, based on our
-  // heuristic-driven implementation that tests to see if there was an input
-  // event that happened shortly before the given action.
+  // Whether an input even directly led to the navigation, according to
+  // input start time tracking in the renderer, as reported by NavigationHandle.
+  // Note that this metric is still experimental and may not be fully
+  // implemented. All known issues are blocking crbug.com/889220. Currently
+  // all known gaps affect browser-side navigations.
   bool user_input_event;
 
  private:
@@ -296,6 +299,11 @@ class PageLoadMetricsObserver {
 
   static bool IsStandardWebPageMimeType(const std::string& mime_type);
 
+  static void AssignTimeAndSizeForLargestContentfulPaint(
+      base::Optional<base::TimeDelta>& largest_content_paint_time,
+      uint64_t& largest_content_paint_size,
+      const page_load_metrics::mojom::PaintTimingPtr& paint_timing);
+
   // The page load started, with the given navigation handle.
   // currently_committed_url contains the URL of the committed page load at the
   // time the navigation for navigation_handle was initiated, or the empty URL
@@ -326,6 +334,13 @@ class PageLoadMetricsObserver {
   // and downloads. Note that |navigation_handle| will be destroyed
   // soon after this call. Don't hold a reference to it.
   virtual void OnDidInternalNavigationAbort(
+      content::NavigationHandle* navigation_handle) {}
+
+  // ReadyToCommitNextNavigation is triggered when a frame navigation is
+  // ready to commit, but has not yet been committed. This is only called by
+  // a PageLoadTracker for a committed load, meaning that this call signals we
+  // are ready to commit a navigation to a new page.
+  virtual void ReadyToCommitNextNavigation(
       content::NavigationHandle* navigation_handle) {}
 
   // OnDidFinishSubFrameNavigation is triggered when a sub-frame of the
@@ -487,6 +502,18 @@ class PageLoadMetricsObserver {
   // to requests with HTTP or HTTPS only schemes.
   virtual void OnLoadedResource(
       const ExtraRequestCompleteInfo& extra_request_complete_info) {}
+
+  virtual void FrameReceivedFirstUserActivation(
+      content::RenderFrameHost* render_frame_host) {}
+
+  // Called when the display property changes on the frame.
+  virtual void FrameDisplayStateChanged(
+      content::RenderFrameHost* render_frame_host,
+      bool is_display_none) {}
+
+  // Called when a frames size changes.
+  virtual void FrameSizeChanged(content::RenderFrameHost* render_frame_host,
+                                const gfx::Size& frame_size) {}
 
   // Called when the event corresponding to |event_key| occurs in this page
   // load.

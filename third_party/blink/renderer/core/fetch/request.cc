@@ -25,8 +25,10 @@
 #include "third_party/blink/renderer/core/fetch/request_init.h"
 #include "third_party/blink/renderer/core/fileapi/blob.h"
 #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
+#include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/loader/threadable_loader.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/url/url_search_params.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/blob/blob_data.h"
@@ -382,9 +384,12 @@ Request* Request::CreateRequestWithRequestOrString(
   // This is not yet standardized, but we can assume the following:
   // "If |init|'s importance member is present, set |request|'s importance
   // mode to it." For more information see Priority Hints at
-  // https://crbug.com/821464
+  // https://crbug.com/821464.
   DCHECK(init->importance().IsNull() ||
-         RuntimeEnabledFeatures::PriorityHintsEnabled());
+         origin_trials::PriorityHintsEnabled(execution_context));
+  if (!init->importance().IsNull())
+    UseCounter::Count(execution_context, WebFeature::kPriorityHints);
+
   if (init->importance() == "low") {
     request->SetImportance(mojom::FetchImportanceMode::kImportanceLow);
   } else if (init->importance() == "high") {

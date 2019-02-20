@@ -59,6 +59,7 @@ class ValidationMessageClientImpl final
   LocalFrameView* CurrentView();
   void HideValidationMessageImmediately(const Element& anchor);
   void Reset(TimerBase*);
+  void ValidationMessageVisibilityChanged(const Element& anchor);
 
   void ShowValidationMessage(const Element& anchor,
                              const String& message,
@@ -84,6 +85,7 @@ class ValidationMessageClientImpl final
   std::unique_ptr<FrameOverlay> overlay_;
   // Raw pointer. This pointer is valid unless overlay_ is nullptr.
   ValidationMessageOverlayDelegate* overlay_delegate_ = nullptr;
+  bool allow_initial_empty_anchor_ = false;
 };
 
 }  // namespace blink

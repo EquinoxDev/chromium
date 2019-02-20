@@ -42,7 +42,7 @@ class CORE_EXPORT HTMLIFrameElement final
 
  public:
   DECLARE_NODE_FACTORY(HTMLIFrameElement);
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
   explicit HTMLIFrameElement(Document&);
   ~HTMLIFrameElement() override;
@@ -52,7 +52,7 @@ class CORE_EXPORT HTMLIFrameElement final
   DOMFeaturePolicy* featurePolicy();
 
   // Returns attributes that should be checked against Trusted Types
-  const HashSet<AtomicString>& GetCheckedAttributeNames() const override;
+  const AttrNameToTrustedType& GetCheckedAttributeTypes() const override;
 
   ParsedFeaturePolicy ConstructContainerPolicy(
       Vector<String>* /* messages */) const override;
@@ -92,7 +92,7 @@ class CORE_EXPORT HTMLIFrameElement final
   bool allow_fullscreen_;
   bool allow_payment_request_;
   bool collapsed_by_client_;
-  Member<HTMLIFrameElementSandbox> sandbox_;
+  TraceWrapperMember<HTMLIFrameElementSandbox> sandbox_;
   Member<DOMFeaturePolicy> policy_;
 
   network::mojom::ReferrerPolicy referrer_policy_;

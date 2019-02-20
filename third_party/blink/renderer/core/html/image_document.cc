@@ -69,11 +69,11 @@ class ImageEventListener : public NativeEventListener {
 
   ImageEventListener(ImageDocument* document) : doc_(document) {}
 
-  bool operator==(const EventListener& other) const override;
+  bool Matches(const EventListener& other) const override;
 
   void Invoke(ExecutionContext*, Event*) override;
 
-  void Trace(blink::Visitor* visitor) override {
+  void Trace(Visitor* visitor) override {
     visitor->Trace(doc_);
     NativeEventListener::Trace(visitor);
   }
@@ -262,7 +262,7 @@ void ImageDocument::CreateDocumentStructure() {
     // Adding a UA shadow root here is because the container <div> should be
     // hidden so that only the <img> element should be visible in <body>,
     // according to the spec:
-    // https://html.spec.whatwg.org/multipage/browsing-the-web.html#read-media
+    // https://html.spec.whatwg.org/C/#read-media
     ShadowRoot& shadow_root = body->EnsureUserAgentShadowRoot();
     shadow_root.AppendChild(div_element_);
   } else {
@@ -278,7 +278,7 @@ void ImageDocument::CreateDocumentStructure() {
   body->AppendChild(image_element_.Get());
   if (Loader() && image_element_->CachedImageResourceForImageDocument()) {
     image_element_->CachedImageResourceForImageDocument()->ResponseReceived(
-        Loader()->GetResponse(), nullptr);
+        Loader()->GetResponse());
   }
 
   if (ShouldShrinkToFit()) {
@@ -563,7 +563,7 @@ bool ImageDocument::ShouldShrinkToFit() const {
   return GetFrame()->IsMainFrame() && !is_wrap_content_web_view;
 }
 
-void ImageDocument::Trace(blink::Visitor* visitor) {
+void ImageDocument::Trace(Visitor* visitor) {
   visitor->Trace(div_element_);
   visitor->Trace(image_element_);
   HTMLDocument::Trace(visitor);
@@ -585,7 +585,7 @@ void ImageEventListener::Invoke(ExecutionContext*, Event* event) {
   }
 }
 
-bool ImageEventListener::operator==(const EventListener& listener) const {
+bool ImageEventListener::Matches(const EventListener& listener) const {
   if (const ImageEventListener* image_event_listener =
           DynamicTo<ImageEventListener>(listener)) {
     return doc_ == image_event_listener->doc_;

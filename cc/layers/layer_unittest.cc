@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include "base/bind.h"
 #include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/animation/animation_host.h"
@@ -1346,7 +1347,7 @@ TEST_F(LayerTest, PushUpdatesShouldHitTest) {
   root_layer->PushPropertiesTo(impl_layer.get());
   EXPECT_TRUE(impl_layer->DrawsContent());
   EXPECT_FALSE(impl_layer->hit_testable_without_draws_content());
-  EXPECT_TRUE(impl_layer->should_hit_test());
+  EXPECT_TRUE(impl_layer->ShouldHitTest());
 
   // A layer that does not draw content and does not hit test without drawing
   // content should not be hit testable.
@@ -1354,7 +1355,7 @@ TEST_F(LayerTest, PushUpdatesShouldHitTest) {
   root_layer->PushPropertiesTo(impl_layer.get());
   EXPECT_FALSE(impl_layer->DrawsContent());
   EXPECT_FALSE(impl_layer->hit_testable_without_draws_content());
-  EXPECT_FALSE(impl_layer->should_hit_test());
+  EXPECT_FALSE(impl_layer->ShouldHitTest());
 
   // |SetHitTestableWithoutDrawsContent| should cause a layer to become hit
   // testable even though it does not draw content.
@@ -1362,7 +1363,7 @@ TEST_F(LayerTest, PushUpdatesShouldHitTest) {
   root_layer->PushPropertiesTo(impl_layer.get());
   EXPECT_FALSE(impl_layer->DrawsContent());
   EXPECT_TRUE(impl_layer->hit_testable_without_draws_content());
-  EXPECT_TRUE(impl_layer->should_hit_test());
+  EXPECT_TRUE(impl_layer->ShouldHitTest());
 }
 
 void ReceiveCopyOutputResult(int* result_count,

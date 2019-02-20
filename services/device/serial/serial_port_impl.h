@@ -5,8 +5,14 @@
 #ifndef SERVICES_DEVICE_SERIAL_SERIAL_PORT_IMPL_H_
 #define SERVICES_DEVICE_SERIAL_SERIAL_PORT_IMPL_H_
 
+#include <string>
+#include <vector>
+
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "mojo/public/cpp/system/data_pipe.h"
+#include "mojo/public/cpp/system/simple_watcher.h"
 #include "services/device/public/mojom/serial.mojom.h"
 
 namespace base {
@@ -24,22 +30,22 @@ class SerialIoHandler;
 class SerialPortImpl : public mojom::SerialPort {
  public:
   static void Create(
-      const std::string& path,
+      const base::FilePath& path,
       mojom::SerialPortRequest request,
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
 
-  explicit SerialPortImpl(
-      const std::string& path,
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
+  SerialPortImpl(const base::FilePath& path,
+                 scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
   ~SerialPortImpl() override;
 
  private:
   // mojom::SerialPort methods:
   void Open(mojom::SerialConnectionOptionsPtr options,
+            mojo::ScopedDataPipeProducerHandle out_stream,
+            mojom::SerialPortClientAssociatedPtrInfo client,
             OpenCallback callback) override;
-  void Read(uint32_t bytes, ReadCallback callback) override;
   void Write(const std::vector<uint8_t>& data, WriteCallback callback) override;
-  void CancelRead(mojom::SerialReceiveError reason) override;
+  void ClearReadError(mojo::ScopedDataPipeProducerHandle producer) override;
   void CancelWrite(mojom::SerialSendError reason) override;
   void Flush(FlushCallback callback) override;
   void GetControlSignals(GetControlSignalsCallback callback) override;
@@ -51,9 +57,17 @@ class SerialPortImpl : public mojom::SerialPort {
   void SetBreak(SetBreakCallback callback) override;
   void ClearBreak(ClearBreakCallback callback) override;
 
-  std::string path_;
-  scoped_refptr<SerialIoHandler> io_handler_;
+  void OnOpenCompleted(OpenCallback callback, bool success);
+  void ReadFromPortAndWriteOut(MojoResult result,
+                               const mojo::HandleSignalsState& state);
+  void WriteToOutStream(int bytes_read, mojom::SerialReceiveError error);
 
+  scoped_refptr<SerialIoHandler> io_handler_;
+  mojom::SerialPortClientAssociatedPtr client_;
+  mojo::ScopedDataPipeProducerHandle out_stream_;
+  mojo::SimpleWatcher out_stream_watcher_;
+
+  base::WeakPtrFactory<SerialPortImpl> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(SerialPortImpl);
 };
 

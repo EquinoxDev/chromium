@@ -21,10 +21,16 @@
 #include "ios/web/public/features.h"
 #import "ios/web/public/navigation_item.h"
 #import "ios/web/public/navigation_manager.h"
+#import "ios/web/public/test/fakes/test_web_client.h"
 #import "ios/web/public/test/fakes/test_web_state_delegate.h"
 #import "ios/web/public/test/web_test_with_web_state.h"
 #import "ios/web/public/test/web_view_content_test_util.h"
 #import "ios/web/public/web_client.h"
+#import "ios/web/public/web_state/web_state_observer.h"
+#include "ios/web/test/test_url_constants.h"
+#include "net/test/embedded_test_server/default_handlers.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
@@ -42,6 +48,12 @@ namespace {
 // A text string from the test HTML page in the session storage returned  by
 // GetTestSessionStorage().
 const char kTestSessionStoragePageText[] = "pony";
+
+// A text string that is included in |kTestPageHTML|.
+const char kTextInTestPageHTML[] = "test";
+
+// A test page HTML containing |kTextInTestPageHTML|.
+const char kTestPageHTML[] = "<html><body>test</body><html>";
 
 // Returns a session storage with a single committed entry of a test HTML page.
 CRWSessionStorage* GetTestSessionStorage() {
@@ -215,7 +227,7 @@ TEST_P(WebStateTest, Snapshot) {
   CGRect rect = [web_state()->GetView() bounds];
   base::test::ios::SpinRunLoopWithMinDelay(base::TimeDelta::FromSecondsD(0.2));
   web_state()->TakeSnapshot(
-      rect, base::BindOnce(^(const gfx::Image& snapshot) {
+      gfx::RectF(rect), base::BindOnce(^(const gfx::Image& snapshot) {
         if (@available(iOS 11, *)) {
           ASSERT_FALSE(snapshot.IsEmpty());
           EXPECT_GT(snapshot.Width(), 0);
@@ -344,18 +356,6 @@ TEST_P(WebStateTest, RestoreLargeSession) {
   // LoadIfNecessary call. Fix the bug and remove extra call.
   navigation_manager->LoadIfNecessary();
 
-  if (web::GetWebClient()->IsSlimNavigationManagerEnabled()) {
-    // After restoration is started GetPendingItemIndex() will return -1 and
-    // GetPendingItem() will return null. Pending item will be returned after
-    // the first post-restore navigation is started, but before session
-    // restoration is complete. Session restoration will be completed when the
-    // fist post-restore navigation is finished. This is why it is not possible
-    // to assert that pending item does not exist during the session
-    // restoration.
-    EXPECT_EQ(-1, navigation_manager->GetPendingItemIndex());
-    EXPECT_FALSE(navigation_manager->GetPendingItem());
-  }
-
   // Verify that session was fully restored.
   int kExpectedItemCount = web::GetWebClient()->IsSlimNavigationManagerEnabled()
                                ? wk_navigation_util::kMaxSessionSize
@@ -363,6 +363,7 @@ TEST_P(WebStateTest, RestoreLargeSession) {
   EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
     bool restored = navigation_manager->GetItemCount() == kExpectedItemCount &&
                     navigation_manager->CanGoForward();
+    EXPECT_EQ(restored, !navigation_manager->IsRestoreSessionInProgress());
     if (!restored) {
       EXPECT_FALSE(navigation_manager->GetLastCommittedItem());
       EXPECT_EQ(-1, navigation_manager->GetLastCommittedItemIndex());
@@ -372,30 +373,27 @@ TEST_P(WebStateTest, RestoreLargeSession) {
       EXPECT_TRUE(navigation_manager->GetForwardItems().empty());
       EXPECT_EQ("Test0", base::UTF16ToASCII(web_state_ptr->GetTitle()));
       EXPECT_EQ(0.0, web_state_ptr->GetLoadingProgress());
-      NavigationItem* pendig_item = navigation_manager->GetPendingItem();
-      if (pendig_item) {
-        // Pending item is non-null after the first post-restore navigation is
-        // started (when happens before session restoration is complete). But
-        // pending item should never be an internal placeholder or session
-        // restoration URL.
-        EXPECT_FALSE(IsWKInternalUrl(pendig_item->GetURL()));
-      }
+      EXPECT_EQ(-1, navigation_manager->GetPendingItemIndex());
+      EXPECT_FALSE(navigation_manager->GetPendingItem());
     } else {
-      if (web::GetWebClient()->IsSlimNavigationManagerEnabled()) {
-        EXPECT_EQ("www.0.com", base::UTF16ToASCII(web_state_ptr->GetTitle()));
-      } else {
-        // This page never loads and does not actually have a title, so
-        // returning cached title is a bug. However there is not much value in
-        // fixing this bug for legacy navigation manager.
-        EXPECT_EQ("Test0", base::UTF16ToASCII(web_state_ptr->GetTitle()));
-      }
-      EXPECT_EQ("http://www.0.com/", web_state_ptr->GetLastCommittedURL());
+      EXPECT_EQ("Test0", base::UTF16ToASCII(web_state_ptr->GetTitle()));
       NavigationItem* last_committed_item =
           navigation_manager->GetLastCommittedItem();
-      EXPECT_TRUE(last_committed_item);
-      EXPECT_TRUE(last_committed_item &&
-                  last_committed_item->GetURL() == "http://www.0.com/");
-      EXPECT_EQ(0, navigation_manager->GetLastCommittedItemIndex());
+      // After restoration is complete GetLastCommittedItem() will return null
+      // until fist post-restore navigation is finished.
+      if (last_committed_item) {
+        EXPECT_EQ("http://www.0.com/", last_committed_item->GetURL());
+        EXPECT_EQ("http://www.0.com/", web_state_ptr->GetLastCommittedURL());
+        EXPECT_EQ(0, navigation_manager->GetLastCommittedItemIndex());
+      } else {
+        EXPECT_EQ("", web_state_ptr->GetLastCommittedURL());
+        EXPECT_EQ(-1, navigation_manager->GetLastCommittedItemIndex());
+        NavigationItem* pending_item = navigation_manager->GetPendingItem();
+        EXPECT_TRUE(pending_item);
+        if (pending_item) {
+          EXPECT_EQ("http://www.0.com/", pending_item->GetURL());
+        }
+      }
       EXPECT_TRUE(navigation_manager->GetBackwardItems().empty());
       EXPECT_EQ(std::max(navigation_manager->GetItemCount() - 1, 0),
                 static_cast<int>(navigation_manager->GetForwardItems().size()));
@@ -638,7 +636,65 @@ TEST_P(WebStateTest, DisableAndReenableWebUsage) {
                                                  kTestSessionStoragePageText));
 }
 
-INSTANTIATE_TEST_CASE_P(
+// Tests that loading an HTML page after a failed navigation works.
+TEST_P(WebStateTest, LoadChromeThenHTML) {
+  GURL app_specific_url(
+      base::StringPrintf("%s://app_specific_url", kTestAppSpecificScheme));
+  web::NavigationManager::WebLoadParams load_params(app_specific_url);
+  web_state()->GetNavigationManager()->LoadURLWithParams(load_params);
+  EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+    return !web_state()->IsLoading();
+  }));
+  // Wait for the error loading.
+  EXPECT_TRUE(
+      test::WaitForWebViewContainingText(web_state(), "unsupported URL"));
+  NSString* data_html = @(kTestPageHTML);
+  web_state()->LoadData([data_html dataUsingEncoding:NSUTF8StringEncoding],
+                        @"text/html", GURL("https://www.chromium.org"));
+  EXPECT_TRUE(
+      test::WaitForWebViewContainingText(web_state(), kTextInTestPageHTML));
+}
+
+// Tests that reloading after loading HTML page will load the online page.
+TEST_P(WebStateTest, LoadChromeThenWaitThenHTMLThenReload) {
+  net::EmbeddedTestServer server;
+  net::test_server::RegisterDefaultHandlers(&server);
+  ASSERT_TRUE(server.Start());
+  GURL echo_url = server.GetURL("/echo");
+
+  GURL app_specific_url(
+      base::StringPrintf("%s://app_specific_url", kTestAppSpecificScheme));
+  web::NavigationManager::WebLoadParams load_params(app_specific_url);
+  web_state()->GetNavigationManager()->LoadURLWithParams(load_params);
+  // Wait for the error loading.
+  EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+    return !web_state()->IsLoading();
+  }));
+  EXPECT_TRUE(
+      test::WaitForWebViewContainingText(web_state(), "unsupported URL"));
+  NSString* data_html = @(kTestPageHTML);
+  web_state()->LoadData([data_html dataUsingEncoding:NSUTF8StringEncoding],
+                        @"text/html", echo_url);
+  EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+    return !web_state()->IsLoading();
+  }));
+  EXPECT_TRUE(
+      test::WaitForWebViewContainingText(web_state(), kTextInTestPageHTML));
+
+  web_state()->GetNavigationManager()->Reload(web::ReloadType::NORMAL, true);
+  EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+    return !web_state()->IsLoading();
+  }));
+
+  EXPECT_TRUE(test::WaitForWebViewContainingText(web_state(), "Echo"));
+  web_state()->GetNavigationManager()->Reload(web::ReloadType::NORMAL, true);
+  EXPECT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
+    return !web_state()->IsLoading();
+  }));
+  EXPECT_TRUE(test::WaitForWebViewContainingText(web_state(), "Echo"));
+}
+
+INSTANTIATE_TEST_SUITE_P(
     ProgrammaticWebStateTest,
     WebStateTest,
     ::testing::Values(

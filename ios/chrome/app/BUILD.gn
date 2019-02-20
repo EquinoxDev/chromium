@@ -10,21 +10,10 @@ import("//ios/build/chrome_build.gni")
 import("//ios/build/config.gni")
 import("//ios/public/provider/chrome/browser/build_config.gni")
 import("//ios/third_party/firebase/firebase.gni")
-import("//services/service_manager/public/service_manifest.gni")
 
 buildflag_header("firebase_buildflags") {
   header = "firebase_buildflags.h"
   flags = [ "FIREBASE_ENABLED=$ios_enable_firebase_sdk" ]
-}
-
-service_manifest("chrome_browser_manifest_overlay") {
-  source = "//ios/chrome/browser/chrome_browser_manifest_overlay.json"
-  packaged_services = [ "//services/identity:manifest" ]
-}
-
-service_manifest("chrome_packaged_services_manifest_overlay") {
-  source = "//ios/chrome/browser/chrome_packaged_services_manifest_overlay.json"
-  packaged_services = [ "//components/services/unzip:manifest" ]
 }
 
 source_set("app") {
@@ -214,6 +203,7 @@ source_set("app_internal") {
     "//ios/chrome/browser/sync",
     "//ios/chrome/browser/tabs",
     "//ios/chrome/browser/ui",
+    "//ios/chrome/browser/ui:feature_flags",
     "//ios/chrome/browser/ui:ui_internal",
     "//ios/chrome/browser/ui/authentication",
     "//ios/chrome/browser/ui/commands",
@@ -224,6 +214,8 @@ source_set("app_internal") {
     "//ios/chrome/browser/ui/main:tab_switcher",
     "//ios/chrome/browser/ui/promos",
     "//ios/chrome/browser/ui/settings",
+    "//ios/chrome/browser/ui/settings:settings_root",
+    "//ios/chrome/browser/ui/settings/google_services",
     "//ios/chrome/browser/ui/signin_interaction",
     "//ios/chrome/browser/ui/tab_grid",
     "//ios/chrome/browser/ui/tab_grid:tab_grid_ui",
@@ -233,6 +225,7 @@ source_set("app_internal") {
     "//ios/chrome/browser/ui/util",
     "//ios/chrome/browser/ui/webui:webui_internal",
     "//ios/chrome/browser/upgrade",
+    "//ios/chrome/browser/url_loading",
     "//ios/chrome/browser/variations:ios_chrome_ui_string_overrider_factory",
     "//ios/chrome/browser/voice",
     "//ios/chrome/browser/web",

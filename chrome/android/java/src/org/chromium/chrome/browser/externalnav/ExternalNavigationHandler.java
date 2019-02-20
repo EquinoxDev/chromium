@@ -44,7 +44,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Logic related to the URL overriding/intercepting functionality.
@@ -158,8 +157,8 @@ public class ExternalNavigationHandler {
         @OverrideUrlLoadingResult
         int result = shouldOverrideUrlLoadingInternal(
                 params, intent, hasBrowserFallbackUrl, browserFallbackUrl);
-        RecordHistogram.recordTimesHistogram("Android.StrictMode.OverrideUrlLoadingTime",
-                SystemClock.elapsedRealtime() - time, TimeUnit.MILLISECONDS);
+        RecordHistogram.recordTimesHistogram(
+                "Android.StrictMode.OverrideUrlLoadingTime", SystemClock.elapsedRealtime() - time);
 
         if (result != OverrideUrlLoadingResult.NO_OVERRIDE) {
             int pageTransitionCore = params.getPageTransition() & PageTransition.CORE_MASK;
@@ -316,9 +315,9 @@ public class ExternalNavigationHandler {
             //                          protocols.
             // TODO(tedchoc): Remove the ChromeFeatureList check once we verify this change does
             //                not break the world.
-            if (isRedirectFromFormSubmit && !params.hasUserGesture()
+            if (isRedirectFromFormSubmit && !incomingIntentRedirect && !params.hasUserGesture()
                     && ChromeFeatureList.isEnabled(
-                               ChromeFeatureList.INTENT_BLOCK_EXTERNAL_FORM_REDIRECT_NO_GESTURE)) {
+                            ChromeFeatureList.INTENT_BLOCK_EXTERNAL_FORM_REDIRECT_NO_GESTURE)) {
                 if (DEBUG) {
                     Log.i(TAG,
                             "NO_OVERRIDE: Incoming form intent attempting to redirect without "

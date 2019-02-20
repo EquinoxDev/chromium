@@ -19,6 +19,7 @@
 #include "chrome/browser/permissions/chooser_context_base.h"
 #include "chrome/browser/usb/usb_policy_allowed_devices.h"
 #include "device/usb/public/mojom/device_manager.mojom.h"
+#include "device/usb/public/mojom/device_manager_client.mojom.h"
 #include "mojo/public/cpp/bindings/associated_binding.h"
 
 class UsbChooserContext : public ChooserContextBase,
@@ -27,12 +28,12 @@ class UsbChooserContext : public ChooserContextBase,
   explicit UsbChooserContext(Profile* profile);
   ~UsbChooserContext() override;
 
-  class Observer : public base::CheckedObserver {
+  // This observer can be used to be notified of changes to USB devices that are
+  // connected.
+  class DeviceObserver : public base::CheckedObserver {
    public:
     virtual void OnDeviceAdded(const device::mojom::UsbDeviceInfo&);
     virtual void OnDeviceRemoved(const device::mojom::UsbDeviceInfo&);
-    virtual void OnPermissionRevoked(const GURL& requesting_origin,
-                                     const GURL& embedding_origin);
     virtual void OnDeviceManagerConnectionError();
   };
 
@@ -41,7 +42,7 @@ class UsbChooserContext : public ChooserContextBase,
 
   // These methods from ChooserContextBase are overridden in order to expose
   // ephemeral devices through the public interface.
-  std::vector<std::unique_ptr<base::DictionaryValue>> GetGrantedObjects(
+  std::vector<std::unique_ptr<ChooserContextBase::Object>> GetGrantedObjects(
       const GURL& requesting_origin,
       const GURL& embedding_origin) override;
   std::vector<std::unique_ptr<ChooserContextBase::Object>>
@@ -61,8 +62,8 @@ class UsbChooserContext : public ChooserContextBase,
                            const GURL& embedding_origin,
                            const device::mojom::UsbDeviceInfo& device_info);
 
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
+  void AddObserver(DeviceObserver* observer);
+  void RemoveObserver(DeviceObserver* observer);
 
   // Forward UsbDeviceManager methods.
   void GetDevices(device::mojom::UsbDeviceManager::GetDevicesCallback callback);
@@ -107,7 +108,7 @@ class UsbChooserContext : public ChooserContextBase,
   device::mojom::UsbDeviceManagerPtr device_manager_;
   mojo::AssociatedBinding<device::mojom::UsbDeviceManagerClient>
       client_binding_;
-  base::ObserverList<Observer> observer_list_;
+  base::ObserverList<DeviceObserver> device_observer_list_;
 
   base::WeakPtrFactory<UsbChooserContext> weak_factory_;
 

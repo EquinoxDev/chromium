@@ -18,6 +18,7 @@
 #include "base/values.h"
 #include "content/public/renderer/render_frame.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_endpoint.h"
 #include "extensions/common/api/messaging/port_id.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/renderer/extension_frame_helper.h"
@@ -188,25 +189,30 @@ void MessagingBindings::OpenChannelToExtension(
   ports_[js_id] = std::make_unique<ExtensionPort>(context(), port_id, js_id);
 
   ExtensionMsg_ExternalConnectionInfo info;
+
   // For messaging APIs, hosted apps should be considered a web page so hide
   // its extension ID.
   const Extension* extension = context()->extension();
-  if (extension && !extension->is_hosted_app())
-    info.source_id = extension->id();
+  if (extension && !extension->is_hosted_app()) {
+    info.source_endpoint =
+        context()->context_type() == Feature::CONTENT_SCRIPT_CONTEXT
+            ? MessagingEndpoint::ForContentScript(extension->id())
+            : MessagingEndpoint::ForExtension(extension->id());
+  } else {
+    info.source_endpoint = MessagingEndpoint::ForWebPage();
+  }
 
   v8::Isolate* isolate = args.GetIsolate();
   info.target_id = *v8::String::Utf8Value(isolate, args[0]);
+
   info.source_url = context()->url();
   std::string channel_name = *v8::String::Utf8Value(isolate, args[1]);
-  // TODO(devlin): Why is this not part of info?
-  bool include_tls_channel_id = args[2].As<v8::Boolean>()->Value();
 
   {
     SCOPED_UMA_HISTOGRAM_TIMER(
         "Extensions.Messaging.SetPortIdTime.Extension");
     render_frame->Send(new ExtensionHostMsg_OpenChannelToExtension(
-        render_frame->GetRoutingID(), info, channel_name,
-        include_tls_channel_id, port_id));
+        render_frame->GetRoutingID(), info, channel_name, port_id));
   }
 
   ++num_extension_ports_;
@@ -247,6 +253,8 @@ void MessagingBindings::OpenChannelToTab(
   content::RenderFrame* render_frame = context()->GetRenderFrame();
   if (!render_frame)
     return;
+
+  DCHECK_NE(context()->context_type(), Feature::CONTENT_SCRIPT_CONTEXT);
 
   // tabs_custom_bindings.js unwraps arguments to tabs.connect/sendMessage and
   // passes them to OpenChannelToTab, in the following order:

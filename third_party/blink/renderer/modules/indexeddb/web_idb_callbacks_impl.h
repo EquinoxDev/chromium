@@ -31,57 +31,78 @@
 
 #include <memory>
 
+#include "base/memory/weak_ptr.h"
+#include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
 #include "third_party/blink/renderer/modules/indexeddb/web_idb_callbacks.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 
 namespace blink {
 
-class IDBDatabaseError;
 class IDBKey;
 class IDBRequest;
 class IDBValue;
-class WebIDBCursor;
-class WebIDBDatabase;
+class WebIDBCursorImpl;
 struct IDBDatabaseMetadata;
 
 class WebIDBCallbacksImpl final : public WebIDBCallbacks {
   USING_FAST_MALLOC(WebIDBCallbacksImpl);
 
  public:
+  // |kNoTransaction| is used as the default transaction ID when instantiating
+  // an WebIDBCallbacksImpl instance.  See web_idb_factory_impl.cc for those
+  // cases.
+  enum : int64_t { kNoTransaction = -1 };
+
   static std::unique_ptr<WebIDBCallbacksImpl> Create(IDBRequest*);
 
   ~WebIDBCallbacksImpl() override;
 
+  void SetState(base::WeakPtr<WebIDBCursorImpl> cursor,
+                int64_t transaction_id) override;
+
   // Pointers transfer ownership.
-  void OnError(const IDBDatabaseError&) override;
-  void OnSuccess(const Vector<IDBNameAndVersion>&) override;
-  void OnSuccess(const Vector<String>&) override;
-  void OnSuccess(WebIDBCursor*,
-                 std::unique_ptr<IDBKey>,
-                 std::unique_ptr<IDBKey> primary_key,
-                 std::unique_ptr<IDBValue>) override;
-  void OnSuccess(WebIDBDatabase*, const IDBDatabaseMetadata&) override;
-  void OnSuccess(std::unique_ptr<IDBKey>) override;
-  void OnSuccess(std::unique_ptr<IDBValue>) override;
-  void OnSuccess(Vector<std::unique_ptr<IDBValue>>) override;
-  void OnSuccess(long long) override;
-  void OnSuccess() override;
-  void OnSuccess(std::unique_ptr<IDBKey>,
-                 std::unique_ptr<IDBKey> primary_key,
-                 std::unique_ptr<IDBValue>) override;
-  void OnBlocked(long long old_version) override;
-  void OnUpgradeNeeded(long long old_version,
-                       WebIDBDatabase*,
-                       const IDBDatabaseMetadata&,
-                       mojom::IDBDataLoss data_loss,
-                       String data_loss_message) override;
-  void Detach() override;
+  void Error(int32_t code, const String& message) override;
+  void SuccessNamesAndVersionsList(
+      Vector<mojom::blink::IDBNameAndVersionPtr>) override;
+  void SuccessStringList(const Vector<String>&) override;
+  void SuccessCursor(
+      mojom::blink::IDBCursorAssociatedPtrInfo cursor_info,
+      std::unique_ptr<IDBKey> key,
+      std::unique_ptr<IDBKey> primary_key,
+      base::Optional<std::unique_ptr<IDBValue>> optional_value) override;
+  void SuccessCursorPrefetch(Vector<std::unique_ptr<IDBKey>> keys,
+                             Vector<std::unique_ptr<IDBKey>> primary_keys,
+                             Vector<std::unique_ptr<IDBValue>> values) override;
+  void SuccessDatabase(mojom::blink::IDBDatabaseAssociatedPtrInfo database_info,
+                       const IDBDatabaseMetadata& metadata) override;
+  void SuccessKey(std::unique_ptr<IDBKey>) override;
+  void SuccessValue(mojom::blink::IDBReturnValuePtr) override;
+  void SuccessArray(Vector<mojom::blink::IDBReturnValuePtr>) override;
+  void SuccessInteger(int64_t) override;
+  void Success() override;
+  void SuccessCursorContinue(
+      std::unique_ptr<IDBKey>,
+      std::unique_ptr<IDBKey> primary_key,
+      base::Optional<std::unique_ptr<IDBValue>>) override;
+  void Blocked(int64_t old_version) override;
+  void UpgradeNeeded(mojom::blink::IDBDatabaseAssociatedPtrInfo,
+                     int64_t old_version,
+                     mojom::IDBDataLoss data_loss,
+                     const String& data_loss_message,
+                     const IDBDatabaseMetadata&) override;
+  void DetachRequestFromCallback() override;
 
  private:
   explicit WebIDBCallbacksImpl(IDBRequest*);
 
+  void Detach();
+  void DetachCallbackFromRequest();
+
   Persistent<IDBRequest> request_;
+  base::WeakPtr<WebIDBCursorImpl> cursor_;
+  int64_t transaction_id_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 };
 
 }  // namespace blink

@@ -19,8 +19,7 @@ void WorkletModuleScriptFetcher::Fetch(
     ModuleScriptFetcher::Client* client) {
   if (module_responses_map_->GetEntry(
           fetch_params.Url(), client,
-          fetch_client_settings_object_fetcher->Context()
-              .GetLoadingTaskRunner())) {
+          fetch_client_settings_object_fetcher->GetTaskRunner())) {
     return;
   }
 
@@ -48,7 +47,7 @@ void WorkletModuleScriptFetcher::NotifyFinished(Resource* resource) {
   if (WasModuleLoadSuccessful(script_resource, &error_messages)) {
     params.emplace(
         script_resource->GetResponse().CurrentRequestUrl(),
-        script_resource->SourceText(),
+        script_resource->SourceText(), script_resource->CacheHandler(),
         script_resource->GetResourceRequest().GetFetchCredentialsMode());
   }
 

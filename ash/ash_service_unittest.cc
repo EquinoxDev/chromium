@@ -6,6 +6,8 @@
 #include <memory>
 #include <vector>
 
+#include "ash/public/cpp/manifest.h"
+#include "ash/public/cpp/test_manifest.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/public/interfaces/constants.mojom.h"
 #include "ash/public/interfaces/window_properties.mojom.h"
@@ -13,9 +15,11 @@
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
+#include "services/service_manager/public/cpp/manifest_builder.h"
 #include "services/service_manager/public/cpp/test/test_service.h"
 #include "services/service_manager/public/cpp/test/test_service_manager.h"
 #include "services/ws/public/cpp/property_type_converters.h"
+#include "services/ws/public/mojom/constants.mojom.h"
 #include "services/ws/public/mojom/window_manager.mojom.h"
 #include "services/ws/public/mojom/window_tree.mojom.h"
 #include "services/ws/public/mojom/window_tree_constants.mojom.h"
@@ -37,6 +41,8 @@
 #include "ui/wm/core/wm_state.h"
 
 namespace ash {
+
+const char kTestServiceName[] = "ash_unittests";
 
 class WindowTreeClientDelegate : public aura::WindowTreeClientDelegate {
  public:
@@ -72,8 +78,15 @@ class WindowTreeClientDelegate : public aura::WindowTreeClientDelegate {
 class AshServiceTest : public testing::Test {
  public:
   AshServiceTest()
-      : test_service_(
-            test_service_manager_.RegisterTestInstance("ash_unittests")) {}
+      : test_service_manager_(
+            {service_manager::Manifest(GetManifest())
+                 .Amend(GetManifestOverlayForTesting()),
+             service_manager::ManifestBuilder()
+                 .WithServiceName(kTestServiceName)
+                 .RequireCapability(ws::mojom::kServiceName, "app")
+                 .Build()}),
+        test_service_(
+            test_service_manager_.RegisterTestInstance(kTestServiceName)) {}
   ~AshServiceTest() override = default;
 
   // service_manager::test::ServiceTest:

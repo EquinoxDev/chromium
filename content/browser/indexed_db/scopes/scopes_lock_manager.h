@@ -37,11 +37,10 @@ class CONTENT_EXPORT ScopesLockManager {
 
   // Acquires locks for the given requests. Lock levels are treated as
   // completely independent domains. The lock levels start at zero.
-  // Returns false if any of the lock ranges were invalid or an invarient was
+  // Returns false if any of the lock ranges were invalid or an invariant was
   // broken.
   struct CONTENT_EXPORT ScopeLockRequest {
     ScopeLockRequest(int level, ScopeLockRange range, LockType type);
-    ~ScopeLockRequest() = default;
     int level;
     ScopeLockRange range;
     LockType type;
@@ -61,21 +60,6 @@ CONTENT_EXPORT bool operator==(const ScopesLockManager::ScopeLockRequest& x,
                                const ScopesLockManager::ScopeLockRequest& y);
 CONTENT_EXPORT bool operator!=(const ScopesLockManager::ScopeLockRequest& x,
                                const ScopesLockManager::ScopeLockRequest& y);
-
-// This is a proxy between a LevelDB Comparator and the std::less interface.
-// It sorts using the |begin| entry of the ranges.
-struct CONTENT_EXPORT ScopesLockRangeLessThan {
-  ScopesLockRangeLessThan() = default;
-  ~ScopesLockRangeLessThan() = default;
-  explicit ScopesLockRangeLessThan(const leveldb::Comparator* comparator)
-      : comparator_(comparator) {}
-  bool operator()(const ScopeLockRange& a, const ScopeLockRange& b) const {
-    DCHECK(comparator_);
-    return comparator_->Compare(leveldb::Slice(a.begin),
-                                leveldb::Slice(b.begin)) < 0;
-  }
-  const leveldb::Comparator* comparator_ = nullptr;
-};
 
 }  // namespace content
 

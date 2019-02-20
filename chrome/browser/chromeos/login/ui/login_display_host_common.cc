@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/login/ui/login_display_host_common.h"
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -181,8 +182,12 @@ void LoginDisplayHostCommon::CompleteLogin(const UserContext& user_context) {
 }
 
 void LoginDisplayHostCommon::OnGaiaScreenReady() {
-  if (GetExistingUserController())
+  if (GetExistingUserController()) {
     GetExistingUserController()->OnGaiaScreenReady();
+  } else {
+    // Used to debug crbug.com/902315. Feel free to remove after that is fixed.
+    LOG(ERROR) << "OnGaiaScreenReady: there is no existing user controller";
+  }
 }
 
 void LoginDisplayHostCommon::SetDisplayEmail(const std::string& email) {

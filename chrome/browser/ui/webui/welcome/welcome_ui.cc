@@ -10,11 +10,13 @@
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
+#include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/localized_string.h"
 #include "chrome/browser/ui/webui/welcome/nux/bookmark_handler.h"
 #include "chrome/browser/ui/webui/welcome/nux/constants.h"
 #include "chrome/browser/ui/webui/welcome/nux/email_handler.h"
 #include "chrome/browser/ui/webui/welcome/nux/google_apps_handler.h"
+#include "chrome/browser/ui/webui/welcome/nux/ntp_background_handler.h"
 #include "chrome/browser/ui/webui/welcome/nux/set_as_default_handler.h"
 #include "chrome/browser/ui/webui/welcome/nux_helper.h"
 #include "chrome/browser/ui/webui/welcome/welcome_handler.h"
@@ -72,6 +74,12 @@ void AddOnboardingStrings(content::WebUIDataSource* html_source) {
       {"googleAppsDescription",
        IDS_ONBOARDING_WELCOME_NUX_GOOGLE_APPS_DESCRIPTION},
 
+      // New Tab Page background module strings.
+      {"ntpBackgroundDescription",
+       IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_DESCRIPTION},
+      {"ntpBackgroundDefault",
+       IDS_ONBOARDING_WELCOME_NTP_BACKGROUND_DEFAULT_TITLE},
+
       // Set as default module strings.
       {"setDefaultHeader", IDS_ONBOARDING_WELCOME_NUX_SET_AS_DEFAULT_HEADER},
       {"setDefaultSubHeader",
@@ -113,6 +121,8 @@ WelcomeUI::WelcomeUI(content::WebUI* web_ui, const GURL& url)
 
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::Create(url.host());
+
+  DarkModeHandler::Initialize(web_ui, html_source);
 
   bool is_dice =
       AccountConsistencyModeManager::IsDiceEnabledForProfile(profile);
@@ -156,6 +166,9 @@ WelcomeUI::WelcomeUI(content::WebUI* web_ui, const GURL& url)
 
     // Add google apps bookmarking onboarding module.
     web_ui->AddMessageHandler(std::make_unique<nux::GoogleAppsHandler>());
+
+    // Add NTP custom background onboarding module.
+    web_ui->AddMessageHandler(std::make_unique<nux::NtpBackgroundHandler>());
 
     // Add set-as-default onboarding module.
     web_ui->AddMessageHandler(std::make_unique<nux::SetAsDefaultHandler>());

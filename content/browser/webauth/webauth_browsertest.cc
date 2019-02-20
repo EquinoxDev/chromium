@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/macros.h"
@@ -171,8 +172,8 @@ class ClosureExecutorBeforeNavigationCommit
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     if (closure_)
       std::move(closure_).Run();
     return true;
@@ -845,7 +846,7 @@ base::Optional<std::string> ExecuteScriptAndExtractPrefixedString(
     }
 
     base::JSONReader reader(base::JSON_ALLOW_TRAILING_COMMAS);
-    std::unique_ptr<base::Value> result = reader.ReadToValue(json);
+    std::unique_ptr<base::Value> result = reader.ReadToValueDeprecated(json);
     if (!result) {
       return base::nullopt;
     }

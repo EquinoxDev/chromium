@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/metrics/field_trial_param_associator.h"
@@ -677,9 +678,10 @@ TEST_F(FrameSchedulerImplTest, SubesourceLoadingPaused) {
     std::unique_ptr<MockLifecycleObserver> loader_observer_added_after_stopped =
         std::make_unique<MockLifecycleObserver>();
 
-    auto loader_observer_handle = frame_scheduler_->AddLifecycleObserver(
-        FrameScheduler::ObserverType::kLoader,
-        loader_observer_added_after_stopped.get());
+    auto loader_observer_added_after_stopped_handle =
+        frame_scheduler_->AddLifecycleObserver(
+            FrameScheduler::ObserverType::kLoader,
+            loader_observer_added_after_stopped.get());
     // This observer should see stopped when added.
     loader_observer_added_after_stopped->CheckObserverState(FROM_HERE, 0, 0, 0,
                                                             1u);
@@ -1597,7 +1599,8 @@ TEST_F(FrameSchedulerImplTest, TaskTypeToTaskQueueMapping) {
   // expected. This test will fail if these task types are moved to different
   // default queues.
   EXPECT_EQ(GetTaskQueue(TaskType::kJavascriptTimer), ThrottleableTaskQueue());
-  EXPECT_EQ(GetTaskQueue(TaskType::kDatabaseAccess), DeferrableTaskQueue());
+  EXPECT_EQ(GetTaskQueue(TaskType::kWebSocket), DeferrableTaskQueue());
+  EXPECT_EQ(GetTaskQueue(TaskType::kDatabaseAccess), PausableTaskQueue());
   EXPECT_EQ(GetTaskQueue(TaskType::kPostedMessage), PausableTaskQueue());
   EXPECT_EQ(GetTaskQueue(TaskType::kInternalIPC), UnpausableTaskQueue());
   EXPECT_EQ(GetTaskQueue(TaskType::kNetworking), LoadingTaskQueue());
@@ -1637,8 +1640,7 @@ class ThrottleableAndFreezableTaskTypesTest
       : ThrottleAndFreezeTaskTypesExperimentTest(
             std::map<std::string, std::string>{
                 // Leading spaces are allowed.
-                {kThrottleableTaskTypesListParam,
-                 "PostedMessage, DatabaseAccess"},
+                {kThrottleableTaskTypesListParam, "PostedMessage"},
                 {kFreezableTaskTypesListParam,
                  "PostedMessage, MediaElementEvent,DOMManipulation"}},
             "Group1") {}
@@ -1662,10 +1664,9 @@ TEST_F(ThrottleableAndFreezableTaskTypesTest, QueueTraitsFromFieldTrialParams) {
       task_queue->GetQueueTraits(),
       MainThreadTaskQueue::QueueTraits().SetCanBeFrozen(true).SetCanBePaused(
           true));
+
   task_queue = GetTaskQueue(TaskType::kDatabaseAccess);
   EXPECT_EQ(task_queue->GetQueueTraits(), MainThreadTaskQueue::QueueTraits()
-                                              .SetCanBeThrottled(true)
-                                              .SetCanBeDeferred(true)
                                               .SetCanBePaused(true));
 
   task_queue = GetTaskQueue(TaskType::kDOMManipulation);
@@ -1678,10 +1679,6 @@ TEST_F(ThrottleableAndFreezableTaskTypesTest, QueueTraitsFromFieldTrialParams) {
   // parameters.
   task_queue = GetTaskQueue(TaskType::kInternalIPC);
   EXPECT_EQ(task_queue->GetQueueTraits(), MainThreadTaskQueue::QueueTraits());
-
-  task_queue = GetTaskQueue(TaskType::kInternalIndexedDB);
-  EXPECT_EQ(task_queue->GetQueueTraits(),
-            MainThreadTaskQueue::QueueTraits().SetCanBePaused(true));
 
   task_queue = GetTaskQueue(TaskType::kMiscPlatformAPI);
   EXPECT_EQ(
@@ -1723,10 +1720,8 @@ TEST_F(FreezableOnlyTaskTypesTest, QueueTraitsFromFieldTrialParams) {
           true));
 
   task_queue = GetTaskQueue(TaskType::kDatabaseAccess);
-  EXPECT_EQ(
-      task_queue->GetQueueTraits(),
-      MainThreadTaskQueue::QueueTraits().SetCanBeDeferred(true).SetCanBePaused(
-          true));
+  EXPECT_EQ(task_queue->GetQueueTraits(),
+            MainThreadTaskQueue::QueueTraits().SetCanBePaused(true));
 
   task_queue = GetTaskQueue(TaskType::kDOMManipulation);
   EXPECT_EQ(task_queue->GetQueueTraits(), MainThreadTaskQueue::QueueTraits()
@@ -1738,10 +1733,6 @@ TEST_F(FreezableOnlyTaskTypesTest, QueueTraitsFromFieldTrialParams) {
   // parameters.
   task_queue = GetTaskQueue(TaskType::kInternalIPC);
   EXPECT_EQ(task_queue->GetQueueTraits(), MainThreadTaskQueue::QueueTraits());
-
-  task_queue = GetTaskQueue(TaskType::kInternalIndexedDB);
-  EXPECT_EQ(task_queue->GetQueueTraits(),
-            MainThreadTaskQueue::QueueTraits().SetCanBePaused(true));
 
   task_queue = GetTaskQueue(TaskType::kMiscPlatformAPI);
   EXPECT_EQ(
@@ -1757,8 +1748,7 @@ class ThrottleableOnlyTaskTypesTest
       : ThrottleAndFreezeTaskTypesExperimentTest(
             std::map<std::string, std::string>{
                 {kFreezableTaskTypesListParam, ""},
-                {kThrottleableTaskTypesListParam,
-                 "PostedMessage,DatabaseAccess"}},
+                {kThrottleableTaskTypesListParam, "PostedMessage"}},
             "Group3") {}
 };
 
@@ -1782,8 +1772,6 @@ TEST_F(ThrottleableOnlyTaskTypesTest, QueueTraitsFromFieldTrialParams) {
 
   task_queue = GetTaskQueue(TaskType::kDatabaseAccess);
   EXPECT_EQ(task_queue->GetQueueTraits(), MainThreadTaskQueue::QueueTraits()
-                                              .SetCanBeThrottled(true)
-                                              .SetCanBeDeferred(true)
                                               .SetCanBePaused(true));
 
   task_queue = GetTaskQueue(TaskType::kDOMManipulation);
@@ -1797,15 +1785,19 @@ TEST_F(ThrottleableOnlyTaskTypesTest, QueueTraitsFromFieldTrialParams) {
   task_queue = GetTaskQueue(TaskType::kInternalIPC);
   EXPECT_EQ(task_queue->GetQueueTraits(), MainThreadTaskQueue::QueueTraits());
 
-  task_queue = GetTaskQueue(TaskType::kInternalIndexedDB);
-  EXPECT_EQ(task_queue->GetQueueTraits(),
-            MainThreadTaskQueue::QueueTraits().SetCanBePaused(true));
-
   task_queue = GetTaskQueue(TaskType::kMiscPlatformAPI);
   EXPECT_EQ(
       task_queue->GetQueueTraits(),
       MainThreadTaskQueue::QueueTraits().SetCanBeDeferred(true).SetCanBePaused(
           true));
+}
+
+TEST_F(FrameSchedulerImplTest, ContentCaptureHasIdleTaskQueue) {
+  auto task_queue = GetTaskQueue(TaskType::kInternalContentCapture);
+
+  EXPECT_TRUE(task_queue->FixedPriority().has_value());
+  EXPECT_EQ(TaskQueue::QueuePriority::kBestEffortPriority,
+            task_queue->FixedPriority().value());
 }
 
 }  // namespace frame_scheduler_impl_unittest

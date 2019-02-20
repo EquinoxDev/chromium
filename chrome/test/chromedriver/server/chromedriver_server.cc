@@ -34,7 +34,6 @@
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
-#include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/logging.h"
 #include "chrome/test/chromedriver/server/http_handler.h"
 #include "chrome/test/chromedriver/version.h"
@@ -42,6 +41,7 @@
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/base/url_util.h"
 #include "net/log/net_log_source.h"
 #include "net/server/http_server.h"
 #include "net/server/http_server_request_info.h"
@@ -74,15 +74,60 @@ int ListenOnIPv6(net::ServerSocket* socket, uint16_t port, bool allow_remote) {
   return socket->ListenWithAddressAndPort(binding_ip, port, 5);
 }
 
+bool RequestIsSafeToServe(const net::HttpServerRequestInfo& info) {
+  // To guard against browser-originating cross-site requests, when host header
+  // and/or origin header are present, serve only those coming from localhost.
+  std::string host_header = info.headers["host"];
+  if (!host_header.empty()) {
+    GURL url = GURL("http://" + host_header);
+    if (!net::IsLocalhost(url)) {
+      LOG(ERROR) << "Rejecting request with host: " << host_header;
+      return false;
+    }
+  }
+  std::string origin_header = info.headers["origin"];
+  if (!origin_header.empty()) {
+    GURL url = GURL(origin_header);
+    if (!net::IsLocalhost(url)) {
+      LOG(ERROR) << "Rejecting request with origin: " << origin_header;
+      return false;
+    }
+  }
+  return true;
+}
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Ensure that there is a writable shared memory directory. We use
+// network::SimpleURLLoader to connect to Chrome, and it calls
+// base::subtle::PlatformSharedMemoryRegion::Create to get a shared memory
+// region. network::SimpleURLLoader would fail if the shared memory directory is
+// not accessible. We work around this issue by adding --disable-dev-shm-usage
+// to command line, to use an alternative directory for shared memory.
+// See https://crbug.com/chromedriver/2782.
+void EnsureSharedMemory(base::CommandLine* cmd_line) {
+  if (!cmd_line->HasSwitch("disable-dev-shm-usage")) {
+    base::FilePath directory;
+    if (GetShmemTempDir(false, &directory) &&
+        access(directory.value().c_str(), W_OK | X_OK) < 0) {
+      VLOG(0) << directory
+              << " not writable, adding --disable-dev-shm-usage switch";
+      cmd_line->AppendSwitch("disable-dev-shm-usage");
+    }
+  }
+}
+#endif
+
 class HttpServer : public net::HttpServer::Delegate {
  public:
   explicit HttpServer(const HttpRequestHandlerFunc& handle_request_func)
       : handle_request_func_(handle_request_func),
+        allow_remote_(false),
         weak_factory_(this) {}
 
   ~HttpServer() override {}
 
   int Start(uint16_t port, bool allow_remote, bool use_ipv4) {
+    allow_remote_ = allow_remote;
     std::unique_ptr<net::ServerSocket> server_socket(
         new net::TCPServerSocket(NULL, net::NetLogSource()));
     int status = use_ipv4
@@ -105,12 +150,19 @@ class HttpServer : public net::HttpServer::Delegate {
   }
   void OnHttpRequest(int connection_id,
                      const net::HttpServerRequestInfo& info) override {
+    if (!allow_remote_ && !RequestIsSafeToServe(info)) {
+      server_->Send500(
+          connection_id,
+          "Host header or origin header is specified and is not localhost.",
+          TRAFFIC_ANNOTATION_FOR_TESTS);
+      return;
+    }
     handle_request_func_.Run(
         info,
         base::Bind(&HttpServer::OnResponse,
                    weak_factory_.GetWeakPtr(),
                    connection_id,
-                   info.HasHeaderValue("connection", "keep-alive")));
+                   !info.HasHeaderValue("connection", "close")));
   }
   void OnWebSocketRequest(int connection_id,
                           const net::HttpServerRequestInfo& info) override {}
@@ -132,6 +184,7 @@ class HttpServer : public net::HttpServer::Delegate {
 
   HttpRequestHandlerFunc handle_request_func_;
   std::unique_ptr<net::HttpServer> server_;
+  bool allow_remote_;
   base::WeakPtrFactory<HttpServer> weak_factory_;  // Should be last.
 };
 
@@ -351,33 +404,35 @@ int main(int argc, char *argv[]) {
     std::string options;
     const char* const kOptionAndDescriptions[] = {
         "port=PORT",
-        "port to listen on",
+            "port to listen on",
         "adb-port=PORT",
-        "adb server port",
+            "adb server port",
         "log-path=FILE",
-        "write server log to file instead of stderr, "
-        "increases log level to INFO",
+            "write server log to file instead of stderr, "
+            "increases log level to INFO",
         "log-level=LEVEL",
-        "set log level: ALL, DEBUG, INFO, WARNING, "
-        "SEVERE, OFF",
+            "set log level: ALL, DEBUG, INFO, WARNING, SEVERE, OFF",
         "verbose",
-        "log verbosely (equivalent to --log-level=ALL)",
+            "log verbosely (equivalent to --log-level=ALL)",
         "silent",
-        "log nothing (equivalent to --log-level=OFF)",
+            "log nothing (equivalent to --log-level=OFF)",
         "append-log",
-        "append log file instead of rewriting",
+            "append log file instead of rewriting",
         "replayable",
-        "(experimental) log verbosely and don't truncate long "
-        "strings so that the log can be replayed.",
+            "(experimental) log verbosely and don't truncate long "
+            "strings so that the log can be replayed.",
         "version",
-        "print the version number and exit",
+            "print the version number and exit",
         "url-base",
-        "base URL path prefix for commands, e.g. wd/url",
+            "base URL path prefix for commands, e.g. wd/url",
         "whitelisted-ips",
-        "comma-separated whitelist of remote IP addresses "
-        "which are allowed to connect to ChromeDriver",
-        "minimum-chrome-version",
-        "minimum supported Chrome version",
+            "comma-separated whitelist of remote IP addresses "
+            "which are allowed to connect to ChromeDriver",
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+        "disable-dev-shm-usage",
+            "do not use /dev/shm "
+            "(add this switch if seeing errors related to shared memory)",
+#endif
     };
     for (size_t i = 0; i < base::size(kOptionAndDescriptions) - 1; i += 2) {
       options += base::StringPrintf(
@@ -387,10 +442,13 @@ int main(int argc, char *argv[]) {
     printf("Usage: %s [OPTIONS]\n\nOptions\n%s", argv[0], options.c_str());
     return 0;
   }
+  bool early_exit = false;
   if (cmd_line->HasSwitch("v") || cmd_line->HasSwitch("version")) {
     printf("ChromeDriver %s\n", kChromeDriverVersion);
-    return 0;
+    early_exit = true;
   }
+  if (early_exit)
+    return 0;
   if (cmd_line->HasSwitch("port")) {
     int cmd_line_port;
     if (!base::StringToInt(cmd_line->GetSwitchValueASCII("port"),
@@ -457,6 +515,7 @@ int main(int argc, char *argv[]) {
     } else {
       printf("All remote connections are allowed. Use a whitelist instead!\n");
     }
+    printf("%s\n", kPortProtectionMessage);
     fflush(stdout);
   }
 
@@ -465,11 +524,9 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (cmd_line->HasSwitch("minimum-chrome-version")) {
-    printf("minimum supported Chrome version: %s\n",
-           GetMinimumSupportedChromeVersion().c_str());
-    return 0;
-  }
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  EnsureSharedMemory(cmd_line);
+#endif
 
   mojo::core::Init();
 

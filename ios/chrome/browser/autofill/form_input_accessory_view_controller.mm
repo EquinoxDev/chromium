@@ -188,12 +188,12 @@ CGFloat const kInputAccessoryHeight = 44.0f;
 
   if (!self.inputAccessoryView) {
     self.inputAccessoryView = [[FormInputAccessoryView alloc] init];
-    self.inputAccessoryView.accessibilityViewIsModal = YES;
     if (IsIPadIdiom()) {
       [self.inputAccessoryView
           setUpWithLeadingView:self.formSuggestionView
             customTrailingView:self.manualFillAccessoryViewController.view];
     } else {
+      self.inputAccessoryView.accessibilityViewIsModal = YES;
       self.formSuggestionView.trailingView =
           self.manualFillAccessoryViewController.view;
       [self.inputAccessoryView setUpWithLeadingView:self.formSuggestionView
@@ -217,6 +217,12 @@ CGFloat const kInputAccessoryHeight = 44.0f;
   [self removeCustomInputAccessoryView];
   [self.keyboardReplacementView removeFromSuperview];
   self.keyboardReplacementView = nil;
+}
+
+// TODO:(crbug.com/923857) Merge this method and restoreOriginalKeyboardView.
+- (void)restoreOriginalKeyboardViewAndClearReferences {
+  [self restoreOriginalKeyboardView];
+  self.inputAccessoryView = nil;
 }
 
 - (void)pauseCustomKeyboardView {
@@ -335,10 +341,32 @@ CGFloat const kInputAccessoryHeight = 44.0f;
   return nil;
 }
 
+// Returns YES if one the first level of children has "Picker" in their class
+// name. No otherwise.
+- (BOOL)containsPickerView:(UIView*)view {
+  for (UIView* subview in view.subviews) {
+    if ([NSStringFromClass([subview class]) rangeOfString:@"Picker"].location !=
+        NSNotFound) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
 - (void)keyboardWillOrDidChangeFrame:(NSNotification*)notification {
   CGRect keyboardFrame =
       [notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
   UIView* keyboardView = [self getKeyboardView];
+  // On iPhones when the field is a selector the keyboard becomes a picker.
+  // Restore the keyboard in these cases, but allow the user to return to see
+  // the info in Manual Fallback.
+  if (!IsIPadIdiom() && [self containsPickerView:keyboardView]) {
+    [self.manualFillAccessoryViewController resetAnimated:NO];
+    [self unlockManualFallbackView];
+    [self.keyboardReplacementView removeFromSuperview];
+    self.keyboardReplacementView = nil;
+    return;
+  }
   CGRect windowRect = keyboardView.window.bounds;
   // On iPad when the keyboard is undocked, on iOS 11 and 12,
   // `UIKeyboard*HideNotification` or `UIKeyboard*ShowNotification` are not
@@ -379,9 +407,22 @@ CGFloat const kInputAccessoryHeight = 44.0f;
   if (self.isPaused) {
     return;
   }
-  if (self.inputAccessoryView && !self.inputAccessoryView.superview) {
+  if (self.inputAccessoryView) {
     if (IsIPadIdiom()) {
+      // On iPad the keyboard view can change so this updates it when needed.
       UIView* keyboardView = [self getKeyboardView];
+      if (!keyboardView) {
+        return;
+      }
+      if (self.inputAccessoryView.superview) {
+        if (keyboardView == self.inputAccessoryView.superview) {
+          return;
+        }
+        // The keyboard view is a different one.
+        [self.manualFillAccessoryViewController resetAnimated:NO];
+        [self.inputAccessoryView removeFromSuperview];
+        [self.grayBackgroundView removeFromSuperview];
+      }
       self.inputAccessoryView.translatesAutoresizingMaskIntoConstraints = NO;
       [keyboardView addSubview:self.inputAccessoryView];
       [NSLayoutConstraint activateConstraints:@[
@@ -399,7 +440,7 @@ CGFloat const kInputAccessoryHeight = 44.0f;
         [keyboardView sendSubviewToBack:self.grayBackgroundView];
         AddSameConstraints(self.grayBackgroundView, keyboardView);
       }
-    } else {
+    } else if (!self.inputAccessoryView.superview) {  // Is not an iPad.
       UIResponder* firstResponder = GetFirstResponder();
       if (firstResponder.inputAccessoryView) {
         [firstResponder.inputAccessoryView addSubview:self.inputAccessoryView];

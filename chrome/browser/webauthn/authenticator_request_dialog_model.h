@@ -15,6 +15,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_piece.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "chrome/browser/webauthn/authenticator_reference.h"
 #include "chrome/browser/webauthn/authenticator_transport.h"
 #include "chrome/browser/webauthn/observable_authenticator_list.h"
@@ -44,15 +45,16 @@ class AuthenticatorRequestDialogModel {
     kWelcomeScreen,
     kTransportSelection,
 
-    // The request is not yet complete, and will only be after user interaction.
+    // The request errored out before completing. Error will only be sent
+    // after user interaction.
     kErrorNoAvailableTransports,
     kErrorInternalUnrecognized,
 
-    // The request is already complete, but the dialog should remain open with
-    // an explaining of what went wrong.
-    kPostMortemTimedOut,
-    kPostMortemKeyNotRegistered,
-    kPostMortemKeyAlreadyRegistered,
+    // The request is already complete, but the error dialog should wait
+    // until user acknowledgement.
+    kTimedOut,
+    kKeyNotRegistered,
+    kKeyAlreadyRegistered,
 
     // The request is completed, and the dialog should be closed.
     kClosed,
@@ -77,6 +79,10 @@ class AuthenticatorRequestDialogModel {
 
     // Phone as a security key.
     kCableActivate,
+
+    // Authenticator Client PIN.
+    kClientPinEntry,
+    kClientPinSetup,
   };
 
   // Implemented by the dialog to observe this model and show the UI panels
@@ -108,14 +114,14 @@ class AuthenticatorRequestDialogModel {
   void SetCurrentStep(Step step);
   Step current_step() const { return current_step_; }
 
-  bool is_showing_post_mortem() const {
-    return current_step() == Step::kPostMortemTimedOut ||
-           current_step() == Step::kPostMortemKeyNotRegistered ||
-           current_step() == Step::kPostMortemKeyAlreadyRegistered;
-  }
-
+  // Returns whether the UI is in a state at which the |request_| member of
+  // AuthenticatorImpl has completed processing. Note that the request callback
+  // is only resolved after the UI is dismissed.
   bool is_request_complete() const {
-    return is_showing_post_mortem() || current_step() == Step::kClosed;
+    return current_step() == Step::kTimedOut ||
+           current_step() == Step::kKeyNotRegistered ||
+           current_step() == Step::kKeyAlreadyRegistered ||
+           current_step() == Step::kClosed;
   }
 
   bool should_dialog_be_closed() const {
@@ -160,6 +166,10 @@ class AuthenticatorRequestDialogModel {
   void StartGuidedFlowForTransport(
       AuthenticatorTransport transport,
       bool pair_with_new_device_for_bluetooth_low_energy = false);
+
+  // Requests that the step-by-step wizard flow be aborted and the
+  // native Windows WebAuthn UI be shown instead.
+  void AbandonFlowAndDispatchToNativeWindowsApi();
 
   // Ensures that the Bluetooth adapter is powered before proceeding to |step|.
   //  -- If the adapter is powered, advanced directly to |step|.
@@ -288,6 +298,8 @@ class AuthenticatorRequestDialogModel {
  private:
   void DispatchRequestAsync(AuthenticatorReference* authenticator,
                             base::TimeDelta delay);
+  void DispatchRequestAsyncInternal(const std::string& authenticator_id,
+                                    base::TimeDelta delay);
 
   // The current step of the request UX flow that is currently shown.
   Step current_step_ = Step::kNotStarted;

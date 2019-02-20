@@ -29,6 +29,7 @@
 #include "components/services/unzip/public/cpp/unzip.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/api/declarative_net_request/ruleset_source.h"
 #include "extensions/browser/api/declarative_net_request/utils.h"
 #include "extensions/browser/extension_file_task_runner.h"
 #include "extensions/browser/install/crx_install_error.h"
@@ -293,7 +294,8 @@ void SandboxedUnpacker::StartWithCrx(const CRXFileInfo& crx_info) {
                         extension_root_);
 
   // Extract the public key and validate the package.
-  if (!ValidateSignature(crx_info.path, expected_hash))
+  if (!ValidateSignature(crx_info.path, expected_hash,
+                         crx_info.required_format))
     return;  // ValidateSignature() already reported the error.
 
   // Copy the crx file into our working directory.
@@ -691,7 +693,7 @@ void SandboxedUnpacker::IndexAndPersistJSONRulesetIfNeeded(
 
   declarative_net_request::IndexAndPersistRules(
       connector_.get(), *data_decoder_service_filter_.instance_id(),
-      *extension_,
+      declarative_net_request::RulesetSource::Create(*extension_),
       base::BindOnce(&SandboxedUnpacker::OnJSONRulesetIndexed, this,
                      std::move(manifest)));
 }
@@ -819,6 +821,9 @@ base::string16 SandboxedUnpacker::FailureReasonToString16(
     case SandboxedUnpackerFailureReason::ERROR_INDEXING_DNR_RULESET:
       return ASCIIToUTF16("ERROR_INDEXING_DNR_RULESET");
 
+    case SandboxedUnpackerFailureReason::CRX_REQUIRED_PROOF_MISSING:
+      return ASCIIToUTF16("CRX_REQUIRED_PROOF_MISSING");
+
     case SandboxedUnpackerFailureReason::DEPRECATED_ABORTED_DUE_TO_SHUTDOWN:
     case SandboxedUnpackerFailureReason::DEPRECATED_ERROR_PARSING_DNR_RULESET:
     case SandboxedUnpackerFailureReason::NUM_FAILURE_REASONS:
@@ -835,8 +840,10 @@ void SandboxedUnpacker::FailWithPackageError(
                                            FailureReasonToString16(reason)));
 }
 
-bool SandboxedUnpacker::ValidateSignature(const base::FilePath& crx_path,
-                                          const std::string& expected_hash) {
+bool SandboxedUnpacker::ValidateSignature(
+    const base::FilePath& crx_path,
+    const std::string& expected_hash,
+    const crx_file::VerifierFormat required_format) {
   std::vector<uint8_t> hash;
   if (!expected_hash.empty()) {
     if (!base::HexStringToBytes(expected_hash, &hash)) {
@@ -846,8 +853,8 @@ bool SandboxedUnpacker::ValidateSignature(const base::FilePath& crx_path,
     }
   }
   const crx_file::VerifierResult result = crx_file::Verify(
-      crx_path, crx_file::VerifierFormat::CRX2_OR_CRX3,
-      std::vector<std::vector<uint8_t>>(), hash, &public_key_, &extension_id_);
+      crx_path, required_format, std::vector<std::vector<uint8_t>>(), hash,
+      &public_key_, &extension_id_);
 
   switch (result) {
     case crx_file::VerifierResult::OK_FULL: {
@@ -880,9 +887,8 @@ bool SandboxedUnpacker::ValidateSignature(const base::FilePath& crx_path,
           SandboxedUnpackerFailureReason::CRX_EXPECTED_HASH_INVALID);
       break;
     case crx_file::VerifierResult::ERROR_REQUIRED_PROOF_MISSING:
-      // We should never get this result, as we do not call
-      // verifier.RequireKeyProof.
-      NOTREACHED();
+      FailWithPackageError(
+          SandboxedUnpackerFailureReason::CRX_REQUIRED_PROOF_MISSING);
       break;
     case crx_file::VerifierResult::ERROR_FILE_HASH_FAILED:
       // We should never get this result unless we had specifically asked for

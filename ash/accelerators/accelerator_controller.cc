@@ -17,6 +17,7 @@
 #include "ash/assistant/assistant_controller.h"
 #include "ash/assistant/assistant_ui_controller.h"
 #include "ash/assistant/model/assistant_ui_model.h"
+#include "ash/contained_shell/contained_shell_controller.h"
 #include "ash/debug.h"
 #include "ash/display/display_configuration_controller.h"
 #include "ash/display/display_move_window_util.h"
@@ -25,11 +26,10 @@
 #include "ash/ime/ime_switch_type.h"
 #include "ash/magnifier/docked_magnifier_controller.h"
 #include "ash/magnifier/magnification_controller.h"
-#include "ash/media_controller.h"
+#include "ash/media/media_controller.h"
 #include "ash/metrics/user_metrics_recorder.h"
 #include "ash/multi_profile_uma.h"
 #include "ash/new_window_controller.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/public/interfaces/accessibility_controller.mojom.h"
@@ -57,7 +57,7 @@
 #include "ash/utility/screenshot_controller.h"
 #include "ash/voice_interaction/voice_interaction_controller.h"
 #include "ash/wm/mru_window_tracker.h"
-#include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/screen_pinning_controller.h"
 #include "ash/wm/window_cycle_controller.h"
 #include "ash/wm/window_positioning_utils.h"
@@ -510,7 +510,8 @@ bool CanHandleToggleAppList(const ui::Accelerator& accelerator,
   return true;
 }
 
-void HandleToggleAppList(const ui::Accelerator& accelerator) {
+void HandleToggleAppList(const ui::Accelerator& accelerator,
+                         app_list::AppListShowSource show_source) {
   if (accelerator.key_code() == ui::VKEY_LWIN)
     base::RecordAction(UserMetricsAction("Accel_Search_LWin"));
 
@@ -518,7 +519,7 @@ void HandleToggleAppList(const ui::Accelerator& accelerator) {
       display::Screen::GetScreen()
           ->GetDisplayNearestWindow(Shell::GetRootWindowForNewWindows())
           .id(),
-      app_list::kSearchKey, accelerator.time_stamp());
+      show_source, accelerator.time_stamp());
 }
 
 void HandleToggleFullscreen(const ui::Accelerator& accelerator) {
@@ -529,7 +530,7 @@ void HandleToggleFullscreen(const ui::Accelerator& accelerator) {
 
 void HandleToggleOverview() {
   base::RecordAction(base::UserMetricsAction("Accel_Overview_F5"));
-  Shell::Get()->window_selector_controller()->ToggleOverview();
+  Shell::Get()->overview_controller()->ToggleOverview();
 }
 
 void HandleToggleUnifiedDesktop() {
@@ -649,8 +650,7 @@ bool CanHandleShowStylusTools() {
 }
 
 bool CanHandleStartVoiceInteraction() {
-  return chromeos::switches::IsVoiceInteractionFlagsEnabled() ||
-         chromeos::switches::IsAssistantEnabled();
+  return chromeos::switches::IsAssistantEnabled();
 }
 
 void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
@@ -717,13 +717,9 @@ void HandleToggleVoiceInteraction(const ui::Accelerator& accelerator) {
       break;
   }
 
-  if (!chromeos::switches::IsAssistantEnabled()) {
-    Shell::Get()->app_list_controller()->ToggleVoiceInteractionSession();
-  } else {
-    Shell::Get()->assistant_controller()->ui_controller()->ToggleUi(
-        /*entry_point=*/AssistantEntryPoint::kHotkey,
-        /*exit_point=*/AssistantExitPoint::kHotkey);
-  }
+  Shell::Get()->assistant_controller()->ui_controller()->ToggleUi(
+      /*entry_point=*/AssistantEntryPoint::kHotkey,
+      /*exit_point=*/AssistantExitPoint::kHotkey);
 }
 
 void HandleSuspend() {
@@ -809,10 +805,6 @@ void HandleToggleDictation() {
       mojom::DictationToggleSource::kKeyboard);
 }
 
-bool CanHandleToggleDockedMagnifier() {
-  return features::IsDockedMagnifierEnabled();
-}
-
 bool CanHandleToggleOverview() {
   auto windows = Shell::Get()->mru_window_tracker()->BuildMruWindowList();
   // Do not toggle overview if there is a window being dragged.
@@ -857,7 +849,6 @@ void SetDockedMagnifierEnabled(bool enabled) {
 }
 
 void HandleToggleDockedMagnifier() {
-  DCHECK(features::IsDockedMagnifierEnabled());
   base::RecordAction(UserMetricsAction("Accel_Toggle_Docked_Magnifier"));
 
   DockedMagnifierController* docked_magnifier_controller =
@@ -996,8 +987,7 @@ void HandleVolumeUp(mojom::VolumeController* volume_controller,
 
 bool CanHandleActiveMagnifierZoom() {
   return Shell::Get()->magnification_controller()->IsEnabled() ||
-         (features::IsDockedMagnifierEnabled() &&
-          Shell::Get()->docked_magnifier_controller()->GetEnabled());
+         Shell::Get()->docked_magnifier_controller()->GetEnabled();
 }
 
 // Change the scale of the active magnifier.
@@ -1007,8 +997,7 @@ void HandleActiveMagnifierZoom(int delta_index) {
     return;
   }
 
-  if (features::IsDockedMagnifierEnabled() &&
-      Shell::Get()->docked_magnifier_controller()->GetEnabled()) {
+  if (Shell::Get()->docked_magnifier_controller()->GetEnabled()) {
     Shell::Get()->docked_magnifier_controller()->StepToNextScaleValue(
         delta_index);
   }
@@ -1186,6 +1175,10 @@ void AcceleratorController::Init() {
     actions_allowed_in_pinned_mode_.insert(
         kActionsAllowedInAppModeOrPinnedMode[i]);
   }
+  for (size_t i = 0; i < kActionsAllowedForContainedShellLength; i++) {
+    actions_allowed_for_contained_shell_.insert(
+        kActionsAllowedForContainedShell[i]);
+  }
   for (size_t i = 0; i < kActionsAllowedInPinnedModeLength; ++i)
     actions_allowed_in_pinned_mode_.insert(kActionsAllowedInPinnedMode[i]);
   for (size_t i = 0; i < kActionsNeedingWindowLength; ++i)
@@ -1271,7 +1264,6 @@ bool AcceleratorController::CanPerformAction(
     case DEBUG_PRINT_LAYER_HIERARCHY:
     case DEBUG_PRINT_VIEW_HIERARCHY:
     case DEBUG_PRINT_WINDOW_HIERARCHY:
-    case DEBUG_SHOW_QUICK_LAUNCH:
     case DEBUG_SHOW_TOAST:
     case DEBUG_TOGGLE_DEVICE_SCALE_FACTOR:
     case DEBUG_TOGGLE_SHOW_DEBUG_BORDERS:
@@ -1320,6 +1312,7 @@ bool AcceleratorController::CanPerformAction(
     case SWITCH_TO_NEXT_USER:
       return CanHandleCycleUser();
     case TOGGLE_APP_LIST:
+    case TOGGLE_APP_LIST_FULLSCREEN:
       return CanHandleToggleAppList(accelerator, previous_accelerator);
     case TOGGLE_CAPS_LOCK:
       return CanHandleToggleCapsLock(
@@ -1328,7 +1321,7 @@ bool AcceleratorController::CanPerformAction(
     case TOGGLE_DICTATION:
       return CanHandleToggleDictation();
     case TOGGLE_DOCKED_MAGNIFIER:
-      return CanHandleToggleDockedMagnifier();
+      return true;
     case TOGGLE_FULLSCREEN_MAGNIFIER:
       return true;
     case TOGGLE_MESSAGE_CENTER_BUBBLE:
@@ -1439,7 +1432,6 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
     case DEBUG_PRINT_LAYER_HIERARCHY:
     case DEBUG_PRINT_VIEW_HIERARCHY:
     case DEBUG_PRINT_WINDOW_HIERARCHY:
-    case DEBUG_SHOW_QUICK_LAUNCH:
     case DEBUG_SHOW_TOAST:
     case DEBUG_TOGGLE_DEVICE_SCALE_FACTOR:
       debug::PerformDebugActionIfEnabled(action);
@@ -1653,7 +1645,10 @@ void AcceleratorController::PerformAction(AcceleratorAction action,
       HandleTakeWindowScreenshot();
       break;
     case TOGGLE_APP_LIST:
-      HandleToggleAppList(accelerator);
+      HandleToggleAppList(accelerator, app_list::kSearchKey);
+      break;
+    case TOGGLE_APP_LIST_FULLSCREEN:
+      HandleToggleAppList(accelerator, app_list::kSearchKeyFullscreen);
       break;
     case TOGGLE_CAPS_LOCK:
       HandleToggleCapsLock();
@@ -1733,6 +1728,10 @@ bool AcceleratorController::ShouldActionConsumeKeyEvent(
 
 AcceleratorController::AcceleratorProcessingRestriction
 AcceleratorController::GetAcceleratorProcessingRestriction(int action) const {
+  if (Shell::Get()->contained_shell_controller()->IsEnabled() &&
+      actions_allowed_for_contained_shell_.count(action) == 0) {
+    return RESTRICTION_PREVENT_PROCESSING_AND_PROPAGATION;
+  }
   if (Shell::Get()->screen_pinning_controller()->IsPinned() &&
       actions_allowed_in_pinned_mode_.find(action) ==
           actions_allowed_in_pinned_mode_.end()) {

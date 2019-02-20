@@ -190,14 +190,15 @@ Length LengthInterpolationFunctions::CreateLength(
 
   if (percentage != 0)
     has_percentage = true;
-  if (pixels != 0 && has_percentage)
-    return Length(
-        CalculationValue::Create(PixelsAndPercent(pixels, percentage), range));
+  if (pixels != 0 && has_percentage) {
+    return Length(CalculationValue::Create(
+        PixelsAndPercent(clampTo<float>(pixels), clampTo<float>(percentage)),
+        range));
+  }
   if (has_percentage)
-    return Length(ClampToRange(percentage, range), kPercent);
-  return Length(
-      CSSPrimitiveValue::ClampToCSSLengthRange(ClampToRange(pixels, range)),
-      kFixed);
+    return Length::Percent(ClampToRange(percentage, range));
+  return Length::Fixed(
+      CSSPrimitiveValue::ClampToCSSLengthRange(ClampToRange(pixels, range)));
 }
 
 const CSSValue* LengthInterpolationFunctions::CreateCSSValue(

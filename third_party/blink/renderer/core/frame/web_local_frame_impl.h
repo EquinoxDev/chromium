@@ -39,6 +39,7 @@
 #include "third_party/blink/public/mojom/ad_tagging/ad_frame.mojom-blink.h"
 #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/find_in_page.mojom-blink.h"
+#include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/public/mojom/portal/portal.mojom-blink.h"
 #include "third_party/blink/public/platform/web_file_system_type.h"
 #include "third_party/blink/public/web/web_history_commit_type.h"
@@ -61,6 +62,7 @@ class FindInPage;
 class HTMLPortalElement;
 class IntSize;
 class LocalFrameClientImpl;
+class ResourceError;
 class ScrollableArea;
 class TextFinder;
 class WebAssociatedURLLoader;
@@ -112,12 +114,7 @@ class CORE_EXPORT WebLocalFrameImpl final
   WARN_UNUSED_RESULT v8::Local<v8::Value>
   ExecuteScriptInIsolatedWorldAndReturnValue(int world_id,
                                              const WebScriptSource&) override;
-  void SetIsolatedWorldSecurityOrigin(int world_id,
-                                      const WebSecurityOrigin&) override;
-  void SetIsolatedWorldContentSecurityPolicy(int world_id,
-                                             const WebString&) override;
-  void SetIsolatedWorldHumanReadableName(int world_id,
-                                         const WebString&) override;
+  void SetIsolatedWorldInfo(int world_id, const WebIsolatedWorldInfo&) override;
   void AddMessageToConsole(const WebConsoleMessage&) override;
   void Alert(const WebString& message) override;
   bool Confirm(const WebString& message) override;
@@ -223,7 +220,6 @@ class CORE_EXPORT WebLocalFrameImpl final
   float GetPrintPageShrink(int page) override;
   void PrintEnd() override;
   void DispatchAfterPrintEvent() override;
-  bool IsPrintScalingDisabledForPlugin(const WebNode&) override;
   bool GetPrintPresetOptionsForPlugin(const WebNode&,
                                       WebPrintPresetOptions*) override;
   bool HasCustomPageSizeStyle(int page_index) override;
@@ -253,7 +249,8 @@ class CORE_EXPORT WebLocalFrameImpl final
   // WebLocalFrame methods:
   WebLocalFrameImpl* CreateLocalChild(WebTreeScopeType,
                                       WebLocalFrameClient*,
-                                      blink::InterfaceRegistry*) override;
+                                      blink::InterfaceRegistry*,
+                                      mojo::ScopedMessagePipeHandle) override;
   void SetAutofillClient(WebAutofillClient*) override;
   WebAutofillClient* AutofillClient() override;
   bool IsLocalRoot() const override;
@@ -301,6 +298,7 @@ class CORE_EXPORT WebLocalFrameImpl final
   void AdvanceFocusInForm(WebFocusType) override;
   void PerformMediaPlayerAction(const WebPoint&,
                                 const WebMediaPlayerAction&) override;
+  void OnPortalActivated() override;
 
   // WebNavigationControl methods:
   bool DispatchBeforeUnloadEvent(bool) override;
@@ -325,6 +323,8 @@ class CORE_EXPORT WebLocalFrameImpl final
       const WebNavigationInfo&,
       std::unique_ptr<WebDocumentLoader::ExtraData>) override;
 
+  void SetLifecycleState(mojom::FrameLifecycleState state) override;
+
   void InitializeCoreFrame(Page&, FrameOwner*, const AtomicString& name);
   LocalFrame* GetFrame() const { return frame_.Get(); }
 
@@ -334,25 +334,31 @@ class CORE_EXPORT WebLocalFrameImpl final
   static WebLocalFrameImpl* Create(WebTreeScopeType,
                                    WebLocalFrameClient*,
                                    InterfaceRegistry*,
+                                   mojo::ScopedMessagePipeHandle,
                                    WebFrame* opener);
   static WebLocalFrameImpl* CreateMainFrame(WebView*,
                                             WebLocalFrameClient*,
                                             InterfaceRegistry*,
+                                            mojo::ScopedMessagePipeHandle,
                                             WebFrame* opener,
                                             const WebString& name,
-                                            WebSandboxFlags);
+                                            WebSandboxFlags,
+                                            const FeaturePolicy::FeatureState&);
   static WebLocalFrameImpl* CreateProvisional(WebLocalFrameClient*,
                                               InterfaceRegistry*,
+                                              mojo::ScopedMessagePipeHandle,
                                               WebRemoteFrame*,
                                               WebSandboxFlags,
                                               ParsedFeaturePolicy);
 
   WebLocalFrameImpl(WebTreeScopeType,
                     WebLocalFrameClient*,
-                    blink::InterfaceRegistry*);
+                    blink::InterfaceRegistry*,
+                    mojo::ScopedMessagePipeHandle);
   WebLocalFrameImpl(WebRemoteFrame*,
                     WebLocalFrameClient*,
-                    blink::InterfaceRegistry*);
+                    blink::InterfaceRegistry*,
+                    mojo::ScopedMessagePipeHandle);
   ~WebLocalFrameImpl() override;
 
   LocalFrame* CreateChildFrame(const AtomicString& name,
@@ -430,6 +436,10 @@ class CORE_EXPORT WebLocalFrameImpl final
   // Returns true if our print context suggests using printing layout.
   bool UsePrintingLayout() const;
 
+  const FeaturePolicy::FeatureState& OpenerFeatureState() const {
+    return opener_feature_state_;
+  }
+
   virtual void Trace(blink::Visitor*);
 
  private:
@@ -488,6 +498,10 @@ class CORE_EXPORT WebLocalFrameImpl final
   WebTextCheckClient* text_check_client_;
 
   WebSpellCheckPanelHostClient* spell_check_panel_host_client_;
+
+  // Feature policy state inherited from an opener. It is always empty for child
+  // frames.
+  FeaturePolicy::FeatureState opener_feature_state_;
 
   // Oilpan: WebLocalFrameImpl must remain alive until close() is called.
   // Accomplish that by keeping a self-referential Persistent<>. It is

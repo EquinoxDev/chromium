@@ -24,14 +24,19 @@
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/test/bind_test_util.h"
+#include "base/test/simple_test_clock.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "base/timer/mock_timer.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "net/base/address_list.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/ip_address.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/mock_network_change_notifier.h"
 #include "net/base/net_errors.h"
 #include "net/dns/dns_client.h"
@@ -49,6 +54,10 @@
 #include "net/test/test_with_scoped_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if BUILDFLAG(ENABLE_MDNS)
+#include "net/dns/mdns_client_impl.h"
+#endif  // BUILDFLAG(ENABLE_MDNS)
 
 using net::test::IsError;
 using net::test::IsOk;
@@ -769,6 +778,7 @@ TEST_F(HostResolverImplTest, AsynchronousLookup_ResolveHost) {
   EXPECT_THAT(response.result_error(), IsOk());
   EXPECT_THAT(response.request()->GetAddressResults().value().endpoints(),
               testing::ElementsAre(CreateExpected("192.168.1.42", 80)));
+  EXPECT_FALSE(response.request()->GetStaleInfo());
 
   EXPECT_EQ("just.testing", proc_->GetCaptureList()[0].hostname);
 }
@@ -902,6 +912,7 @@ TEST_F(HostResolverImplTest,
   EXPECT_THAT(response.result_error(), IsOk());
   EXPECT_THAT(response.request()->GetAddressResults().value().endpoints(),
               testing::ElementsAre(CreateExpected(kIpLiteral, 80)));
+  EXPECT_FALSE(response.request()->GetStaleInfo());
 }
 
 TEST_F(HostResolverImplTest, EmptyListMeansNameNotResolved) {
@@ -924,6 +935,7 @@ TEST_F(HostResolverImplTest, EmptyListMeansNameNotResolved_ResolveHost) {
 
   EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
   EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetStaleInfo());
 
   EXPECT_EQ("just.testing", proc_->GetCaptureList()[0].hostname);
 }
@@ -952,6 +964,7 @@ TEST_F(HostResolverImplTest, FailedAsynchronousLookup_ResolveHost) {
       HostPortPair("just.testing", 80), NetLogWithSource(), base::nullopt));
   EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
   EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetStaleInfo());
 
   EXPECT_EQ("just.testing", proc_->GetCaptureList()[0].hostname);
 
@@ -1008,13 +1021,7 @@ TEST_F(HostResolverImplTest, AbortedAsynchronousLookup_ResolveHost) {
   EXPECT_FALSE(response0.complete());
 }
 
-#if defined(THREAD_SANITIZER)
-// Use of WorkerPool in HostResolverImpl causes a data race. crbug.com/334140
-#define MAYBE_NumericIPv4Address DISABLED_NumericIPv4Address
-#else
-#define MAYBE_NumericIPv4Address NumericIPv4Address
-#endif
-TEST_F(HostResolverImplTest, MAYBE_NumericIPv4Address) {
+TEST_F(HostResolverImplTest, NumericIPv4Address) {
   // Stevens says dotted quads with AI_UNSPEC resolve to a single sockaddr_in.
   Request* req = CreateRequest("127.1.2.3", 5555);
   EXPECT_THAT(req->Resolve(), IsOk());
@@ -1022,14 +1029,7 @@ TEST_F(HostResolverImplTest, MAYBE_NumericIPv4Address) {
   EXPECT_TRUE(req->HasOneAddress("127.1.2.3", 5555));
 }
 
-#if defined(THREAD_SANITIZER)
-// Use of WorkerPool in HostResolverImpl causes a data race. crbug.com/334140
-#define MAYBE_NumericIPv4Address_ResolveHost \
-  DISABLED_NumericIPv4Address_ResolveHost
-#else
-#define MAYBE_NumericIPv4Address_ResolveHost NumericIPv4Address_ResolveHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_NumericIPv4Address_ResolveHost) {
+TEST_F(HostResolverImplTest, NumericIPv4Address_ResolveHost) {
   ResolveHostResponseHelper response(resolver_->CreateRequest(
       HostPortPair("127.1.2.3", 5555), NetLogWithSource(), base::nullopt));
 
@@ -1038,13 +1038,7 @@ TEST_F(HostResolverImplTest, MAYBE_NumericIPv4Address_ResolveHost) {
               testing::ElementsAre(CreateExpected("127.1.2.3", 5555)));
 }
 
-#if defined(THREAD_SANITIZER)
-// Use of WorkerPool in HostResolverImpl causes a data race. crbug.com/334140
-#define MAYBE_NumericIPv6Address DISABLED_NumericIPv6Address
-#else
-#define MAYBE_NumericIPv6Address NumericIPv6Address
-#endif
-TEST_F(HostResolverImplTest, MAYBE_NumericIPv6Address) {
+TEST_F(HostResolverImplTest, NumericIPv6Address) {
   // Resolve a plain IPv6 address.  Don't worry about [brackets], because
   // the caller should have removed them.
   Request* req = CreateRequest("2001:db8::1", 5555);
@@ -1053,14 +1047,7 @@ TEST_F(HostResolverImplTest, MAYBE_NumericIPv6Address) {
   EXPECT_TRUE(req->HasOneAddress("2001:db8::1", 5555));
 }
 
-#if defined(THREAD_SANITIZER)
-// Use of WorkerPool in HostResolverImpl causes a data race. crbug.com/334140
-#define MAYBE_NumericIPv6Address_ResolveHost \
-  DISABLED_NumericIPv6Address_ResolveHost
-#else
-#define MAYBE_NumericIPv6Address_ResolveHost NumericIPv6Address_ResolveHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_NumericIPv6Address_ResolveHost) {
+TEST_F(HostResolverImplTest, NumericIPv6Address_ResolveHost) {
   // Resolve a plain IPv6 address.  Don't worry about [brackets], because
   // the caller should have removed them.
   ResolveHostResponseHelper response(resolver_->CreateRequest(
@@ -1071,24 +1058,12 @@ TEST_F(HostResolverImplTest, MAYBE_NumericIPv6Address_ResolveHost) {
               testing::ElementsAre(CreateExpected("2001:db8::1", 5555)));
 }
 
-#if defined(THREAD_SANITIZER)
-// Use of WorkerPool in HostResolverImpl causes a data race. crbug.com/334140
-#define MAYBE_EmptyHost DISABLED_EmptyHost
-#else
-#define MAYBE_EmptyHost EmptyHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_EmptyHost) {
+TEST_F(HostResolverImplTest, EmptyHost) {
   Request* req = CreateRequest(std::string(), 5555);
   EXPECT_THAT(req->Resolve(), IsError(ERR_NAME_NOT_RESOLVED));
 }
 
-#if defined(THREAD_SANITIZER)
-// Use of WorkerPool in HostResolverImpl causes a data race. crbug.com/334140
-#define MAYBE_EmptyHost_ResolveHost DISABLED_EmptyHost_ResolveHost
-#else
-#define MAYBE_EmptyHost_ResolveHost EmptyHost_ResolveHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_EmptyHost_ResolveHost) {
+TEST_F(HostResolverImplTest, EmptyHost_ResolveHost) {
   ResolveHostResponseHelper response(resolver_->CreateRequest(
       HostPortPair(std::string(), 5555), NetLogWithSource(), base::nullopt));
 
@@ -1096,32 +1071,14 @@ TEST_F(HostResolverImplTest, MAYBE_EmptyHost_ResolveHost) {
   EXPECT_FALSE(response.request()->GetAddressResults());
 }
 
-#if defined(THREAD_SANITIZER)
-// There's a data race in this test that may lead to use-after-free.
-// If the test starts to crash without ThreadSanitizer it needs to be disabled
-// globally. See http://crbug.com/268946 (stacks for this test in
-// crbug.com/333567).
-#define MAYBE_EmptyDotsHost DISABLED_EmptyDotsHost
-#else
-#define MAYBE_EmptyDotsHost EmptyDotsHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_EmptyDotsHost) {
+TEST_F(HostResolverImplTest, EmptyDotsHost) {
   for (int i = 0; i < 16; ++i) {
     Request* req = CreateRequest(std::string(i, '.'), 5555);
     EXPECT_THAT(req->Resolve(), IsError(ERR_NAME_NOT_RESOLVED));
   }
 }
 
-#if defined(THREAD_SANITIZER)
-// There's a data race in this test that may lead to use-after-free.
-// If the test starts to crash without ThreadSanitizer it needs to be disabled
-// globally. See http://crbug.com/268946 (stacks for this test in
-// crbug.com/333567).
-#define MAYBE_EmptyDotsHost_ResolveHost DISABLED_EmptyDotsHost_ResolveHost
-#else
-#define MAYBE_EmptyDotsHost_ResolveHost EmptyDotsHost_ResolveHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_EmptyDotsHost_ResolveHost) {
+TEST_F(HostResolverImplTest, EmptyDotsHost_ResolveHost) {
   for (int i = 0; i < 16; ++i) {
     ResolveHostResponseHelper response(
         resolver_->CreateRequest(HostPortPair(std::string(i, '.'), 5555),
@@ -1132,28 +1089,12 @@ TEST_F(HostResolverImplTest, MAYBE_EmptyDotsHost_ResolveHost) {
   }
 }
 
-#if defined(THREAD_SANITIZER)
-// There's a data race in this test that may lead to use-after-free.
-// If the test starts to crash without ThreadSanitizer it needs to be disabled
-// globally. See http://crbug.com/268946.
-#define MAYBE_LongHost DISABLED_LongHost
-#else
-#define MAYBE_LongHost LongHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_LongHost) {
+TEST_F(HostResolverImplTest, LongHost) {
   Request* req = CreateRequest(std::string(4097, 'a'), 5555);
   EXPECT_THAT(req->Resolve(), IsError(ERR_NAME_NOT_RESOLVED));
 }
 
-#if defined(THREAD_SANITIZER)
-// There's a data race in this test that may lead to use-after-free.
-// If the test starts to crash without ThreadSanitizer it needs to be disabled
-// globally. See http://crbug.com/268946.
-#define MAYBE_LongHost_ResolveHost DISABLED_LongHost_ResolveHost
-#else
-#define MAYBE_LongHost_ResolveHost LongHost_ResolveHost
-#endif
-TEST_F(HostResolverImplTest, MAYBE_LongHost_ResolveHost) {
+TEST_F(HostResolverImplTest, LongHost_ResolveHost) {
   ResolveHostResponseHelper response(
       resolver_->CreateRequest(HostPortPair(std::string(4097, 'a'), 5555),
                                NetLogWithSource(), base::nullopt));
@@ -1506,7 +1447,15 @@ TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback) {
   proc_->SignalMultiple(requests_.size());
 }
 
-TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback_ResolveHost) {
+// Flaky on Fuchsia and Linux ASAN. crbug.com/930483
+#if defined(OS_FUCHSIA) || defined(OS_LINUX)
+#define MAYBE_DeleteWithinAbortedCallback_ResolveHost \
+  DISABLED_DeleteWithinAbortedCallback_ResolveHost
+#else
+#define MAYBE_DeleteWithinAbortedCallback_ResolveHost \
+  DeleteWithinAbortedCallback_ResolveHost
+#endif
+TEST_F(HostResolverImplTest, MAYBE_DeleteWithinAbortedCallback_ResolveHost) {
   std::vector<std::unique_ptr<ResolveHostResponseHelper>> responses;
   ResolveHostResponseHelper::Callback custom_callback =
       base::BindLambdaForTesting(
@@ -1651,7 +1600,8 @@ TEST_F(HostResolverImplTest, BypassCache_ResolveHost) {
   EXPECT_EQ(1u, proc_->GetCaptureList().size());
 
   HostResolver::ResolveHostParameters parameters;
-  parameters.allow_cached_response = false;
+  parameters.cache_usage =
+      HostResolver::ResolveHostParameters::CacheUsage::DISALLOWED;
   ResolveHostResponseHelper cache_bypassed_response(resolver_->CreateRequest(
       HostPortPair("a", 80), NetLogWithSource(), parameters));
   EXPECT_THAT(cache_bypassed_response.result_error(), IsOk());
@@ -2526,6 +2476,121 @@ TEST_F(HostResolverImplTest, ResolveFromCacheInvalidNameLocalhost) {
   EXPECT_THAT(requests_[1]->WaitForResult(), IsError(ERR_NAME_NOT_RESOLVED));
 }
 
+TEST_F(HostResolverImplTest, SourceNone_FromCache) {
+  proc_->AddRuleForAllFamilies("just.testing", "192.168.1.42");
+  proc_->SignalMultiple(1u);  // Need only one.
+
+  HostResolver::ResolveHostParameters source_none_parameters;
+  source_none_parameters.source = HostResolverSource::LOCAL_ONLY;
+
+  // First NONE query expected to complete synchronously with a cache miss.
+  ResolveHostResponseHelper cache_miss_request(
+      resolver_->CreateRequest(HostPortPair("just.testing", 80),
+                               NetLogWithSource(), source_none_parameters));
+  EXPECT_TRUE(cache_miss_request.complete());
+  EXPECT_THAT(cache_miss_request.result_error(), IsError(ERR_DNS_CACHE_MISS));
+  EXPECT_FALSE(cache_miss_request.request()->GetAddressResults());
+  EXPECT_FALSE(cache_miss_request.request()->GetStaleInfo());
+
+  // Normal query to populate the cache.
+  ResolveHostResponseHelper normal_request(resolver_->CreateRequest(
+      HostPortPair("just.testing", 80), NetLogWithSource(), base::nullopt));
+  EXPECT_THAT(normal_request.result_error(), IsOk());
+  EXPECT_FALSE(normal_request.request()->GetStaleInfo());
+
+  // Second NONE query expected to complete synchronously with cache hit.
+  ResolveHostResponseHelper cache_hit_request(
+      resolver_->CreateRequest(HostPortPair("just.testing", 80),
+                               NetLogWithSource(), source_none_parameters));
+  EXPECT_TRUE(cache_hit_request.complete());
+  EXPECT_THAT(cache_hit_request.result_error(), IsOk());
+  EXPECT_THAT(
+      cache_hit_request.request()->GetAddressResults().value().endpoints(),
+      testing::ElementsAre(CreateExpected("192.168.1.42", 80)));
+  EXPECT_FALSE(cache_hit_request.request()->GetStaleInfo().value().is_stale());
+}
+
+TEST_F(HostResolverImplTest, SourceNone_StaleEntry) {
+  proc_->AddRuleForAllFamilies("just.testing", "192.168.1.42");
+  proc_->SignalMultiple(1u);  // Need only one.
+
+  HostResolver::ResolveHostParameters source_none_parameters;
+  source_none_parameters.source = HostResolverSource::LOCAL_ONLY;
+
+  // First NONE query expected to complete synchronously with a cache miss.
+  ResolveHostResponseHelper cache_miss_request(
+      resolver_->CreateRequest(HostPortPair("just.testing", 80),
+                               NetLogWithSource(), source_none_parameters));
+  EXPECT_TRUE(cache_miss_request.complete());
+  EXPECT_THAT(cache_miss_request.result_error(), IsError(ERR_DNS_CACHE_MISS));
+  EXPECT_FALSE(cache_miss_request.request()->GetAddressResults());
+  EXPECT_FALSE(cache_miss_request.request()->GetStaleInfo());
+
+  // Normal query to populate the cache.
+  ResolveHostResponseHelper normal_request(resolver_->CreateRequest(
+      HostPortPair("just.testing", 80), NetLogWithSource(), base::nullopt));
+  EXPECT_THAT(normal_request.result_error(), IsOk());
+  EXPECT_FALSE(normal_request.request()->GetStaleInfo());
+
+  MakeCacheStale();
+
+  // Second NONE query still expected to complete synchronously with cache miss.
+  ResolveHostResponseHelper stale_request(
+      resolver_->CreateRequest(HostPortPair("just.testing", 80),
+                               NetLogWithSource(), source_none_parameters));
+  EXPECT_TRUE(stale_request.complete());
+  EXPECT_THAT(stale_request.result_error(), IsError(ERR_DNS_CACHE_MISS));
+  EXPECT_FALSE(stale_request.request()->GetAddressResults());
+  EXPECT_FALSE(stale_request.request()->GetStaleInfo());
+}
+
+TEST_F(HostResolverImplTest, SourceNone_FromIp) {
+  HostResolver::ResolveHostParameters source_none_parameters;
+  source_none_parameters.source = HostResolverSource::LOCAL_ONLY;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("1.2.3.4", 56), NetLogWithSource(), source_none_parameters));
+
+  // Expected to resolve synchronously.
+  EXPECT_TRUE(response.complete());
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_THAT(response.request()->GetAddressResults().value().endpoints(),
+              testing::ElementsAre(CreateExpected("1.2.3.4", 56)));
+  EXPECT_FALSE(response.request()->GetStaleInfo());
+}
+
+TEST_F(HostResolverImplTest, SourceNone_InvalidName) {
+  proc_->AddRuleForAllFamilies("foo,bar.com", "192.168.1.42");
+
+  HostResolver::ResolveHostParameters source_none_parameters;
+  source_none_parameters.source = HostResolverSource::LOCAL_ONLY;
+
+  ResolveHostResponseHelper response(
+      resolver_->CreateRequest(HostPortPair("foo,bar.com", 57),
+                               NetLogWithSource(), source_none_parameters));
+
+  // Expected to fail synchronously.
+  EXPECT_TRUE(response.complete());
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetStaleInfo());
+}
+
+TEST_F(HostResolverImplTest, SourceNone_InvalidLocalhost) {
+  HostResolver::ResolveHostParameters source_none_parameters;
+  source_none_parameters.source = HostResolverSource::LOCAL_ONLY;
+
+  ResolveHostResponseHelper response(
+      resolver_->CreateRequest(HostPortPair("foo,bar.localhost", 58),
+                               NetLogWithSource(), source_none_parameters));
+
+  // Expected to fail synchronously.
+  EXPECT_TRUE(response.complete());
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetStaleInfo());
+}
+
 TEST_F(HostResolverImplTest, ResolveStaleFromCache) {
   proc_->AddRuleForAllFamilies("just.testing", "192.168.1.42");
   proc_->SignalMultiple(1u);  // Need only one.
@@ -2605,6 +2670,79 @@ TEST_F(HostResolverImplTest, ResolveStaleFromCacheError) {
               IsOk());
   EXPECT_TRUE(requests_[6]->HasOneAddress("192.168.1.42", 80));
   EXPECT_TRUE(requests_[6]->staleness().is_stale());
+}
+
+TEST_F(HostResolverImplTest, StaleAllowed) {
+  proc_->AddRuleForAllFamilies("just.testing", "192.168.1.42");
+  proc_->SignalMultiple(1u);  // Need only one.
+
+  HostResolver::ResolveHostParameters stale_allowed_parameters;
+  stale_allowed_parameters.source = HostResolverSource::LOCAL_ONLY;
+  stale_allowed_parameters.cache_usage =
+      HostResolver::ResolveHostParameters::CacheUsage::STALE_ALLOWED;
+
+  // First query expected to complete synchronously as a cache miss.
+  ResolveHostResponseHelper cache_miss_request(
+      resolver_->CreateRequest(HostPortPair("just.testing", 80),
+                               NetLogWithSource(), stale_allowed_parameters));
+  EXPECT_TRUE(cache_miss_request.complete());
+  EXPECT_THAT(cache_miss_request.result_error(), IsError(ERR_DNS_CACHE_MISS));
+  EXPECT_FALSE(cache_miss_request.request()->GetAddressResults());
+  EXPECT_FALSE(cache_miss_request.request()->GetStaleInfo());
+
+  // Normal query to populate cache
+  ResolveHostResponseHelper normal_request(resolver_->CreateRequest(
+      HostPortPair("just.testing", 80), NetLogWithSource(), base::nullopt));
+  EXPECT_THAT(normal_request.result_error(), IsOk());
+  EXPECT_FALSE(normal_request.request()->GetStaleInfo());
+
+  MakeCacheStale();
+
+  // Second NONE query expected to get a stale cache hit.
+  ResolveHostResponseHelper stale_request(
+      resolver_->CreateRequest(HostPortPair("just.testing", 84),
+                               NetLogWithSource(), stale_allowed_parameters));
+  EXPECT_TRUE(stale_request.complete());
+  EXPECT_THAT(stale_request.result_error(), IsOk());
+  EXPECT_THAT(stale_request.request()->GetAddressResults().value().endpoints(),
+              testing::ElementsAre(CreateExpected("192.168.1.42", 84)));
+  EXPECT_TRUE(stale_request.request()->GetStaleInfo().value().is_stale());
+}
+
+TEST_F(HostResolverImplTest, StaleAllowed_NonLocal) {
+  proc_->AddRuleForAllFamilies("just.testing", "192.168.2.42");
+  proc_->SignalMultiple(1u);  // Need only one.
+
+  HostResolver::ResolveHostParameters stale_allowed_parameters;
+  stale_allowed_parameters.cache_usage =
+      HostResolver::ResolveHostParameters::CacheUsage::STALE_ALLOWED;
+
+  // Normal non-local resolves should still work normally with the STALE_ALLOWED
+  // parameter, and there should be no stale info.
+  ResolveHostResponseHelper response(
+      resolver_->CreateRequest(HostPortPair("just.testing", 85),
+                               NetLogWithSource(), stale_allowed_parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_THAT(response.request()->GetAddressResults().value().endpoints(),
+              testing::ElementsAre(CreateExpected("192.168.2.42", 85)));
+  EXPECT_FALSE(response.request()->GetStaleInfo());
+}
+
+TEST_F(HostResolverImplTest, StaleAllowed_FromIp) {
+  HostResolver::ResolveHostParameters stale_allowed_parameters;
+  stale_allowed_parameters.cache_usage =
+      HostResolver::ResolveHostParameters::CacheUsage::STALE_ALLOWED;
+
+  ResolveHostResponseHelper response(
+      resolver_->CreateRequest(HostPortPair("1.2.3.4", 57), NetLogWithSource(),
+                               stale_allowed_parameters));
+
+  // Expected to resolve synchronously without stale info.
+  EXPECT_TRUE(response.complete());
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_THAT(response.request()->GetAddressResults().value().endpoints(),
+              testing::ElementsAre(CreateExpected("1.2.3.4", 57)));
+  EXPECT_FALSE(response.request()->GetStaleInfo());
 }
 
 // TODO(mgersh): add a test case for errors with positive TTL after
@@ -3040,6 +3178,46 @@ const uint8_t kMdnsResponseA[] = {
     0x01, 0x02, 0x03, 0x04,  // 1.2.3.4
 };
 
+const uint8_t kMdnsResponseA2[] = {
+    // Header
+    0x00, 0x00,  // ID is zeroed out
+    0x81, 0x80,  // Standard query response, RA, no error
+    0x00, 0x00,  // No questions (for simplicity)
+    0x00, 0x01,  // 1 RR (answers)
+    0x00, 0x00,  // 0 authority RRs
+    0x00, 0x00,  // 0 additional RRs
+
+    // "myhello.local."
+    0x07, 'm', 'y', 'h', 'e', 'l', 'l', 'o', 0x05, 'l', 'o', 'c', 'a', 'l',
+    0x00,
+
+    0x00, 0x01,              // TYPE is A.
+    0x00, 0x01,              // CLASS is IN.
+    0x00, 0x00, 0x00, 0x10,  // TTL is 16 (seconds)
+    0x00, 0x04,              // RDLENGTH is 4 bytes.
+    0x05, 0x06, 0x07, 0x08,  // 5.6.7.8
+};
+
+const uint8_t kMdnsResponseA2Goodbye[] = {
+    // Header
+    0x00, 0x00,  // ID is zeroed out
+    0x81, 0x80,  // Standard query response, RA, no error
+    0x00, 0x00,  // No questions (for simplicity)
+    0x00, 0x01,  // 1 RR (answers)
+    0x00, 0x00,  // 0 authority RRs
+    0x00, 0x00,  // 0 additional RRs
+
+    // "myhello.local."
+    0x07, 'm', 'y', 'h', 'e', 'l', 'l', 'o', 0x05, 'l', 'o', 'c', 'a', 'l',
+    0x00,
+
+    0x00, 0x01,              // TYPE is A.
+    0x00, 0x01,              // CLASS is IN.
+    0x00, 0x00, 0x00, 0x00,  // TTL is 0 (signaling "goodbye" removal of result)
+    0x00, 0x04,              // RDLENGTH is 4 bytes.
+    0x05, 0x06, 0x07, 0x08,  // 5.6.7.8
+};
+
 const uint8_t kMdnsResponseAAAA[] = {
     // Header
     0x00, 0x00,  // ID is zeroed out
@@ -3113,6 +3291,73 @@ const uint8_t kMdnsResponseTxt[] = {
     0x03, 0x62, 0x61, 0x72,
 };
 
+const uint8_t kMdnsResponsePtr[] = {
+    // Header
+    0x00, 0x00,  // ID is zeroed out
+    0x81, 0x80,  // Standard query response, RA, no error
+    0x00, 0x00,  // No questions (for simplicity)
+    0x00, 0x01,  // 1 RR (answers)
+    0x00, 0x00,  // 0 authority RRs
+    0x00, 0x00,  // 0 additional RRs
+
+    // "myhello.local."
+    0x07, 'm', 'y', 'h', 'e', 'l', 'l', 'o', 0x05, 'l', 'o', 'c', 'a', 'l',
+    0x00,
+
+    0x00, 0x0c,              // TYPE is PTR.
+    0x00, 0x01,              // CLASS is IN.
+    0x00, 0x00, 0x00, 0x12,  // TTL is 18 (seconds)
+    0x00, 0x09,              // RDLENGTH is 9 bytes.
+
+    // "foo.com."
+    0x03, 'f', 'o', 'o', 0x03, 'c', 'o', 'm', 0x00};
+
+const uint8_t kMdnsResponsePtrRoot[] = {
+    // Header
+    0x00, 0x00,  // ID is zeroed out
+    0x81, 0x80,  // Standard query response, RA, no error
+    0x00, 0x00,  // No questions (for simplicity)
+    0x00, 0x01,  // 1 RR (answers)
+    0x00, 0x00,  // 0 authority RRs
+    0x00, 0x00,  // 0 additional RRs
+
+    // "myhello.local."
+    0x07, 'm', 'y', 'h', 'e', 'l', 'l', 'o', 0x05, 'l', 'o', 'c', 'a', 'l',
+    0x00,
+
+    0x00, 0x0c,              // TYPE is PTR.
+    0x00, 0x01,              // CLASS is IN.
+    0x00, 0x00, 0x00, 0x13,  // TTL is 19 (seconds)
+    0x00, 0x01,              // RDLENGTH is 1 byte.
+
+    // "." (the root domain)
+    0x00};
+
+const uint8_t kMdnsResponseSrv[] = {
+    // Header
+    0x00, 0x00,  // ID is zeroed out
+    0x81, 0x80,  // Standard query response, RA, no error
+    0x00, 0x00,  // No questions (for simplicity)
+    0x00, 0x01,  // 1 RR (answers)
+    0x00, 0x00,  // 0 authority RRs
+    0x00, 0x00,  // 0 additional RRs
+
+    // "myhello.local."
+    0x07, 'm', 'y', 'h', 'e', 'l', 'l', 'o', 0x05, 'l', 'o', 'c', 'a', 'l',
+    0x00,
+
+    0x00, 0x21,              // TYPE is SRV.
+    0x00, 0x01,              // CLASS is IN.
+    0x00, 0x00, 0x00, 0x13,  // TTL is 19 (seconds)
+    0x00, 0x0f,              // RDLENGTH is 15 bytes.
+
+    0x00, 0x05,  // Priority 5
+    0x00, 0x01,  // Weight 1
+    0x20, 0x49,  // Port 8265
+
+    // "foo.com."
+    0x03, 'f', 'o', 'o', 0x03, 'c', 'o', 'm', 0x00};
+
 TEST_F(HostResolverImplTest, Mdns) {
   auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
   MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
@@ -3185,6 +3430,56 @@ TEST_F(HostResolverImplTest, Mdns_Txt) {
   EXPECT_THAT(response.request()->GetTextResults(),
               testing::Optional(testing::ElementsAre("foo", "bar")));
   EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplTest, Mdns_Ptr) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+  // 2 socket creations for every transaction.
+  EXPECT_CALL(*socket_factory_ptr, OnSendTo(_)).Times(2);
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+  parameters.source = HostResolverSource::MULTICAST_DNS;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("myhello.local", 83), NetLogWithSource(), parameters));
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponsePtr,
+                                      sizeof(kMdnsResponsePtr));
+
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_THAT(
+      response.request()->GetHostnameResults(),
+      testing::Optional(testing::ElementsAre(HostPortPair("foo.com", 83))));
+}
+
+TEST_F(HostResolverImplTest, Mdns_Srv) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+  // 2 socket creations for every transaction.
+  EXPECT_CALL(*socket_factory_ptr, OnSendTo(_)).Times(2);
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+  parameters.source = HostResolverSource::MULTICAST_DNS;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("myhello.local", 83), NetLogWithSource(), parameters));
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponseSrv,
+                                      sizeof(kMdnsResponseSrv));
+
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_THAT(
+      response.request()->GetHostnameResults(),
+      testing::Optional(testing::ElementsAre(HostPortPair("foo.com", 8265))));
 }
 
 // Test multicast DNS handling of NSEC responses (used for explicit negative
@@ -3377,6 +3672,299 @@ TEST_F(HostResolverImplTest, Mdns_PartialFailure) {
 
   EXPECT_THAT(response.result_error(), IsError(ERR_FAILED));
   EXPECT_FALSE(response.request()->GetAddressResults());
+}
+
+// Implementation of HostResolver::MdnsListenerDelegate that records all
+// received results in maps.
+class TestMdnsListenerDelegate : public HostResolver::MdnsListener::Delegate {
+ public:
+  using UpdateKey =
+      std::pair<HostResolver::MdnsListener::Delegate::UpdateType, DnsQueryType>;
+
+  void OnAddressResult(
+      HostResolver::MdnsListener::Delegate::UpdateType update_type,
+      DnsQueryType result_type,
+      IPEndPoint address) override {
+    address_results_.insert({{update_type, result_type}, std::move(address)});
+  }
+
+  void OnTextResult(
+      HostResolver::MdnsListener::Delegate::UpdateType update_type,
+      DnsQueryType result_type,
+      std::vector<std::string> text_records) override {
+    for (auto& text_record : text_records) {
+      text_results_.insert(
+          {{update_type, result_type}, std::move(text_record)});
+    }
+  }
+
+  void OnHostnameResult(
+      HostResolver::MdnsListener::Delegate::UpdateType update_type,
+      DnsQueryType result_type,
+      HostPortPair host) override {
+    hostname_results_.insert({{update_type, result_type}, std::move(host)});
+  }
+
+  void OnUnhandledResult(
+      HostResolver::MdnsListener::Delegate::UpdateType update_type,
+      DnsQueryType result_type) override {
+    unhandled_results_.insert({update_type, result_type});
+  }
+
+  const std::multimap<UpdateKey, IPEndPoint>& address_results() {
+    return address_results_;
+  }
+
+  const std::multimap<UpdateKey, std::string>& text_results() {
+    return text_results_;
+  }
+
+  const std::multimap<UpdateKey, HostPortPair>& hostname_results() {
+    return hostname_results_;
+  }
+
+  const std::multiset<UpdateKey>& unhandled_results() {
+    return unhandled_results_;
+  }
+
+  template <typename T>
+  static std::pair<UpdateKey, T> CreateExpectedResult(
+      HostResolver::MdnsListener::Delegate::UpdateType update_type,
+      DnsQueryType query_type,
+      T result) {
+    return std::make_pair(std::make_pair(update_type, query_type), result);
+  }
+
+ private:
+  std::multimap<UpdateKey, IPEndPoint> address_results_;
+  std::multimap<UpdateKey, std::string> text_results_;
+  std::multimap<UpdateKey, HostPortPair> hostname_results_;
+  std::multiset<UpdateKey> unhandled_results_;
+};
+
+TEST_F(HostResolverImplTest, MdnsListener) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  base::SimpleTestClock clock;
+  clock.SetNow(base::Time::Now());
+  auto cache_cleanup_timer = std::make_unique<base::MockOneShotTimer>();
+  auto* cache_cleanup_timer_ptr = cache_cleanup_timer.get();
+  auto mdns_client =
+      std::make_unique<MDnsClientImpl>(&clock, std::move(cache_cleanup_timer));
+  mdns_client->StartListening(socket_factory.get());
+  resolver_->SetMdnsClientForTesting(std::move(mdns_client));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 80),
+                                    DnsQueryType::A);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+  ASSERT_THAT(delegate.address_results(), testing::IsEmpty());
+
+  socket_factory->SimulateReceive(kMdnsResponseA, sizeof(kMdnsResponseA));
+  socket_factory->SimulateReceive(kMdnsResponseA2, sizeof(kMdnsResponseA2));
+  socket_factory->SimulateReceive(kMdnsResponseA2Goodbye,
+                                  sizeof(kMdnsResponseA2Goodbye));
+
+  // Per RFC6762 section 10.1, removals take effect 1 second after receiving the
+  // goodbye message.
+  clock.Advance(base::TimeDelta::FromSeconds(1));
+  cache_cleanup_timer_ptr->Fire();
+
+  // Expect 1 record adding "1.2.3.4", another changing to "5.6.7.8", and a
+  // final removing "5.6.7.8".
+  EXPECT_THAT(delegate.address_results(),
+              testing::ElementsAre(
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+                      DnsQueryType::A, CreateExpected("1.2.3.4", 80)),
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::CHANGED,
+                      DnsQueryType::A, CreateExpected("5.6.7.8", 80)),
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::REMOVED,
+                      DnsQueryType::A, CreateExpected("5.6.7.8", 80))));
+
+  EXPECT_THAT(delegate.text_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.hostname_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.unhandled_results(), testing::IsEmpty());
+}
+
+// Test that removal notifications are sent on natural expiration of MDNS
+// records.
+TEST_F(HostResolverImplTest, MdnsListener_Expiration) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  base::SimpleTestClock clock;
+  clock.SetNow(base::Time::Now());
+  auto cache_cleanup_timer = std::make_unique<base::MockOneShotTimer>();
+  auto* cache_cleanup_timer_ptr = cache_cleanup_timer.get();
+  auto mdns_client =
+      std::make_unique<MDnsClientImpl>(&clock, std::move(cache_cleanup_timer));
+  mdns_client->StartListening(socket_factory.get());
+  resolver_->SetMdnsClientForTesting(std::move(mdns_client));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 100),
+                                    DnsQueryType::A);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+  ASSERT_THAT(delegate.address_results(), testing::IsEmpty());
+
+  socket_factory->SimulateReceive(kMdnsResponseA, sizeof(kMdnsResponseA));
+
+  EXPECT_THAT(
+      delegate.address_results(),
+      testing::ElementsAre(TestMdnsListenerDelegate::CreateExpectedResult(
+          HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+          DnsQueryType::A, CreateExpected("1.2.3.4", 100))));
+
+  clock.Advance(base::TimeDelta::FromSeconds(16));
+  cache_cleanup_timer_ptr->Fire();
+
+  EXPECT_THAT(delegate.address_results(),
+              testing::ElementsAre(
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+                      DnsQueryType::A, CreateExpected("1.2.3.4", 100)),
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::REMOVED,
+                      DnsQueryType::A, CreateExpected("1.2.3.4", 100))));
+
+  EXPECT_THAT(delegate.text_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.hostname_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.unhandled_results(), testing::IsEmpty());
+}
+
+TEST_F(HostResolverImplTest, MdnsListener_Txt) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 12),
+                                    DnsQueryType::TXT);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+  ASSERT_THAT(delegate.text_results(), testing::IsEmpty());
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponseTxt,
+                                      sizeof(kMdnsResponseTxt));
+
+  EXPECT_THAT(delegate.text_results(),
+              testing::ElementsAre(
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+                      DnsQueryType::TXT, "foo"),
+                  TestMdnsListenerDelegate::CreateExpectedResult(
+                      HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+                      DnsQueryType::TXT, "bar")));
+
+  EXPECT_THAT(delegate.address_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.hostname_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.unhandled_results(), testing::IsEmpty());
+}
+
+TEST_F(HostResolverImplTest, MdnsListener_Ptr) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 13),
+                                    DnsQueryType::PTR);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+  ASSERT_THAT(delegate.text_results(), testing::IsEmpty());
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponsePtr,
+                                      sizeof(kMdnsResponsePtr));
+
+  EXPECT_THAT(
+      delegate.hostname_results(),
+      testing::ElementsAre(TestMdnsListenerDelegate::CreateExpectedResult(
+          HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+          DnsQueryType::PTR, HostPortPair("foo.com", 13))));
+
+  EXPECT_THAT(delegate.address_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.text_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.unhandled_results(), testing::IsEmpty());
+}
+
+TEST_F(HostResolverImplTest, MdnsListener_Srv) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 14),
+                                    DnsQueryType::SRV);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+  ASSERT_THAT(delegate.text_results(), testing::IsEmpty());
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponseSrv,
+                                      sizeof(kMdnsResponseSrv));
+
+  EXPECT_THAT(
+      delegate.hostname_results(),
+      testing::ElementsAre(TestMdnsListenerDelegate::CreateExpectedResult(
+          HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+          DnsQueryType::SRV, HostPortPair("foo.com", 8265))));
+
+  EXPECT_THAT(delegate.address_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.text_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.unhandled_results(), testing::IsEmpty());
+}
+
+// Ensure query types we are not listening for do not affect MdnsListener.
+TEST_F(HostResolverImplTest, MdnsListener_NonListeningTypes) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 41),
+                                    DnsQueryType::A);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponseAAAA,
+                                      sizeof(kMdnsResponseAAAA));
+
+  EXPECT_THAT(delegate.address_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.text_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.hostname_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.unhandled_results(), testing::IsEmpty());
+}
+
+TEST_F(HostResolverImplTest, MdnsListener_RootDomain) {
+  auto socket_factory = std::make_unique<MockMDnsSocketFactory>();
+  MockMDnsSocketFactory* socket_factory_ptr = socket_factory.get();
+  resolver_->SetMdnsSocketFactoryForTesting(std::move(socket_factory));
+
+  std::unique_ptr<HostResolver::MdnsListener> listener =
+      resolver_->CreateMdnsListener(HostPortPair("myhello.local", 5),
+                                    DnsQueryType::PTR);
+
+  TestMdnsListenerDelegate delegate;
+  ASSERT_THAT(listener->Start(&delegate), IsOk());
+
+  socket_factory_ptr->SimulateReceive(kMdnsResponsePtrRoot,
+                                      sizeof(kMdnsResponsePtrRoot));
+
+  EXPECT_THAT(delegate.unhandled_results(),
+              testing::ElementsAre(std::make_pair(
+                  HostResolver::MdnsListener::Delegate::UpdateType::ADDED,
+                  DnsQueryType::PTR)));
+
+  EXPECT_THAT(delegate.address_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.text_results(), testing::IsEmpty());
+  EXPECT_THAT(delegate.hostname_results(), testing::IsEmpty());
 }
 #endif  // BUILDFLAG(ENABLE_MDNS)
 
@@ -5773,6 +6361,34 @@ TEST_F(HostResolverImplDnsTest, NotFoundTTL_ResolveHost) {
   EXPECT_THAT(cache_entry->ttl(), base::TimeDelta::FromSeconds(86400));
 }
 
+TEST_F(HostResolverImplDnsTest, CachedError) {
+  CreateResolver();
+  set_allow_fallback_to_proctask(false);
+  ChangeDnsConfig(CreateValidDnsConfig());
+
+  HostResolver::ResolveHostParameters cache_only_parameters;
+  cache_only_parameters.source = HostResolverSource::LOCAL_ONLY;
+
+  // Expect cache initially empty.
+  ResolveHostResponseHelper cache_miss_response(resolver_->CreateRequest(
+      HostPortPair("nodomain", 80), NetLogWithSource(), cache_only_parameters));
+  EXPECT_THAT(cache_miss_response.result_error(), IsError(ERR_DNS_CACHE_MISS));
+  EXPECT_FALSE(cache_miss_response.request()->GetStaleInfo());
+
+  // Populate cache with an error.
+  ResolveHostResponseHelper no_domain_response(resolver_->CreateRequest(
+      HostPortPair("nodomain", 80), NetLogWithSource(), base::nullopt));
+  EXPECT_THAT(no_domain_response.result_error(),
+              IsError(ERR_NAME_NOT_RESOLVED));
+
+  // Expect the error result can be resolved from the cache.
+  ResolveHostResponseHelper cache_hit_response(resolver_->CreateRequest(
+      HostPortPair("nodomain", 80), NetLogWithSource(), cache_only_parameters));
+  EXPECT_THAT(cache_hit_response.result_error(),
+              IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(cache_hit_response.request()->GetStaleInfo().value().is_stale());
+}
+
 TEST_F(HostResolverImplDnsTest, NoCanonicalName) {
   MockDnsClientRuleList rules;
   AddDnsRule(&rules, "alias", dns_protocol::kTypeA, IPAddress::IPv4Localhost(),
@@ -5827,6 +6443,7 @@ TEST_F(HostResolverImplDnsTest, CanonicalName_CreateRequest) {
 
   HostResolver::ResolveHostParameters params;
   params.include_canonical_name = true;
+  params.source = HostResolverSource::DNS;
   ResolveHostResponseHelper response(resolver_->CreateRequest(
       HostPortPair("alias", 80), NetLogWithSource(), params));
   ASSERT_THAT(response.result_error(), IsOk());
@@ -5848,6 +6465,7 @@ TEST_F(HostResolverImplDnsTest, CanonicalName_PreferV6_CreateRequest) {
 
   HostResolver::ResolveHostParameters params;
   params.include_canonical_name = true;
+  params.source = HostResolverSource::DNS;
   ResolveHostResponseHelper response(resolver_->CreateRequest(
       HostPortPair("alias", 80), NetLogWithSource(), params));
   ASSERT_FALSE(response.complete());
@@ -5869,11 +6487,35 @@ TEST_F(HostResolverImplDnsTest, CanonicalName_V4Only_CreateRequest) {
   HostResolver::ResolveHostParameters params;
   params.dns_query_type = DnsQueryType::A;
   params.include_canonical_name = true;
+  params.source = HostResolverSource::DNS;
   ResolveHostResponseHelper response(resolver_->CreateRequest(
       HostPortPair("alias", 80), NetLogWithSource(), params));
   ASSERT_THAT(response.result_error(), IsOk());
   EXPECT_EQ(response.request()->GetAddressResults().value().canonical_name(),
             "correct");
+}
+
+// Test that without specifying source, a request that would otherwise be
+// handled by DNS is sent to the system resolver if cannonname is requested.
+TEST_F(HostResolverImplDnsTest, CanonicalNameForcesProc) {
+  // Disable fallback to ensure system resolver is used directly, not via
+  // fallback.
+  set_allow_fallback_to_proctask(false);
+
+  proc_->AddRuleForAllFamilies("nx_succeed", "192.168.1.102",
+                               HOST_RESOLVER_CANONNAME, "canonical");
+  proc_->SignalMultiple(1u);
+
+  ChangeDnsConfig(CreateValidDnsConfig());
+
+  HostResolver::ResolveHostParameters params;
+  params.include_canonical_name = true;
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("nx_succeed", 80), NetLogWithSource(), params));
+  ASSERT_THAT(response.result_error(), IsOk());
+
+  EXPECT_EQ(response.request()->GetAddressResults().value().canonical_name(),
+            "canonical");
 }
 
 TEST_F(HostResolverImplTest, ResolveLocalHostname) {
@@ -6592,6 +7234,10 @@ TEST_F(HostResolverImplDnsTest, TxtQuery_WrongType) {
   EXPECT_FALSE(response.request()->GetHostnameResults());
 }
 
+// Same as TxtQuery except we specify DNS HostResolverSource instead of relying
+// on automatic determination.  Expect same results since DNS should be what we
+// automatically determine, but some slightly different logic paths are
+// involved.
 TEST_F(HostResolverImplDnsTest, TxtDnsQuery) {
   // Simulate two separate DNS records, each with multiple strings.
   std::vector<std::string> foo_records = {"foo1", "foo2", "foo3"};
@@ -6629,6 +7275,546 @@ TEST_F(HostResolverImplDnsTest, TxtDnsQuery) {
                                        foo_records.begin(), foo_records.end()));
   EXPECT_NE(results.end(), std::search(results.begin(), results.end(),
                                        bar_records.begin(), bar_records.end()));
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery) {
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(BuildTestDnsPointerResponse(
+                         "host", {"foo.com", "bar.com"})),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+
+  // Order between separate records is undefined.
+  EXPECT_THAT(response.request()->GetHostnameResults(),
+              testing::Optional(testing::UnorderedElementsAre(
+                  HostPortPair("foo.com", 108), HostPortPair("bar.com", 108))));
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_Ip) {
+  MockDnsClientRuleList rules;
+  rules.emplace_back("8.8.8.8", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(BuildTestDnsPointerResponse(
+                         "8.8.8.8", {"foo.com", "bar.com"})),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("8.8.8.8", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+
+  // Order between separate records is undefined.
+  EXPECT_THAT(response.request()->GetHostnameResults(),
+              testing::Optional(testing::UnorderedElementsAre(
+                  HostPortPair("foo.com", 108), HostPortPair("bar.com", 108))));
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_NonexistentDomain) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(MockDnsClientRule::NODOMAIN),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_Failure) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(MockDnsClientRule::FAIL),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_Timeout) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(MockDnsClientRule::TIMEOUT),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_DNS_TIMED_OUT));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_Empty) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(MockDnsClientRule::EMPTY),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_Malformed) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(MockDnsClientRule::MALFORMED),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_DNS_MALFORMED_RESPONSE));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_MismatchedName) {
+  std::vector<std::string> ptr_records = {{"foo.com"}};
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(BuildTestDnsPointerResponse(
+                         "host", std::move(ptr_records), "not.host")),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_DNS_MALFORMED_RESPONSE));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, PtrQuery_WrongType) {
+  // Respond to a TXT query with an A response.
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(
+                         BuildTestDnsResponse("host", IPAddress(1, 2, 3, 4))),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  // Responses for the wrong type should be ignored.
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("ok", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+// Same as PtrQuery except we specify DNS HostResolverSource instead of relying
+// on automatic determination.  Expect same results since DNS should be what we
+// automatically determine, but some slightly different logic paths are
+// involved.
+TEST_F(HostResolverImplDnsTest, PtrDnsQuery) {
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypePTR,
+                     MockDnsClientRule::Result(BuildTestDnsPointerResponse(
+                         "host", {"foo.com", "bar.com"})),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.source = HostResolverSource::DNS;
+  parameters.dns_query_type = DnsQueryType::PTR;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+
+  // Order between separate records is undefined.
+  EXPECT_THAT(response.request()->GetHostnameResults(),
+              testing::Optional(testing::UnorderedElementsAre(
+                  HostPortPair("foo.com", 108), HostPortPair("bar.com", 108))));
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery) {
+  const TestServiceRecord kRecord1 = {2, 3, 1223, "foo.com"};
+  const TestServiceRecord kRecord2 = {5, 10, 80, "bar.com"};
+  const TestServiceRecord kRecord3 = {5, 1, 5, "google.com"};
+  const TestServiceRecord kRecord4 = {2, 100, 12345, "chromium.org"};
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(BuildTestDnsResponse(
+                         "host", {kRecord1, kRecord2, kRecord3, kRecord4})),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+
+  // Expect ordered by priority, and random within a priority.
+  base::Optional<std::vector<HostPortPair>> results =
+      response.request()->GetHostnameResults();
+  ASSERT_THAT(
+      results,
+      testing::Optional(testing::UnorderedElementsAre(
+          HostPortPair("foo.com", 1223), HostPortPair("bar.com", 80),
+          HostPortPair("google.com", 5), HostPortPair("chromium.org", 12345))));
+  auto priority2 = std::vector<HostPortPair>(results.value().begin(),
+                                             results.value().begin() + 2);
+  EXPECT_THAT(priority2, testing::UnorderedElementsAre(
+                             HostPortPair("foo.com", 1223),
+                             HostPortPair("chromium.org", 12345)));
+  auto priority5 = std::vector<HostPortPair>(results.value().begin() + 2,
+                                             results.value().end());
+  EXPECT_THAT(priority5,
+              testing::UnorderedElementsAre(HostPortPair("bar.com", 80),
+                                            HostPortPair("google.com", 5)));
+}
+
+// 0-weight services are allowed. Ensure that we can handle such records,
+// especially the case where all entries have weight 0.
+TEST_F(HostResolverImplDnsTest, SrvQuery_ZeroWeight) {
+  const TestServiceRecord kRecord1 = {5, 0, 80, "bar.com"};
+  const TestServiceRecord kRecord2 = {5, 0, 5, "google.com"};
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(
+                         BuildTestDnsResponse("host", {kRecord1, kRecord2})),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+
+  // Expect ordered by priority, and random within a priority.
+  EXPECT_THAT(response.request()->GetHostnameResults(),
+              testing::Optional(testing::UnorderedElementsAre(
+                  HostPortPair("bar.com", 80), HostPortPair("google.com", 5))));
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_NonexistentDomain) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(MockDnsClientRule::NODOMAIN),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_Failure) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(MockDnsClientRule::FAIL),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_Timeout) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(MockDnsClientRule::TIMEOUT),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_DNS_TIMED_OUT));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_Empty) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(MockDnsClientRule::EMPTY),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_Malformed) {
+  // Setup fallback to confirm it is not used for non-address results.
+  set_allow_fallback_to_proctask(true);
+  proc_->AddRuleForAllFamilies("host", "192.168.1.102");
+  proc_->SignalMultiple(1u);
+
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(MockDnsClientRule::MALFORMED),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_DNS_MALFORMED_RESPONSE));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_MismatchedName) {
+  std::vector<TestServiceRecord> srv_records = {{1, 2, 3, "foo.com"}};
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(BuildTestDnsResponse(
+                         "host", std::move(srv_records), "not.host")),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_DNS_MALFORMED_RESPONSE));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+TEST_F(HostResolverImplDnsTest, SrvQuery_WrongType) {
+  // Respond to a SRV query with an A response.
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(
+                         BuildTestDnsResponse("host", IPAddress(1, 2, 3, 4))),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  // Responses for the wrong type should be ignored.
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("ok", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsError(ERR_NAME_NOT_RESOLVED));
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+  EXPECT_FALSE(response.request()->GetHostnameResults());
+}
+
+// Same as SrvQuery except we specify DNS HostResolverSource instead of relying
+// on automatic determination.  Expect same results since DNS should be what we
+// automatically determine, but some slightly different logic paths are
+// involved.
+TEST_F(HostResolverImplDnsTest, SrvDnsQuery) {
+  const TestServiceRecord kRecord1 = {2, 3, 1223, "foo.com"};
+  const TestServiceRecord kRecord2 = {5, 10, 80, "bar.com"};
+  const TestServiceRecord kRecord3 = {5, 1, 5, "google.com"};
+  const TestServiceRecord kRecord4 = {2, 100, 12345, "chromium.org"};
+  MockDnsClientRuleList rules;
+  rules.emplace_back("host", dns_protocol::kTypeSRV,
+                     MockDnsClientRule::Result(BuildTestDnsResponse(
+                         "host", {kRecord1, kRecord2, kRecord3, kRecord4})),
+                     false /* delay */);
+
+  CreateResolver();
+  UseMockDnsClient(CreateValidDnsConfig(), std::move(rules));
+
+  HostResolver::ResolveHostParameters parameters;
+  parameters.source = HostResolverSource::DNS;
+  parameters.dns_query_type = DnsQueryType::SRV;
+
+  ResolveHostResponseHelper response(resolver_->CreateRequest(
+      HostPortPair("host", 108), NetLogWithSource(), parameters));
+  EXPECT_THAT(response.result_error(), IsOk());
+  EXPECT_FALSE(response.request()->GetAddressResults());
+  EXPECT_FALSE(response.request()->GetTextResults());
+
+  // Expect ordered by priority, and random within a priority.
+  base::Optional<std::vector<HostPortPair>> results =
+      response.request()->GetHostnameResults();
+  ASSERT_THAT(
+      results,
+      testing::Optional(testing::UnorderedElementsAre(
+          HostPortPair("foo.com", 1223), HostPortPair("bar.com", 80),
+          HostPortPair("google.com", 5), HostPortPair("chromium.org", 12345))));
+  auto priority2 = std::vector<HostPortPair>(results.value().begin(),
+                                             results.value().begin() + 2);
+  EXPECT_THAT(priority2, testing::UnorderedElementsAre(
+                             HostPortPair("foo.com", 1223),
+                             HostPortPair("chromium.org", 12345)));
+  auto priority5 = std::vector<HostPortPair>(results.value().begin() + 2,
+                                             results.value().end());
+  EXPECT_THAT(priority5,
+              testing::UnorderedElementsAre(HostPortPair("bar.com", 80),
+                                            HostPortPair("google.com", 5)));
 }
 
 }  // namespace net

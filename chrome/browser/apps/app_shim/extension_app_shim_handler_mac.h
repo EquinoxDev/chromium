@@ -78,7 +78,8 @@ class ExtensionAppShimHandler : public AppShimHandler,
     virtual void LaunchShim(Profile* profile,
                             const extensions::Extension* extension,
                             bool recreate_shims,
-                            LaunchShimCallback launch_callback);
+                            ShimLaunchedCallback launched_callback,
+                            ShimTerminatedCallback terminated_callback);
     virtual void LaunchUserManager();
 
     virtual void MaybeTerminate();
@@ -138,7 +139,8 @@ class ExtensionAppShimHandler : public AppShimHandler,
   void OnShimLaunchRequested(
       AppShimHost* host,
       bool recreate_shims,
-      base::OnceCallback<void(base::Process)> launch_callback) override;
+      base::OnceCallback<void(base::Process)> launched_callback,
+      base::OnceClosure terminated_callback) override;
   void OnShimProcessConnected(
       std::unique_ptr<AppShimHostBootstrap> bootstrap) override;
   void OnShimClose(AppShimHost* host) override;
@@ -171,6 +173,9 @@ class ExtensionAppShimHandler : public AppShimHandler,
   typedef std::map<std::pair<Profile*, std::string>, AppShimHost*> HostMap;
   typedef std::set<Browser*> BrowserSet;
   typedef std::map<std::string, BrowserSet> AppBrowserMap;
+
+  // Virtual for tests.
+  virtual bool IsAcceptablyCodeSigned(pid_t pid) const;
 
   // Exposed for testing.
   void set_delegate(Delegate* delegate);

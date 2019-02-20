@@ -74,7 +74,7 @@ class CORE_EXPORT WorkletGlobalScope
 
   const base::UnguessableToken& GetAgentClusterID() const final {
     // Currently, worklet agents have no clearly defined owner. See
-    // https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism
+    // https://html.spec.whatwg.org/C/#integration-with-the-javascript-agent-cluster-formalism
     //
     // However, it is intended that a SharedArrayBuffer can be shared with a
     // worklet, e.g. the AudioWorklet. If this WorkletGlobalScope's creation
@@ -98,7 +98,7 @@ class CORE_EXPORT WorkletGlobalScope
   void FetchAndInvokeScript(
       const KURL& module_url_record,
       network::mojom::FetchCredentialsMode,
-      FetchClientSettingsObjectSnapshot* outside_settings_object,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object,
       scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
       WorkletPendingTasks*);
 
@@ -156,6 +156,8 @@ class CORE_EXPORT WorkletGlobalScope
   EventTarget* ErrorEventTarget() final { return nullptr; }
 
   void BindContentSecurityPolicyToExecutionContext() override;
+
+  mojom::RequestContextType GetDestinationForMainScript() override;
 
   // The |url_| and |user_agent_| are inherited from the parent Document.
   const KURL url_;

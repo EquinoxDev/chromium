@@ -10,6 +10,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.SystemClock;
 import android.support.annotation.WorkerThread;
+import android.text.format.DateUtils;
 import android.view.inputmethod.InputMethodInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.InputMethodSubtype;
@@ -47,6 +48,7 @@ import org.chromium.chrome.browser.download.DownloadManagerService;
 import org.chromium.chrome.browser.firstrun.ForcedSigninProcessor;
 import org.chromium.chrome.browser.identity.UniqueIdentificationGeneratorFactory;
 import org.chromium.chrome.browser.identity.UuidBasedUniqueIdentificationGenerator;
+import org.chromium.chrome.browser.incognito.IncognitoTabLauncher;
 import org.chromium.chrome.browser.invalidation.UniqueIdInvalidationClientNameGenerator;
 import org.chromium.chrome.browser.locale.LocaleManager;
 import org.chromium.chrome.browser.media.MediaCaptureNotificationService;
@@ -89,7 +91,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Handles the initialization dependences of the browser process.  This is meant to handle the
@@ -226,25 +227,25 @@ public class ProcessInitializationHandler {
             });
         }
 
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.NEW_CONTACTS_PICKER)) {
-            UiUtils.setContactsPickerDelegate(new UiUtils.ContactsPickerDelegate() {
-                private ContactsPickerDialog mDialog;
+        UiUtils.setContactsPickerDelegate(new UiUtils.ContactsPickerDelegate() {
+            private ContactsPickerDialog mDialog;
 
-                @Override
-                public void showContactsPicker(Context context, ContactsPickerListener listener,
-                        boolean allowMultiple, List<String> mimeTypes) {
-                    mDialog = new ContactsPickerDialog(context, listener, allowMultiple, mimeTypes);
-                    mDialog.getWindow().getAttributes().windowAnimations =
-                            R.style.PickerDialogAnimation;
-                    mDialog.show();
-                }
+            @Override
+            public void showContactsPicker(Context context, ContactsPickerListener listener,
+                    boolean allowMultiple, boolean includeNames, boolean includeEmails,
+                    boolean includeTel, String formattedOrigin) {
+                mDialog = new ContactsPickerDialog(context, listener, allowMultiple, includeNames,
+                        includeEmails, includeTel, formattedOrigin);
+                mDialog.getWindow().getAttributes().windowAnimations =
+                        R.style.PickerDialogAnimation;
+                mDialog.show();
+            }
 
-                @Override
-                public void onContactsPickerDismissed() {
-                    mDialog = null;
-                }
-            });
-        }
+            @Override
+            public void onContactsPickerDismissed() {
+                mDialog = null;
+            }
+        });
 
         SearchWidgetProvider.initialize();
     }
@@ -408,31 +409,24 @@ public class ProcessInitializationHandler {
             }
         });
 
-        deferredStartupHandler.addDeferredTask(new Runnable() {
-            @Override
-            public void run() {
-                BackgroundTaskSchedulerFactory.getScheduler().checkForOSUpgrade(application);
-            }
-        });
-
-        deferredStartupHandler.addDeferredTask(new Runnable() {
-            @Override
-            public void run() {
-                logEGLShaderCacheSizeHistogram();
-            }
-        });
+        deferredStartupHandler.addDeferredTask(
+                () -> BackgroundTaskSchedulerFactory.getScheduler().checkForOSUpgrade(application));
 
         deferredStartupHandler.addDeferredTask(
-                () -> { BuildHooksAndroid.maybeRecordResourceMetrics(); });
+                ProcessInitializationHandler::logEGLShaderCacheSizeHistogram);
 
-        deferredStartupHandler.addDeferredTask(() -> {
-            MediaViewerUtils.updateMediaLauncherActivityEnabled(
-                    ContextUtils.getApplicationContext());
-        });
+        deferredStartupHandler.addDeferredTask(
+                BuildHooksAndroid::maybeRecordResourceMetrics);
+
+        deferredStartupHandler.addDeferredTask(
+                () -> MediaViewerUtils.updateMediaLauncherActivityEnabled(application));
 
         deferredStartupHandler.addDeferredTask(
                 ChromeApplication.getComponent().resolveTwaClearDataDialogRecorder()
                         ::makeDeferredRecordings);
+
+        deferredStartupHandler.addDeferredTask(
+                () ->  IncognitoTabLauncher.updateComponentEnabledState(application));
     }
 
     private void initChannelsAsync() {
@@ -504,7 +498,7 @@ public class ProcessInitializationHandler {
 
                 RecordHistogram.recordLongTimesHistogram(
                         "UMA.Debug.EnableCrashUpload.DeferredStartUpAsyncTaskDuration",
-                        SystemClock.uptimeMillis() - mAsyncTaskStartTime, TimeUnit.MILLISECONDS);
+                        SystemClock.uptimeMillis() - mAsyncTaskStartTime);
             }
 
             /**
@@ -619,7 +613,7 @@ public class ProcessInitializationHandler {
                 if (!CrashFileManager.isMinidumpSansLogcat(minidump.getName())) return false;
 
                 long ageInMillis = new Date().getTime() - minidump.lastModified();
-                long ageInHours = TimeUnit.HOURS.convert(ageInMillis, TimeUnit.MILLISECONDS);
+                long ageInHours = ageInMillis / DateUtils.HOUR_IN_MILLIS;
                 return ageInHours < LOGCAT_RELEVANCE_THRESHOLD_IN_HOURS;
             }
         }

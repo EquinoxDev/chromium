@@ -76,9 +76,6 @@ template("test") {
 
         # Don't output to the root or else conflict with the group() below.
         output_name = rebase_path(_exec_output, root_out_dir)
-        if (is_component_build || is_asan) {
-          data_deps += [ "//build/android:cpplib_stripped" ]
-        }
       }
 
       create_native_executable_dist(_dist_target) {
@@ -138,12 +135,18 @@ template("test") {
         }
       }
       unittest_apk(_apk_target) {
-        forward_variables_from(invoker, _apk_specific_vars + [ "deps" ])
+        forward_variables_from(invoker, _apk_specific_vars)
         shared_library = ":$_library_target"
         apk_name = invoker.target_name
         if (defined(invoker.output_name)) {
           apk_name = invoker.output_name
           install_script_name = "install_${invoker.output_name}"
+        }
+
+        if (defined(invoker.deps)) {
+          deps = invoker.deps
+        } else {
+          deps = []
         }
 
         # Add the Java classes so that each target does not have to do it.
@@ -349,6 +352,9 @@ template("test") {
       if (!defined(data)) {
         data = []
       }
+
+      # We use a special trigger script for CrOS hardware tests.
+      data += [ "//testing/trigger_scripts/chromeos_device_trigger.py" ]
 
       testonly = true
       output_name = target_name

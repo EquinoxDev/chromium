@@ -10,10 +10,12 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Handler;
+import android.provider.MediaStore.MediaColumns;
 import android.support.annotation.IntDef;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
@@ -31,6 +33,7 @@ import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.AsyncTask;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.AppHooks;
 import org.chromium.chrome.browser.download.DownloadMetrics.DownloadOpenSource;
 import org.chromium.chrome.browser.download.DownloadNotificationUmaHelper.UmaBackgroundDownload;
 import org.chromium.chrome.browser.download.DownloadNotificationUmaHelper.UmaDownloadResumption;
@@ -43,6 +46,7 @@ import org.chromium.chrome.browser.preferences.PrefServiceBridge;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.util.ConversionUtils;
 import org.chromium.chrome.browser.util.FeatureUtilities;
+import org.chromium.components.download.DownloadCollectionBridge;
 import org.chromium.components.download.DownloadState;
 import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.components.feature_engagement.Tracker;
@@ -67,7 +71,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Chrome implementation of the {@link DownloadController.DownloadNotificationService} interface.
@@ -225,6 +228,8 @@ public class DownloadManagerService
             DownloadNotifier downloadNotifier = new SystemDownloadNotifier();
             sDownloadManagerService = new DownloadManagerService(
                     downloadNotifier, new Handler(), UPDATE_DELAY_MILLIS);
+            DownloadCollectionBridge.setDownloadCollectionBridge(
+                    AppHooks.get().createDownloadCollectionBridge());
         }
         return sDownloadManagerService;
     }
@@ -359,8 +364,14 @@ public class DownloadManagerService
         } else if (isAutoResumable) {
             addAutoResumableDownload(item.getId());
         }
+
+        if (status == DownloadStatus.INTERRUPTED) {
+            maybeRecordBackgroundDownload(
+                    UmaBackgroundDownload.INTERRUPTED, downloadInfo.getDownloadGuid());
+        }
         updateDownloadProgress(item, status);
 
+        if (FeatureUtilities.isDownloadAutoResumptionEnabledInNative()) return;
         DownloadProgress progress = mDownloadProgressMap.get(item.getId());
         if (progress == null) return;
         if (!isAutoResumable || sIsNetworkListenerDisabled) return;
@@ -521,23 +532,26 @@ public class DownloadManagerService
     private boolean updateDownloadSuccessNotification(DownloadProgress progress) {
         final boolean isSupportedMimeType = progress.mIsSupportedMimeType;
         final DownloadItem item = progress.mDownloadItem;
-        AsyncTask<Pair<Long, Boolean>> task = new AsyncTask<Pair<Long, Boolean>>() {
+        AsyncTask<Pair<Boolean, Boolean>> task = new AsyncTask<Pair<Boolean, Boolean>>() {
             @Override
-            public Pair<Long, Boolean> doInBackground() {
-                boolean success = addCompletedDownload(item);
+            public Pair<Boolean, Boolean> doInBackground() {
+                boolean success = DownloadUtils.isContentUri(item.getDownloadInfo().getFilePath());
+                if (!success) {
+                    success = addCompletedDownload(item);
+                }
                 boolean canResolve = success
                         && (isOMADownloadDescription(item.getDownloadInfo())
                                    || canResolveDownloadItem(ContextUtils.getApplicationContext(),
                                               item, isSupportedMimeType));
-                return Pair.create(item.getSystemDownloadId(), canResolve);
+                return Pair.create(success, canResolve);
             }
 
             @Override
-            protected void onPostExecute(Pair<Long, Boolean> result) {
+            protected void onPostExecute(Pair<Boolean, Boolean> result) {
                 DownloadInfo info = item.getDownloadInfo();
-                if (result.first != DownloadItem.INVALID_DOWNLOAD_ID) {
+                if (result.first) {
                     mDownloadNotifier.notifyDownloadSuccessful(
-                            info, result.first, result.second, isSupportedMimeType);
+                            info, item.getSystemDownloadId(), result.second, isSupportedMimeType);
                     broadcastDownloadSuccessful(info);
                     maybeRecordBackgroundDownload(
                             UmaBackgroundDownload.COMPLETED, info.getDownloadGuid());
@@ -811,10 +825,14 @@ public class DownloadManagerService
      * @return the intent to launch for the given download item.
      */
     @Nullable
-    static Intent getLaunchIntentFromDownloadId(
-            Context context, @Nullable String filePath, long downloadId,
-            boolean isSupportedMimeType, String originalUrl, String referrer) {
+    static Intent getLaunchIntentForDownload(Context context, @Nullable String filePath,
+            long downloadId, boolean isSupportedMimeType, String originalUrl, String referrer) {
         assert !ThreadUtils.runningOnUiThread();
+        if (downloadId == DownloadItem.INVALID_DOWNLOAD_ID) {
+            if (!DownloadUtils.isContentUri(filePath)) return null;
+            return getLaunchIntentFromDownloadUri(
+                    context, filePath, isSupportedMimeType, originalUrl, referrer);
+        }
         Uri contentUri = filePath == null
                 ? DownloadManagerDelegate.getContentUriFromDownloadManager(context, downloadId)
                 : ApiCompatibilityUtils.getUriForDownloadedFile(new File(filePath));
@@ -823,11 +841,52 @@ public class DownloadManagerService
         DownloadManager manager =
                 (DownloadManager) context.getSystemService(Context.DOWNLOAD_SERVICE);
         String mimeType = manager.getMimeTypeForDownloadedFile(downloadId);
+        Uri fileUri = filePath == null ? contentUri : Uri.fromFile(new File(filePath));
+        return createLaunchIntent(
+                fileUri, contentUri, mimeType, isSupportedMimeType, originalUrl, referrer);
+    }
+
+    /**
+     * Similar to getLaunchIntentForDownload(), but only works for download that is stored as a
+     * content Uri.
+     * @param context    Context of the app.
+     * @param contentUri Uri of the download.
+     * @param isSupportedMimeType Whether the MIME type is supported by browser.
+     * @param originalUrl The original url of the downloaded file
+     * @param referrer   Referrer of the downloaded file.
+     * @return the intent to launch for the given download item.
+     */
+    @Nullable
+    private static Intent getLaunchIntentFromDownloadUri(Context context, String contentUri,
+            boolean isSupportedMimeType, String originalUrl, String referrer) {
+        assert !ThreadUtils.runningOnUiThread();
+        assert DownloadUtils.isContentUri(contentUri);
+
+        Uri uri = Uri.parse(contentUri);
+        try (Cursor cursor = context.getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor.getCount() == 0) return null;
+            cursor.moveToNext();
+            String mimeType = cursor.getString(cursor.getColumnIndex(MediaColumns.MIME_TYPE));
+            return createLaunchIntent(
+                    uri, uri, mimeType, isSupportedMimeType, originalUrl, referrer);
+        }
+    }
+
+    /**
+     * Creates a an intent to launch a download.
+     * @param fileUri File uri of the download has an actual file path. Otherwise, this is the same
+     *                as |contentUri|.
+     * @param contentUri Content uri of the download.
+     * @param isSupportedMimeType Whether the MIME type is supported by browser.
+     * @param originalUrl The original url of the downloaded file
+     * @param referrer   Referrer of the downloaded file.
+     * @return the intent to launch for the given download item.
+     */
+    private static Intent createLaunchIntent(Uri fileUri, Uri contentUri, String mimeType,
+            boolean isSupportedMimeType, String originalUrl, String referrer) {
         if (isSupportedMimeType) {
             // Redirect the user to an internal media viewer.  The file path is necessary to show
             // the real file path to the user instead of a content:// download ID.
-            Uri fileUri = contentUri;
-            if (filePath != null) fileUri = Uri.fromFile(new File(filePath));
             return MediaViewerUtils.getMediaViewerIntent(
                     fileUri, contentUri, mimeType, true /* allowExternalAppHandlers */);
         }
@@ -845,9 +904,9 @@ public class DownloadManagerService
     static boolean canResolveDownloadItem(Context context, DownloadItem download,
             boolean isSupportedMimeType) {
         assert !ThreadUtils.runningOnUiThread();
-        Intent intent = getLaunchIntentFromDownloadId(
-                context, download.getDownloadInfo().getFilePath(),
-                download.getSystemDownloadId(), isSupportedMimeType, null, null);
+        Intent intent =
+                getLaunchIntentForDownload(context, download.getDownloadInfo().getFilePath(),
+                        download.getSystemDownloadId(), isSupportedMimeType, null, null);
         return (intent == null)
                 ? false : ExternalNavigationDelegateImpl.resolveIntent(intent, true);
     }
@@ -882,7 +941,7 @@ public class DownloadManagerService
         new AsyncTask<Intent>() {
             @Override
             public Intent doInBackground() {
-                return getLaunchIntentFromDownloadId(
+                return getLaunchIntentForDownload(
                         context, filePath, downloadId, isSupportedMimeType, originalUrl, referrer);
             }
 
@@ -1201,15 +1260,14 @@ public class DownloadManagerService
             case DownloadStatus.COMPLETE:
                 if (useDownloadManager) {
                     RecordHistogram.recordLongTimesHistogram(
-                            "MobileDownload.DownloadTime.DownloadManager.Success",
-                            totalDuration, TimeUnit.MILLISECONDS);
+                            "MobileDownload.DownloadTime.DownloadManager.Success", totalDuration);
                     RecordHistogram.recordCount1000Histogram(
                             "MobileDownload.BytesDownloaded.DownloadManager.Success",
                             (int) ConversionUtils.bytesToKilobytes(bytesDownloaded));
                 } else {
                     RecordHistogram.recordLongTimesHistogram(
                             "MobileDownload.DownloadTime.ChromeNetworkStack.Success",
-                            totalDuration, TimeUnit.MILLISECONDS);
+                            totalDuration);
                     RecordHistogram.recordCount1000Histogram(
                             "MobileDownload.BytesDownloaded.ChromeNetworkStack.Success",
                             (int) ConversionUtils.bytesToKilobytes(bytesDownloaded));
@@ -1223,15 +1281,14 @@ public class DownloadManagerService
             case DownloadStatus.FAILED:
                 if (useDownloadManager) {
                     RecordHistogram.recordLongTimesHistogram(
-                            "MobileDownload.DownloadTime.DownloadManager.Failure",
-                            totalDuration, TimeUnit.MILLISECONDS);
+                            "MobileDownload.DownloadTime.DownloadManager.Failure", totalDuration);
                     RecordHistogram.recordCount1000Histogram(
                             "MobileDownload.BytesDownloaded.DownloadManager.Failure",
                             (int) ConversionUtils.bytesToKilobytes(bytesDownloaded));
                 } else {
                     RecordHistogram.recordLongTimesHistogram(
                             "MobileDownload.DownloadTime.ChromeNetworkStack.Failure",
-                            totalDuration, TimeUnit.MILLISECONDS);
+                            totalDuration);
                     RecordHistogram.recordCount1000Histogram(
                             "MobileDownload.BytesDownloaded.ChromeNetworkStack.Failure",
                             (int) ConversionUtils.bytesToKilobytes(bytesDownloaded));
@@ -1245,8 +1302,7 @@ public class DownloadManagerService
             case DownloadStatus.CANCELLED:
                 if (!useDownloadManager) {
                     RecordHistogram.recordLongTimesHistogram(
-                            "MobileDownload.DownloadTime.ChromeNetworkStack.Cancel",
-                            totalDuration, TimeUnit.MILLISECONDS);
+                            "MobileDownload.DownloadTime.ChromeNetworkStack.Cancel", totalDuration);
                     RecordHistogram.recordCountHistogram(
                             "MobileDownload.InterruptionsCount.ChromeNetworkStack.Cancel",
                             numInterruptions);
@@ -1321,6 +1377,7 @@ public class DownloadManagerService
      * @param guid Id of the download item.
      */
     private void addAutoResumableDownload(String guid) {
+        if (FeatureUtilities.isDownloadAutoResumptionEnabledInNative()) return;
         if (mAutoResumableDownloadIds.isEmpty() && !sIsNetworkListenerDisabled) {
             mNetworkChangeNotifier = new NetworkChangeNotifierAutoDetect(
                     this, new RegistrationPolicyAlwaysRegister());
@@ -1335,6 +1392,7 @@ public class DownloadManagerService
      * @param guid Id of the download item.
      */
     private void removeAutoResumableDownload(String guid) {
+        if (FeatureUtilities.isDownloadAutoResumptionEnabledInNative()) return;
         if (mAutoResumableDownloadIds.isEmpty()) return;
         mAutoResumableDownloadIds.remove(guid);
         stopListenToConnectionChangeIfNotNeeded();
@@ -1352,6 +1410,7 @@ public class DownloadManagerService
 
     @Override
     public void onConnectionTypeChanged(int connectionType) {
+        if (FeatureUtilities.isDownloadAutoResumptionEnabledInNative()) return;
         if (mAutoResumableDownloadIds.isEmpty()) return;
         if (connectionType == ConnectionType.CONNECTION_NONE) return;
         boolean isMetered = isActiveNetworkMetered(ContextUtils.getApplicationContext());
@@ -1678,10 +1737,10 @@ public class DownloadManagerService
     private void openDownloadItem(
             DownloadItem downloadItem, @DownloadMetrics.DownloadOpenSource int source) {
         DownloadInfo downloadInfo = downloadItem.getDownloadInfo();
-        boolean canOpen = DownloadUtils.openFile(new File(downloadInfo.getFilePath()),
-                downloadInfo.getMimeType(), downloadInfo.getDownloadGuid(),
-                downloadInfo.isOffTheRecord(), downloadInfo.getOriginalUrl(),
-                downloadInfo.getReferrer(), source);
+        boolean canOpen =
+                DownloadUtils.openFile(downloadInfo.getFilePath(), downloadInfo.getMimeType(),
+                        downloadInfo.getDownloadGuid(), downloadInfo.isOffTheRecord(),
+                        downloadInfo.getOriginalUrl(), downloadInfo.getReferrer(), source);
         if (!canOpen) {
             openDownloadsPage(ContextUtils.getApplicationContext());
         }

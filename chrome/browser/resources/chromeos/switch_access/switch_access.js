@@ -47,6 +47,13 @@ class SwitchAccess {
      */
     this.onMoveForwardForTesting_ = null;
 
+    /**
+     * Callback that is called once the navigation manager is initialized.
+     * Used to setup communications with the menu panel.
+     * @private {?function()}
+     */
+    this.navReadyCallback_ = null;
+
     this.init_();
   }
 
@@ -62,6 +69,9 @@ class SwitchAccess {
 
     chrome.automation.getDesktop(function(desktop) {
       this.navigationManager_ = new NavigationManager(desktop);
+
+      if (this.navReadyCallback_)
+        this.navReadyCallback_();
     }.bind(this));
 
     document.addEventListener(
@@ -69,12 +79,12 @@ class SwitchAccess {
   }
 
   /**
-   * Jump to the context menu.
+   * Open and jump to the Switch Access menu.
    * @override
    */
-  enterContextMenu() {
+  enterMenu() {
     if (this.navigationManager_)
-      this.navigationManager_.enterContextMenu();
+      this.navigationManager_.enterMenu();
   }
 
   /**
@@ -131,6 +141,21 @@ class SwitchAccess {
    */
   getDefaultKeyCodeFor(command) {
     return this.commands_.getDefaultKeyCodeFor(command);
+  }
+
+  /**
+   * Forwards the keycodes received from keyPressed events to |callback|.
+   * @param {function(number)} callback
+   */
+  listenForKeycodes(callback) {
+    this.keyboardHandler_.listenForKeycodes(callback);
+  }
+
+  /**
+   * Stops forwarding keycodes.
+   */
+  stopListeningForKeycodes() {
+    this.keyboardHandler_.stopListeningForKeycodes();
   }
 
   /**
@@ -231,5 +256,21 @@ class SwitchAccess {
    */
   keyCodeIsUsed(keyCode) {
     return this.switchAccessPrefs_.keyCodeIsUsed(keyCode);
+  }
+
+  /**
+   * Sets up the connection between the menuPanel and menuManager.
+   * @param {!PanelInterface} menuPanel
+   * @return {MenuManager}
+   */
+  connectMenuPanel(menuPanel) {
+    // Because this may be called before init_(), check if navigationManager_
+    // is initialized.
+    if (this.navigationManager_)
+      return this.navigationManager_.connectMenuPanel(menuPanel);
+
+    // If not, set navReadyCallback_ to have the menuPanel try again.
+    this.navReadyCallback_ = menuPanel.connectToBackground.bind(menuPanel);
+    return null;
   }
 }

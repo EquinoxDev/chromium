@@ -23,6 +23,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/memory_cache.h"
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loading_log.h"
@@ -87,8 +88,8 @@ inline MemoryCache::MemoryCache(
       size_(0),
       task_runner_(std::move(task_runner)) {
   MemoryCacheDumpProvider::Instance()->SetMemoryCache(this);
-  if (MemoryCoordinator::IsLowEndDevice())
-    MemoryCoordinator::Instance().RegisterClient(this);
+  if (MemoryPressureListenerRegistry::IsLowEndDevice())
+    MemoryPressureListenerRegistry::Instance().RegisterClient(this);
 }
 
 MemoryCache* MemoryCache::Create(
@@ -101,7 +102,7 @@ MemoryCache::~MemoryCache() = default;
 void MemoryCache::Trace(blink::Visitor* visitor) {
   visitor->Trace(resource_maps_);
   MemoryCacheDumpClient::Trace(visitor);
-  MemoryCoordinatorClient::Trace(visitor);
+  MemoryPressureListener::Trace(visitor);
 }
 
 KURL MemoryCache::RemoveFragmentIdentifierIfNeeded(const KURL& original_url) {

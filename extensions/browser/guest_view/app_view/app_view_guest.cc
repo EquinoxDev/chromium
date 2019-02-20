@@ -6,11 +6,11 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "components/guest_view/browser/guest_view_manager.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/common/renderer_preferences.h"
 #include "extensions/browser/api/app_runtime/app_runtime_api.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/app_window/app_delegate.h"
@@ -19,8 +19,8 @@
 #include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/guest_view/app_view/app_view_constants.h"
-#include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/lazy_context_id.h"
+#include "extensions/browser/lazy_context_task_queue.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/api/app_runtime.h"
@@ -145,7 +145,7 @@ void AppViewGuest::RequestMediaAccessPermission(
 bool AppViewGuest::CheckMediaAccessPermission(
     content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
-    content::MediaStreamType type) {
+    blink::MediaStreamType type) {
   if (!app_delegate_) {
     return WebContentsDelegate::CheckMediaAccessPermission(
         render_frame_host, security_origin, type);
@@ -194,11 +194,11 @@ void AppViewGuest::CreateWebContents(const base::DictionaryValue& create_params,
                                guest_extension, weak_ptr_factory_.GetWeakPtr(),
                                std::move(callback))));
 
-  LazyBackgroundTaskQueue* queue =
-      LazyBackgroundTaskQueue::Get(browser_context());
+  const LazyContextId context_id(browser_context(), guest_extension->id());
+  LazyContextTaskQueue* queue = context_id.GetTaskQueue();
   if (queue->ShouldEnqueueTask(browser_context(), guest_extension)) {
     queue->AddPendingTask(
-        LazyContextId(browser_context(), guest_extension->id()),
+        context_id,
         base::BindOnce(&AppViewGuest::LaunchAppAndFireEvent,
                        weak_ptr_factory_.GetWeakPtr(), data->CreateDeepCopy(),
                        std::move(callback)));

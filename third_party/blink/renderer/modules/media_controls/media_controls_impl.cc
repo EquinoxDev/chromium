@@ -79,13 +79,13 @@
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_text_track_list_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_timeline_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_toggle_closed_captions_button_element.h"
+#include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_control_container_element.h"
 #include "third_party/blink/renderer/modules/media_controls/elements/media_control_volume_slider_element.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_display_cutout_delegate.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_media_event_listener.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_orientation_lock_delegate.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_resource_loader.h"
 #include "third_party/blink/renderer/modules/media_controls/media_controls_rotate_to_fullscreen_delegate.h"
-#include "third_party/blink/renderer/modules/media_controls/media_download_in_product_help_manager.h"
 #include "third_party/blink/renderer/modules/remoteplayback/remote_playback.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -236,7 +236,6 @@ TimeDelta GetTimeWithoutMouseMovementBeforeHidingMediaControls() {
 }  // namespace
 
 class MediaControlsImpl::BatchedControlUpdate {
-  WTF_MAKE_NONCOPYABLE(BatchedControlUpdate);
   STACK_ALLOCATED();
 
  public:
@@ -256,6 +255,8 @@ class MediaControlsImpl::BatchedControlUpdate {
  private:
   Member<MediaControlsImpl> controls_;
   static int batch_depth_;
+
+  DISALLOW_COPY_AND_ASSIGN(BatchedControlUpdate);
 };
 
 // Count of number open batches for controls visibility.
@@ -373,6 +374,7 @@ MediaControlsImpl::MediaControlsImpl(HTMLMediaElement& media_element)
       duration_display_(nullptr),
       mute_button_(nullptr),
       volume_slider_(nullptr),
+      volume_control_container_(nullptr),
       toggle_closed_captions_button_(nullptr),
       text_track_list_(nullptr),
       overflow_list_(nullptr),
@@ -452,16 +454,6 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
             ToHTMLVideoElement(media_element));
   }
 
-  // Initialize download in-product-help for video elements if enabled.
-  if (media_element.GetDocument().GetSettings() &&
-      media_element.GetDocument()
-          .GetSettings()
-          ->GetMediaDownloadInProductHelpEnabled() &&
-      media_element.IsHTMLVideoElement()) {
-    controls->download_iph_manager_ =
-        MakeGarbageCollected<MediaDownloadInProductHelpManager>(*controls);
-  }
-
   MediaControlsResourceLoader::InjectMediaControlsUAStyleSheet();
 
   shadow_root.ParserAppendChild(controls);
@@ -507,11 +499,15 @@ MediaControlsImpl* MediaControlsImpl::Create(HTMLMediaElement& media_element,
 //     |  +-HTMLDivElement
 //     |  |    (-internal-media-controls-button-spacer)
 //     |  |    {if ModernMediaControls is enabled and is video element}
-//     |  +-MediaControlMuteButtonElement
-//     |  |    (-webkit-media-controls-mute-button)
-//     |  +-MediaControlVolumeSliderElement
-//     |  |    (-webkit-media-controls-volume-slider)
-//     |  |    {if not ModernMediaControlsEnabled}
+//     |  +-MediaControlVolumeControlContainerElement
+//     |  |  |  (-webkit-media-controls-volume-control-container)
+//     |  |  +-HTMLDivElement
+//     |  |  |    (-webkit-media-controls-volume-control-hover-background)
+//     |  |  +-MediaControlMuteButtonElement
+//     |  |  |    (-webkit-media-controls-mute-button)
+//     |  |  +-MediaControlVolumeSliderElement
+//     |  |       (-webkit-media-controls-volume-slider)
+//     |  |       {if not ModernMediaControlsEnabled}
 //     |  +-MediaControlPictureInPictureButtonElement
 //     |  |    (-webkit-media-controls-picture-in-picture-button)
 //     |  +-MediaControlFullscreenButtonElement
@@ -591,6 +587,8 @@ void MediaControlsImpl::InitializeControls() {
   mute_button_ = MakeGarbageCollected<MediaControlMuteButtonElement>(*this);
 
   volume_slider_ = MakeGarbageCollected<MediaControlVolumeSliderElement>(*this);
+  volume_control_container_ =
+      MakeGarbageCollected<MediaControlVolumeControlContainerElement>(*this);
   if (PreferHiddenVolumeControls(GetDocument()))
     volume_slider_->SetIsWanted(false);
 
@@ -695,14 +693,9 @@ void MediaControlsImpl::PopulatePanel() {
 
   // On modern controls, the volume slider is to the left of the mute button.
   if (IsModern()) {
-    volume_control_container_ = MediaControlElementsHelper::CreateDiv(
-        "-webkit-media-controls-volume-control-container", button_panel);
-    MediaControlElementsHelper::CreateDiv(
-        "-webkit-media-controls-volume-control-hover-background",
-        volume_control_container_);
     MaybeParserAppendChild(volume_control_container_, volume_slider_);
     volume_control_container_->ParserAppendChild(mute_button_);
-    HideVolumeControlHoverBackground();
+    button_panel->ParserAppendChild(volume_control_container_);
   } else {
     button_panel->ParserAppendChild(mute_button_);
     MaybeParserAppendChild(button_panel, volume_slider_);
@@ -817,7 +810,9 @@ void MediaControlsImpl::UpdateCSSClassFromState() {
 
   // If we are in the "no-source" state we should show the overflow menu on a
   // video element.
-  if (IsModern()) {
+  // TODO(https://crbug.org/930001): Reconsider skipping this block when not
+  // connected.
+  if (IsModern() && MediaElement().isConnected()) {
     bool updated = false;
 
     if (state == kNoSource) {
@@ -841,6 +836,18 @@ void MediaControlsImpl::UpdateCSSClassFromState() {
 
       if (overflow_menu_->hasAttribute(html_names::kDisabledAttr)) {
         overflow_menu_->removeAttribute(html_names::kDisabledAttr);
+        updated = true;
+      }
+    }
+
+    if (state == kNoSource || state == kNotLoaded) {
+      if (!timeline_->hasAttribute(html_names::kDisabledAttr)) {
+        timeline_->setAttribute(html_names::kDisabledAttr, "");
+        updated = true;
+      }
+    } else {
+      if (timeline_->hasAttribute(html_names::kDisabledAttr)) {
+        timeline_->removeAttribute(html_names::kDisabledAttr);
         updated = true;
       }
     }
@@ -1000,8 +1007,6 @@ void MediaControlsImpl::MaybeShow() {
   // Only make the controls visible if they won't get hidden by OnTimeUpdate.
   if (MediaElement().paused() || !ShouldHideMediaControls())
     MakeOpaque();
-  if (download_iph_manager_)
-    download_iph_manager_->SetControlsVisibility(true);
   if (loading_panel_)
     loading_panel_->OnControlsShown();
 
@@ -1020,8 +1025,6 @@ void MediaControlsImpl::Hide() {
 
   if (overlay_play_button_)
     overlay_play_button_->SetIsWanted(false);
-  if (download_iph_manager_)
-    download_iph_manager_->SetControlsVisibility(false);
   if (loading_panel_)
     loading_panel_->OnControlsHidden();
 
@@ -1118,10 +1121,6 @@ bool MediaControlsImpl::ShouldHideMediaControls(unsigned behavior_flags) const {
   if (text_track_list_->IsWanted() || overflow_list_->IsWanted())
     return false;
 
-  // Don't hide the media controls while the in product help is showing.
-  if (download_iph_manager_ && download_iph_manager_->IsShowingInProductHelp())
-    return false;
-
   // Don't hide if we have accessiblity focus.
   if (panel_->KeepDisplayedForAccessibility())
     return false;
@@ -1149,6 +1148,11 @@ void MediaControlsImpl::UpdatePlayState() {
 
 HTMLDivElement* MediaControlsImpl::PanelElement() {
   return panel_;
+}
+
+HTMLDivElement* MediaControlsImpl::ButtonPanelElement() {
+  DCHECK(IsModern());
+  return media_button_panel_;
 }
 
 void MediaControlsImpl::BeginScrubbing(bool is_touch_event) {
@@ -1401,7 +1405,7 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
     element->SetDoesFit(does_fit);
 
     if (element == mute_button_.Get() && IsModern())
-      SetVolumeControlContainerIsWanted(does_fit);
+      volume_control_container_->SetIsWanted(does_fit);
 
     // The element does fit and is sticky so we should allocate space for it. If
     // we cannot fit this element we should stop allocating space for other
@@ -1433,13 +1437,10 @@ void MediaControlsImpl::UpdateOverflowMenuWanted() const {
     last_element->SetOverflowElementIsWanted(true);
 
     if (last_element == mute_button_.Get() && IsModern())
-      SetVolumeControlContainerIsWanted(false);
+      volume_control_container_->SetIsWanted(false);
   }
 
   MaybeRecordElementsDisplayed();
-
-  if (download_iph_manager_)
-    download_iph_manager_->UpdateInProductHelp();
 
   UpdateOverflowAndTrackListCSSClassForPip();
   UpdateOverflowMenuItemCSSClass();
@@ -1619,7 +1620,8 @@ void MediaControlsImpl::HandlePointerEvent(Event* event) {
       is_mouse_over_controls_ = true;
       if (!MediaElement().paused()) {
         MakeOpaqueFromPointerEvent();
-        StartHideMediaControlsIfNecessary();
+        if (ShouldHideMediaControls())
+          StartHideMediaControlsTimer();
       }
     }
   } else if (event->type() == event_type_names::kPointerout) {
@@ -1865,8 +1867,9 @@ void MediaControlsImpl::OnVolumeChange() {
 }
 
 void MediaControlsImpl::OnFocusIn() {
-  // Touch focus shouldn't affect controls visibility.
-  if (!MediaElement().ShouldShowControls() || is_touch_interaction_)
+  // If the tap timer is active, then we will toggle the controls when the timer
+  // completes, so we don't want to start showing here.
+  if (!MediaElement().ShouldShowControls() || tap_timer_.IsActive())
     return;
 
   ResetHideMediaControlsTimer();
@@ -1886,9 +1889,6 @@ void MediaControlsImpl::OnTimeUpdate() {
 
   if (IsVisible() && ShouldHideMediaControls())
     MakeTransparent();
-
-  if (download_iph_manager_)
-    download_iph_manager_->UpdateInProductHelp();
 }
 
 void MediaControlsImpl::OnDurationChange() {
@@ -1927,8 +1927,6 @@ void MediaControlsImpl::OnPlay() {
 
 void MediaControlsImpl::OnPlaying() {
   timeline_->OnPlaying();
-  if (download_iph_manager_)
-    download_iph_manager_->SetIsPlaying(true);
 
   StartHideMediaControlsTimer();
   UpdateCSSClassFromState();
@@ -1941,9 +1939,6 @@ void MediaControlsImpl::OnPause() {
   MakeOpaque();
 
   StopHideMediaControlsTimer();
-
-  if (download_iph_manager_)
-    download_iph_manager_->SetIsPlaying(false);
 
   UpdateCSSClassFromState();
 }
@@ -2030,6 +2025,9 @@ void MediaControlsImpl::NotifyElementSizeChanged(DOMRectReadOnly* new_size) {
 
 void MediaControlsImpl::ElementSizeChangedTimerFired(TimerBase*) {
   ComputeWhichControlsFit();
+
+  // Rerender timeline bar segments when size changed.
+  timeline_->RenderBarSegments();
 }
 
 void MediaControlsImpl::OnLoadingProgress() {
@@ -2158,9 +2156,6 @@ void MediaControlsImpl::ComputeWhichControlsFit() {
                     size_.Height() >= kMinHeightForOverlayPlayButton;
     overlay_play_button_->SetDoesFit(does_fit);
   }
-
-  if (download_iph_manager_)
-    download_iph_manager_->UpdateInProductHelp();
 
   MaybeRecordElementsDisplayed();
 }
@@ -2292,14 +2287,9 @@ void MediaControlsImpl::HidePopupMenu() {
     ToggleTextTrackList();
 }
 
-void MediaControlsImpl::StartHideMediaControlsIfNecessary() {
-  if (ShouldHideMediaControls())
-    StartHideMediaControlsTimer();
-}
-
 void MediaControlsImpl::VolumeSliderWantedTimerFired(TimerBase*) {
   volume_slider_->OpenSlider();
-  ShowVolumeControlHoverBackground();
+  volume_control_container_->OpenContainer();
 }
 
 void MediaControlsImpl::OpenVolumeSliderIfNecessary() {
@@ -2307,7 +2297,7 @@ void MediaControlsImpl::OpenVolumeSliderIfNecessary() {
     if (volume_slider_->IsFocused() || mute_button_->IsFocused()) {
       // When we're focusing with the keyboard, we don't need the delay.
       volume_slider_->OpenSlider();
-      ShowVolumeControlHoverBackground();
+      volume_control_container_->OpenContainer();
     } else {
       volume_slider_wanted_timer_.StartOneShot(
           WebTestSupport::IsRunningWebTest() ? kTimeToShowVolumeSliderTest
@@ -2320,28 +2310,10 @@ void MediaControlsImpl::OpenVolumeSliderIfNecessary() {
 void MediaControlsImpl::CloseVolumeSliderIfNecessary() {
   if (ShouldCloseVolumeSlider()) {
     volume_slider_->CloseSlider();
-    HideVolumeControlHoverBackground();
+    volume_control_container_->CloseContainer();
 
     if (volume_slider_wanted_timer_.IsActive())
       volume_slider_wanted_timer_.Stop();
-  }
-}
-
-void MediaControlsImpl::ShowVolumeControlHoverBackground() {
-  volume_control_container_->classList().Remove(kClosedCSSClass);
-}
-
-void MediaControlsImpl::HideVolumeControlHoverBackground() {
-  volume_control_container_->classList().Add(kClosedCSSClass);
-}
-
-void MediaControlsImpl::SetVolumeControlContainerIsWanted(
-    bool is_wanted) const {
-  if (is_wanted) {
-    volume_control_container_->RemoveInlineStyleProperty(CSSPropertyDisplay);
-  } else {
-    volume_control_container_->SetInlineStyleProperty(CSSPropertyDisplay,
-                                                      CSSValueNone);
   }
 }
 
@@ -2356,13 +2328,8 @@ bool MediaControlsImpl::ShouldCloseVolumeSlider() const {
   if (!volume_slider_ || !IsModern())
     return false;
 
-  return !(volume_slider_->IsHovered() || mute_button_->IsHovered() ||
+  return !(volume_control_container_->IsHovered() ||
            volume_slider_->IsFocused() || mute_button_->IsFocused());
-}
-
-const MediaControlDownloadButtonElement& MediaControlsImpl::DownloadButton()
-    const {
-  return *download_button_;
 }
 
 const MediaControlOverflowMenuButtonElement& MediaControlsImpl::OverflowButton()
@@ -2372,14 +2339,6 @@ const MediaControlOverflowMenuButtonElement& MediaControlsImpl::OverflowButton()
 
 MediaControlOverflowMenuButtonElement& MediaControlsImpl::OverflowButton() {
   return *overflow_menu_;
-}
-
-void MediaControlsImpl::DidDismissDownloadInProductHelp() {
-  StartHideMediaControlsIfNecessary();
-}
-
-MediaDownloadInProductHelpManager* MediaControlsImpl::DownloadInProductHelp() {
-  return download_iph_manager_;
 }
 
 void MediaControlsImpl::OnWaiting() {
@@ -2423,7 +2382,6 @@ void MediaControlsImpl::Trace(blink::Visitor* visitor) {
   visitor->Trace(orientation_lock_delegate_);
   visitor->Trace(rotate_to_fullscreen_delegate_);
   visitor->Trace(display_cutout_delegate_);
-  visitor->Trace(download_iph_manager_);
   visitor->Trace(media_button_panel_);
   visitor->Trace(loading_panel_);
   visitor->Trace(display_cutout_fullscreen_button_);

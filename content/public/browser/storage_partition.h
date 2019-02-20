@@ -15,7 +15,7 @@
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "services/network/public/mojom/cookie_manager.mojom.h"
+#include "services/network/public/mojom/cookie_manager.mojom-forward.h"
 
 class GURL;
 
@@ -183,10 +183,10 @@ class CONTENT_EXPORT StoragePartition {
   //   (created_after_time/created_before_time), so when deleting cookies
   //   |begin| and |end| will be used ignoring the interval in
   //   |cookie_deletion_filter|.
-  //   If |perform_cleanup| is true, the storage will try to remove traces
-  //   about deleted data from disk. This is an expensive operation that should
-  //   only be performed if we are sure that almost all data will be deleted
-  //   anyway.
+  //   If |perform_storage_cleanup| is true, the storage will try to remove
+  //   traces about deleted data from disk. This is an expensive operation that
+  //   should only be performed if we are sure that almost all data will be
+  //   deleted anyway.
   // * |callback| is called when data deletion is done or at least the deletion
   //   is scheduled.
   // Note: Make sure you know what you are doing before clearing cookies
@@ -196,7 +196,7 @@ class CONTENT_EXPORT StoragePartition {
       uint32_t quota_storage_remove_mask,
       const OriginMatcherFunction& origin_matcher,
       network::mojom::CookieDeletionFilterPtr cookie_deletion_filter,
-      bool perform_cleanup,
+      bool perform_storage_cleanup,
       const base::Time begin,
       const base::Time end,
       base::OnceClosure callback) = 0;
@@ -212,9 +212,14 @@ class CONTENT_EXPORT StoragePartition {
       base::OnceClosure callback) = 0;
 
   // Clears code caches associated with this StoragePartition.
-  // TODO(crbug.com/866419): Currently we just clear entire caches.
-  // Change it to conditionally clear entries based on the filters.
-  virtual void ClearCodeCaches(base::OnceClosure callback) = 0;
+  // If |begin| and |end| are not null, only entries with
+  // timestamps inbetween are deleted. If |url_matcher| is not null, only
+  // entries with URLs for which the |url_matcher| returns true are deleted.
+  virtual void ClearCodeCaches(
+      base::Time begin,
+      base::Time end,
+      const base::RepeatingCallback<bool(const GURL&)>& url_matcher,
+      base::OnceClosure callback) = 0;
 
   // Write any unwritten data to disk.
   // Note: this method does not sync the data - it only ensures that any

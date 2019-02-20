@@ -190,9 +190,9 @@ class PasswordDropdownModel : public ui::ComboboxModel {
 std::unique_ptr<views::ToggleImageButton> CreatePasswordViewButton(
     views::ButtonListener* listener,
     bool are_passwords_revealed) {
-  std::unique_ptr<views::ToggleImageButton> button(
-      new views::ToggleImageButton(listener));
+  auto button = std::make_unique<views::ToggleImageButton>(listener);
   button->SetFocusForPlatform();
+  button->SetInstallFocusRingOnFocus(true);
   button->set_request_focus_on_press(true);
   button->SetTooltipText(
       l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_SHOW_PASSWORD));
@@ -216,9 +216,10 @@ std::unique_ptr<views::Combobox> CreatePasswordDropdownView(
     const autofill::PasswordForm& form,
     bool are_passwords_revealed) {
   DCHECK(!form.all_possible_passwords.empty());
-  std::unique_ptr<views::Combobox> combobox =
-      std::make_unique<views::Combobox>(std::make_unique<PasswordDropdownModel>(
-          are_passwords_revealed, form.all_possible_passwords));
+  std::unique_ptr<views::Combobox> combobox = std::make_unique<views::Combobox>(
+      std::make_unique<PasswordDropdownModel>(are_passwords_revealed,
+                                              form.all_possible_passwords),
+      views::style::CONTEXT_BUTTON, STYLE_PRIMARY_MONOSPACED);
   size_t index =
       std::distance(form.all_possible_passwords.begin(),
                     find_if(form.all_possible_passwords.begin(),

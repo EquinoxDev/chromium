@@ -7,9 +7,11 @@
 #include <stdint.h>
 
 #include <limits>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
@@ -126,7 +128,7 @@ void HidDeviceManager::GetApiDevices(
     std::unique_ptr<base::ListValue> devices =
         CreateApiDeviceList(extension, filters);
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(callback, base::Passed(&devices)));
+        FROM_HERE, base::BindOnce(callback, std::move(devices)));
   } else {
     pending_enumerations_.push_back(
         std::make_unique<GetApiDevicesParams>(extension, filters, callback));
@@ -265,7 +267,8 @@ void HidDeviceManager::DeviceRemoved(device::mojom::HidDeviceInfoPtr device) {
   DevicePermissionsManager* permissions_manager =
       DevicePermissionsManager::Get(browser_context_);
   DCHECK(permissions_manager);
-  permissions_manager->RemoveEntryByHidDeviceGUID(device->guid);
+  permissions_manager->RemoveEntryByDeviceGUID(DevicePermissionEntry::Type::HID,
+                                               device->guid);
 }
 
 void HidDeviceManager::LazyInitialize() {

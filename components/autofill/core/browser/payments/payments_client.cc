@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -845,11 +846,11 @@ void PaymentsClient::InitializeResourceRequest() {
     // Add Chrome experiment state to the request headers.
     net::HttpRequestHeaders headers;
     // User is always signed-in to be able to upload card to Google Payments.
-    variations::AppendVariationHeaders(
+    variations::AppendVariationsHeader(
         resource_request_->url,
         is_off_the_record_ ? variations::InIncognito::kYes
                            : variations::InIncognito::kNo,
-        variations::SignedIn::kYes, &resource_request_->headers);
+        variations::SignedIn::kYes, resource_request_.get());
   }
 }
 
@@ -878,7 +879,8 @@ void PaymentsClient::OnSimpleLoaderCompleteInternal(int response_code,
     // Valid response.
     case net::HTTP_OK: {
       std::string error_code;
-      std::unique_ptr<base::Value> message_value = base::JSONReader::Read(data);
+      std::unique_ptr<base::Value> message_value =
+          base::JSONReader::ReadDeprecated(data);
       if (message_value.get() && message_value->is_dict()) {
         response_dict =
             base::Value::FromUniquePtrValue(std::move(message_value));

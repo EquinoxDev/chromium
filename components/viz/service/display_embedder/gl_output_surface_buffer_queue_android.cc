@@ -29,11 +29,6 @@ class OverlayCandidateValidatorImpl : public OverlayCandidateValidator {
     // Only update the last candidate that was added to the list. All previous
     // overlays should have already been handled.
     auto& candidate = surfaces->back();
-    if (candidate.transform != gfx::OVERLAY_TRANSFORM_NONE) {
-      candidate.overlay_handled = false;
-      return;
-    }
-
     candidate.display_rect =
         gfx::RectF(gfx::ToEnclosingRect(candidate.display_rect));
     candidate.overlay_handled = true;
@@ -65,16 +60,6 @@ GLOutputSurfaceBufferQueueAndroid::GLOutputSurfaceBufferQueueAndroid(
 
 GLOutputSurfaceBufferQueueAndroid::~GLOutputSurfaceBufferQueueAndroid() =
     default;
-
-void GLOutputSurfaceBufferQueueAndroid::HandlePartialSwap(
-    const gfx::Rect& sub_buffer_rect,
-    uint32_t flags,
-    gpu::ContextSupport::SwapCompletedCallback swap_callback,
-    gpu::ContextSupport::PresentationCallback presentation_callback) {
-  DCHECK(sub_buffer_rect.IsEmpty());
-  context_provider_->ContextSupport()->CommitOverlayPlanes(
-      flags, std::move(swap_callback), std::move(presentation_callback));
-}
 
 OverlayCandidateValidator*
 GLOutputSurfaceBufferQueueAndroid::GetOverlayCandidateValidator() const {

@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "base/android/jni_string.h"
+#include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
@@ -47,8 +48,8 @@
 #include "chrome/browser/vr/vr_tab_helper.h"
 #include "chrome/browser/vr/vr_web_contents_observer.h"
 #include "chrome/common/chrome_features.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -947,7 +948,7 @@ void VrShell::SetVoiceSearchActive(bool active) {
   if (!active && !speech_recognizer_)
     return;
 
-  if (!HasAudioPermission()) {
+  if (!HasRecordAudioPermission()) {
     OnUnsupportedMode(
         UiUnsupportedMode::kVoiceSearchNeedsRecordAudioOsPermission);
     return;
@@ -960,7 +961,7 @@ void VrShell::SetVoiceSearchActive(bool active) {
         this, ui_,
         content::BrowserContext::GetDefaultStoragePartition(profile)
             ->GetURLLoaderFactoryForBrowserProcessIOThread(),
-        profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
+        profile->GetPrefs()->GetString(language::prefs::kAcceptLanguages),
         profile_locale));
   }
   if (active) {
@@ -986,9 +987,24 @@ void VrShell::ShowPageInfo() {
   Java_VrShell_showPageInfo(base::android::AttachCurrentThread(), j_vr_shell_);
 }
 
-bool VrShell::HasAudioPermission() {
+bool VrShell::HasRecordAudioPermission() const {
   JNIEnv* env = base::android::AttachCurrentThread();
-  return Java_VrShell_hasAudioPermission(env, j_vr_shell_);
+  return Java_VrShell_hasRecordAudioPermission(env, j_vr_shell_);
+}
+
+bool VrShell::CanRequestRecordAudioPermission() const {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  return Java_VrShell_canRequestRecordAudioPermission(env, j_vr_shell_);
+}
+
+void VrShell::RequestRecordAudioPermissionResult(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& object,
+    jboolean can_record_audio) {
+  // If permission was denied, we need to check if it was *permanently* denied.
+  if (!can_record_audio && !CanRequestRecordAudioPermission()) {
+    ui_->SetHasOrCanRequestRecordAudioPermission(false);
+  }
 }
 
 void VrShell::PollCapturingState() {
@@ -1231,6 +1247,10 @@ void VrShell::SetPermissionInfo(const PermissionInfoList& permission_info_list,
 
 void VrShell::SetIdentityInfo(const IdentityInfo& identity_info) {}
 
+void VrShell::SetPageFeatureInfo(const PageFeatureInfo& info) {
+  NOTIMPLEMENTED();
+}
+
 void VrShell::AcceptDoffPromptForTesting(
     JNIEnv* env,
     const base::android::JavaParamRef<jobject>& obj) {
@@ -1352,7 +1372,7 @@ jlong JNI_VrShell_Init(JNIEnv* env,
                        const JavaParamRef<jobject>& delegate,
                        jboolean for_web_vr,
                        jboolean browsing_disabled,
-                       jboolean has_or_can_request_audio_permission,
+                       jboolean has_or_can_request_record_audio_permission,
                        jlong gvr_api,
                        jboolean reprojected_rendering,
                        jfloat display_width_meters,
@@ -1365,8 +1385,8 @@ jlong JNI_VrShell_Init(JNIEnv* env,
   UiInitialState ui_initial_state;
   ui_initial_state.browsing_disabled = browsing_disabled;
   ui_initial_state.in_web_vr = for_web_vr;
-  ui_initial_state.has_or_can_request_audio_permission =
-      has_or_can_request_audio_permission;
+  ui_initial_state.has_or_can_request_record_audio_permission =
+      has_or_can_request_record_audio_permission;
   ui_initial_state.assets_supported = AssetsLoader::AssetsSupported();
   ui_initial_state.is_standalone_vr_device = is_standalone_vr_device;
   ui_initial_state.use_new_incognito_strings =

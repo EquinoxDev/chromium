@@ -31,8 +31,8 @@
 #include "third_party/webrtc/media/base/vp9_profile.h"
 #include "third_party/webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "third_party/webrtc/rtc_base/bind.h"
-#include "third_party/webrtc/rtc_base/refcount.h"
-#include "third_party/webrtc/rtc_base/refcountedobject.h"
+#include "third_party/webrtc/rtc_base/ref_count.h"
+#include "third_party/webrtc/rtc_base/ref_counted_object.h"
 #include "ui/gfx/color_space.h"
 
 #if defined(OS_WIN)
@@ -246,7 +246,7 @@ int32_t RTCVideoDecoderAdapter::Decode(
   // Convert to media::DecoderBuffer.
   // TODO(sandersd): What is |render_time_ms|?
   scoped_refptr<media::DecoderBuffer> buffer =
-      media::DecoderBuffer::CopyFrom(input_image._buffer, input_image._length);
+      media::DecoderBuffer::CopyFrom(input_image.data(), input_image.size());
   buffer->set_timestamp(
       base::TimeDelta::FromMicroseconds(input_image.Timestamp()));
 

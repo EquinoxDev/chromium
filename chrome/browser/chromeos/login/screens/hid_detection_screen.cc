@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -79,7 +80,7 @@ HIDDetectionScreen::HIDDetectionScreen(BaseScreenDelegate* base_screen_delegate,
   if (view_)
     view_->Bind(this);
 
-  device::BluetoothAdapterFactory::GetAdapter(base::Bind(
+  device::BluetoothAdapterFactory::GetAdapter(base::BindOnce(
       &HIDDetectionScreen::InitializeAdapter, weak_ptr_factory_.GetWeakPtr()));
   ConnectToInputDeviceManager();
 }
@@ -186,7 +187,7 @@ void HIDDetectionScreen::DisplayPasskey(device::BluetoothDevice* device,
                                         uint32_t passkey) {
   VLOG(1) << "DisplayPassKey id = " << device->GetDeviceID()
           << " name = " << device->GetNameForDisplay();
-  std::string pincode = base::UintToString(passkey);
+  std::string pincode = base::NumberToString(passkey);
   pincode = std::string(kPincodeLength - pincode.length(), '0').append(pincode);
   // No differences in UI for passkey and pincode authentication calls.
   DisplayPinCode(device, pincode);

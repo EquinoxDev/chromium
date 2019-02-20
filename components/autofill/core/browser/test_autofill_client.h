@@ -57,6 +57,7 @@ class TestAutofillClient : public AutofillClient {
       base::OnceClosure show_migration_dialog_closure) override;
   void ConfirmMigrateLocalCardToCloud(
       std::unique_ptr<base::DictionaryValue> legal_message,
+      const std::string& user_email,
       const std::vector<MigratableCreditCard>& migratable_credit_cards,
       LocalCardMigrationCallback start_migrating_cards_callback) override;
   void ShowLocalCardMigrationResults(
@@ -73,6 +74,9 @@ class TestAutofillClient : public AutofillClient {
 #if defined(OS_ANDROID)
   void ConfirmAccountNameFixFlow(
       base::OnceCallback<void(const base::string16&)> callback) override;
+  void ConfirmExpirationDateFixFlow(
+      base::OnceCallback<void(const base::string16&, const base::string16&)>
+          callback) override;
 #endif  // defined(OS_ANDROID)
   void ConfirmSaveCreditCardToCloud(
       const CreditCard& card,
@@ -158,6 +162,10 @@ class TestAutofillClient : public AutofillClient {
 
   bool get_offer_to_save_credit_card_bubble_was_shown() {
     return offer_to_save_credit_card_bubble_was_shown_.value();
+  }
+
+  MockAutocompleteHistoryManager* GetMockAutocompleteHistoryManager() {
+    return &mock_autocomplete_history_manager_;
   }
 
   void set_migration_card_selections(

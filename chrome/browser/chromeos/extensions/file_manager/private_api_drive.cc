@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/i18n/string_search.h"
 #include "base/memory/ptr_util.h"
@@ -42,12 +43,13 @@
 #include "components/drive/chromeos/search_metadata.h"
 #include "components/drive/event_logger.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "google_apis/drive/auth_service.h"
 #include "google_apis/drive/drive_api_url_generator.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
-#include "net/base/network_change_notifier.h"
 #include "services/identity/public/cpp/identity_manager.h"
+#include "services/network/public/cpp/network_connection_tracker.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "storage/common/fileapi/file_system_info.h"
 #include "storage/common/fileapi/file_system_util.h"
@@ -252,20 +254,20 @@ void ConvertSearchResultInfoListToEntryDefinitionList(
 
 class SingleEntryPropertiesGetterForDrive {
  public:
-  typedef base::Callback<void(std::unique_ptr<EntryProperties> properties,
-                              base::File::Error error)>
+  typedef base::OnceCallback<void(std::unique_ptr<EntryProperties> properties,
+                                  base::File::Error error)>
       ResultCallback;
 
   // Creates an instance and starts the process.
   static void Start(const base::FilePath local_path,
                     const std::set<EntryPropertyName>& names,
                     Profile* const profile,
-                    const ResultCallback& callback) {
+                    ResultCallback callback) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
     SingleEntryPropertiesGetterForDrive* instance =
         new SingleEntryPropertiesGetterForDrive(local_path, names, profile,
-                                                callback);
+                                                std::move(callback));
     instance->StartProcess();
 
     // The instance will be destroyed by itself.
@@ -278,8 +280,8 @@ class SingleEntryPropertiesGetterForDrive {
       const base::FilePath local_path,
       const std::set<EntryPropertyName>& /* names */,
       Profile* const profile,
-      const ResultCallback& callback)
-      : callback_(callback),
+      ResultCallback callback)
+      : callback_(std::move(callback)),
         local_path_(local_path),
         running_profile_(profile),
         properties_(new EntryProperties),
@@ -413,13 +415,13 @@ class SingleEntryPropertiesGetterForDrive {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(!callback_.is_null());
 
-    callback_.Run(std::move(properties_),
-                  drive::FileErrorToBaseFileError(error));
+    std::move(callback_).Run(std::move(properties_),
+                             drive::FileErrorToBaseFileError(error));
     BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, this);
   }
 
   // Given parameters.
-  const ResultCallback callback_;
+  ResultCallback callback_;
   const base::FilePath local_path_;
   Profile* const running_profile_;
 
@@ -434,19 +436,19 @@ class SingleEntryPropertiesGetterForDrive {
 
 class SingleEntryPropertiesGetterForFileSystemProvider {
  public:
-  typedef base::Callback<void(std::unique_ptr<EntryProperties> properties,
-                              base::File::Error error)>
+  typedef base::OnceCallback<void(std::unique_ptr<EntryProperties> properties,
+                                  base::File::Error error)>
       ResultCallback;
 
   // Creates an instance and starts the process.
   static void Start(const storage::FileSystemURL file_system_url,
                     const std::set<EntryPropertyName>& names,
-                    const ResultCallback& callback) {
+                    ResultCallback callback) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
     SingleEntryPropertiesGetterForFileSystemProvider* instance =
-        new SingleEntryPropertiesGetterForFileSystemProvider(file_system_url,
-                                                             names, callback);
+        new SingleEntryPropertiesGetterForFileSystemProvider(
+            file_system_url, names, std::move(callback));
     instance->StartProcess();
 
     // The instance will be destroyed by itself.
@@ -458,8 +460,8 @@ class SingleEntryPropertiesGetterForFileSystemProvider {
   SingleEntryPropertiesGetterForFileSystemProvider(
       const storage::FileSystemURL& file_system_url,
       const std::set<EntryPropertyName>& names,
-      const ResultCallback& callback)
-      : callback_(callback),
+      ResultCallback callback)
+      : callback_(std::move(callback)),
         file_system_url_(file_system_url),
         names_(names),
         properties_(new EntryProperties),
@@ -554,12 +556,12 @@ class SingleEntryPropertiesGetterForFileSystemProvider {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     DCHECK(!callback_.is_null());
 
-    callback_.Run(std::move(properties_), result);
+    std::move(callback_).Run(std::move(properties_), result);
     BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, this);
   }
 
   // Given parameters.
-  const ResultCallback callback_;
+  ResultCallback callback_;
   const storage::FileSystemURL file_system_url_;
   const std::set<EntryPropertyName> names_;
 
@@ -885,16 +887,18 @@ bool FileManagerPrivateInternalGetEntryPropertiesFunction::RunAsync() {
       case storage::kFileSystemTypeDrive:
         SingleEntryPropertiesGetterForDrive::Start(
             file_system_url.path(), names_as_set, GetProfile(),
-            base::Bind(&FileManagerPrivateInternalGetEntryPropertiesFunction::
-                           CompleteGetEntryProperties,
-                       this, i, file_system_url));
+            base::BindOnce(
+                &FileManagerPrivateInternalGetEntryPropertiesFunction::
+                    CompleteGetEntryProperties,
+                this, i, file_system_url));
         break;
       case storage::kFileSystemTypeProvided:
         SingleEntryPropertiesGetterForFileSystemProvider::Start(
             file_system_url, names_as_set,
-            base::Bind(&FileManagerPrivateInternalGetEntryPropertiesFunction::
-                           CompleteGetEntryProperties,
-                       this, i, file_system_url));
+            base::BindOnce(
+                &FileManagerPrivateInternalGetEntryPropertiesFunction::
+                    CompleteGetEntryProperties,
+                this, i, file_system_url));
         break;
       case storage::kFileSystemTypeDriveFs:
         SingleEntryPropertiesGetterForDriveFs::Start(
@@ -1128,7 +1132,7 @@ bool FileManagerPrivateSearchDriveFunction::RunAsync() {
   }
 
   operation_start_ = base::TimeTicks::Now();
-  is_offline_ = net::NetworkChangeNotifier::IsOffline();
+  is_offline_ = content::GetNetworkConnectionTracker()->IsOffline();
 
   drive::FileSystemInterface* const file_system =
       drive::util::GetFileSystemByProfile(GetProfile());

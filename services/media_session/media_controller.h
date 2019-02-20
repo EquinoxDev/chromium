@@ -33,7 +33,7 @@ class MediaController : public mojom::MediaController,
   void Resume() override;
   void Stop() override;
   void ToggleSuspendResume() override;
-  void AddObserver(mojom::MediaSessionObserverPtr observer) override;
+  void AddObserver(mojom::MediaControllerObserverPtr observer) override;
   void PreviousTrack() override;
   void NextTrack() override;
   void Seek(base::TimeDelta seek_time) override;
@@ -45,6 +45,9 @@ class MediaController : public mojom::MediaController,
       const base::Optional<MediaMetadata>&) override;
   void MediaSessionActionsChanged(
       const std::vector<mojom::MediaSessionAction>& action) override;
+  void MediaSessionImagesChanged(
+      const base::flat_map<mojom::MediaSessionImageType,
+                           std::vector<MediaImage>>& images) override;
 
   // Sets the media session that the controller should be bound to. If the
   // session is already bound to the same session then we will return false.
@@ -70,8 +73,8 @@ class MediaController : public mojom::MediaController,
   // the underlying MediaSession.
   mojom::MediaSession* session_ = nullptr;
 
-  // Observers that are observing |session_|.
-  mojo::InterfacePtrSet<mojom::MediaSessionObserver> observers_;
+  // Observers that are observing |this|.
+  mojo::InterfacePtrSet<mojom::MediaControllerObserver> observers_;
 
   // Binding for |this| to act as an observer to |session_|.
   mojo::Binding<mojom::MediaSessionObserver> session_binding_{this};

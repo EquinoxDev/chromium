@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h"
 
 #include <memory>
+#include "build/build_config.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
@@ -296,6 +297,9 @@ class FakeCanvasResourceProvider : public CanvasResourceProvider {
   bool IsValid() const override { return false; }
   sk_sp<SkSurface> CreateSkSurface() const override {
     return sk_sp<SkSurface>();
+  }
+  scoped_refptr<StaticBitmapImage> Snapshot() override {
+    return SnapshotInternal();
   }
 
  private:
@@ -1240,6 +1244,10 @@ TEST_F(CanvasRenderingContext2DTestWithTestingPlatform,
 }
 
 TEST_F(CanvasRenderingContext2DTest, LowLatencyIsSingleBuffered) {
+#if defined(OS_MACOSX)
+  // TODO(crbug.com/922218): enable lowLatency on Mac.
+  return;
+#endif
   CreateContext(kNonOpaque, kLowLatency);
   // No need to set-up the layer bridge when testing low latency mode.
   DrawSomething();

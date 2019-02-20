@@ -17,6 +17,10 @@
 #include "base/test/bind_test_util.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chromeos/arc/icon_decode_request.h"
+#include "chrome/browser/chromeos/crostini/crostini_registry_service.h"
+#include "chrome/browser/chromeos/crostini/crostini_registry_service_factory.h"
+#include "chrome/browser/chromeos/crostini/crostini_test_helper.h"
+#include "chrome/browser/chromeos/crostini/crostini_util.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_test.h"
@@ -515,6 +519,56 @@ TEST_F(LauncherContextMenuTest, InternalAppShelfContextMenuOptionsNumber) {
     const int expected_options_num = internal_app.show_in_launcher ? 2 : 1;
     EXPECT_EQ(expected_options_num, menu->GetItemCount());
   }
+}
+
+// Checks some properties for crostini's terminal app's context menu,
+// specifically that every menu item has an icon.
+TEST_F(LauncherContextMenuTest, CrostiniTerminalApp) {
+  crostini::CrostiniTestHelper crostini_helper(profile());
+  const std::string app_id = crostini::kCrostiniTerminalId;
+
+  controller()->PinAppWithID(app_id);
+  const ash::ShelfItem* item = controller()->GetItem(ash::ShelfID(app_id));
+  ASSERT_TRUE(item);
+
+  ash::ShelfItemDelegate* item_delegate =
+      model()->GetShelfItemDelegate(ash::ShelfID(app_id));
+  ASSERT_TRUE(item_delegate);
+  int64_t primary_id = GetPrimaryDisplay().id();
+  std::unique_ptr<ui::MenuModel> menu =
+      GetContextMenu(item_delegate, primary_id);
+
+  // Check that every menu item has an icon
+  for (int i = 0; i < menu->GetItemCount(); ++i) {
+    gfx::Image icon;
+    EXPECT_TRUE(menu->GetIconAt(i, &icon));
+    EXPECT_FALSE(icon.IsEmpty());
+  }
+}
+
+// Confirms the menu items for unregistered crostini apps (i.e. apps that do not
+// have an associated .desktop file, and therefore can only be closed).
+TEST_F(LauncherContextMenuTest, CrostiniUnregisteredApps) {
+  crostini::CrostiniTestHelper crostini_helper(profile());
+
+  const std::string fake_window_app_id = "foo";
+  const std::string fake_window_startup_id = "bar";
+  const std::string app_id =
+      crostini::CrostiniRegistryServiceFactory::GetForProfile(profile())
+          ->GetCrostiniShelfAppId(&fake_window_app_id, &fake_window_startup_id);
+  controller()->PinAppWithID(app_id);
+  const ash::ShelfItem* item = controller()->GetItem(ash::ShelfID(app_id));
+  ASSERT_TRUE(item);
+
+  ash::ShelfItemDelegate* item_delegate =
+      model()->GetShelfItemDelegate(ash::ShelfID(app_id));
+  ASSERT_TRUE(item_delegate);
+  int64_t primary_id = GetPrimaryDisplay().id();
+  std::unique_ptr<ui::MenuModel> menu =
+      GetContextMenu(item_delegate, primary_id);
+
+  EXPECT_EQ(menu->GetItemCount(), 1);
+  EXPECT_FALSE(IsItemEnabledInMenu(menu.get(), ash::MENU_NEW_WINDOW));
 }
 
 }  // namespace

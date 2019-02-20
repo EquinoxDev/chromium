@@ -21,6 +21,8 @@
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/post_task.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_task_environment.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread.h"
@@ -33,6 +35,9 @@
 #include "content/browser/appcache/appcache_interceptor.h"
 #include "content/browser/appcache/appcache_request_handler.h"
 #include "content/browser/appcache/appcache_service_impl.h"
+#include "content/browser/appcache/appcache_url_loader_request.h"
+#include "content/public/browser/browser_task_traits.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
@@ -41,9 +46,15 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
+#include "services/network/public/cpp/features.h"
+#include "services/network/test/test_url_loader_factory.h"
+#include "services/network/test/test_utils.h"
 #include "sql/test/test_helpers.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
+#include "third_party/blink/public/mojom/appcache/appcache_info.mojom.h"
+#include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -57,109 +68,12 @@ constexpr int kMockQuota = 5000;
 
 // The Reinitialize test needs some http accessible resources to run,
 // we mock stuff inprocess for that.
-class MockHttpServer {
- public:
-  static GURL GetMockUrl(const std::string& path) {
-    return GURL("http://mockhost/" + path);
-  }
-
-  static net::URLRequestJob* CreateJob(
-      net::URLRequest* request, net::NetworkDelegate* network_delegate) {
-    if (request->url().host() != "mockhost")
-      return new net::URLRequestErrorJob(request, network_delegate, -100);
-
-    std::string headers, body;
-    GetMockResponse(request->url().path(), &headers, &body);
-    return new net::URLRequestTestJob(
-        request, network_delegate, headers, body, true);
-  }
-
- private:
-  static void GetMockResponse(const std::string& path,
-                              std::string* headers,
-                              std::string* body) {
-    const char manifest_headers[] =
-        "HTTP/1.1 200 OK\n"
-        "Content-type: text/cache-manifest\n"
-        "\n";
-    const char page_headers[] =
-        "HTTP/1.1 200 OK\n"
-        "Content-type: text/html\n"
-        "\n";
-    const char not_found_headers[] =
-        "HTTP/1.1 404 NOT FOUND\n"
-        "\n";
-
-    if (path == "/manifest") {
-      (*headers) = std::string(manifest_headers, base::size(manifest_headers));
-      (*body) = "CACHE MANIFEST\n";
-    } else if (path == "/empty.html") {
-      (*headers) = std::string(page_headers, base::size(page_headers));
-      (*body) = "";
-    } else {
-      (*headers) =
-          std::string(not_found_headers, base::size(not_found_headers));
-      (*body) = "";
-    }
-  }
-};
-
-class MockHttpServerJobFactory
-    : public net::URLRequestJobFactory::ProtocolHandler {
- public:
-  MockHttpServerJobFactory(
-      std::unique_ptr<net::URLRequestInterceptor> appcache_start_interceptor)
-      : appcache_start_interceptor_(std::move(appcache_start_interceptor)) {}
-
-  net::URLRequestJob* MaybeCreateJob(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const override {
-    net::URLRequestJob* appcache_job =
-        appcache_start_interceptor_->MaybeInterceptRequest(
-            request, network_delegate);
-    if (appcache_job)
-      return appcache_job;
-    return MockHttpServer::CreateJob(request, network_delegate);
-  }
- private:
-  std::unique_ptr<net::URLRequestInterceptor> appcache_start_interceptor_;
-};
-
-class IOThread : public base::Thread {
- public:
-  explicit IOThread(const char* name)
-      : base::Thread(name) {
-  }
-
-  ~IOThread() override { Stop(); }
-
-  net::URLRequestContext* request_context() {
-    return request_context_.get();
-  }
-
-  void Init() override {
-    std::unique_ptr<net::URLRequestJobFactoryImpl> factory(
-        new net::URLRequestJobFactoryImpl());
-    factory->SetProtocolHandler("http",
-                                std::make_unique<MockHttpServerJobFactory>(
-                                    std::make_unique<AppCacheInterceptor>()));
-    job_factory_ = std::move(factory);
-    request_context_.reset(new net::TestURLRequestContext());
-    request_context_->set_job_factory(job_factory_.get());
-  }
-
-  void CleanUp() override {
-    request_context_.reset();
-    job_factory_.reset();
-  }
-
- private:
-  std::unique_ptr<net::URLRequestJobFactory> job_factory_;
-  std::unique_ptr<net::URLRequestContext> request_context_;
-};
+static GURL GetMockUrl(const std::string& path) {
+  return GURL("http://mockhost/" + path);
+}
 
 std::unique_ptr<base::test::ScopedTaskEnvironment> scoped_task_environment;
-std::unique_ptr<IOThread> io_thread;
+scoped_refptr<base::SingleThreadTaskRunner> io_runner;
 std::unique_ptr<base::Thread> background_thread;
 
 }  // namespace
@@ -169,10 +83,12 @@ class AppCacheStorageImplTest : public testing::Test {
   class MockStorageDelegate : public AppCacheStorage::Delegate {
    public:
     explicit MockStorageDelegate(AppCacheStorageImplTest* test)
-        : loaded_cache_id_(0), stored_group_success_(false),
-          would_exceed_quota_(false), obsoleted_success_(false),
-          found_cache_id_(kAppCacheNoCacheId), test_(test) {
-    }
+        : loaded_cache_id_(0),
+          stored_group_success_(false),
+          would_exceed_quota_(false),
+          obsoleted_success_(false),
+          found_cache_id_(blink::mojom::kAppCacheNoCacheId),
+          test_(test) {}
 
     void OnCacheLoaded(AppCache* cache, int64_t cache_id) override {
       loaded_cache_ = cache;
@@ -249,7 +165,7 @@ class AppCacheStorageImplTest : public testing::Test {
     MockQuotaManager()
         : QuotaManager(true /* is_incognito */,
                        base::FilePath(),
-                       io_thread->task_runner().get(),
+                       io_runner.get(),
                        nullptr,
                        storage::GetQuotaSettingsFunc()),
           async_(false) {}
@@ -356,19 +272,21 @@ class AppCacheStorageImplTest : public testing::Test {
   }
 
   static void SetUpTestCase() {
-    scoped_task_environment.reset(new base::test::ScopedTaskEnvironment());
+    scoped_task_environment = std::make_unique<TestBrowserThreadBundle>(
+        TestBrowserThreadBundle::REAL_IO_THREAD);
 
-    // We start both threads as TYPE_IO because we also use the db_thead
-    // for the disk_cache which needs to be of TYPE_IO.
+    io_runner =
+        base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO});
+
+    // We start the background thread as TYPE_IO because we also use the
+    // db_thread for the disk_cache which needs to be of TYPE_IO.
     base::Thread::Options options(base::MessageLoop::TYPE_IO, 0);
-    io_thread.reset(new IOThread("AppCacheTest.IOThread"));
-    ASSERT_TRUE(io_thread->StartWithOptions(options));
     background_thread.reset(new base::Thread("AppCacheTest::BackgroundThread"));
     ASSERT_TRUE(background_thread->StartWithOptions(options));
   }
 
   static void TearDownTestCase() {
-    io_thread.reset();
+    io_runner.reset();
     background_thread.reset();
     scoped_task_environment.reset();
   }
@@ -376,7 +294,16 @@ class AppCacheStorageImplTest : public testing::Test {
   // Test harness --------------------------------------------------
 
   AppCacheStorageImplTest() {
-    request_delegate_.set_on_complete(base::DoNothing());
+    auto head = network::CreateResourceResponseHead(net::HTTP_OK);
+    network::URLLoaderCompletionStatus status;
+
+    head.mime_type = "text/cache-manifest";
+    mock_url_loader_factory_.AddResponse(GetMockUrl("manifest"), head,
+                                         "CACHE MANIFEST\n", status);
+
+    head.mime_type = "text/html";
+    mock_url_loader_factory_.AddResponse(GetMockUrl("empty.html"), head, "",
+                                         status);
   }
 
   template <class Method>
@@ -384,7 +311,7 @@ class AppCacheStorageImplTest : public testing::Test {
     test_finished_event_.reset(new base::WaitableEvent(
         base::WaitableEvent::ResetPolicy::AUTOMATIC,
         base::WaitableEvent::InitialState::NOT_SIGNALED));
-    io_thread->task_runner()->PostTask(
+    io_runner->PostTask(
         FROM_HERE,
         base::BindOnce(&AppCacheStorageImplTest::MethodWrapper<Method>,
                        base::Unretained(this), method));
@@ -392,7 +319,7 @@ class AppCacheStorageImplTest : public testing::Test {
   }
 
   void SetUpTest() {
-    DCHECK(io_thread->task_runner()->BelongsToCurrentThread());
+    DCHECK(io_runner->BelongsToCurrentThread());
     service_.reset(new AppCacheServiceImpl(nullptr));
     service_->Initialize(base::FilePath());
     mock_quota_manager_proxy_ = new MockQuotaManagerProxy();
@@ -401,7 +328,7 @@ class AppCacheStorageImplTest : public testing::Test {
   }
 
   void TearDownTest() {
-    DCHECK(io_thread->task_runner()->BelongsToCurrentThread());
+    DCHECK(io_runner->BelongsToCurrentThread());
     scoped_refptr<base::SequencedTaskRunner> db_runner =
         storage()->db_task_runner_;
     storage()->CancelDelegateCallbacks(delegate());
@@ -419,7 +346,7 @@ class AppCacheStorageImplTest : public testing::Test {
   void TestFinished() {
     // We unwind the stack prior to finishing up to let stack
     // based objects get deleted.
-    DCHECK(io_thread->task_runner()->BelongsToCurrentThread());
+    DCHECK(io_runner->BelongsToCurrentThread());
     base::SequencedTaskRunnerHandle::Get()->PostTask(
         FROM_HERE, base::BindOnce(&AppCacheStorageImplTest::TestFinishedUnwound,
                                   base::Unretained(this)));
@@ -435,7 +362,7 @@ class AppCacheStorageImplTest : public testing::Test {
   }
 
   void ScheduleNextTask() {
-    DCHECK(io_thread->task_runner()->BelongsToCurrentThread());
+    DCHECK(io_runner->BelongsToCurrentThread());
     if (task_stack_.empty()) {
       return;
     }
@@ -962,10 +889,11 @@ class AppCacheStorageImplTest : public testing::Test {
   void Verify_FindNoMainResponse() {
     EXPECT_EQ(kEntryUrl, delegate()->found_url_);
     EXPECT_TRUE(delegate()->found_manifest_url_.is_empty());
-    EXPECT_EQ(kAppCacheNoCacheId, delegate()->found_cache_id_);
-    EXPECT_EQ(kAppCacheNoResponseId, delegate()->found_entry_.response_id());
-    EXPECT_EQ(kAppCacheNoResponseId,
-        delegate()->found_fallback_entry_.response_id());
+    EXPECT_EQ(blink::mojom::kAppCacheNoCacheId, delegate()->found_cache_id_);
+    EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+              delegate()->found_entry_.response_id());
+    EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+              delegate()->found_fallback_entry_.response_id());
     EXPECT_TRUE(delegate()->found_namespace_entry_url_.is_empty());
     EXPECT_EQ(0, delegate()->found_entry_.types());
     EXPECT_EQ(0, delegate()->found_fallback_entry_.types());
@@ -1225,10 +1153,11 @@ class AppCacheStorageImplTest : public testing::Test {
   void Verify_FindInterceptPatternMatchNegative() {
     EXPECT_EQ(kInterceptPatternTestNegativeUrl, delegate()->found_url_);
     EXPECT_TRUE(delegate()->found_manifest_url_.is_empty());
-    EXPECT_EQ(kAppCacheNoCacheId, delegate()->found_cache_id_);
-    EXPECT_EQ(kAppCacheNoResponseId, delegate()->found_entry_.response_id());
-    EXPECT_EQ(kAppCacheNoResponseId,
-        delegate()->found_fallback_entry_.response_id());
+    EXPECT_EQ(blink::mojom::kAppCacheNoCacheId, delegate()->found_cache_id_);
+    EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+              delegate()->found_entry_.response_id());
+    EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+              delegate()->found_fallback_entry_.response_id());
     EXPECT_TRUE(delegate()->found_namespace_entry_url_.is_empty());
     EXPECT_EQ(0, delegate()->found_entry_.types());
     EXPECT_EQ(0, delegate()->found_fallback_entry_.types());
@@ -1309,10 +1238,11 @@ class AppCacheStorageImplTest : public testing::Test {
   void Verify_FindFallbackPatternMatchNegative() {
     EXPECT_EQ(kFallbackPatternTestNegativeUrl, delegate()->found_url_);
       EXPECT_TRUE(delegate()->found_manifest_url_.is_empty());
-      EXPECT_EQ(kAppCacheNoCacheId, delegate()->found_cache_id_);
-      EXPECT_EQ(kAppCacheNoResponseId, delegate()->found_entry_.response_id());
-      EXPECT_EQ(kAppCacheNoResponseId,
-          delegate()->found_fallback_entry_.response_id());
+      EXPECT_EQ(blink::mojom::kAppCacheNoCacheId, delegate()->found_cache_id_);
+      EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+                delegate()->found_entry_.response_id());
+      EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+                delegate()->found_fallback_entry_.response_id());
       EXPECT_TRUE(delegate()->found_namespace_entry_url_.is_empty());
       EXPECT_EQ(0, delegate()->found_entry_.types());
       EXPECT_EQ(0, delegate()->found_fallback_entry_.types());
@@ -1557,11 +1487,12 @@ class AppCacheStorageImplTest : public testing::Test {
   void Verify_ExclusionNotFound(GURL expected_url, int phase) {
     EXPECT_EQ(expected_url, delegate()->found_url_);
     EXPECT_TRUE(delegate()->found_manifest_url_.is_empty());
-    EXPECT_EQ(kAppCacheNoCacheId, delegate()->found_cache_id_);
+    EXPECT_EQ(blink::mojom::kAppCacheNoCacheId, delegate()->found_cache_id_);
     EXPECT_EQ(0, delegate()->found_group_id_);
-    EXPECT_EQ(kAppCacheNoResponseId, delegate()->found_entry_.response_id());
-    EXPECT_EQ(kAppCacheNoResponseId,
-        delegate()->found_fallback_entry_.response_id());
+    EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+              delegate()->found_entry_.response_id());
+    EXPECT_EQ(blink::mojom::kAppCacheNoResponseId,
+              delegate()->found_fallback_entry_.response_id());
     EXPECT_TRUE(delegate()->found_namespace_entry_url_.is_empty());
     EXPECT_EQ(0, delegate()->found_entry_.types());
     EXPECT_EQ(0, delegate()->found_fallback_entry_.types());
@@ -1610,29 +1541,28 @@ class AppCacheStorageImplTest : public testing::Test {
     AppCacheStorageImplTest* test_;
   };
 
-  class MockAppCacheFrontend : public AppCacheFrontend {
+  class MockAppCacheFrontend : public blink::mojom::AppCacheFrontend {
    public:
     MockAppCacheFrontend() : error_event_was_raised_(false) {}
 
-    void OnCacheSelected(int host_id, const AppCacheInfo& info) override {}
-    void OnStatusChanged(const std::vector<int>& host_ids,
-                         AppCacheStatus status) override {}
-    void OnEventRaised(const std::vector<int>& host_ids,
-                       AppCacheEventID event_id) override {}
-    void OnProgressEventRaised(const std::vector<int>& host_ids,
-                               const GURL& url,
-                               int num_total,
-                               int num_complete) override {}
-    void OnErrorEventRaised(const std::vector<int>& host_ids,
-                            const AppCacheErrorDetails& details) override {
+    void CacheSelected(int32_t host_id,
+                       blink::mojom::AppCacheInfoPtr info) override {}
+    void EventRaised(const std::vector<int32_t>& host_ids,
+                     blink::mojom::AppCacheEventID event_id) override {}
+    void ProgressEventRaised(const std::vector<int32_t>& host_ids,
+                             const GURL& url,
+                             int32_t num_total,
+                             int32_t num_complete) override {}
+    void ErrorEventRaised(
+        const std::vector<int32_t>& host_ids,
+        blink::mojom::AppCacheErrorDetailsPtr details) override {
       error_event_was_raised_ = true;
     }
-    void OnLogMessage(int host_id,
-                      AppCacheLogLevel log_level,
-                      const std::string& message) override {}
-    void OnContentBlocked(int host_id, const GURL& manifest_url) override {}
-    void OnSetSubresourceFactory(
-        int host_id,
+    void LogMessage(int32_t host_id,
+                    blink::mojom::ConsoleMessageLevel log_level,
+                    const std::string& message) override {}
+    void SetSubresourceFactory(
+        int32_t host_id,
         network::mojom::URLLoaderFactoryPtr url_loader_factory) override {}
 
     bool error_event_was_raised_;
@@ -1663,6 +1593,10 @@ class AppCacheStorageImplTest : public testing::Test {
   }
 
   void Reinitialize(ReinitTestCase test_case) {
+    // These tests use the network service code path when simulating requests
+    // to app cache.
+    feature_list_.InitAndEnableFeature(network::features::kNetworkService);
+
     // Unlike all of the other tests, this one actually read/write files.
     ASSERT_TRUE(temp_directory_.CreateUniqueTempDir());
 
@@ -1680,13 +1614,21 @@ class AppCacheStorageImplTest : public testing::Test {
       EXPECT_EQ(static_cast<int>(kCorruptData.length()),
                 base::WriteFile(
                     index_file, kCorruptData.data(), kCorruptData.length()));
+
+      // Also add a corrupt entry file so that simple disk_cache does not try
+      // to automatically recover from the corrupted index.
+      base::FilePath entry_file =
+          disk_cache_directory.AppendASCII("01234567_0");
+      EXPECT_EQ(static_cast<int>(kCorruptData.length()),
+                base::WriteFile(entry_file, kCorruptData.data(),
+                                kCorruptData.length()));
     }
 
     // Create records for a degenerate cached manifest that only contains
     // one entry for the manifest file resource.
     if (test_case == CORRUPT_CACHE_ON_LOAD_EXISTING) {
       AppCacheDatabase db(temp_directory_.GetPath().AppendASCII("Index"));
-      GURL manifest_url = MockHttpServer::GetMockUrl("manifest");
+      GURL manifest_url = GetMockUrl("manifest");
 
       AppCacheDatabase::GroupRecord group_record;
       group_record.group_id = 1;
@@ -1711,7 +1653,11 @@ class AppCacheStorageImplTest : public testing::Test {
 
     // Recreate the service to point at the db and corruption on disk.
     service_.reset(new AppCacheServiceImpl(nullptr));
-    service_->set_request_context(io_thread->request_context());
+    auto loader_factory_getter = base::MakeRefCounted<URLLoaderFactoryGetter>();
+    loader_factory_getter->SetNetworkFactoryForTesting(
+        &mock_url_loader_factory_, /* is_corb_enabled = */ true);
+    service_->set_url_loader_factory_getter(loader_factory_getter.get());
+
     service_->Initialize(temp_directory_.GetPath());
     mock_quota_manager_proxy_ = new MockQuotaManagerProxy();
     service_->quota_manager_proxy_ = mock_quota_manager_proxy_;
@@ -1732,8 +1678,10 @@ class AppCacheStorageImplTest : public testing::Test {
 
   void Continue_Reinitialize(ReinitTestCase test_case) {
     const int kMockProcessId = 1;
-    backend_.reset(new AppCacheBackendImpl);
-    backend_->Initialize(service_.get(), &frontend_, kMockProcessId);
+    const int kMockRenderFrameId = MSG_ROUTING_NONE;
+    backend_ =
+        std::make_unique<AppCacheBackendImpl>(service_.get(), kMockProcessId);
+    backend_->set_frontend_for_testing(&frontend_);
 
     if (test_case == CORRUPT_SQL_ON_INSTALL) {
       // Break the db file
@@ -1746,28 +1694,28 @@ class AppCacheStorageImplTest : public testing::Test {
         test_case == CORRUPT_SQL_ON_INSTALL) {
       // Try to create a new appcache, the resulting update job will
       // eventually fail when it gets to disk cache initialization.
-      backend_->RegisterHost(1);
+      backend_->RegisterHost(blink::mojom::AppCacheHostRequest(), 1,
+                             kMockRenderFrameId);
       AppCacheHost* host1 = backend_->GetHost(1);
-      const GURL kEmptyPageUrl(MockHttpServer::GetMockUrl("empty.html"));
+      const GURL kEmptyPageUrl(GetMockUrl("empty.html"));
       host1->SetFirstPartyUrlForTesting(kEmptyPageUrl);
-      host1->SelectCache(kEmptyPageUrl,
-                         kAppCacheNoCacheId,
-                         MockHttpServer::GetMockUrl("manifest"));
+      host1->SelectCache(kEmptyPageUrl, blink::mojom::kAppCacheNoCacheId,
+                         GetMockUrl("manifest"));
     } else {
       ASSERT_EQ(CORRUPT_CACHE_ON_LOAD_EXISTING, test_case);
       // Try to access the existing cache manifest.
       // The URLRequestJob  will eventually fail when it gets to disk
       // cache initialization.
-      backend_->RegisterHost(2);
+      backend_->RegisterHost(blink::mojom::AppCacheHostRequest(), 2,
+                             kMockRenderFrameId);
       AppCacheHost* host2 = backend_->GetHost(2);
-      GURL manifest_url = MockHttpServer::GetMockUrl("manifest");
-      request_ = service()->request_context()->CreateRequest(
-          manifest_url, net::DEFAULT_PRIORITY, &request_delegate_,
-          TRAFFIC_ANNOTATION_FOR_TESTS);
-      AppCacheInterceptor::SetExtraRequestInfo(
-          request_.get(), service_.get(), backend_->process_id(),
-          host2->host_id(), RESOURCE_TYPE_MAIN_FRAME, false);
-      request_->Start();
+      network::ResourceRequest request;
+      request.url = GetMockUrl("manifest");
+      handler_ =
+          host2->CreateRequestHandler(AppCacheURLLoaderRequest::Create(request),
+                                      RESOURCE_TYPE_MAIN_FRAME, false);
+      handler_->MaybeCreateLoader(request, nullptr, base::DoNothing(),
+                                  base::DoNothing());
     }
 
     PushNextTask(base::BindOnce(&AppCacheStorageImplTest::Verify_Reinitialized,
@@ -1805,7 +1753,7 @@ class AppCacheStorageImplTest : public testing::Test {
 
     // Cleanup and claim victory.
     service_->RemoveObserver(observer_.get());
-    request_.reset();
+    handler_.reset();
     backend_.reset();
     observer_.reset();
     TestFinished();
@@ -1879,12 +1827,13 @@ class AppCacheStorageImplTest : public testing::Test {
   scoped_refptr<AppCache> cache2_;
 
   // Specifically for the Reinitalize test.
+  base::test::ScopedFeatureList feature_list_;
   base::ScopedTempDir temp_directory_;
   std::unique_ptr<MockServiceObserver> observer_;
   MockAppCacheFrontend frontend_;
   std::unique_ptr<AppCacheBackendImpl> backend_;
-  net::TestDelegate request_delegate_;
-  std::unique_ptr<net::URLRequest> request_;
+  std::unique_ptr<AppCacheRequestHandler> handler_;
+  network::TestURLLoaderFactory mock_url_loader_factory_;
 
   // Test data
   const base::Time kZeroTime;

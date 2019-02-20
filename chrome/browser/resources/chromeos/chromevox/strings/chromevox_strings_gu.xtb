@@ -54,6 +54,7 @@
 <translation id="1346059596910821859">ટિપ</translation>
 <translation id="1346748346194534595">જમણે</translation>
 <translation id="135978014023467274">તમને ChromeVox 63 પર અપડેટ કરવામાં આવ્યા છે!</translation>
+<translation id="1360699455582016846">રૂટિંગ કી <ph name="ROUTING_KEY_NUMBER" /> હેઠળની આઇટમને ક્લિક કરો</translation>
 <translation id="136718599399906424">આગલી કોષ્ટક પંક્તિ</translation>
 <translation id="1377925789329510816">આ છેલ્લું મથાળું છે. આ પેજ પર સીધા જ પ્રથમ મથાળા પર જવા માટે શોધ+H, અથવા બીજા મથાળા પર જવા માટે શોધ+Shift+H દબાવો.</translation>
 <translation id="1383876407941801731">શોધો</translation>
@@ -112,6 +113,7 @@
 <translation id="1905379170753160525">મથાળાની સૂચિ બતાવો</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">#ed</translation>
+<translation id="1914635379910604678"><ph name="DOT" /> ચાપકર્ણ</translation>
 <translation id="1954623340234317532">વર્ષના સપ્તાહનું નિયંત્રણ</translation>
 <translation id="1964135212174907577">આગલો ઑબ્જેક્ટ</translation>
 <translation id="1969092762068865084">જુલાઈ</translation>
@@ -267,6 +269,7 @@
 <translation id="316542773973815724">નેવિગેશન</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{જગ્યા}one{# જગ્યા}other{# જગ્યા}}</translation>
 <translation id="320961988183078793">દાખલ કરેલ <ph name="TYPE" /></translation>
+<translation id="3218691001991391708"><ph name="TEXT" /> પેસ્ટ કરો.</translation>
 <translation id="3223701887221307104"><ph name="NAME" />, ટૅબ</translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">મુલાકાત લીધેલી લિંક</translation>
@@ -286,48 +289,6 @@
 <translation id="3322936298410871309">પાછલું લેવલ 1 શીર્ષક</translation>
 <translation id="3323447499041942178">ટેક્સ્ટ બૉક્સ</translation>
 <translation id="3338224621010291843"><ph name="VALUE" /> <ph name="NAME" /> સ્લાઇડર</translation>
-<translation id="3353420241558113817">{"ar": "અરબી",
-        "bg": "બલ્ગેરિયન",
-        "ca": "કતલાન",
-        "cs": "ચેક",
-        "da": "ડેનિશ",
-        "de": "જર્મન",
-        "de_CH": "જર્મન (સ્વિટ્ઝર્લેન્ડ)",
-        "de_DE": "જર્મન (જર્મની)",
-        "el": "ગ્રીક",
-        "en": "અંગ્રેજી",
-        "en_CA": "અંગ્રેજી (કેનેડા)",
-        "en_GB": "અંગ્રેજી (યુનાઇટેડ કિંગડમ)",
-        "en_US": "અંગ્રેજી (યુનાઇટેડ સ્ટેટ્સ)",
-        "es": "સ્પેનિશ",
-        "et": "એસ્ટોનિયન",
-        "fr": "ફ્રેંચ",
-        "fr_CA": "ફ્રેંચ (કેનેડા)",
-        "fr_FR": "ફ્રેંચ (ફ્રાંસ)",
-        "fi": "ફિનિશ",
-        "he": "હીબ્રુ",
-        "hi": "હિન્દી",
-        "hr": "ક્રોએશિયન",
-        "hu": "હંગેરિયન",
-        "is": "આઇસલેન્ડિક",
-        "it": "ઇટાલિયન",
-        "ko": "કોરિયન",
-        "lt": "લિથુઆનિયન",
-        "lv": "લાતવિયન",
-        "nb": "નોર્વેજિયન બોકમાલ",
-        "nl": "ડચ",
-        "pl": "પોલિશ",
-        "pt": "પોર્ટુગીઝ",
-        "ro": "રોમાનિયન",
-        "ru": "રશિયન",
-        "sk": "સ્લોવાક",
-        "sl": "સ્લોવેનિયન",
-        "sr": "સર્બિયન",
-        "sv": "સ્વીડિશ",
-        "tr": "ટર્કિશ",
-        "vi": "વિયેતનામીઝ",
-        "zh": "ચાઇનીઝ",
-        "zh_TW": "ચાઇનીઝ (પરંપરાગત હાન)"}</translation>
 <translation id="335581015389089642">ભાષા</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{વત્તા}one{# વત્તાની નિશાની}other{# વત્તાની નિશાની}}</translation>
@@ -344,12 +305,14 @@
 <translation id="3468959318854349468">કોઈ શીર્ષક નથી</translation>
 <translation id="3473644018603298796">sld <ph name="COUNT" /></translation>
 <translation id="3486232535569802404"><ph name="V1" /> થી <ph name="V2" /></translation>
+<translation id="3490765818161916458">સૂચિ ગ્રિડ</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{જમણો મોટો કૌંસ}one{# જમણા મોટાં કૌંસ}other{# જમણા મોટાં કૌંસ}}</translation>
 <translation id="3493915602752813531">આગલું એન્કર નથી.</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{પ્રશ્નાર્થ ચિહ્ન}one{# પ્રશ્નાર્થ ચિહ્ન}other{# પ્રશ્નાર્થ ચિહ્ન}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{કૅરેટ}one{# કૅરેટ}other{# કૅરેટ}}</translation>
 <translation id="352577523970648069">સંપાદનયોગ્ય ટેક્સ્ટ ફીલ્ડ</translation>
+<translation id="3549141990712742152"><ph name="TEXT" /> કાપો.</translation>
 <translation id="3549680091535286226">હંગામી રૂપે સ્પીચને રોકવા માટે 2 આંગળીઓથી ટૅપ કરો</translation>
 <translation id="3568702578574425662"><ph name="NAME" />, ચેકબૉક્સ ચેક કરેલુંં નથી</translation>
 <translation id="3589661172894441357">શબ્દાવલી</translation>
@@ -381,6 +344,7 @@
 <translation id="3856075812838139784">ફક્ત વાંચવા માટે</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">મેનૂ</translation>
+<translation id="3907138069015388678">સૂચિ ગ્રિડ</translation>
 <translation id="3909320334364316587">પાછલું લેવલ 6 શીર્ષક</translation>
 <translation id="3914173277599553213">આવશ્યક</translation>
 <translation id="3914732343065571127">ChromeVox આદેશ સંદર્ભ</translation>
@@ -515,7 +479,6 @@
 <translation id="4973762002207131920"><ph name="KEY" /> પર સ્વિચ કર્યુ.</translation>
 <translation id="4975416682604111799">મીલીસેકન્ડ</translation>
 <translation id="49787999531187221">ChromeVox હવે નિષ્ક્રિય છે.</translation>
-<translation id="4979263087381759787">ડેવલપરનાં વિકલ્પો</translation>
 <translation id="4979404613699303341">પાછલું બટન</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />, <ph name="NAME" />, સૂચિ બૉક્સ</translation>
 <translation id="4983588134362688868">પૃષ્ઠની ટોચ પર જાઓ</translation>
@@ -530,6 +493,7 @@
 <translation id="5020651427400641814">સ્પીચ લૉગ ઇન ચાલુ કરો</translation>
 <translation id="5041394372352067729">બ્રેઇલ ડિસ્પ્લેને પેજમાં સૌથી ઉપર ખસેડો</translation>
 <translation id="5042770794184672516">ભાષણનો અવાજ વધારો</translation>
+<translation id="5042992464904238023">વેબ સામગ્રી</translation>
 <translation id="5050015258024679800">પાછલું લેવલ 4 શીર્ષક</translation>
 <translation id="5054047268577924192">પાછલી સૂચિની આઇટમ</translation>
 <translation id="5075936896689244141">આગલો કીમેપ</translation>
@@ -674,6 +638,7 @@
 <translation id="6129953537138746214">જગ્યા</translation>
 <translation id="6132506484792346370">સૂચિબોક્સ અથવા કોમ્બો બોક્સ</translation>
 <translation id="6142308968191113180">મથાળું 4</translation>
+<translation id="6158882249329863701">પંક્તિ <ph name="TABLECELLROWINDEX" /> કૉલમ <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="6164829606128959761">મીટર</translation>
 <translation id="6169420925157477918">લાંબા વર્ણન સાથેની છબી</translation>
 <translation id="6186305613600865047">પૃચ્ઠમાં નીચે જાઓ</translation>
@@ -689,6 +654,7 @@
 <translation id="6307969636681130414">દબાયેલું</translation>
 <translation id="6322856989298155004">ધ્વનિઓ</translation>
 <translation id="6324551002951139333">વ્યાકરણની ભૂલ મળી</translation>
+<translation id="6325241889020214828"><ph name="TEXT" /> કૉપિ કરો.</translation>
 <translation id="6348657800373377022">કૉમ્બો બૉક્સ</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{બુલેટ}one{# બુલેટ}other{# બુલેટ}}</translation>
 <translation id="6355910664415701303">કોઈ પાછલી સૂચિ આઇટમ નથી.</translation>
@@ -698,6 +664,7 @@
 <translation id="6387719785439924554">aside</translation>
 <translation id="6411426777058107714">કોઈ પાછલું રેડિયો બટન નથી.</translation>
 <translation id="6414968628640960377">પાછલાં ભિન્ન ઘટક.</translation>
+<translation id="6417265370957905582">Google સહાયક</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{મહાવિરામ}one{# મહાવિરામ}other{# મહાવિરામ}}</translation>
 <translation id="6438968337250688271"><ph name="NAME" />, મેનૂ</translation>
 <translation id="6444046323172968959">ચેતવણી સંવાદ</translation>
@@ -877,6 +844,89 @@ Chrome બ્રાઉઝર મેનૂ ખોલવા માટે, Alt+F �
 <translation id="8037651341025652929">સારાંશ</translation>
 <translation id="8042761080832772327">ટેક્સ્ટ, શોધ એન્ટ્રીમાં ફેરફાર કરો</translation>
 <translation id="8049189770492311300">ટાઇમર</translation>
+<translation id="8056782883599416672">{"ar": "અરેબિક",
+        "as": "આસામીઝ ",
+        "aw": "અવધી ",
+        "be": "બંગાળી",
+        "bg": "બલ્ગેરિયન ",
+        "bh": "બિહારી ",
+        "bo": "તિબેટિયન ",
+        "br": "વ્રજ",
+        "ca": "કૅટલન",
+        "ckb": "સોરાની",
+        "cs": "ચૅક",
+        "cy": "વૅલ્શ",
+        "da": "ડેનિશ",
+        "de": "જર્મન",
+        "de_CH": "જર્મન (સ્વિટ્ઝર્લેન્ડ)",
+        "de_DE": "જર્મન (જર્મની)",
+        "dra": "દ્રવિડિયન",
+        "el": "ગ્રીક",
+        "en": "અંગ્રેજી",
+        "en_CA": "અંગ્રેજી (કૅનેડા)",
+        "en_GB": "અંગ્રેજી (યુનાઇટેડ કિંગડમ)",
+        "en_US": "અંગ્રેજી (યુનાઇટેડ સ્ટેટ્સ)",
+        "eo": "એસ્પેરાન્ટો",
+        "es": "સ્પેનિશ",
+        "et": "એસ્ટોનિયન",
+        "fa": "પર્શિયન",
+        "fr": "ફ્રેન્ચ",
+        "fr_CA": "ફ્રેન્ચ (કૅનેડા))",
+        "fr_FR": "ફ્રેન્ચ (ફ્રાન્સ)",
+        "fi": "ફિનીશ",
+        "ga": "આઇરિશ",
+        "gd": "ગાએલિક",
+        "gon": "ગોંડી",
+        "gu": "ગુજરાતી",
+        "he": "હિબ્રુ",
+        "hi": "હિન્દી",
+        "hr": "ક્રોએશિયન",
+        "hu": "હંગેરિયન",
+        "hy": "અર્મેનિયન",
+        "is": "આઇસલેન્ડિક",
+        "it": "ઇટાલિયન",
+        "iu": "ઇનુક્ટટ્યુટ",
+        "ka": "કન્નડ",
+        "kh": "ખાસી",
+        "ko": "કોરિયન",
+        "kok": "કોંકણી",
+        "kru": "કુરુખ",
+        "ks": "કાશ્મીરી",
+        "lt": "લિથુઆનિયન",
+        "lv": "લેટવિયન",
+        "mao": "માઓરી",
+        "ml": "મલયાલમ",
+        "mt": "માલ્ટીઝ",
+        "mwr": "મારવાડી",
+        "mn": "મોંગોલિયન",
+        "mun": "મુંડા",
+        "nb": "નૉર્વેયન બૉકમાલ",
+        "ne": "નેપાળી",
+        "nl": "ડચ",
+        "no": "નૉર્વેયન",
+        "or": "ઉડિયા",
+        "pi": "પાલી",
+        "pl": "પૉલિશ",
+        "pt": "પૉર્ટુગીઝ",
+        "pu": "પંજાબી",
+        "ro": "રોમાનિયન",
+        "ru": "રશિયન",
+        "sa": "સંસ્કૃત",
+        "si": "સિંધી",
+        "sin": "સિંહાલા",
+        "sk": "સ્લોવાક",
+        "sl": "સ્લોવેેનિયન",
+        "sr": "સર્બિયન",
+        "sv": "સ્વિડિશ",
+        "ta": "તામિલ",
+        "te": "તેલુગુ",
+        "tr": "ટર્કિશ",
+        "tsn": "આફ્રિકાન્સ",
+        "uk": "યુક્રેનિયન",
+        "ur": "ઉર્દુ",
+        "vi": "વિયેટનામીઝ",
+        "zh": "ચાઈનીઝ",
+        "zh_TW": "ચાઈનીઝ (પરંપરાગત હાન)"}</translation>
 <translation id="8065607967589909823">પસંદગી આ છે</translation>
 <translation id="8066678206530322333">બેનર</translation>
 <translation id="8076492880354921740">ટૅબ્સ</translation>
@@ -886,6 +936,7 @@ Chrome બ્રાઉઝર મેનૂ ખોલવા માટે, Alt+F �
 <translation id="8153880621934657047">કોષ્ટકની અંદર નથી</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{અંડરસ્કોર}one{# અંડરસ્કોર}other{# અંડરસ્કોર}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">ChromeVox ભાષા ઑટોમૅટિક રીતે શોધો અને તેના પર સ્વિચ કરો.</translation>
 <translation id="8184828902145951186">પંક્તિ</translation>
 <translation id="8186185314313222077">પૂર્ણ સ્ક્રીન ટોગલ કરો</translation>
 <translation id="8199231515320852133">ચાલુ કોષના મથાળાની ઘોષણા કરો</translation>
@@ -960,6 +1011,7 @@ Chrome બ્રાઉઝર મેનૂ ખોલવા માટે, Alt+F �
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">સંશોધક કીઝ</translation>
 <translation id="8943175951035496220">જમણી બાજુએ કોષ નથી.</translation>
+<translation id="8946628535652548639">પંક્તિ<ph name="TABLECELLROWINDEX" />કૉલમ<ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">ભૂલી ગયા</translation>
 <translation id="900114243503212879">ફાઇલ</translation>

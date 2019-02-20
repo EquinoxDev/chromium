@@ -57,7 +57,6 @@
 // nogncheck because dependency on //printing is conditional upon
 // enable_basic_printing flags.
 #include "printing/metafile_skia.h"          // nogncheck
-#include "printing/metafile_skia_wrapper.h"  // nogncheck
 #endif
 
 namespace content {
@@ -348,7 +347,8 @@ void RenderFrameProxy::SetReplicatedState(const FrameReplicationState& state) {
   web_frame_->SetReplicatedInsecureRequestPolicy(state.insecure_request_policy);
   web_frame_->SetReplicatedInsecureNavigationsSet(
       state.insecure_navigations_set);
-  web_frame_->SetReplicatedFeaturePolicyHeader(state.feature_policy_header);
+  web_frame_->SetReplicatedFeaturePolicyHeaderAndOpenerPolicies(
+      state.feature_policy_header, state.opener_feature_state);
   if (state.has_received_user_gesture) {
     web_frame_->UpdateUserActivationState(
         blink::UserActivationUpdateType::kNotifyActivation);
@@ -393,7 +393,8 @@ void RenderFrameProxy::OnDidSetFramePolicyHeaders(
     blink::WebSandboxFlags active_sandbox_flags,
     blink::ParsedFeaturePolicy feature_policy_header) {
   web_frame_->SetReplicatedSandboxFlags(active_sandbox_flags);
-  web_frame_->SetReplicatedFeaturePolicyHeader(feature_policy_header);
+  web_frame_->SetReplicatedFeaturePolicyHeaderAndOpenerPolicies(
+      feature_policy_header, blink::FeaturePolicy::FeatureState());
 }
 
 bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {
@@ -694,8 +695,9 @@ void RenderFrameProxy::SynchronizeVisualProperties() {
 
 #if defined(USE_AURA)
   if (rect_changed && mus_embedded_frame_) {
-    mus_embedded_frame_->SetWindowBounds(GetLocalSurfaceId(),
-                                         gfx::Rect(local_frame_size()));
+    mus_embedded_frame_->SetWindowBounds(
+        parent_local_surface_id_allocator_.GetCurrentLocalSurfaceIdAllocation(),
+        gfx::Rect(local_frame_size()));
   }
 #endif
 
@@ -729,7 +731,7 @@ void RenderFrameProxy::FrameDetached(DetachType type) {
   mus_embedded_frame_.reset();
 #endif
 
-  if (type == DetachType::kRemove && web_frame_->Parent()) {
+  if (type == DetachType::kRemove) {
     // Let the browser process know this subframe is removed, so that it is
     // destroyed in its current process.
     Send(new FrameHostMsg_Detach(routing_id_));
@@ -799,6 +801,8 @@ void RenderFrameProxy::ForwardPostMessage(
 
 void RenderFrameProxy::Navigate(const blink::WebURLRequest& request,
                                 bool should_replace_current_entry,
+                                bool is_opener_navigation,
+                                bool prevent_sandboxed_download,
                                 mojo::ScopedMessagePipeHandle blob_url_token) {
   // The request must always have a valid initiator origin.
   DCHECK(!request.RequestorOrigin().IsNull());
@@ -820,6 +824,11 @@ void RenderFrameProxy::Navigate(const blink::WebURLRequest& request,
   params.triggering_event_info = blink::WebTriggeringEventInfo::kUnknown;
   params.blob_url_token = blob_url_token.release();
 
+  params.download_policy =
+      prevent_sandboxed_download
+          ? NavigationDownloadPolicy::kDisallowSandbox
+          : RenderFrameImpl::GetOpenerDownloadPolicy(
+                is_opener_navigation, request, web_frame_->GetSecurityOrigin());
   Send(new FrameHostMsg_OpenURL(routing_id_, params));
 }
 
@@ -851,8 +860,9 @@ void RenderFrameProxy::UpdateRemoteViewportIntersection(
       last_compositor_visible_rect_, last_occluded_or_obscured_));
 }
 
-void RenderFrameProxy::VisibilityChanged(bool visible) {
-  Send(new FrameHostMsg_VisibilityChanged(routing_id_, visible));
+void RenderFrameProxy::VisibilityChanged(
+    blink::mojom::FrameVisibility visibility) {
+  Send(new FrameHostMsg_VisibilityChanged(routing_id_, visibility));
 }
 
 void RenderFrameProxy::SetIsInert(bool inert) {
@@ -934,8 +944,7 @@ SkBitmap* RenderFrameProxy::GetSadPageBitmap() {
 uint32_t RenderFrameProxy::Print(const blink::WebRect& rect,
                                  cc::PaintCanvas* canvas) {
 #if BUILDFLAG(ENABLE_PRINTING)
-  printing::MetafileSkia* metafile =
-      printing::MetafileSkiaWrapper::GetMetafileFromCanvas(canvas);
+  auto* metafile = canvas->GetPrintingMetafile();
   DCHECK(metafile);
 
   // Create a place holder content for the remote frame so it can be replaced

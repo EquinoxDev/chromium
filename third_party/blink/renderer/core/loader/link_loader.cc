@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/loader/private/prerender_handle.h"
 #include "third_party/blink/renderer/core/loader/resource/css_style_sheet_resource.h"
 #include "third_party/blink/renderer/core/loader/subresource_integrity_helper.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_client.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_finish_observer.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
@@ -137,7 +138,7 @@ void LinkLoader::NotifyFinished() {
     client_->LinkLoaded();
 }
 
-// https://html.spec.whatwg.org/#link-type-modulepreload
+// https://html.spec.whatwg.org/C/#link-type-modulepreload
 void LinkLoader::NotifyModuleLoadFinished(ModuleScript* module) {
   // Step 11. "If result is null, fire an event named error at the link element,
   // and return." [spec text]
@@ -228,7 +229,7 @@ void LinkLoader::LoadStylesheet(const LinkLoadParameters& params,
   mojom::FetchImportanceMode importance_mode =
       GetFetchImportanceAttributeValue(params.importance);
   DCHECK(importance_mode == mojom::FetchImportanceMode::kImportanceAuto ||
-         RuntimeEnabledFeatures::PriorityHintsEnabled());
+         origin_trials::PriorityHintsEnabled(&document));
   resource_request.SetFetchImportanceMode(importance_mode);
 
   ResourceLoaderOptions options;

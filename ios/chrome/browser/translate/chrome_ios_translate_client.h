@@ -16,7 +16,7 @@
 #include "components/translate/core/common/translate_errors.h"
 #include "components/translate/ios/browser/ios_translate_driver.h"
 #include "ios/web/public/web_state/web_state_observer.h"
-#include "ios/web/public/web_state/web_state_user_data.h"
+#import "ios/web/public/web_state/web_state_user_data.h"
 
 class PrefService;
 
@@ -37,6 +37,7 @@ class WebState;
 }  // namespace web
 
 @protocol LanguageSelectionHandler;
+@protocol TranslateNotificationHandler;
 @protocol TranslateOptionSelectionHandler;
 
 class ChromeIOSTranslateClient
@@ -77,13 +78,30 @@ class ChromeIOSTranslateClient
   bool IsTranslatableURL(const GURL& url) override;
   void ShowReportLanguageDetectionErrorUI(const GURL& report_url) override;
 
+  id<LanguageSelectionHandler> language_selection_handler() {
+    return language_selection_handler_;
+  }
+
   void set_language_selection_handler(id<LanguageSelectionHandler> handler) {
     language_selection_handler_ = handler;
+  }
+
+  id<TranslateOptionSelectionHandler> translate_option_selection_handler() {
+    return translate_option_selection_handler_;
   }
 
   void set_translate_option_selection_handler(
       id<TranslateOptionSelectionHandler> handler) {
     translate_option_selection_handler_ = handler;
+  }
+
+  id<TranslateNotificationHandler> translate_notification_handler() {
+    return translate_notification_handler_;
+  }
+
+  void set_translate_notification_handler(
+      id<TranslateNotificationHandler> handler) {
+    translate_notification_handler_ = handler;
   }
 
  private:
@@ -103,6 +121,9 @@ class ChromeIOSTranslateClient
   __weak id<LanguageSelectionHandler> language_selection_handler_;
   __weak id<TranslateOptionSelectionHandler>
       translate_option_selection_handler_;
+  __weak id<TranslateNotificationHandler> translate_notification_handler_;
+
+  WEB_STATE_USER_DATA_KEY_DECL();
 
   DISALLOW_COPY_AND_ASSIGN(ChromeIOSTranslateClient);
 };

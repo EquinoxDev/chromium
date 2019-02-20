@@ -137,8 +137,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void SetTooltipText(const base::string16& tooltip_text) override;
   void DisplayTooltipText(const base::string16& tooltip_text) override;
   uint32_t GetCaptureSequenceNumber() const override;
-  bool DoBrowserControlsShrinkRendererSize() const override;
-  float GetTopControlsHeight() const override;
   bool IsSurfaceAvailableForCopy() const override;
   void CopyFromSurface(
       const gfx::Rect& src_rect,
@@ -267,7 +265,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void OnWindowDestroyed(aura::Window* window) override;
   void OnWindowTargetVisibilityChanged(bool visible) override;
   bool HasHitTestMask() const override;
-  void GetHitTestMask(gfx::Path* mask) const override;
+  void GetHitTestMask(SkPath* mask) const override;
   bool RequiresDoubleTapGestureEvents() const override;
 
   // Overridden from ui::EventHandler:
@@ -349,6 +347,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     last_pointer_type_ = last_pointer_type;
   }
 
+  MouseWheelPhaseHandler* GetMouseWheelPhaseHandler() override;
+
  protected:
   ~RenderWidgetHostViewAura() override;
 
@@ -367,6 +367,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   friend class DelegatedFrameHostClientAura;
   friend class InputMethodAuraTestBase;
   friend class RenderWidgetHostViewAuraTest;
+  friend class RenderWidgetHostViewAuraBrowserTest;
   friend class RenderWidgetHostViewAuraCopyRequestTest;
   friend class TestInputMethodObserver;
 #if defined(OS_WIN)
@@ -459,9 +460,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // collide with FrameSinkIds used by RenderWidgetHostImpls.
   static viz::FrameSinkId AllocateFrameSinkIdForGuestViewHack();
 
-  MouseWheelPhaseHandler* GetMouseWheelPhaseHandler() override;
-
   void CreateAuraWindow(aura::client::WindowType type);
+
+  // Returns true if a stale frame content needs to be set for the current RWHV.
+  // This is primarily useful during various CrOS animations to prevent showing
+  // a white screen and instead showing a snapshot of the frame content that
+  // was most recently evicted.
+  bool ShouldShowStaleContentOnEviction();
 
   void CreateDelegatedFrameHostClient();
 

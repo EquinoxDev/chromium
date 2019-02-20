@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -90,9 +91,11 @@ class StubArCoreInstallUtils : public vr::ArCoreInstallUtils {
  public:
   StubArCoreInstallUtils() = default;
 
+  bool CanRequestInstallArModule() override { return false; };
   bool ShouldRequestInstallArModule() override { return false; };
 
-  void RequestInstallArModule() override{};
+  void RequestInstallArModule(int render_process_id,
+                              int render_frame_id) override{};
   bool ShouldRequestInstallSupportedArCore() override { return false; };
   void RequestInstallSupportedArCore(int render_process_id,
                                      int render_frame_id) override{};

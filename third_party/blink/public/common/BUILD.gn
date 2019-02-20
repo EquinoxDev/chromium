@@ -44,6 +44,7 @@ source_set("headers") {
     "download/download_stats.h",
     "experiments/memory_ablation_experiment.h",
     "feature_policy/feature_policy.h",
+    "feature_policy/policy_value.h",
     "features.h",
     "fetch/fetch_api_request_headers_map.h",
     "fetch/fetch_api_request_headers_mojom_traits.h",
@@ -65,6 +66,12 @@ source_set("headers") {
     "manifest/manifest.h",
     "manifest/manifest_icon_selector.h",
     "manifest/web_display_mode.h",
+    "media/video_capture.h",
+    "mediastream/media_devices.h",
+    "mediastream/media_devices_mojom_traits.h",
+    "mediastream/media_stream_controls.h",
+    "mediastream/media_stream_mojom_traits.h",
+    "mediastream/media_stream_request.h",
     "messaging/cloneable_message.h",
     "messaging/cloneable_message_struct_traits.h",
     "messaging/message_port_channel.h",
@@ -81,13 +88,13 @@ source_set("headers") {
     "origin_trials/trial_token.h",
     "origin_trials/trial_token_validator.h",
     "page/launching_process_state.h",
-    "picture_in_picture/picture_in_picture_control_info.h",
     "privacy_preferences.h",
     "screen_orientation/web_screen_orientation_lock_type.h",
     "screen_orientation/web_screen_orientation_type.h",
     "service_worker/service_worker_status_code.h",
     "service_worker/service_worker_type_converters.h",
     "service_worker/service_worker_utils.h",
+    "user_agent/user_agent_metadata.h",
   ]
 
   public_deps = [
@@ -106,10 +113,14 @@ source_set("headers") {
 
   # iOS doesn't use and must not depend on //media
   if (!is_ios) {
-    deps += [ "//media" ]
+    deps += [
+      "//media",
+      "//media/capture:capture_base",
+      "//media/capture:capture_lib",
+    ]
   }
 
-  if (is_android) {
+  if (is_android || is_win) {
     sources += [
       "font_unique_name_lookup/font_table_matcher.h",
       "font_unique_name_lookup/icu_fold_case_util.h",
@@ -130,7 +141,7 @@ source_set("headers") {
   public = sources - [ "common_export.h" ]
 }
 
-if (is_android) {
+if (is_android || is_win) {
   proto_library("font_unique_name_table_proto") {
     sources = [
       "font_unique_name_lookup/font_unique_name_table.proto",

@@ -8,6 +8,8 @@
 // for the main thread / worker thread.
 
 #include "third_party/blink/renderer/modules/peerconnection/rtc_quic_stream.h"
+#include <memory>
+#include "base/test/metrics/histogram_tester.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/test/mock_p2p_quic_stream.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_quic_stream_event.h"
@@ -169,6 +171,8 @@ TEST_F(RTCQuicStreamTest, OnRemoteResetFiresStateChangeToClosed) {
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnRemoteReset();
 
   RunUntilIdle();
@@ -203,6 +207,8 @@ TEST_F(RTCQuicStreamTest, PendingOnRemoteResetIgnoredAfterReset) {
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnRemoteReset();
   quic_stream->reset();
   EXPECT_EQ("closed", quic_stream->state());
@@ -326,6 +332,8 @@ TEST_F(RTCQuicStreamTest, OnRemoteResetSetsWriteBufferedAmountToZero) {
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnRemoteReset();
 
   RunUntilIdle();
@@ -356,6 +364,8 @@ TEST_F(RTCQuicStreamTest,
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnDataReceived({}, /*fin=*/true);
 
   RunUntilIdle();
@@ -382,6 +392,8 @@ TEST_F(RTCQuicStreamTest, WriteThrowsIfRemoteReset) {
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnRemoteReset();
 
   RunUntilIdle();
@@ -573,6 +585,8 @@ TEST_F(RTCQuicStreamTest,
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnRemoteReset();
 
   RunUntilIdle();
@@ -876,6 +890,8 @@ TEST_F(RTCQuicStreamTest, ReadIntoThrowsIfClosed) {
 
   Persistent<RTCQuicStream> stream =
       CreateQuicStream(scope, p2p_quic_stream.get());
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream->reset();
 
   NotShared<DOMUint8Array> read_buffer(DOMUint8Array::Create(2));
@@ -1134,6 +1150,8 @@ TEST_F(RTCQuicStreamTest, OnRemoteResetTransitionsToClosed) {
 
   ASSERT_TRUE(stream_delegate);
   EXPECT_EQ("open", stream->state());
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnRemoteReset();
 
   RunUntilIdle();
@@ -1165,6 +1183,7 @@ TEST_F(RTCQuicStreamTest, FinishAfterReadingRemoteFinishTransitionsToClosed) {
   EXPECT_TRUE(stream->readInto(read_buffer, ASSERT_NO_EXCEPTION)->finished());
 
   EXPECT_EQ("closing", stream->state());
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
 
   stream->write(CreateWriteParametersWithoutData(/*finish=*/true),
                 ASSERT_NO_EXCEPTION);
@@ -1193,6 +1212,8 @@ TEST_F(RTCQuicStreamTest, ReadingRemoteFinishAfterFinishTransitionsToClosed) {
   RunUntilIdle();
 
   ASSERT_TRUE(stream_delegate);
+  EXPECT_CALL(*p2p_quic_stream.get(), SetDelegate(nullptr));
+
   stream_delegate->OnDataReceived({}, /*fin=*/true);
 
   RunUntilIdle();
@@ -1203,6 +1224,207 @@ TEST_F(RTCQuicStreamTest, ReadingRemoteFinishAfterFinishTransitionsToClosed) {
   EXPECT_TRUE(stream->readInto(read_buffer, ASSERT_NO_EXCEPTION)->finished());
 
   EXPECT_EQ("closed", stream->state());
+}
+
+TEST_F(RTCQuicStreamTest, HistogramWriteUsageOnlyData) {
+  V8TestingScope scope;
+
+  auto p2p_quic_stream = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream =
+      CreateQuicStream(scope, p2p_quic_stream.get());
+
+  base::HistogramTester tester;
+  stream->write(CreateWriteParametersWithDataOfLength(2), ASSERT_NO_EXCEPTION);
+  stream->write(CreateWriteParametersWithDataOfLength(2), ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.WriteUsage",
+                            WriteUsage::kSomeDataNoFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramWriteUsageDataWithFin) {
+  V8TestingScope scope;
+
+  auto p2p_quic_stream_1 = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream_1 =
+      CreateQuicStream(scope, p2p_quic_stream_1.get());
+  auto p2p_quic_stream_2 = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream_2 =
+      CreateQuicStream(scope, p2p_quic_stream_2.get());
+
+  base::HistogramTester tester;
+  stream_1->write(CreateWriteParametersWithDataOfLength(2, /*finish=*/true),
+                  ASSERT_NO_EXCEPTION);
+  stream_2->write(CreateWriteParametersWithDataOfLength(2, /*finish=*/true),
+                  ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.WriteUsage",
+                            WriteUsage::kSomeDataWithFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramWriteUsageDataOnlyFin) {
+  V8TestingScope scope;
+
+  auto p2p_quic_stream_1 = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream_1 =
+      CreateQuicStream(scope, p2p_quic_stream_1.get());
+  auto p2p_quic_stream_2 = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream_2 =
+      CreateQuicStream(scope, p2p_quic_stream_2.get());
+
+  base::HistogramTester tester;
+  stream_1->write(CreateWriteParametersWithoutData(/*finish=*/true),
+                  ASSERT_NO_EXCEPTION);
+  stream_2->write(CreateWriteParametersWithoutData(/*finish=*/true),
+                  ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.WriteUsage",
+                            WriteUsage::kNoDataWithFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramWriteAmountBytes) {
+  V8TestingScope scope;
+
+  auto p2p_quic_stream = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream =
+      CreateQuicStream(scope, p2p_quic_stream.get());
+
+  base::HistogramTester tester;
+  stream->write(CreateWriteParametersWithDataOfLength(4), ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  // Expect that 4 bytes were written once.
+  tester.ExpectBucketCount("RTCQuicStream.WriteAmountBytes", 4, 1);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramReadIntoResultOnlyData) {
+  V8TestingScope scope;
+
+  P2PQuicStream::Delegate* stream_delegate = nullptr;
+  auto p2p_quic_stream = std::make_unique<MockP2PQuicStream>(&stream_delegate);
+  Persistent<RTCQuicStream> stream =
+      CreateQuicStream(scope, p2p_quic_stream.get());
+  RunUntilIdle();
+
+  ASSERT_TRUE(stream_delegate);
+  stream_delegate->OnDataReceived({1, 2, 3}, /*fin=*/false);
+  RunUntilIdle();
+
+  base::HistogramTester tester;
+  stream->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(2)),
+                   ASSERT_NO_EXCEPTION);
+  stream->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(1)),
+                   ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.ReadIntoResult",
+                            ReadIntoResult::kSomeDataNoFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramReadIntoResultDataWithFin) {
+  V8TestingScope scope;
+
+  P2PQuicStream::Delegate* stream_delegate_1 = nullptr;
+  auto p2p_quic_stream_1 =
+      std::make_unique<MockP2PQuicStream>(&stream_delegate_1);
+  Persistent<RTCQuicStream> stream_1 =
+      CreateQuicStream(scope, p2p_quic_stream_1.get());
+  P2PQuicStream::Delegate* stream_delegate_2 = nullptr;
+  auto p2p_quic_stream_2 =
+      std::make_unique<MockP2PQuicStream>(&stream_delegate_2);
+  Persistent<RTCQuicStream> stream_2 =
+      CreateQuicStream(scope, p2p_quic_stream_2.get());
+  RunUntilIdle();
+
+  ASSERT_TRUE(stream_delegate_1);
+  ASSERT_TRUE(stream_delegate_2);
+  stream_delegate_1->OnDataReceived({1, 2, 3}, /*fin=*/true);
+  stream_delegate_2->OnDataReceived({1, 2, 3}, /*fin=*/true);
+  RunUntilIdle();
+
+  base::HistogramTester tester;
+  stream_1->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(4)),
+                     ASSERT_NO_EXCEPTION);
+  stream_2->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(4)),
+                     ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.ReadIntoResult",
+                            ReadIntoResult::kSomeDataWithFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramReadIntoResultOnlyFin) {
+  V8TestingScope scope;
+
+  P2PQuicStream::Delegate* stream_delegate_1 = nullptr;
+  auto p2p_quic_stream_1 =
+      std::make_unique<MockP2PQuicStream>(&stream_delegate_1);
+  Persistent<RTCQuicStream> stream_1 =
+      CreateQuicStream(scope, p2p_quic_stream_1.get());
+  P2PQuicStream::Delegate* stream_delegate_2 = nullptr;
+  auto p2p_quic_stream_2 =
+      std::make_unique<MockP2PQuicStream>(&stream_delegate_2);
+  Persistent<RTCQuicStream> stream_2 =
+      CreateQuicStream(scope, p2p_quic_stream_2.get());
+  RunUntilIdle();
+
+  ASSERT_TRUE(stream_delegate_1);
+  ASSERT_TRUE(stream_delegate_2);
+  stream_delegate_1->OnDataReceived({}, /*fin=*/true);
+  stream_delegate_2->OnDataReceived({}, /*fin=*/true);
+  RunUntilIdle();
+
+  base::HistogramTester tester;
+  stream_1->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(0)),
+                     ASSERT_NO_EXCEPTION);
+  stream_2->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(0)),
+                     ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.ReadIntoResult",
+                            ReadIntoResult::kNoDataWithFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramReadIntoResultNothing) {
+  V8TestingScope scope;
+
+  auto p2p_quic_stream = std::make_unique<MockP2PQuicStream>();
+  Persistent<RTCQuicStream> stream =
+      CreateQuicStream(scope, p2p_quic_stream.get());
+
+  base::HistogramTester tester;
+  stream->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(0)),
+                   ASSERT_NO_EXCEPTION);
+  stream->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(0)),
+                   ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  tester.ExpectUniqueSample("RTCQuicStream.ReadIntoResult",
+                            ReadIntoResult::kNoDataNoFin, 2);
+}
+
+TEST_F(RTCQuicStreamTest, HistogramReadCount) {
+  V8TestingScope scope;
+
+  P2PQuicStream::Delegate* stream_delegate = nullptr;
+  auto p2p_quic_stream = std::make_unique<MockP2PQuicStream>(&stream_delegate);
+  Persistent<RTCQuicStream> stream =
+      CreateQuicStream(scope, p2p_quic_stream.get());
+  RunUntilIdle();
+
+  ASSERT_TRUE(stream_delegate);
+  stream_delegate->OnDataReceived({1, 2, 3}, /*fin=*/false);
+  RunUntilIdle();
+
+  base::HistogramTester tester;
+  stream->readInto(NotShared<DOMUint8Array>(DOMUint8Array::Create(3)),
+                   ASSERT_NO_EXCEPTION);
+  RunUntilIdle();
+
+  // Expect that the 3 bytes recorded has a count of 1.
+  tester.ExpectBucketCount("RTCQuicStream.ReadIntoAmountBytes", 3, 1);
 }
 
 }  // namespace blink

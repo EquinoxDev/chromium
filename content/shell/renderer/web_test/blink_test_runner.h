@@ -30,7 +30,6 @@ class DictionaryValue;
 }
 
 namespace blink {
-class WebURLRequest;
 class WebView;
 }  // namespace blink
 
@@ -96,9 +95,9 @@ class BlinkTestRunner : public RenderViewObserver,
   void SetDeviceColorSpace(const std::string& name) override;
   float GetWindowToViewportScale() override;
   std::unique_ptr<blink::WebInputEvent> TransformScreenToWidgetCoordinates(
-      test_runner::WebWidgetTestProxyBase* web_widget_test_proxy_base,
+      test_runner::WebWidgetTestProxy* web_widget_test_proxy,
       const blink::WebInputEvent& event) override;
-  test_runner::WebWidgetTestProxyBase* GetWebWidgetTestProxyBase(
+  test_runner::WebWidgetTestProxy* GetWebWidgetTestProxy(
       blink::WebLocalFrame* frame) override;
   void EnableUseZoomForDSF() override;
   bool IsUseZoomForDSFEnabled() override;
@@ -147,8 +146,6 @@ class BlinkTestRunner : public RenderViewObserver,
   float GetDeviceScaleFactor() const override;
   void RunIdleTasks(base::OnceClosure callback) override;
   void ForceTextInputStateUpdate(blink::WebLocalFrame* frame) override;
-  bool IsNavigationInitiatedByRenderer(
-      const blink::WebURLRequest& request) override;
 
   // Resets a RenderView to a known state for web tests. It is used both when
   // a RenderView is created and when reusing an existing RenderView for the
@@ -202,6 +199,7 @@ class BlinkTestRunner : public RenderViewObserver,
   bool is_main_window_;
 
   bool focus_on_next_commit_;
+  bool waiting_for_reset_ = false;
 
   std::unique_ptr<test_runner::AppBannerService> app_banner_service_;
 

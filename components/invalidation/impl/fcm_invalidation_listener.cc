@@ -167,6 +167,13 @@ void FCMInvalidationListener::DoRegistrationUpdate() {
       object_id_invalidation_map));
 }
 
+void FCMInvalidationListener::RequestDetailedStatus(
+    const base::RepeatingCallback<void(const base::DictionaryValue&)>& callback)
+    const {
+  network_channel_->RequestDetailedStatus(callback);
+  callback.Run(CollectDebugData());
+}
+
 void FCMInvalidationListener::StopForTest() {
   Stop();
 }
@@ -211,6 +218,9 @@ InvalidatorState FCMInvalidationListener::GetState() const {
     // enabled, return INVALIDATIONS_ENABLED.
     return INVALIDATIONS_ENABLED;
   }
+  if (subscription_channel_state_ == SUBSCRIPTION_FAILURE) {
+    return SUBSCRIPTION_FAILURE;
+  }
   // Otherwise, we have a transient error.
   return TRANSIENT_INVALIDATION_ERROR;
 }
@@ -229,6 +239,21 @@ void FCMInvalidationListener::OnSubscriptionChannelStateChanged(
     InvalidatorState invalidator_state) {
   subscription_channel_state_ = invalidator_state;
   EmitStateChange();
+}
+
+base::DictionaryValue FCMInvalidationListener::CollectDebugData() const {
+  base::DictionaryValue status =
+      per_user_topic_registration_manager_->CollectDebugData();
+  status.SetString("InvalidationListener.FCM-channel-state",
+                   InvalidatorStateToString(fcm_network_state_));
+  status.SetString("InvalidationListener.Subscription-channel-state",
+                   InvalidatorStateToString(subscription_channel_state_));
+  for (const Topic& topic : registered_topics_) {
+    if (!status.HasKey(topic)) {
+      status.SetString(topic, "Unregistered");
+    }
+  }
+  return status;
 }
 
 }  // namespace syncer

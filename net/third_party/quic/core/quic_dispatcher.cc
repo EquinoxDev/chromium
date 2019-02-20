@@ -92,6 +92,13 @@ class PacketCollector : public QuicPacketCreator::DelegateInterface,
     }
     return WRITE_FAILED;
   }
+  bool WriteCryptoData(EncryptionLevel level,
+                       QuicStreamOffset offset,
+                       QuicByteCount data_length,
+                       QuicDataWriter* writer) override {
+    QUIC_BUG << "PacketCollector::WriteCryptoData is unimplemented.";
+    return false;
+  }
 
   std::vector<std::unique_ptr<QuicEncryptedPacket>>* packets() {
     return &packets_;
@@ -137,7 +144,7 @@ class StatelessConnectionTerminator {
     // TODO(fayang): Use the right long header type for conneciton close sent by
     // dispatcher.
     creator_.SetLongHeaderType(RETRY);
-    if (!creator_.AddSavedFrame(QuicFrame(frame))) {
+    if (!creator_.AddSavedFrame(QuicFrame(frame), NOT_RETRANSMISSION)) {
       QUIC_BUG << "Unable to add frame to an empty packet";
       delete frame;
       return;
@@ -163,7 +170,7 @@ class StatelessConnectionTerminator {
               QuicUtils::GetCryptoStreamId(framer_->transport_version()),
               reject.length(), offset, offset,
               /*fin=*/false,
-              /*needs_full_padding=*/true, &frame)) {
+              /*needs_full_padding=*/true, NOT_RETRANSMISSION, &frame)) {
         QUIC_BUG << "Unable to consume data into an empty packet.";
         return;
       }
@@ -235,9 +242,9 @@ class ChloValidator : public ChloAlpnExtractor {
     if (helper_->CanAcceptClientHello(chlo, client_address_, peer_address_,
                                       self_address_, &error_details_)) {
       can_accept_ = true;
-      rejector_->OnChlo(version, connection_id,
-                        helper_->GenerateConnectionIdForReject(connection_id),
-                        chlo);
+      rejector_->OnChlo(
+          version, connection_id,
+          helper_->GenerateConnectionIdForReject(version, connection_id), chlo);
     }
   }
 
@@ -260,7 +267,7 @@ class ChloValidator : public ChloAlpnExtractor {
 }  // namespace
 
 QuicDispatcher::QuicDispatcher(
-    const QuicConfig& config,
+    const QuicConfig* config,
     const QuicCryptoServerConfig* crypto_config,
     QuicVersionManager* version_manager,
     std::unique_ptr<QuicConnectionHelperInterface> helper,
@@ -397,16 +404,13 @@ bool QuicDispatcher::OnUnauthenticatedPublicHeader(
       if (ShouldCreateSessionForUnknownVersion(framer_.last_version_label())) {
         return true;
       }
-      if (!GetQuicReloadableFlag(quic_limit_version_negotiation) ||
-          current_packet_->length() >= kMinPacketSizeForVersionNegotiation) {
+      if (current_packet_->length() >= kMinPacketSizeForVersionNegotiation) {
         // Since the version is not supported, send a version negotiation
         // packet and stop processing the current packet.
         time_wait_list_manager()->SendVersionNegotiationPacket(
             connection_id, header.form != GOOGLE_QUIC_PACKET,
             GetSupportedVersions(), current_self_address_,
             current_peer_address_, GetPerPacketContext());
-      } else {
-        QUIC_RELOADABLE_FLAG_COUNT(quic_limit_version_negotiation);
       }
       return false;
     }
@@ -506,27 +510,29 @@ QuicDispatcher::QuicPacketFate QuicDispatcher::ValidityChecks(
   }
 
   // initial packet number of 0 is always invalid.
-  if (header.packet_number == kInvalidPacketNumber) {
+  if (!header.packet_number.IsInitialized()) {
     return kFateTimeWait;
   }
   if (GetQuicRestartFlag(quic_enable_accept_random_ipn)) {
     QUIC_RESTART_FLAG_COUNT_N(quic_enable_accept_random_ipn, 1, 2);
     // Accepting Initial Packet Numbers in 1...((2^31)-1) range... check
     // maximum accordingly.
-    if (header.packet_number > kMaxRandomInitialPacketNumber) {
+    if (header.packet_number > MaxRandomInitialPacketNumber()) {
       return kFateTimeWait;
     }
   } else {
     // Count those that would have been accepted if FLAGS..random_ipn
     // were true -- to detect/diagnose potential issues prior to
     // enabling the flag.
-    if ((header.packet_number > kMaxReasonableInitialPacketNumber) &&
-        (header.packet_number <= kMaxRandomInitialPacketNumber)) {
+    if ((header.packet_number >
+         QuicPacketNumber(kMaxReasonableInitialPacketNumber)) &&
+        (header.packet_number <= MaxRandomInitialPacketNumber())) {
       QUIC_CODE_COUNT_N(had_possibly_random_ipn, 1, 2);
     }
     // Check that the sequence number is within the range that the client is
     // expected to send before receiving a response from the server.
-    if (header.packet_number > kMaxReasonableInitialPacketNumber) {
+    if (header.packet_number >
+        QuicPacketNumber(kMaxReasonableInitialPacketNumber)) {
       return kFateTimeWait;
     }
   }
@@ -548,9 +554,11 @@ void QuicDispatcher::CleanUpSession(SessionMap::iterator it,
       !connection->termination_packets()->empty()) {
     action = QuicTimeWaitListManager::SEND_TERMINATION_PACKETS;
   } else if (connection->transport_version() > QUIC_VERSION_43) {
-    if (!GetQuicReloadableFlag(
-            quic_send_reset_for_post_handshake_connections_without_termination_packets) ||  // NOLINT
-        (source == ConnectionCloseSource::FROM_PEER)) {
+    // TODO(fayang): Always resetting IETF connections is a debugging
+    // expediency. Stop doing this when removing flag
+    // quic_always_reset_ietf_connections.
+    if (!GetQuicReloadableFlag(quic_always_reset_ietf_connections) &&
+        source == ConnectionCloseSource::FROM_PEER) {
       action = QuicTimeWaitListManager::DO_NOTHING;
     } else if (!connection->IsHandshakeConfirmed()) {
       QUIC_CODE_COUNT(quic_v44_add_to_time_wait_list_with_handshake_failed);
@@ -722,6 +730,8 @@ void QuicDispatcher::OnWriteBlocked(
 }
 
 void QuicDispatcher::OnRstStreamReceived(const QuicRstStreamFrame& frame) {}
+
+void QuicDispatcher::OnStopSendingReceived(const QuicStopSendingFrame& frame) {}
 
 void QuicDispatcher::OnConnectionAddedToTimeWaitList(
     QuicConnectionId connection_id) {
@@ -1189,7 +1199,7 @@ void QuicDispatcher::MaybeRejectStatelessly(QuicConnectionId connection_id,
     ChloAlpnExtractor alpn_extractor;
     if (FLAGS_quic_allow_chlo_buffering &&
         !ChloExtractor::Extract(*current_packet_, GetSupportedVersions(),
-                                config_.create_session_tag_indicators(),
+                                config_->create_session_tag_indicators(),
                                 &alpn_extractor)) {
       // Buffer non-CHLO packets.
       ProcessUnauthenticatedHeaderFate(kFateBuffer, connection_id, form,
@@ -1211,7 +1221,7 @@ void QuicDispatcher::MaybeRejectStatelessly(QuicConnectionId connection_id,
                           current_peer_address_, current_self_address_,
                           rejector.get());
   if (!ChloExtractor::Extract(*current_packet_, GetSupportedVersions(),
-                              config_.create_session_tag_indicators(),
+                              config_->create_session_tag_indicators(),
                               &validator)) {
     ProcessUnauthenticatedHeaderFate(kFateBuffer, connection_id, form, version);
     return;
@@ -1268,12 +1278,6 @@ void QuicDispatcher::OnStatelessRejectorProcessDone(
   current_packet_ = current_packet.get();
   current_connection_id_ = rejector->connection_id();
   framer_.set_version(first_version);
-  if (GetQuicReloadableFlag(quic_fix_last_packet_is_ietf_quic)) {
-    if (GetLastPacketFormat() != current_packet_format) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_fix_last_packet_is_ietf_quic);
-    }
-    framer_.set_last_packet_form(current_packet_format);
-  }
 
   // Stop buffering packets on this connection
   const auto num_erased =
@@ -1370,10 +1374,6 @@ void QuicDispatcher::DeliverPacketsToSession(
 
 void QuicDispatcher::DisableFlagValidation() {
   framer_.set_validate_flags(false);
-}
-
-PacketHeaderFormat QuicDispatcher::GetLastPacketFormat() const {
-  return framer_.GetLastPacketFormat();
 }
 
 }  // namespace quic

@@ -111,7 +111,7 @@ class CORE_EXPORT TextTrack : public EventTargetWithInlineData,
   void CueWillChange(TextTrackCue*);
   void CueDidChange(TextTrackCue*, bool update_cue_index);
 
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(cuechange, kCuechange);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(cuechange, kCuechange)
 
   TextTrackType TrackType() const { return track_type_; }
 
@@ -133,7 +133,7 @@ class CORE_EXPORT TextTrack : public EventTargetWithInlineData,
   const AtomicString& InterfaceName() const override;
   ExecutionContext* GetExecutionContext() const override;
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
  protected:
   void AddListOfCues(HeapVector<Member<TextTrackCue>>&);

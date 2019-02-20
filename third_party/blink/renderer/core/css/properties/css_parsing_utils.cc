@@ -42,6 +42,7 @@
 #include "third_party/blink/renderer/core/svg/svg_parsing_error.h"
 #include "third_party/blink/renderer/core/svg/svg_path_utilities.h"
 #include "third_party/blink/renderer/platform/animation/timing_function.h"
+#include "third_party/blink/renderer/platform/fonts/font_selection_types.h"
 #include "third_party/blink/renderer/platform/geometry/length.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -132,11 +133,6 @@ CSSValue* ConsumeSteps(CSSParserTokenRange& range) {
       StepsTimingFunction::StepPosition::END;
   if (css_property_parser_helpers::ConsumeCommaIncludingWhitespace(args)) {
     switch (args.ConsumeIncludingWhitespace().Id()) {
-      case CSSValueMiddle:
-        if (!RuntimeEnabledFeatures::WebAnimationsAPIEnabled())
-          return nullptr;
-        position = StepsTimingFunction::StepPosition::MIDDLE;
-        break;
       case CSSValueStart:
         position = StepsTimingFunction::StepPosition::START;
         break;
@@ -541,8 +537,7 @@ CSSValue* ConsumeAnimationTimingFunction(CSSParserTokenRange& range) {
   CSSValueID id = range.Peek().Id();
   if (id == CSSValueEase || id == CSSValueLinear || id == CSSValueEaseIn ||
       id == CSSValueEaseOut || id == CSSValueEaseInOut ||
-      id == CSSValueStepStart || id == CSSValueStepEnd ||
-      id == CSSValueStepMiddle)
+      id == CSSValueStepStart || id == CSSValueStepEnd)
     return css_property_parser_helpers::ConsumeIdent(range);
 
   CSSValueID function = range.Peek().FunctionId();
@@ -1390,8 +1385,8 @@ CSSValue* ConsumeFontStyle(CSSParserTokenRange& range,
   CSSIdentifierValue* oblique_identifier =
       css_property_parser_helpers::ConsumeIdent<CSSValueOblique>(range);
 
-  CSSPrimitiveValue* start_angle =
-      css_property_parser_helpers::ConsumeAngle(range, nullptr, base::nullopt);
+  CSSPrimitiveValue* start_angle = css_property_parser_helpers::ConsumeAngle(
+      range, nullptr, base::nullopt, MinObliqueValue(), MaxObliqueValue());
   if (!start_angle)
     return oblique_identifier;
   if (!IsAngleWithinLimits(start_angle))
@@ -1403,8 +1398,8 @@ CSSValue* ConsumeFontStyle(CSSParserTokenRange& range,
     return CSSFontStyleRangeValue::Create(*oblique_identifier, *value_list);
   }
 
-  CSSPrimitiveValue* end_angle =
-      css_property_parser_helpers::ConsumeAngle(range, nullptr, base::nullopt);
+  CSSPrimitiveValue* end_angle = css_property_parser_helpers::ConsumeAngle(
+      range, nullptr, base::nullopt, MinObliqueValue(), MaxObliqueValue());
   if (!end_angle || !IsAngleWithinLimits(end_angle))
     return nullptr;
 
@@ -2595,6 +2590,13 @@ CSSValue* ParsePaintStroke(CSSParserTokenRange& range,
     return url;
   }
   return css_property_parser_helpers::ConsumeColor(range, context.Mode());
+}
+
+css_property_parser_helpers::UnitlessQuirk UnitlessUnlessShorthand(
+    const CSSParserLocalContext& local_context) {
+  return local_context.CurrentShorthand() == CSSPropertyInvalid
+             ? css_property_parser_helpers::UnitlessQuirk::kAllow
+             : css_property_parser_helpers::UnitlessQuirk::kForbid;
 }
 
 }  // namespace css_parsing_utils

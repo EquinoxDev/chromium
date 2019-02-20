@@ -9,6 +9,7 @@
 #include "base/android/build_info.h"
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -223,9 +224,8 @@ void NotificationChannelsProviderAndroid::MigrateToChannelsIfNecessary(
 
     while (it && it->HasNext()) {
       content_settings::Rule rule = it->Next();
-      rules.push_back(std::move(rule));
-
       CreateChannelForRule(rule);
+      rules.push_back(std::move(rule));
     }
   }
 
@@ -351,6 +351,7 @@ bool NotificationChannelsProviderAndroid::SetWebsiteSetting(
       NOTREACHED();
       break;
   }
+  delete value;
   return true;
 }
 

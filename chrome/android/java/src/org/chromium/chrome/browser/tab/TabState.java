@@ -7,7 +7,6 @@ package org.chromium.chrome.browser.tab;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
 import android.support.annotation.Nullable;
 import android.util.Pair;
 
@@ -16,7 +15,7 @@ import org.chromium.base.StreamUtil;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.browser.ChromeVersionInfo;
 import org.chromium.chrome.browser.crypto.CipherFactory;
-import org.chromium.chrome.browser.tabmodel.TabModel;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.content_public.browser.WebContents;
 
@@ -121,7 +120,7 @@ public class TabState {
         public WebContentsState deleteNavigationEntries(long predicate) {
             ByteBuffer newBuffer = nativeDeleteNavigationEntries(mBuffer, mVersion, predicate);
             if (newBuffer == null) return null;
-            WebContentsState newState = new TabState.WebContentsStateNative(newBuffer);
+            WebContentsState newState = new TabState.WebContentsState(newBuffer);
             newState.setVersion(TabState.CONTENTS_STATE_CURRENT_VERSION);
             return newState;
         }
@@ -135,25 +134,10 @@ public class TabState {
         }
     }
 
-    /** Deletes the native-side portion of the buffer. */
-    public static class WebContentsStateNative extends WebContentsState {
-        private final Handler mHandler;
-
-        public WebContentsStateNative(ByteBuffer buffer) {
-            super(buffer);
-            this.mHandler = new Handler();
-        }
-
-        @Override
-        protected void finalize() {
-            assert mHandler != null;
-            mHandler.post(() -> nativeFreeWebContentsStateBuffer(buffer()));
-        }
-    }
-
     /** Navigation history of the WebContents. */
     public WebContentsState contentsState;
     public int parentId = Tab.INVALID_TAB_ID;
+    public int rootId;
 
     public long timestampMillis = TIMESTAMP_NOT_SET;
     public String openerAppId;
@@ -162,7 +146,7 @@ public class TabState {
     /** The tab's theme color. */
     public int themeColor;
 
-    public @Nullable @TabModel.TabLaunchType Integer tabLaunchTypeAtCreation;
+    public @Nullable @TabLaunchType Integer tabLaunchTypeAtCreation;
 
     /** Whether this TabState was created from a file containing info about an incognito Tab. */
     protected boolean mIsIncognito;
@@ -343,6 +327,14 @@ public class TabState {
                         "Failed to read tab launch type at creation from tab state. "
                                 + "Assuming tab launch type is null");
             }
+            try {
+                tabState.rootId = stream.readInt();
+            } catch (EOFException eof) {
+                tabState.rootId = Tab.INVALID_TAB_ID;
+                Log.w(TAG,
+                        "Failed to read tab root id from tab state. "
+                                + "Assuming root id is Tab.INVALID_TAB_ID");
+            }
             return tabState;
         } finally {
             stream.close();
@@ -409,6 +401,7 @@ public class TabState {
             dataOutputStream.writeInt(state.themeColor);
             dataOutputStream.writeInt(
                     state.tabLaunchTypeAtCreation != null ? state.tabLaunchTypeAtCreation : -1);
+            dataOutputStream.writeInt(state.rootId);
         } catch (FileNotFoundException e) {
             Log.w(TAG, "FileNotFoundException while attempting to save TabState.");
         } catch (IOException e) {
@@ -574,8 +567,6 @@ public class TabState {
 
     private static native String nativeGetVirtualUrlFromByteBuffer(
             ByteBuffer state, int savedStateVersion);
-
-    private static native void nativeFreeWebContentsStateBuffer(ByteBuffer buffer);
 
     private static native void nativeCreateHistoricalTab(ByteBuffer state, int savedStateVersion);
 }

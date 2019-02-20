@@ -4,6 +4,7 @@
 <translation id="1001534784610492198">Архивът на инсталационната програма е повреден или невалиден. Моля, изтеглете Google Chrome отново.</translation>
 <translation id="102763973188675173">Персонализиране и управление на Google Chrome. Налице е актуализация.</translation>
 <translation id="1035334672863811645">Влезте в Chrome</translation>
+<translation id="1051826050538111504">На компютъра ви има опасен софтуер. Chrome може да го премахне, да възстанови настройките ви и да деактивира разширенията, така че браузърът отново да заработи нормално.</translation>
 <translation id="1065672644894730302">Предпочитанията ви не могат да бъдат прочетени. Възможно е да няма достъп до някои функции и промените в предпочитанията няма да бъдат запазени.</translation>
 <translation id="1088300314857992706">По-рано <ph name="USER_EMAIL_ADDRESS" /> използва Chrome</translation>
 <translation id="1104959162601287462">Всичко за &amp;Chrome OS</translation>
@@ -70,6 +71,7 @@
 <translation id="2580411288591421699">Не може да се инсталира същата версия на Google Chrome, която се използва понастоящем. Моля, затворете браузъра и опитайте отново.</translation>
 <translation id="2586406160782125153">Данните за сърфирането ви ще се изтрият от това устройство. За да ги извлечете по-късно, влезте в Chrome като <ph name="USER_EMAIL" />.</translation>
 <translation id="2588322182880276190">Лого на Chrome</translation>
+<translation id="2644798301485385923">Система Chrome OS</translation>
 <translation id="2652691236519827073">Отваряне на връзката в нов &amp;раздел на Chrome</translation>
 <translation id="2665296953892887393">Помогнете ни да подобрим Google Chrome, като ни изпращате <ph name="UMA_LINK" /> му и сигнали за сривове</translation>
 <translation id="2689103672227170538">Това разширение промени страницата, която се показва при стартиране на Chrome.</translation>
@@ -86,7 +88,6 @@
 <translation id="3080151273017101988">Изпълняване на приложения на заден план при затворен браузър Google Chrome</translation>
 <translation id="3089968997497233615">Налице е нова, по-сигурна версия на Google Chrome.</translation>
 <translation id="3149510190863420837">Приложения в Chrome</translation>
-<translation id="3180085900771989961">Мениджърът ви трябва да ви премахне от Chrome и да ви добави отново.</translation>
 <translation id="3251381707915721925">За да зададете кои уебсайтове може да преглежда <ph name="NEW_PROFILE_NAME" />, посетете <ph name="BEGIN_LINK_1" /><ph name="DISPLAY_LINK" /><ph name="END_LINK_1" /> и конфигурирайте ограничения и настройки. Ако не промените стандартните опции, <ph name="NEW_PROFILE_NAME" /> ще е в състояние да сърфира навсякъде в мрежата.
 
 За да предотвратите достъпа на <ph name="NEW_PROFILE_NAME" /> до профила си, непременно заключвайте потребителския си профил, когато не използвате Chrome. За целта кликнете върху името на потребителския си профил в горния десен ъгъл на браузъра и изберете „Изход и заключване за деца“.
@@ -101,6 +102,7 @@
 <translation id="3451115285585441894">Добавя се към Chrome...</translation>
 <translation id="345171907106878721">Добавяне на вас към Chrome</translation>
 <translation id="3479552764303398839">Не сега</translation>
+<translation id="34857402635545079">Да се изчистят и данните от Chrome (<ph name="URL" />)</translation>
 <translation id="3503306920980160878">Chrome се нуждае от достъп до данните за местоположението ви, за да ги сподели с този сайт</translation>
 <translation id="3582972582564653026">Синхронизирайте и персонализирайте Chrome на всичките си устройства</translation>
 <translation id="3622797965165704966">Вече е по-лесно да използвате Chrome с профила си в Google и на споделени компютри.</translation>
@@ -110,7 +112,6 @@
 <translation id="3735758079232443276">Разширението „<ph name="EXTENSION_NAME" />“ промени страницата, която се показва при стартиране на Chrome.</translation>
 <translation id="3780814664026482060">Chrome – <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Премахване от Chrome...</translation>
-<translation id="3844992844761326777">На компютъра ви има опасен софтуер. Chrome може да го премахне и да възстанови настройките ви, така че браузърът отново да заработи нормално.</translation>
 <translation id="386202838227397562">Моля, затворете всички прозорци на Google Chrome и опитайте отново.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Отваряне на връзката в прозорец в режим „инко&amp;гнито“ на Chrome</translation>
@@ -156,7 +157,6 @@
 <translation id="5062123544085870375">Рестартиране на Chrome OS</translation>
 <translation id="5090044601776247154">От версия 70 на Google Chrome функцията за контролирани потребителски профили вече няма да е налична.</translation>
 <translation id="5132929315877954718">Открийте отлични приложения, игри, разширения и теми за Google Chrome.</translation>
-<translation id="5166975452760862670">Google Chrome се показва на този език</translation>
 <translation id="5170938038195470297">Потребителският ви профил не може да се използва, защото е от по-нова версия на Google Chrome. Някои функции може да не са налице. Моля, посочете друга директория в потребителския профил или използвайте по-нова версия на Chrome.</translation>
 <translation id="5193136243808726294">Google Chrome OS не може да отвори тази страница.</translation>
 <translation id="5204098752394657250"><ph name="TERMS_OF_SERVICE_LINK" />Общи условия<ph name="END_TERMS_OF_SERVICE_LINK" /> на Google Chrome</translation>
@@ -168,9 +168,9 @@
 <translation id="556024056938947818">Google Chrome опитва да покаже паролите.</translation>
 <translation id="5566025111015594046">Google Chrome (входящ трафик за mDNS)</translation>
 <translation id="565744775970812598">Chrome блокира „<ph name="FILE_NAME" />“, тъй като файлът може да е опасен.</translation>
+<translation id="5686916850681061684">Персонализиране и контролиране на Google Chrome. Трябва да обърнете внимание на нещо – кликнете за подробности.</translation>
 <translation id="5715063361988620182">{SECONDS,plural, =1{Google Chrome ще се рестартира след 1 секунда}other{Google Chrome ще се рестартира след # секунди}}</translation>
 <translation id="573759479754913123">Всичко за Chrome OS</translation>
-<translation id="5774845247549698882">Chrome OS се показва на този език</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> – Google Chrome Canary</translation>
 <translation id="5804318322022881572">Chrome не можа да се стартира. Опитайте отново.</translation>
 <translation id="5877064549588274448">Каналът бе променен. Рестартирайте устройството си, за да се приложат промените.</translation>
@@ -195,6 +195,7 @@
 <translation id="6566149418543181476">Google Chrome се актуализира (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">Използвате <ph name="PROFILE_EMAIL" /> за синхронизиране на нещата си в Chrome. За да актуализирате съответното предпочитание или да ползвате браузъра без профил в Google, посетете <ph name="SETTINGS_LINK" />.</translation>
 <translation id="6600954340915313787">Копирано в Chrome</translation>
+<translation id="6609605543612238677">Системният ви администратор е конфигурирал Google Chrome да отваря алтернативен браузър за достъп до <ph name="URL" />.</translation>
 <translation id="6634887557811630702">Google Chrome е актуален.</translation>
 <translation id="6676384891291319759">Достъп до интернет</translation>
 <translation id="6679975945624592337">Разрешаване на Google Chrome да се изпълнява на заден план</translation>
@@ -202,6 +203,7 @@
 <translation id="683440813066116847">Правило за Google Chrome Canary за допускане на входящия трафик за mDNS.</translation>
 <translation id="686561893457936865">Използвайте Chrome навсякъде</translation>
 <translation id="6885412569789873916">Приложения за Chrome бета</translation>
+<translation id="6943584222992551122">Данните за сърфирането на този човек ще бъдат изтрити от устройството. За да ги възстановите, влезте в Chrome като <ph name="USER_EMAIL" />.</translation>
 <translation id="6964107240822114422">{0,plural, =0{Налице е актуализация за Chrome}=1{Налице е актуализация за Chrome}other{Налице е актуализация за Chrome от # дни}}</translation>
 <translation id="6967962315388095737">Правило за Google Chrome бета за допускане на входящия трафик за mDNS.</translation>
 <translation id="6970811910055250180">Устройството ви се актуализира...</translation>
@@ -212,6 +214,7 @@
 <translation id="7106741999175697885">Диспечер на задачите - Google Chrome</translation>
 <translation id="7164397146364144019">Можете да ни помогнете да направим Chrome по-надежден и по-лесен за използване, като автоматично ни съобщавате подробности за инциденти, свързани със сигурността.</translation>
 <translation id="7242029209006116544">Влизате с управляван профил и давате на администратора му контрол над потребителския си профил в Google Chrome. Данните ви в браузъра, като например приложения, отметки, история, пароли и други настройки, ще се свържат за постоянно с/ъс <ph name="USER_NAME" />. Ще можете да ги изтриете чрез таблото за управление на Google Профили, но не и да ги свържете с друг профил. По избор можете да създадете нов потребителски профил, за да отделите съществуващите си данни в Chrome. <ph name="LEARN_MORE" /></translation>
+<translation id="7295052994004373688">Този език служи за показване на ПИ на Google Chrome</translation>
 <translation id="7296210096911315575">Важна информация за използването и безопасността</translation>
 <translation id="7308322188646931570">Chrome се нуждае от достъп до хранилището, за да изтегля файлове</translation>
 <translation id="7339898014177206373">Нов прозорец</translation>
@@ -274,6 +277,7 @@
 <translation id="870251953148363156">Актуализиране на &amp;Google Chrome</translation>
 <translation id="873133009373065397">Google Chrome не може да определи или зададе браузъра по подразбиране</translation>
 <translation id="8736674169840206667">Администраторът ви изисква да рестартирате Chrome, за да се приложи актуализация</translation>
+<translation id="8788264404293392165">Този език служи за показване на ПИ на Chrome OS</translation>
 <translation id="8791470158600044404">{0,plural, =1{Chrome OS ще се рестартира след 1 минута}other{Chrome OS ще се рестартира след # минути}}</translation>
 <translation id="8823341990149967727">Chrome не е актуален</translation>
 <translation id="884296878221830158">То също контролира коя страница се показва при стартиране на Chrome или при кликване върху бутона „Начална страница“.</translation>

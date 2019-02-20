@@ -5,6 +5,7 @@
 #include "media/gpu/android/texture_owner.h"
 
 #include "base/android/android_image_reader_compat.h"
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "gpu/command_buffer/service/abstract_texture.h"
@@ -35,7 +36,8 @@ TextureOwner::~TextureOwner() {
 
 // static
 scoped_refptr<TextureOwner> TextureOwner::Create(
-    std::unique_ptr<gpu::gles2::AbstractTexture> texture) {
+    std::unique_ptr<gpu::gles2::AbstractTexture> texture,
+    SecureMode secure_mode) {
   // Set the parameters on the texture.
   texture->SetParameteri(GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   texture->SetParameteri(GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -45,10 +47,12 @@ scoped_refptr<TextureOwner> TextureOwner::Create(
   // If AImageReader is supported and is enabled by media flag, use it.
   if (base::android::AndroidImageReader::GetInstance().IsSupported() &&
       base::FeatureList::IsEnabled(media::kAImageReaderVideoOutput)) {
-    return new ImageReaderGLOwner(std::move(texture));
+    return new ImageReaderGLOwner(std::move(texture), secure_mode);
   }
 
   // If not, fall back to legacy path.
+  DCHECK_EQ(secure_mode, SecureMode::kInsecure)
+      << "Can not use secure mode with SurfaceTexture";
   return new SurfaceTextureGLOwner(std::move(texture));
 }
 

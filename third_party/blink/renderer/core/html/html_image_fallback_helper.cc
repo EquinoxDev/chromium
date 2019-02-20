@@ -36,8 +36,8 @@ static bool ElementRepresentsNothing(const Element& element) {
 }
 
 static bool ImageSmallerThanAltImage(int pixels_for_alt_image,
-                                     const Length width,
-                                     const Length height) {
+                                     const Length& width,
+                                     const Length& height) {
   // We don't have a layout tree so can't compute the size of an image
   // relative dimensions - so we just assume we should display the alt image.
   if (!width.IsFixed() && !height.IsFixed())
@@ -116,7 +116,7 @@ scoped_refptr<ComputedStyle> HTMLImageFallbackHelper::CustomStyleForAltText(
       image_has_intrinsic_dimensions &&
       (element.GetDocument().InQuirksMode() || image_has_no_alt_attribute);
   if (treat_as_replaced) {
-    // https://html.spec.whatwg.org/multipage/rendering.html#images-3:
+    // https://html.spec.whatwg.org/C/#images-3:
     // "If the element does not represent an image, but the element already has
     // intrinsic dimensions (e.g. from the dimension attributes or CSS rules),
     // and either: the user agent has reason to believe that the image will

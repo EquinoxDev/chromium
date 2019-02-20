@@ -52,7 +52,7 @@ constexpr uint8_t kMessageHeader[] =
     // draft-specific string beginning with "HTTP Exchange 1 " instead."
     // [spec text]
     // 5.3. "A single 0 byte which serves as a separator." [spec text]
-    "HTTP Exchange 1 b2";
+    "HTTP Exchange 1 b3";
 
 constexpr base::TimeDelta kOneWeek = base::TimeDelta::FromDays(7);
 constexpr base::TimeDelta kFourWeeks = base::TimeDelta::FromDays(4 * 7);
@@ -137,6 +137,7 @@ void AppendToBuf8BytesBigEndian(std::vector<uint8_t>* buf, uint64_t n) {
 }
 
 base::Optional<std::vector<uint8_t>> GenerateSignedMessage(
+    SignedExchangeVersion version,
     const SignedExchangeEnvelope& envelope) {
   TRACE_EVENT_BEGIN0(TRACE_DISABLED_BY_DEFAULT("loading"),
                      "GenerateSignedMessage");
@@ -246,6 +247,7 @@ bool ShouldIgnoreTimestampError(
 }  // namespace
 
 SignedExchangeSignatureVerifier::Result SignedExchangeSignatureVerifier::Verify(
+    SignedExchangeVersion version,
     const SignedExchangeEnvelope& envelope,
     scoped_refptr<net::X509Certificate> certificate,
     const base::Time& verification_time,
@@ -287,7 +289,7 @@ SignedExchangeSignatureVerifier::Result SignedExchangeSignatureVerifier::Verify(
     return Result::kErrCertificateSHA256Mismatch;
   }
 
-  auto message = GenerateSignedMessage(envelope);
+  auto message = GenerateSignedMessage(version, envelope);
   if (!message) {
     signed_exchange_utils::ReportErrorAndTraceEvent(
         devtools_proxy, "Failed to reconstruct signed message.");

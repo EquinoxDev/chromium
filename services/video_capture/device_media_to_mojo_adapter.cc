@@ -4,8 +4,10 @@
 
 #include "services/video_capture/device_media_to_mojo_adapter.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "media/base/bind_to_current_loop.h"
+#include "media/capture/video/scoped_video_capture_jpeg_decoder.h"
 #include "media/capture/video/video_capture_buffer_pool_impl.h"
 #include "media/capture/video/video_capture_buffer_tracker_factory_impl.h"
 #include "media/capture/video/video_capture_jpeg_decoder_impl.h"
@@ -20,9 +22,18 @@ std::unique_ptr<media::VideoCaptureJpegDecoder> CreateGpuJpegDecoder(
     media::MojoJpegDecodeAcceleratorFactoryCB jpeg_decoder_factory_callback,
     media::VideoCaptureJpegDecoder::DecodeDoneCB decode_done_cb,
     base::RepeatingCallback<void(const std::string&)> send_log_message_cb) {
-  return std::make_unique<media::VideoCaptureJpegDecoderImpl>(
-      jpeg_decoder_factory_callback, std::move(decoder_task_runner),
-      std::move(decode_done_cb), std::move(send_log_message_cb));
+  return std::make_unique<media::ScopedVideoCaptureJpegDecoder>(
+      std::make_unique<media::VideoCaptureJpegDecoderImpl>(
+          jpeg_decoder_factory_callback, decoder_task_runner,
+          std::move(decode_done_cb), std::move(send_log_message_cb)),
+      decoder_task_runner);
+}
+
+void FinishUpCallToStop(
+    std::unique_ptr<video_capture::ReceiverMojoToMediaAdapter> receiver,
+    video_capture::mojom::Device::StopCallback callback) {
+  receiver.reset();
+  std::move(callback).Run();
 }
 
 }  // anonymous namespace
@@ -92,19 +103,6 @@ void DeviceMediaToMojoAdapter::Start(
   device_started_ = true;
 }
 
-void DeviceMediaToMojoAdapter::OnReceiverReportingUtilization(
-    int32_t frame_feedback_id,
-    double utilization) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  device_->OnUtilizationReport(frame_feedback_id, utilization);
-}
-
-void DeviceMediaToMojoAdapter::RequestRefreshFrame() {
-  if (!device_started_)
-    return;
-  device_->RequestRefreshFrame();
-}
-
 void DeviceMediaToMojoAdapter::MaybeSuspend() {
   if (!device_started_)
     return;
@@ -140,24 +138,27 @@ void DeviceMediaToMojoAdapter::TakePhoto(TakePhotoCallback callback) {
   device_->TakePhoto(std::move(scoped_callback));
 }
 
-void DeviceMediaToMojoAdapter::Stop() {
+void DeviceMediaToMojoAdapter::Stop(StopCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (device_started_ == false)
+  if (!device_started_) {
+    std::move(callback).Run();
     return;
+  }
   device_started_ = false;
   weak_factory_.InvalidateWeakPtrs();
   device_->StopAndDeAllocate();
-  // We need to post the deletion of receiver to the end of the message queue,
-  // because |device_->StopAndDeAllocate()| may post messages (e.g.
-  // OnBufferRetired()) to a WeakPtr to |receiver_| to this queue, and we need
-  // those messages to be sent before we invalidate the WeakPtr.
-  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE,
-                                                  std::move(receiver_));
+  // We need to post a continuation of the stop routine to the end of the
+  // message queue, because |device_->StopAndDeAllocate()| may post messages
+  // (e.g. OnBufferRetired()) to a WeakPtr to |receiver_| to this queue, and we
+  // need those messages to be sent out before we continue.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&FinishUpCallToStop, std::move(receiver_),
+                                std::move(callback)));
 }
 
 void DeviceMediaToMojoAdapter::OnClientConnectionErrorOrClose() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  Stop();
+  Stop(base::DoNothing());
 }
 
 // static

@@ -9,8 +9,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.animation.ValueAnimator.AnimatorUpdateListener;
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
@@ -44,7 +42,9 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.metrics.RecordUserAction;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.ActivityTabProvider;
 import org.chromium.chrome.browser.WindowDelegate;
 import org.chromium.chrome.browser.appmenu.AppMenuButtonHelper;
 import org.chromium.chrome.browser.native_page.NativePageFactory;
@@ -63,14 +63,15 @@ import org.chromium.chrome.browser.util.AccessibilityUtil;
 import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.widget.TintedDrawable;
 import org.chromium.components.url_formatter.UrlFormatter;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.common.ContentUrlConstants;
 import org.chromium.net.GURLUtils;
+import org.chromium.ui.base.Clipboard;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.interpolators.BakedBezierInterpolator;
 import org.chromium.ui.text.SpanApplier;
 import org.chromium.ui.text.SpanApplier.SpanInfo;
-import org.chromium.ui.widget.Toast;
 
 import java.util.List;
 import java.util.regex.Pattern;
@@ -135,6 +136,7 @@ public class CustomTabToolbar
     private ImageButton mSecurityButton;
     private LinearLayout mCustomActionButtons;
     private ImageButton mCloseButton;
+    private ImageButton mMenuButton;
 
     // Whether dark tint should be applied to icons and text.
     private boolean mUseDarkColors = true;
@@ -182,6 +184,7 @@ public class CustomTabToolbar
         mCustomActionButtons = findViewById(R.id.action_buttons);
         mCloseButton = findViewById(R.id.close_button);
         mCloseButton.setOnLongClickListener(this);
+        mMenuButton = findViewById(R.id.menu_button);
         mAnimDelegate = new CustomTabToolbarAnimationDelegate(mSecurityButton, mTitleUrlContainer);
     }
 
@@ -369,7 +372,8 @@ public class CustomTabToolbar
                 && !title.equals(getToolbarDataProvider().getCurrentUrl())
                 && !title.equals(ContentUrlConstants.ABOUT_BLANK_DISPLAY_URL)) {
             // Delay the title animation until security icon animation finishes.
-            ThreadUtils.postOnUiThreadDelayed(mTitleAnimationStarter, TITLE_ANIM_DELAY_MS);
+            PostTask.postDelayedTask(
+                    UiThreadTaskTraits.DEFAULT, mTitleAnimationStarter, TITLE_ANIM_DELAY_MS);
         }
 
         mTitleBar.setText(title);
@@ -534,7 +538,8 @@ public class CustomTabToolbar
     }
 
     @Override
-    public void initializeControls(WindowDelegate windowDelegate, WindowAndroid windowAndroid) {}
+    public void initializeControls(WindowDelegate windowDelegate, WindowAndroid windowAndroid,
+            ActivityTabProvider provider) {}
 
     @Override
     public void updateStatusIcon() {
@@ -720,14 +725,9 @@ public class CustomTabToolbar
                     getContext(), v, v.getContentDescription());
         }
         if (v == mTitleUrlContainer) {
-            ClipboardManager clipboard =
-                    (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
             Tab tab = getCurrentTab();
             if (tab == null) return false;
-            String url = tab.getOriginalUrl();
-            ClipData clip = ClipData.newPlainText("url", url);
-            clipboard.setPrimaryClip(clip);
-            Toast.makeText(getContext(), R.string.url_copied, Toast.LENGTH_SHORT).show();
+            Clipboard.getInstance().copyUrlToClipboard(tab.getOriginalUrl());
             return true;
         }
         return false;
@@ -785,7 +785,7 @@ public class CustomTabToolbar
     public void setAutocompleteProfile(Profile profile) {}
 
     @Override
-    void showAppMenuUpdateBadge() {}
+    void showAppMenuUpdateBadge(boolean animate) {}
 
     @Override
     boolean isShowingAppMenuUpdateBadge() {
@@ -796,17 +796,20 @@ public class CustomTabToolbar
     void removeAppMenuUpdateBadge(boolean animate) {}
 
     @Override
-    void setAppMenuUpdateBadgeToVisible(boolean animate) {}
-
-    @Override
     View getMenuButtonWrapper() {
         // This class has no menu button wrapper, so return the menu button instead.
         return getMenuButton();
     }
 
     @Override
+    ImageButton getMenuButton() {
+        return mMenuButton;
+    }
+
+    @Override
     void disableMenuButton() {
         super.disableMenuButton();
+        mMenuButton = null;
         // In addition to removing the menu button, we also need to remove the margin on the custom
         // action button.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
@@ -816,13 +819,6 @@ public class CustomTabToolbar
             mCustomActionButtons.setLayoutParams(p);
         }
     }
-
-    // Temporary fix to override ToolbarLayout's highlight-related methods
-    @Override
-    void setMenuButtonHighlight(boolean highlight) {}
-
-    @Override
-    void setMenuButtonHighlightDrawable(boolean highlighting) {}
 
     @Override
     public int getUrlContainerMarginEnd() {

@@ -15,7 +15,7 @@ ProfileSyncServiceMock::ProfileSyncServiceMock(InitParams init_params)
 
 ProfileSyncServiceMock::~ProfileSyncServiceMock() {}
 
-SyncUserSettingsMock* ProfileSyncServiceMock::GetUserSettingsMock() {
+syncer::SyncUserSettingsMock* ProfileSyncServiceMock::GetUserSettingsMock() {
   return &user_settings_;
 }
 
@@ -34,54 +34,7 @@ bool ProfileSyncServiceMock::IsAuthenticatedAccountPrimary() const {
 
 syncer::ModelTypeSet ProfileSyncServiceMock::GetPreferredDataTypes() const {
   return syncer::SyncPrefs::ResolvePrefGroups(
-      /*registered_types=*/syncer::ModelTypeSet::All(),
       user_settings_.GetChosenDataTypes());
-}
-
-bool ProfileSyncServiceMock::IsPassphraseRequiredForDecryption() const {
-  return user_settings_.IsPassphraseRequiredForDecryption();
-}
-
-base::Time ProfileSyncServiceMock::GetExplicitPassphraseTime() const {
-  return user_settings_.GetExplicitPassphraseTime();
-}
-
-bool ProfileSyncServiceMock::IsUsingSecondaryPassphrase() const {
-  return user_settings_.IsUsingSecondaryPassphrase();
-}
-
-void ProfileSyncServiceMock::EnableEncryptEverything() {
-  user_settings_.EnableEncryptEverything();
-}
-
-bool ProfileSyncServiceMock::IsEncryptEverythingEnabled() const {
-  return user_settings_.IsEncryptEverythingEnabled();
-}
-
-void ProfileSyncServiceMock::SetEncryptionPassphrase(
-    const std::string& passphrase) {
-  user_settings_.SetEncryptionPassphrase(passphrase);
-}
-
-bool ProfileSyncServiceMock::SetDecryptionPassphrase(
-    const std::string& passphrase) {
-  return user_settings_.SetDecryptionPassphrase(passphrase);
-}
-
-bool ProfileSyncServiceMock::IsPassphraseRequired() const {
-  return user_settings_.IsPassphraseRequired();
-}
-
-bool ProfileSyncServiceMock::IsFirstSetupComplete() const {
-  return user_settings_.IsFirstSetupComplete();
-}
-
-syncer::PassphraseType ProfileSyncServiceMock::GetPassphraseType() const {
-  return user_settings_.GetPassphraseType();
-}
-
-bool ProfileSyncServiceMock::IsEncryptEverythingAllowed() const {
-  return user_settings_.IsEncryptEverythingAllowed();
 }
 
 std::unique_ptr<syncer::SyncSetupInProgressHandle>

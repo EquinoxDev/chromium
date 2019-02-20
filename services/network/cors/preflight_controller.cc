@@ -18,6 +18,7 @@
 #include "services/network/public/cpp/cors/cors_error_status.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_loader.mojom.h"
 #include "url/gurl.h"
 
 namespace network {
@@ -30,7 +31,7 @@ base::Optional<std::string> GetHeaderString(
     const scoped_refptr<net::HttpResponseHeaders>& headers,
     const std::string& header_name) {
   std::string header_value;
-  if (!headers->GetNormalizedHeader(header_name, &header_value))
+  if (!headers || !headers->GetNormalizedHeader(header_name, &header_value))
     return base::nullopt;
   return header_value;
 }
@@ -124,8 +125,9 @@ std::unique_ptr<PreflightResult> CreatePreflightResult(
     base::Optional<CorsErrorStatus>* detected_error_status) {
   DCHECK(detected_error_status);
 
+  const int response_code = head.headers ? head.headers->response_code() : 0;
   *detected_error_status = CheckPreflightAccess(
-      final_url, head.headers->response_code(),
+      final_url, response_code,
       GetHeaderString(head.headers, header_names::kAccessControlAllowOrigin),
       GetHeaderString(head.headers,
                       header_names::kAccessControlAllowCredentials),
@@ -135,7 +137,7 @@ std::unique_ptr<PreflightResult> CreatePreflightResult(
     return nullptr;
 
   base::Optional<mojom::CorsError> error;
-  error = CheckPreflight(head.headers->response_code());
+  error = CheckPreflight(response_code);
   if (error) {
     *detected_error_status = CorsErrorStatus(*error);
     return nullptr;
@@ -287,8 +289,10 @@ class PreflightController::PreflightLoader final {
     timing_info_.finish_time = base::TimeTicks::Now();
     timing_info_.alpn_negotiated_protocol = head.alpn_negotiated_protocol;
     timing_info_.connection_info = head.connection_info;
-    head.headers->GetNormalizedHeader("Timing-Allow-Origin",
-                                      &timing_info_.timing_allow_origin);
+    auto timing_allow_origin =
+        GetHeaderString(head.headers, "Timing-Allow-Origin");
+    if (timing_allow_origin)
+      timing_info_.timing_allow_origin = *timing_allow_origin;
     timing_info_.transfer_size = head.encoded_data_length;
 
     base::Optional<CorsErrorStatus> detected_error_status;
@@ -372,6 +376,18 @@ PreflightController::CreatePreflightRequestForTesting(
     const ResourceRequest& request,
     bool tainted) {
   return CreatePreflightRequest(request, tainted);
+}
+
+// static
+std::unique_ptr<PreflightResult>
+PreflightController::CreatePreflightResultForTesting(
+    const GURL& final_url,
+    const ResourceResponseHead& head,
+    const ResourceRequest& original_request,
+    bool tainted,
+    base::Optional<CorsErrorStatus>* detected_error_status) {
+  return CreatePreflightResult(final_url, head, original_request, tainted,
+                               detected_error_status);
 }
 
 PreflightController::PreflightController() = default;

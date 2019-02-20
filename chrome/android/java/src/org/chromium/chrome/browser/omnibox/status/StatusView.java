@@ -31,7 +31,6 @@ public class StatusView extends LinearLayout {
     private TextView mVerboseStatusTextView;
     private View mSeparatorView;
     private View mStatusExtraSpace;
-    private View mLocationBarButtonContainer;
 
     private boolean mAnimationsEnabled;
     private boolean mAnimatingStatusIconShow;
@@ -116,8 +115,13 @@ public class StatusView extends LinearLayout {
             mAnimatingStatusIconShow = false;
 
             mAnimatingStatusIconHide = true;
+            // Do not animate phase-out when animations are disabled.
+            // While this looks nice in some cases (navigating to insecure sites),
+            // it has a side-effect of briefly showing padlock (phase-out) when navigating
+            // back and forth between secure and insecure sites, which seems like a glitch.
+            // See bug: crbug.com/919449
             mIconView.animate()
-                    .setDuration(URL_FOCUS_CHANGE_ANIMATION_DURATION_MS)
+                    .setDuration(mAnimationsEnabled ? URL_FOCUS_CHANGE_ANIMATION_DURATION_MS : 0)
                     .alpha(0.0f)
                     .withEndAction(() -> {
                         mIconView.setVisibility(View.GONE);
@@ -129,8 +133,13 @@ public class StatusView extends LinearLayout {
         // Action 3: Specify icon content. Use TransitionDrawable whenever object is visible.
         if (targetIcon != null) {
             if (!isIconHidden) {
-                TransitionDrawable newImage = new TransitionDrawable(
-                        new Drawable[] {mIconView.getDrawable(), targetIcon});
+                Drawable existingDrawable = mIconView.getDrawable();
+                if (existingDrawable instanceof TransitionDrawable
+                        && ((TransitionDrawable) existingDrawable).getNumberOfLayers() == 2) {
+                    existingDrawable = ((TransitionDrawable) existingDrawable).getDrawable(1);
+                }
+                TransitionDrawable newImage =
+                        new TransitionDrawable(new Drawable[] {existingDrawable, targetIcon});
 
                 mIconView.setImageDrawable(newImage);
 

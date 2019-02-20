@@ -776,6 +776,12 @@ void EffectTree::UpdateOpacities(EffectNode* node, EffectNode* parent_node) {
     node->screen_space_opacity *= parent_node->screen_space_opacity;
 }
 
+void EffectTree::UpdateSubtreeHidden(EffectNode* node,
+                                     EffectNode* parent_node) {
+  if (parent_node)
+    node->subtree_hidden |= parent_node->subtree_hidden;
+}
+
 void EffectTree::UpdateIsDrawn(EffectNode* node, EffectNode* parent_node) {
   // Nodes that have screen space opacity 0 are hidden. So they are not drawn.
   // Exceptions:
@@ -827,6 +833,11 @@ void EffectTree::UpdateHasMaskingChild(EffectNode* node,
   node->has_masking_child = false;
   if (node->blend_mode == SkBlendMode::kDstIn)
     parent_node->has_masking_child = true;
+}
+
+void EffectTree::UpdateIsMasked(EffectNode* node, EffectNode* parent_node) {
+  node->is_masked = (parent_node && parent_node->is_masked) ||
+                    node->mask_layer_id != Layer::INVALID_ID;
 }
 
 void EffectTree::UpdateSurfaceContentsScale(EffectNode* effect_node) {
@@ -900,10 +911,12 @@ void EffectTree::UpdateEffects(int id) {
   EffectNode* parent_node = parent(node);
 
   UpdateOpacities(node, parent_node);
+  UpdateSubtreeHidden(node, parent_node);
   UpdateIsDrawn(node, parent_node);
   UpdateEffectChanged(node, parent_node);
   UpdateBackfaceVisibility(node, parent_node);
   UpdateHasMaskingChild(node, parent_node);
+  UpdateIsMasked(node, parent_node);
   UpdateSurfaceContentsScale(node);
 }
 
@@ -1177,8 +1190,6 @@ bool EffectTree::ClippedHitTestRegionIsRectangle(int effect_id) const {
     if (!property_trees()->GetToTarget(effect_node->transform_id,
                                        effect_node->target_id, &to_target) ||
         !to_target.Preserves2dAxisAlignment())
-      return false;
-    if (effect_node->mask_layer_id != Layer::INVALID_ID)
       return false;
   }
   return true;
@@ -1837,7 +1848,7 @@ void PropertyTrees::SetOuterViewportContainerBoundsDelta(
 
 bool PropertyTrees::ElementIsAnimatingChanged(
     const MutatorHost* mutator_host,
-    ElementId element_id,
+    const PropertyToElementIdMap& element_id_map,
     ElementListType list_type,
     const PropertyAnimationState& mask,
     const PropertyAnimationState& state,
@@ -1849,6 +1860,19 @@ bool PropertyTrees::ElementIsAnimatingChanged(
         !mask.potentially_animating[property])
       continue;
 
+    // The mask represents which properties have had their state changed. This
+    // can include properties for which there are no longer any animations, in
+    // which case there will not be an entry in the map.
+    //
+    // It is unclear whether this is desirable; it may be that we are missing
+    // updates to property nodes here because we no longer have the required
+    // ElementId to look them up. See http://crbug.com/912574 for context around
+    // why this code was rewritten.
+    auto it = element_id_map.find(static_cast<TargetProperty::Type>(property));
+    if (it == element_id_map.end())
+      continue;
+
+    const ElementId element_id = it->second;
     switch (property) {
       case TargetProperty::TRANSFORM:
         if (TransformNode* transform_node =

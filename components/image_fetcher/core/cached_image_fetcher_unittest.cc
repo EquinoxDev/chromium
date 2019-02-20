@@ -47,6 +47,8 @@ class FakeImageDecoder;
 namespace {
 
 const GURL kImageUrl = GURL("http://gstatic.img.com/foo.jpg");
+
+constexpr char kUmaClientName[] = "TestUma";
 constexpr char kImageData[] = "data";
 
 const char kCachedImageFetcherEventHistogramName[] =
@@ -67,7 +69,7 @@ class ComponentizedCachedImageFetcherTest : public testing::Test {
   ~ComponentizedCachedImageFetcherTest() override {
     cached_image_fetcher_.reset();
     // We need to run until idle after deleting the database, because
-    // ProtoDatabaseImpl deletes the actual LevelDB asynchronously.
+    // ProtoDatabase deletes the actual LevelDB asynchronously.
     RunUntilIdle();
   }
 
@@ -171,10 +173,10 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchImageFromCache) {
   base::MockCallback<ImageFetcherCallback> image_callback;
 
   EXPECT_CALL(data_callback, Run(kImageData, _));
-  EXPECT_CALL(image_callback, Run(kImageUrl.spec(), NonEmptyImage(), _));
+  EXPECT_CALL(image_callback, Run(NonEmptyImage(), _));
   cached_image_fetcher()->FetchImageAndData(
-      kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-      TRAFFIC_ANNOTATION_FOR_TESTS);
+      kImageUrl, data_callback.Get(), image_callback.Get(),
+      ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
 
   RunUntilIdle();
 
@@ -198,10 +200,10 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchImageFromCacheReadOnly) {
     image_decoder()->SetDecodingValid(false);
     base::MockCallback<ImageDataFetcherCallback> data_callback;
     base::MockCallback<ImageFetcherCallback> image_callback;
-    EXPECT_CALL(image_callback, Run(kImageUrl.spec(), EmptyImage(), _));
+    EXPECT_CALL(image_callback, Run(EmptyImage(), _));
     cached_image_fetcher()->FetchImageAndData(
-        kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-        TRAFFIC_ANNOTATION_FOR_TESTS);
+        kImageUrl, data_callback.Get(), image_callback.Get(),
+        ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
     RunUntilIdle();
 
     histogram_tester().ExpectBucketCount(kCachedImageFetcherEventHistogramName,
@@ -218,10 +220,10 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchImageFromCacheReadOnly) {
     image_decoder()->SetDecodingValid(true);
     base::MockCallback<ImageDataFetcherCallback> data_callback;
     base::MockCallback<ImageFetcherCallback> image_callback;
-    EXPECT_CALL(image_callback, Run(kImageUrl.spec(), NonEmptyImage(), _));
+    EXPECT_CALL(image_callback, Run(NonEmptyImage(), _));
     cached_image_fetcher()->FetchImageAndData(
-        kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-        TRAFFIC_ANNOTATION_FOR_TESTS);
+        kImageUrl, data_callback.Get(), image_callback.Get(),
+        ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
     RunUntilIdle();
   }
 }
@@ -235,10 +237,10 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchImagePopulatesCache) {
     base::MockCallback<ImageFetcherCallback> image_callback;
 
     EXPECT_CALL(data_callback, Run(NonEmptyString(), _));
-    EXPECT_CALL(image_callback, Run(kImageUrl.spec(), NonEmptyImage(), _));
+    EXPECT_CALL(image_callback, Run(NonEmptyImage(), _));
     cached_image_fetcher()->FetchImageAndData(
-        kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-        TRAFFIC_ANNOTATION_FOR_TESTS);
+        kImageUrl, data_callback.Get(), image_callback.Get(),
+        ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
 
     RunUntilIdle();
 
@@ -267,10 +269,10 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchImagePopulatesCache) {
     base::MockCallback<ImageFetcherCallback> image_callback;
 
     EXPECT_CALL(data_callback, Run(NonEmptyString(), _));
-    EXPECT_CALL(image_callback, Run(kImageUrl.spec(), NonEmptyImage(), _));
+    EXPECT_CALL(image_callback, Run(NonEmptyImage(), _));
     cached_image_fetcher()->FetchImageAndData(
-        kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-        TRAFFIC_ANNOTATION_FOR_TESTS);
+        kImageUrl, data_callback.Get(), image_callback.Get(),
+        ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
 
     RunUntilIdle();
   }
@@ -286,10 +288,10 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchImagePopulatesCacheReadOnly) {
     base::MockCallback<ImageFetcherCallback> image_callback;
 
     EXPECT_CALL(data_callback, Run(NonEmptyString(), _));
-    EXPECT_CALL(image_callback, Run(kImageUrl.spec(), NonEmptyImage(), _));
+    EXPECT_CALL(image_callback, Run(NonEmptyImage(), _));
     cached_image_fetcher()->FetchImageAndData(
-        kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-        TRAFFIC_ANNOTATION_FOR_TESTS);
+        kImageUrl, data_callback.Get(), image_callback.Get(),
+        ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
 
     RunUntilIdle();
 
@@ -321,11 +323,11 @@ TEST_F(ComponentizedCachedImageFetcherTest, FetchDecodingErrorDeletesCache) {
   base::MockCallback<ImageDataFetcherCallback> data_callback;
   base::MockCallback<ImageFetcherCallback> image_callback;
   EXPECT_CALL(data_callback, Run(NonEmptyString(), _));
-  EXPECT_CALL(image_callback, Run(kImageUrl.spec(), EmptyImage(), _));
+  EXPECT_CALL(image_callback, Run(EmptyImage(), _));
   test_url_loader_factory()->AddResponse(kImageUrl.spec(), kImageData);
   cached_image_fetcher()->FetchImageAndData(
-      kImageUrl.spec(), kImageUrl, data_callback.Get(), image_callback.Get(),
-      TRAFFIC_ANNOTATION_FOR_TESTS);
+      kImageUrl, data_callback.Get(), image_callback.Get(),
+      ImageFetcherParams(TRAFFIC_ANNOTATION_FOR_TESTS, kUmaClientName));
   RunUntilIdle();
 
   histogram_tester().ExpectTotalCount(kNetworkLoadAfterCacheHitHistogram, 1);

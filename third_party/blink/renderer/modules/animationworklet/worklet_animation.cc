@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/animation/worklet_animation_controller.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
+#include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
@@ -132,6 +133,17 @@ void StartEffectOnCompositor(CompositorAnimation* animation,
   int group = 0;
   base::Optional<double> start_time = base::nullopt;
   double time_offset = 0;
+
+  // Normally the playback rate of a blink animation gets translated into
+  // equivalent playback rate of cc::KeyframeModels.
+  // This has worked for regular animations since their current time was not
+  // exposed in cc. However, for worklet animations this does not work because
+  // the current time is exposed and it is an animation level concept as
+  // opposed to a keyframe model level concept.
+  // So it makes sense here that we use "1" as playback rate for KeyframeModels
+  // and separately plumb the playback rate to cc worklet animation.
+  // TODO(majidvp): Remove playbackRate from KeyframeModel in favor of having
+  // it on animation. https://crbug.com/925373.
   double playback_rate = 1;
 
   effect->StartAnimationOnCompositor(group, start_time, time_offset,
@@ -144,6 +156,39 @@ unsigned NextSequenceNumber() {
   static unsigned next = 0;
   return ++next;
 }
+
+double ToMilliseconds(base::Optional<base::TimeDelta> time) {
+  return time ? time->InMillisecondsF()
+              : std::numeric_limits<double>::quiet_NaN();
+}
+
+// Calculates start time backwards from the current time and
+// timeline.currentTime.
+//
+// If this is a scroll-linked animation, we always consider start time to be
+// zero (i.e., scroll origin). This means the computed start time post this
+// calculation may not match the expected current time that was given as input.
+//
+// Changing this is under consideration here:
+// https://github.com/w3c/csswg-drafts/issues/2075
+base::Optional<base::TimeDelta> CalculateStartTime(
+    base::TimeDelta current_time,
+    double playback_rate,
+    AnimationTimeline& timeline) {
+  if (timeline.IsScrollTimeline())
+    return base::TimeDelta();
+
+  bool is_null;
+  double time_ms = timeline.currentTime(is_null);
+  // TODO(majidvp): Make it so that inactive timelines do not reach here
+  // i.e., we should instead "hold" when timeline is inactive.
+  // https://crbug.com/924159
+  if (is_null)
+    return base::nullopt;
+  auto timeline_time = base::TimeDelta::FromMillisecondsD(time_ms);
+  return timeline_time - (current_time / playback_rate);
+}
+
 }  // namespace
 
 WorkletAnimation* WorkletAnimation::Create(
@@ -187,12 +232,20 @@ WorkletAnimation* WorkletAnimation::Create(
     return nullptr;
   }
 
+  Document& document = keyframe_effects.at(0)->target()->GetDocument();
+  if (!document.GetWorkletAnimationController().IsAnimatorRegistered(
+          animator_name)) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "The animator '" + animator_name + "' has not yet been registered.");
+    return nullptr;
+  }
+
   AnimationWorklet* worklet =
       CSSAnimationWorklet::animationWorklet(script_state);
 
   WorkletAnimationId id = worklet->NextWorkletAnimationId();
 
-  Document& document = keyframe_effects.at(0)->target()->GetDocument();
   AnimationTimeline* animation_timeline =
       ConvertAnimationTimeline(document, timeline);
 
@@ -215,6 +268,7 @@ WorkletAnimation::WorkletAnimation(
       animator_name_(animator_name),
       play_state_(Animation::kIdle),
       last_play_state_(play_state_),
+      playback_rate_(1),
       document_(document),
       effects_(effects),
       timeline_(timeline),
@@ -242,6 +296,17 @@ void WorkletAnimation::play(ExceptionState& exception_state) {
   if (play_state_ == Animation::kPending)
     return;
 
+  if (play_state_ == Animation::kPaused) {
+    // If we have ever started before then just unpause otherwise we need to
+    // start the animation.
+    if (has_started_) {
+      SetPlayState(Animation::kPending);
+      SetCurrentTime(CurrentTime());
+      InvalidateCompositingState();
+      return;
+    }
+  }
+
   String failure_message;
   if (!CheckCanStart(&failure_message)) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
@@ -250,7 +315,11 @@ void WorkletAnimation::play(ExceptionState& exception_state) {
   }
 
   document_->GetWorkletAnimationController().AttachAnimation(*this);
+  // While animation is pending, it hold time at Zero, see:
+  // https://drafts.csswg.org/web-animations-1/#playing-an-animation-section
   SetPlayState(Animation::kPending);
+  SetCurrentTime(base::TimeDelta());
+  has_started_ = true;
 
   for (auto& effect : effects_) {
     Element* target = effect->target();
@@ -265,19 +334,48 @@ void WorkletAnimation::play(ExceptionState& exception_state) {
   }
 }
 
+double WorkletAnimation::currentTime(bool& is_null) {
+  base::Optional<base::TimeDelta> current_time = CurrentTime();
+  is_null = !current_time.has_value();
+  return ToMilliseconds(current_time);
+}
+
+double WorkletAnimation::startTime(bool& is_null) {
+  is_null = !start_time_.has_value();
+  return ToMilliseconds(start_time_);
+}
+
+void WorkletAnimation::pause(ExceptionState& exception_state) {
+  DCHECK(IsMainThread());
+  if (play_state_ == Animation::kPaused)
+    return;
+
+  // If animation is pending it means we have not sent an update to
+  // compositor. Since we are pausing, immediately start the animation
+  // which updates start time and marks animation as main thread.
+  // This ensures we have a valid current time to hold.
+  if (play_state_ == Animation::kPending)
+    StartOnMain();
+
+  // If animation is playing then we should hold the current time
+  // otherwise hold zero.
+  base::TimeDelta new_current_time =
+      Playing() ? CurrentTime().value() : base::TimeDelta();
+  SetPlayState(Animation::kPaused);
+  SetCurrentTime(new_current_time);
+}
+
 void WorkletAnimation::cancel() {
   DCHECK(IsMainThread());
   if (play_state_ == Animation::kIdle)
     return;
   document_->GetWorkletAnimationController().DetachAnimation(*this);
-
   if (compositor_animation_) {
     GetEffect()->CancelAnimationOnCompositor(compositor_animation_.get());
     DestroyCompositorAnimation();
   }
-
+  has_started_ = false;
   local_times_.Fill(base::nullopt);
-  start_time_ = base::nullopt;
   running_on_main_thread_ = false;
   // TODO(yigu): Because this animation has been detached and will not receive
   // updates anymore, we have to update its value upon cancel. Similar to
@@ -288,6 +386,7 @@ void WorkletAnimation::cancel() {
       effect->UpdateInheritedTime(NullValue(), kTimingUpdateOnDemand);
   }
   SetPlayState(Animation::kIdle);
+  SetCurrentTime(base::nullopt);
 
   for (auto& effect : effects_) {
     Element* target = effect->target();
@@ -312,16 +411,64 @@ void WorkletAnimation::UpdateIfNecessary() {
   Update(kTimingUpdateOnDemand);
 }
 
+double WorkletAnimation::playbackRate(ScriptState* script_state) const {
+  return playback_rate_;
+}
+
+void WorkletAnimation::setPlaybackRate(ScriptState* script_state,
+                                       double playback_rate) {
+  if (playback_rate == playback_rate_)
+    return;
+
+  // TODO(https://crbug.com/821910): Implement 0 playback rate after pause()
+  // support is in.
+  if (!playback_rate) {
+    if (document_->GetFrame() && ExecutionContext::From(script_state)) {
+      document_->GetFrame()->Console().AddMessage(
+          ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                                 "WorkletAnimation currently does not support "
+                                 "playback rate of Zero."));
+    }
+    return;
+  }
+
+  // TODO(gerchiko): Implement support playback_rate for scroll-linked
+  // animations. http://crbug.com/852475.
+  if (timeline_->IsScrollTimeline()) {
+    if (document_->GetFrame() && ExecutionContext::From(script_state)) {
+      document_->GetFrame()->Console().AddMessage(
+          ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel,
+                                 "Scroll-linked WorkletAnimation currently "
+                                 "does not support setting playback rate."));
+    }
+    return;
+  }
+  SetPlaybackRateInternal(playback_rate);
+}
+
+void WorkletAnimation::SetPlaybackRateInternal(double playback_rate) {
+  DCHECK(std::isfinite(playback_rate));
+  DCHECK_NE(playback_rate, playback_rate_);
+  DCHECK(playback_rate);
+  DCHECK(!timeline_->IsScrollTimeline());
+
+  base::Optional<base::TimeDelta> previous_current_time = CurrentTime();
+  playback_rate_ = playback_rate;
+  // Update startTime in order to maintain previous currentTime and, as a
+  // result, prevent the animation from jumping.
+  if (previous_current_time)
+    SetCurrentTime(previous_current_time);
+
+  if (Playing())
+    document_->GetWorkletAnimationController().InvalidateAnimation(*this);
+}
+
 void WorkletAnimation::EffectInvalidated() {
   InvalidateCompositingState();
 }
 
 void WorkletAnimation::Update(TimingUpdateReason reason) {
-  if (play_state_ != Animation::kRunning)
-    return;
-
-  // ScrollTimeline animation doesn't require start_time_ to be set.
-  if (!start_time_ && !timeline_->IsScrollTimeline())
+  if (play_state_ != Animation::kRunning && play_state_ != Animation::kPaused)
     return;
 
   DCHECK_EQ(effects_.size(), local_times_.size());
@@ -344,12 +491,25 @@ bool WorkletAnimation::CheckCanStart(String* failure_message) {
   return true;
 }
 
-void WorkletAnimation::SetStartTimeToNow() {
-  DCHECK(!start_time_);
-  bool is_null;
-  double time = timeline_->currentTime(is_null);
-  if (!is_null)
-    start_time_ = base::TimeDelta::FromSecondsD(time);
+void WorkletAnimation::SetCurrentTime(
+    base::Optional<base::TimeDelta> seek_time) {
+  DCHECK(timeline_);
+  // The procedure either:
+  // 1) updates the hold time (for paused animations, non-existent timeline)
+  // 2) updates the start time (for playing animations)
+  bool should_hold = play_state_ == Animation::kPaused || !seek_time;
+  if (should_hold) {
+    start_time_ = base::nullopt;
+    hold_time_ = seek_time;
+  } else {
+    // TODO(majidvp): Currently when timeline is inactive (e.g., scroll timeline
+    // whose source is not scrolling), we will end up here but probably we
+    // should not. In those cases we should hold instead.
+    // https://crbug.com/924159
+    start_time_ =
+        CalculateStartTime(seek_time.value(), playback_rate_, *timeline_);
+    hold_time_ = base::nullopt;
+  }
 }
 
 void WorkletAnimation::UpdateCompositingState() {
@@ -382,8 +542,10 @@ void WorkletAnimation::InvalidateCompositingState() {
 
 void WorkletAnimation::StartOnMain() {
   running_on_main_thread_ = true;
-  SetStartTimeToNow();
+  // Start from existing current time in case one exists or zero.
+  base::TimeDelta current_time = CurrentTime().value_or(base::TimeDelta());
   SetPlayState(Animation::kRunning);
+  SetCurrentTime(current_time);
 }
 
 bool WorkletAnimation::StartOnCompositor() {
@@ -412,7 +574,6 @@ bool WorkletAnimation::StartOnCompositor() {
           base::Optional<CompositorElementIdSet>(), playback_rate);
 
   if (!failure_code.Ok()) {
-    SetPlayState(Animation::kIdle);
     return false;
   }
 
@@ -425,7 +586,7 @@ bool WorkletAnimation::StartOnCompositor() {
     // update the compositor to have the correct orientation and start/end
     // offset information.
     compositor_animation_ = CompositorAnimation::CreateWorkletAnimation(
-        id_, animator_name_,
+        id_, animator_name_, playback_rate_,
         scroll_timeline_util::ToCompositorScrollTimeline(timeline_),
         std::move(options_));
     compositor_animation_->SetAnimationDelegate(this);
@@ -443,12 +604,7 @@ bool WorkletAnimation::StartOnCompositor() {
   // TODO(smcgruer): We need to start all of the effects, not just the first.
   StartEffectOnCompositor(compositor_animation_.get(), GetEffect());
   SetPlayState(Animation::kRunning);
-
-  bool is_null;
-  double time = timeline_->currentTime(is_null);
-  if (!is_null)
-    start_time_ = base::TimeDelta::FromSecondsD(time);
-
+  SetCurrentTime(base::TimeDelta());
   return true;
 }
 
@@ -486,6 +642,7 @@ void WorkletAnimation::UpdateOnCompositor() {
         scroll_timeline_util::GetCompositorScrollElementId(scroll_source),
         start_scroll_offset, end_scroll_offset);
   }
+  compositor_animation_->UpdatePlaybackRate(playback_rate_);
 }
 
 void WorkletAnimation::DestroyCompositorAnimation() {
@@ -511,20 +668,50 @@ bool WorkletAnimation::IsActiveAnimation() const {
   return IsActive(play_state_);
 }
 
-base::Optional<double> WorkletAnimation::CurrentTime() const {
+base::Optional<base::TimeDelta> WorkletAnimation::CurrentTime() const {
+  if (play_state_ == Animation::kIdle || play_state_ == Animation::kUnset)
+    return base::nullopt;
+
+  if (hold_time_)
+    return hold_time_.value();
+
   bool is_null;
-  double timeline_time = timeline_->currentTime(is_null);
+  double timeline_time_ms = timeline_->currentTime(is_null);
   if (is_null)
     return base::nullopt;
-  if (timeline_->IsScrollTimeline())
-    return timeline_time;
+
+  base::TimeDelta timeline_time =
+      base::TimeDelta::FromMillisecondsD(timeline_time_ms);
   DCHECK(start_time_);
-  return timeline_time - start_time_->InSecondsF();
+  return (timeline_time - start_time_.value()) * playback_rate_;
+}
+
+bool WorkletAnimation::NeedsPeek(base::TimeDelta current_time) {
+  bool local_time_is_set = false;
+  for (auto& time : local_times_) {
+    if (time) {
+      local_time_is_set = true;
+      break;
+    }
+  }
+
+  // If any of the local times has been set, a previous peek must have
+  // completed. Request a new peek only if the input time changes.
+  if (local_time_is_set)
+    return last_peek_request_time_ != current_time;
+
+  return true;
 }
 
 void WorkletAnimation::UpdateInputState(
     AnimationWorkletDispatcherInput* input_state) {
   if (!running_on_main_thread_) {
+    if (!CurrentTime())
+      return;
+    base::TimeDelta current_time = CurrentTime().value();
+    if (!NeedsPeek(current_time))
+      return;
+    last_peek_request_time_ = current_time;
     input_state->Peek(id_);
     return;
   }
@@ -532,27 +719,23 @@ void WorkletAnimation::UpdateInputState(
   bool was_active = IsActive(last_play_state_);
   bool is_active = IsActive(play_state_);
 
-  // ScrollTimeline animation doesn't require start_time_ to be set.
-  DCHECK(start_time_ || timeline_->IsScrollTimeline());
-  DCHECK(last_current_time_ || !was_active);
-  double current_time =
-      CurrentTime().value_or(std::numeric_limits<double>::quiet_NaN());
+  base::Optional<base::TimeDelta> current_time = CurrentTime();
+  double current_time_ms = ToMilliseconds(current_time);
 
-  bool did_time_change =
-      !last_current_time_ || current_time != last_current_time_->InSecondsF();
+  bool did_time_change = current_time != last_current_time_;
   // TODO(yigu): If current_time becomes newly unresolved and last_current_time_
   // is resolved, we apply the last current time to the animation if the scroll
   // timeline becomes newly inactive. See https://crbug.com/906050.
-  last_current_time_ = base::TimeDelta::FromSecondsD(current_time);
+  last_current_time_ = current_time;
   if (!was_active && is_active) {
     input_state->Add(
         {id_,
          std::string(animator_name_.Ascii().data(), animator_name_.length()),
-         current_time, CloneOptions(), effects_.size()});
+         current_time_ms, CloneOptions(), effects_.size()});
   } else if (was_active && is_active) {
     // Skip if the input time is not changed.
     if (did_time_change)
-      input_state->Update({id_, current_time});
+      input_state->Update({id_, current_time_ms});
   } else if (was_active && !is_active) {
     input_state->Remove(id_);
   }

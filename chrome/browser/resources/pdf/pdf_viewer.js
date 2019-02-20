@@ -132,12 +132,10 @@ function PDFViewer(browserApi) {
   this.isPrintPreviewLoadingFinished_ = false;
   this.isUserInitiatedEvent_ = true;
 
-  /**
-   * @type {!PDFMetrics}
-   */
-  this.metrics =
-      (chrome.metricsPrivate ? new PDFMetricsImpl() : new PDFMetricsDummy());
-  this.metrics.onDocumentOpened();
+  /** @private {boolean} */
+  this.hasEnteredAnnotationMode_ = false;
+
+  PDFMetrics.record(PDFMetrics.UserAction.DOCUMENT_OPENED);
 
   // Parse open pdf parameters.
   this.paramsParser_ = new OpenPDFParamsParser(
@@ -172,7 +170,7 @@ function PDFViewer(browserApi) {
       this.browserApi_.getZoomBehavior() == BrowserApi.ZoomBehavior.MANAGE ?
       this.browserApi_.getDefaultZoom() :
       1.0;
-  this.viewport_ = new Viewport(
+  this.viewport_ = new ViewportImpl(
       window, this.sizer_, this.viewportChanged_.bind(this),
       () => this.currentController_.beforeZoom(),
       () => {
@@ -221,7 +219,7 @@ function PDFViewer(browserApi) {
     this.plugin_.setAttribute('full-frame', '');
   }
 
-  document.body.appendChild(this.plugin_);
+  $('content').appendChild(this.plugin_);
 
   this.pluginController_ =
       new PluginController(this.plugin_, this, this.viewport_);
@@ -237,7 +235,7 @@ function PDFViewer(browserApi) {
   this.zoomToolbar_.addEventListener(
       'zoom-out', this.viewport_.zoomOut.bind(this.viewport_));
 
-  this.gestureDetector_ = new GestureDetector(this.plugin_);
+  this.gestureDetector_ = new GestureDetector($('content'));
   this.gestureDetector_.addEventListener(
       'pinchstart', this.onPinchStart_.bind(this));
   this.sentPinchEvent_ = false;
@@ -250,12 +248,18 @@ function PDFViewer(browserApi) {
     this.toolbar_ = $('toolbar');
     this.toolbar_.hidden = false;
     this.toolbar_.addEventListener('save', () => this.save());
+    this.toolbar_.addEventListener('print', () => this.print());
     this.toolbar_.addEventListener(
-        'print', () => this.currentController_.print());
+        'undo', () => this.currentController_.undo());
+    this.toolbar_.addEventListener(
+        'redo', () => this.currentController_.redo());
     this.toolbar_.addEventListener(
         'rotate-right', () => this.currentController_.rotateClockwise());
     this.toolbar_.addEventListener(
         'annotation-mode-changed', e => this.annotationModeChanged_(e));
+    this.toolbar_.addEventListener(
+        'annotation-tool-changed',
+        e => this.inkController_.setAnnotationTool(e.detail.value));
 
     this.toolbar_.docTitle = getFilenameFromURL(this.originalUrl_);
   }
@@ -263,9 +267,9 @@ function PDFViewer(browserApi) {
   document.body.addEventListener('change-page', e => {
     this.viewport_.goToPage(e.detail.page);
     if (e.detail.origin == 'bookmark') {
-      this.metrics.onFollowBookmark();
+      PDFMetrics.record(PDFMetrics.UserAction.FOLLOW_BOOKMARK);
     } else if (e.detail.origin == 'pageselector') {
-      this.metrics.onPageSelectorNavigation();
+      PDFMetrics.record(PDFMetrics.UserAction.PAGE_SELECTOR_NAVIGATE);
     }
   });
 
@@ -283,7 +287,7 @@ function PDFViewer(browserApi) {
 
   document.body.addEventListener('dropdown-opened', e => {
     if (e.detail == 'bookmarks') {
-      this.metrics.onOpenBookmarksPanel();
+      PDFMetrics.record(PDFMetrics.UserAction.OPEN_BOOKMARKS_PANEL);
     }
   });
 
@@ -315,6 +319,11 @@ function PDFViewer(browserApi) {
 
   // Request translated strings.
   chrome.resourcesPrivate.getStrings('pdf', this.handleStrings_.bind(this));
+
+  // Listen for save commands from the browser.
+  if (chrome.mimeHandlerPrivate && chrome.mimeHandlerPrivate.onSave) {
+    chrome.mimeHandlerPrivate.onSave.addListener(this.onSave.bind(this));
+  }
 }
 
 PDFViewer.prototype = {
@@ -488,14 +497,16 @@ PDFViewer.prototype = {
   /**
    * Handles the annotation mode being toggled on or off.
    *
-   * @param {CustomEvent} e
+   * @param {!CustomEvent<{value: boolean}>} e
    * @private
    */
   annotationModeChanged_: async function(e) {
     const annotationMode = e.detail.value;
     if (annotationMode) {
-      assert(this.currentController_ == this.pluginController_);
       // Enter annotation mode.
+      PDFMetrics.record(PDFMetrics.UserAction.ENTER_ANNOTATION_MODE);
+      this.hasEnteredAnnotationMode_ = true;
+      assert(this.currentController_ == this.pluginController_);
       // TODO(dstockwell): set plugin read-only, begin transition
       this.updateProgress(0);
       // TODO(dstockwell): handle save failure
@@ -503,11 +514,13 @@ PDFViewer.prototype = {
       // TODO(dstockwell): feed real progress data from the Ink component
       this.updateProgress(50);
       await this.inkController_.load(result.fileName, result.dataToSave);
+      this.inkController_.setAnnotationTool(this.toolbar_.annotationTool);
       this.currentController_ = this.inkController_;
       this.pluginController_.unload();
       this.updateProgress(100);
     } else {
       // Exit annotation mode.
+      PDFMetrics.record(PDFMetrics.UserAction.EXIT_ANNOTATION_MODE);
       assert(this.currentController_ == this.inkController_);
       // TODO(dstockwell): set ink read-only, begin transition
       this.updateProgress(0);
@@ -520,13 +533,31 @@ PDFViewer.prototype = {
       // TODO(dstockwell): handle save failure
       const result = await this.inkController_.save(true);
       await this.pluginController_.load(result.fileName, result.dataToSave);
+      // Ensure the plugin gets the initial viewport.
+      this.viewport_.setZoom(this.viewport_.zoom);
     }
+  },
+
+  /**
+   * Exits annotation mode if active.
+   *
+   * @return {Promise<void>}
+   */
+  exitAnnotationMode_: async function() {
+    if (!this.toolbar_.annotationMode) {
+      return;
+    }
+    this.toolbar_.toggleAnnotation();
+    await this.loaded;
   },
 
   /**
    * Request to change the viewport fitting type.
    *
-   * @param {CustomEvent} e Event received with the new FittingType as detail.
+   * @param {!CustomEvent<{
+   *     fittingType: FittingType,
+   *     userInitiated: boolean
+   * }>} e
    * @private
    */
   fitToChanged_: function(e) {
@@ -541,7 +572,7 @@ PDFViewer.prototype = {
     }
 
     if (e.detail.userInitiated) {
-      this.metrics.onFitTo(e.detail.fittingType);
+      PDFMetrics.recordFitTo(e.detail.fittingType);
     }
   },
 
@@ -612,7 +643,7 @@ PDFViewer.prototype = {
   goToPageAndXY_: function(origin, page, message) {
     this.viewport_.goToPageAndXY(page, message.x, message.y);
     if (origin == 'bookmark') {
-      this.metrics.onFollowBookmark();
+      PDFMetrics.record(PDFMetrics.UserAction.FOLLOW_BOOKMARK);
     }
   },
 
@@ -1104,11 +1135,34 @@ PDFViewer.prototype = {
   },
 
   /**
+   * An event handler for when the browser tells the PDF Viewer to perform a
+   * save.
+   *
+   * @param {string} streamUrl unique identifier for a PDF Viewer instance.
+   * @private
+   */
+  onSave: async function(streamUrl) {
+    if (streamUrl != this.browserApi_.getStreamInfo().streamUrl) {
+      return;
+    }
+
+    this.save();
+  },
+
+  /**
    * Saves the current PDF document to disk.
    */
   save: async function() {
+    PDFMetrics.record(PDFMetrics.UserAction.SAVE);
+    if (this.hasEnteredAnnotationMode_) {
+      PDFMetrics.record(PDFMetrics.UserAction.SAVE_WITH_ANNOTATION);
+    }
+    // If we have entered annotation mode we must require the local
+    // contents to ensure annotations are saved. Otherwise we would
+    // save the cached or remote copy without annotatios.
+    const requireResult = this.hasEnteredAnnotationMode_;
     // TODO(dstockwell): Report an error to user if this fails.
-    const result = await this.currentController_.save(false);
+    const result = await this.currentController_.save(requireResult);
     if (result == null) {
       // The content controller handled the save internally.
       return;
@@ -1120,13 +1174,31 @@ PDFViewer.prototype = {
       fileName = fileName + '.pdf';
     }
 
-    const a = document.createElement('a');
-    a.download = fileName;
-    const blob = new Blob([result.dataToSave], {type: 'application/pdf'});
-    a.href = URL.createObjectURL(blob);
-    a.click();
-    URL.revokeObjectURL(a.href);
+    chrome.fileSystem.chooseEntry(
+        {type: 'saveFile', suggestedName: fileName}, entry => {
+          if (chrome.runtime.lastError) {
+            if (chrome.runtime.lastError.message != 'User cancelled') {
+              console.log(
+                  'chrome.fileSystem.chooseEntry failed: ' +
+                  chrome.runtime.lastError.message);
+            }
+            return;
+          }
+          entry.createWriter(writer => {
+            writer.write(
+                new Blob([result.dataToSave], {type: 'application/pdf'}));
+          });
+        });
+
+    // Saving in Annotation mode is destructive: crbug.com/919364
+    this.exitAnnotationMode_();
   },
+
+  print: async function() {
+    PDFMetrics.record(PDFMetrics.UserAction.PRINT);
+    await this.exitAnnotationMode_();
+    this.currentController_.print();
+  }
 };
 
 /** @abstract */
@@ -1162,9 +1234,18 @@ class ContentController {
 
   /**
    * Triggers printing of the current document.
-   * @abstract
    */
   print() {}
+
+  /**
+   * Undo an edit action.
+   */
+  undo() {}
+
+  /**
+   * Redo an edit action.
+   */
+  redo() {}
 
   /**
    * Requests that the current document be saved.
@@ -1205,6 +1286,14 @@ class InkController extends ContentController {
     this.inkHost_ = null;
   }
 
+  /** @param {AnnotationTool} tool */
+  setAnnotationTool(tool) {
+    this.tool_ = tool;
+    if (this.inkHost_) {
+      this.inkHost_.setAnnotationTool(tool);
+    }
+  }
+
   /** @override */
   rotateClockwise() {
     // TODO(dstockwell): implement rotation
@@ -1216,13 +1305,8 @@ class InkController extends ContentController {
   }
 
   /** @override */
-  print() {
-    // TODO(dstockwell): implement printing
-  }
-
-  /** @override */
   viewportChanged() {
-    this.inkHost_.viewportChanged(this.viewport_);
+    this.inkHost_.viewportChanged();
   }
 
   /** @override */
@@ -1231,12 +1315,23 @@ class InkController extends ContentController {
   }
 
   /** @override */
+  undo() {
+    this.inkHost_.undo();
+  }
+
+  /** @override */
+  redo() {
+    this.inkHost_.redo();
+  }
+
+  /** @override */
   load(filename, data) {
     if (!this.inkHost_) {
       this.inkHost_ = document.createElement('viewer-ink-host');
-      document.body.appendChild(this.inkHost_);
+      $('content').appendChild(this.inkHost_);
+      this.inkHost_.viewport = this.viewport_;
     }
-    return this.inkHost_.load(filename, data, this.viewport_);
+    return this.inkHost_.load(filename, data);
   }
 
   /** @override */
@@ -1327,14 +1422,14 @@ class PluginController extends ContentController {
 
   /** @override */
   rotateClockwise() {
-    this.viewer_.metrics.onRotation();
+    PDFMetrics.record(PDFMetrics.UserAction.ROTATE);
     this.viewport_.rotateClockwise(1);
     this.postMessage({type: 'rotateClockwise'});
   }
 
   /** @override */
   rotateCounterClockwise() {
-    this.viewer_.metrics.onRotation();
+    PDFMetrics.record(PDFMetrics.UserAction.ROTATE);
     this.viewport_.rotateClockwise(3);
     this.postMessage({type: 'rotateCounterclockwise'});
   }
@@ -1383,7 +1478,7 @@ class PluginController extends ContentController {
         this.viewer_.handleBeep();
         break;
       case 'documentDimensions':
-        viewer.setDocumentDimensions(message.data);
+        this.viewer_.setDocumentDimensions(message.data);
         break;
       case 'email':
         const href = 'mailto:' + message.data.to + '?cc=' + message.data.cc +
@@ -1435,9 +1530,9 @@ class PluginController extends ContentController {
         this.saveData_(message.data);
         break;
       case 'consumeSaveToken':
-        const resolve = this.pendingTokens_.get(message.data.token);
+        const resolver = this.pendingTokens_.get(message.data.token);
         assert(this.pendingTokens_.delete(message.data.token));
-        resolve(null);
+        resolver.resolve(null);
         break;
     }
   }

@@ -36,9 +36,7 @@ namespace {
 
 const char kMetadataTraceLabel[] = "metadata";
 
-const char kGetCategoriesClosureName[] = "GetCategoriesClosure";
 const char kRequestBufferUsageClosureName[] = "RequestBufferUsageClosure";
-const char kStartTracingClosureName[] = "StartTracingClosure";
 
 }  // namespace
 
@@ -269,9 +267,11 @@ class Coordinator::TraceStreamer : public base::SupportsWeakPtr<TraceStreamer> {
   DISALLOW_COPY_AND_ASSIGN(TraceStreamer);
 };
 
-Coordinator::Coordinator(AgentRegistry* agent_registry)
-    : binding_(this),
-      task_runner_(base::ThreadTaskRunnerHandle::Get()),
+Coordinator::Coordinator(AgentRegistry* agent_registry,
+                         const base::RepeatingClosure& on_disconnect_callback)
+    : on_disconnect_callback_(std::move(on_disconnect_callback)),
+      binding_(this),
+      task_runner_(base::SequencedTaskRunnerHandle::Get()),
       // USER_VISIBLE because the task posted from StopAndFlushInternal() is
       // required to stop tracing from the UI.
       // TODO(fdoray): Once we have support for dynamic priorities
@@ -286,16 +286,20 @@ Coordinator::Coordinator(AgentRegistry* agent_registry)
 }
 
 Coordinator::~Coordinator() {
+  Reset();
+}
+
+bool Coordinator::IsConnected() {
+  return !!binding_;
+}
+
+void Coordinator::Reset() {
   if (!stop_and_flush_callback_.is_null()) {
     base::ResetAndReturn(&stop_and_flush_callback_)
         .Run(base::Value(base::Value::Type::DICTIONARY));
   }
-  if (!start_tracing_callback_.is_null())
-    base::ResetAndReturn(&start_tracing_callback_).Run(false);
   if (!request_buffer_usage_callback_.is_null())
     base::ResetAndReturn(&request_buffer_usage_callback_).Run(false, 0, 0);
-  if (!get_categories_callback_.is_null())
-    base::ResetAndReturn(&get_categories_callback_).Run(false, "");
 
   if (trace_streamer_) {
     // We are in the middle of flushing trace data. We need to
@@ -309,17 +313,21 @@ Coordinator::~Coordinator() {
   }
 }
 
+void Coordinator::OnClientConnectionError() {
+  Reset();
+  binding_.Close();
+  on_disconnect_callback_.Run();
+}
 void Coordinator::BindCoordinatorRequest(
     mojom::CoordinatorRequest request,
     const service_manager::BindSourceInfo& source_info) {
   binding_.Bind(std::move(request));
+  binding_.set_connection_error_handler(base::BindRepeating(
+      &Coordinator::OnClientConnectionError, base::Unretained(this)));
 }
 
-void Coordinator::StartTracing(const std::string& config,
-                               StartTracingCallback callback) {
-  bool is_initializing = !start_tracing_callback_.is_null();
-  if (is_initializing || (is_tracing_ && config == config_)) {
-    std::move(callback).Run(config == config_);
+void Coordinator::StartTracing(const std::string& config) {
+  if ((is_tracing_ && config == config_)) {
     return;
   }
 
@@ -330,41 +338,13 @@ void Coordinator::StartTracing(const std::string& config,
       base::BindRepeating(&Coordinator::SendStartTracingToAgent,
                           weak_ptr_factory_.GetWeakPtr()),
       false /* call_on_new_agents_only */);
-  if (!agent_registry_->HasDisconnectClosure(&kStartTracingClosureName)) {
-    std::move(callback).Run(true);
-    return;
-  }
-  start_tracing_callback_ = std::move(callback);
 }
 
 void Coordinator::SendStartTracingToAgent(
     AgentRegistry::AgentEntry* agent_entry) {
-  if (agent_entry->HasDisconnectClosure(&kStartTracingClosureName))
-    return;
   if (!parsed_config_.process_filter_config().IsEnabled(agent_entry->pid()))
     return;
-  agent_entry->AddDisconnectClosure(
-      &kStartTracingClosureName,
-      base::BindOnce(&Coordinator::OnTracingStarted,
-                     weak_ptr_factory_.GetWeakPtr(),
-                     base::Unretained(agent_entry), false));
-  agent_entry->agent()->StartTracing(
-      config_, TRACE_TIME_TICKS_NOW(),
-      base::BindRepeating(&Coordinator::OnTracingStarted,
-                          weak_ptr_factory_.GetWeakPtr(),
-                          base::Unretained(agent_entry)));
-}
-
-void Coordinator::OnTracingStarted(AgentRegistry::AgentEntry* agent_entry,
-                                   bool success) {
-  bool removed =
-      agent_entry->RemoveDisconnectClosure(&kStartTracingClosureName);
-  DCHECK(removed);
-
-  if (!agent_registry_->HasDisconnectClosure(&kStartTracingClosureName) &&
-      !start_tracing_callback_.is_null()) {
-    std::move(start_tracing_callback_).Run(true);
-  }
+  agent_entry->agent()->StartTracing(config_, TRACE_TIME_TICKS_NOW());
 }
 
 void Coordinator::StopAndFlush(mojo::ScopedDataPipeProducerHandle stream,
@@ -392,18 +372,6 @@ void Coordinator::StopAndFlushAgent(mojo::ScopedDataPipeProducerHandle stream,
 }
 
 void Coordinator::StopAndFlushInternal() {
-  if (agent_registry_->HasDisconnectClosure(&kStartTracingClosureName)) {
-    // We received a |StopAndFlush| command before receiving |StartTracing| acks
-    // from all agents. Let's retry after a delay.
-    task_runner_->PostDelayedTask(
-        FROM_HERE,
-        base::BindRepeating(&Coordinator::StopAndFlushInternal,
-                            weak_ptr_factory_.GetWeakPtr()),
-        base::TimeDelta::FromMilliseconds(
-            mojom::kStopTracingRetryTimeMilliseconds));
-    return;
-  }
-
   size_t num_initialized_agents =
       agent_registry_->SetAgentInitializationCallback(
           base::BindRepeating(&Coordinator::SendStopTracingToAgent,
@@ -470,7 +438,7 @@ void Coordinator::RequestBufferUsage(RequestBufferUsageCallback callback) {
 
   maximum_trace_buffer_usage_ = 0;
   approximate_event_count_ = 0;
-  request_buffer_usage_callback_ = std::move(callback);
+
   agent_registry_->ForAllAgents([this](AgentRegistry::AgentEntry* agent_entry) {
     agent_entry->AddDisconnectClosure(
         &kRequestBufferUsageClosureName,
@@ -482,6 +450,12 @@ void Coordinator::RequestBufferUsage(RequestBufferUsageCallback callback) {
         &Coordinator::OnRequestBufferStatusResponse,
         weak_ptr_factory_.GetWeakPtr(), base::Unretained(agent_entry)));
   });
+
+  if (!agent_registry_->HasDisconnectClosure(&kRequestBufferUsageClosureName)) {
+    std::move(callback).Run(true, 0.0f, 0);
+    return;
+  }
+  request_buffer_usage_callback_ = std::move(callback);
 }
 
 void Coordinator::OnRequestBufferStatusResponse(
@@ -503,50 +477,6 @@ void Coordinator::OnRequestBufferStatusResponse(
   if (!agent_registry_->HasDisconnectClosure(&kRequestBufferUsageClosureName)) {
     std::move(request_buffer_usage_callback_)
         .Run(true, maximum_trace_buffer_usage_, approximate_event_count_);
-  }
-}
-
-void Coordinator::GetCategories(GetCategoriesCallback callback) {
-  if (is_tracing_) {
-    std::move(callback).Run(false, "");
-    return;
-  }
-
-  DCHECK(get_categories_callback_.is_null());
-  is_tracing_ = true;
-  category_set_.clear();
-  get_categories_callback_ = std::move(callback);
-  agent_registry_->ForAllAgents([this](AgentRegistry::AgentEntry* agent_entry) {
-    agent_entry->AddDisconnectClosure(
-        &kGetCategoriesClosureName,
-        base::BindOnce(&Coordinator::OnGetCategoriesResponse,
-                       weak_ptr_factory_.GetWeakPtr(),
-                       base::Unretained(agent_entry), ""));
-    agent_entry->agent()->GetCategories(base::BindRepeating(
-        &Coordinator::OnGetCategoriesResponse, weak_ptr_factory_.GetWeakPtr(),
-        base::Unretained(agent_entry)));
-  });
-}
-
-void Coordinator::OnGetCategoriesResponse(
-    AgentRegistry::AgentEntry* agent_entry,
-    const std::string& categories) {
-  bool removed =
-      agent_entry->RemoveDisconnectClosure(&kGetCategoriesClosureName);
-  DCHECK(removed);
-
-  std::vector<std::string> split = base::SplitString(
-      categories, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  for (const auto& category : split) {
-    category_set_.insert(category);
-  }
-
-  if (!agent_registry_->HasDisconnectClosure(&kGetCategoriesClosureName)) {
-    std::vector<std::string> category_vector(category_set_.begin(),
-                                             category_set_.end());
-    std::move(get_categories_callback_)
-        .Run(true, base::JoinString(category_vector, ","));
-    is_tracing_ = false;
   }
 }
 

@@ -22,38 +22,23 @@
 #include "components/browser_sync/profile_sync_test_util.h"
 #include "components/invalidation/impl/invalidation_switches.h"
 #include "components/invalidation/impl/profile_invalidation_provider.h"
-#include "components/sync/device_info/local_device_info_provider_impl.h"
 #include "components/sync/driver/startup_controller.h"
 #include "components/sync/driver/sync_api_component_factory_mock.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "ui/base/device_form_factor.h"
 
 using browser_sync::ProfileSyncService;
 using testing::NiceMock;
 
 ProfileSyncService::InitParams CreateProfileSyncServiceParamsForTest(
     Profile* profile) {
-  auto sync_client = std::make_unique<browser_sync::ChromeSyncClient>(profile);
-
-  sync_client->SetSyncApiComponentFactoryForTesting(
-      std::make_unique<NiceMock<syncer::SyncApiComponentFactoryMock>>());
-
-  ProfileSyncService::InitParams init_params =
-      CreateProfileSyncServiceParamsForTest(std::move(sync_client), profile);
-
-  return init_params;
-}
-
-ProfileSyncService::InitParams CreateProfileSyncServiceParamsForTest(
-    std::unique_ptr<syncer::SyncClient> sync_client,
-    Profile* profile) {
   ProfileSyncService::InitParams init_params;
 
   init_params.identity_manager = IdentityManagerFactory::GetForProfile(profile);
   init_params.start_behavior = ProfileSyncService::MANUAL_START;
-  init_params.sync_client = std::move(sync_client);
+  init_params.sync_client =
+      std::make_unique<browser_sync::ChromeSyncClient>(profile);
   init_params.network_time_update_callback = base::DoNothing();
   bool fcm_invalidations_enabled =
       base::FeatureList::IsEnabled(invalidation::switches::kFCMInvalidations);
@@ -70,27 +55,8 @@ ProfileSyncService::InitParams CreateProfileSyncServiceParamsForTest(
       content::BrowserContext::GetDefaultStoragePartition(profile)
           ->GetURLLoaderFactoryForBrowserProcess();
   init_params.debug_identifier = profile->GetDebugName();
-  init_params.local_device_info_provider =
-      std::make_unique<syncer::LocalDeviceInfoProviderImpl>(
-          chrome::GetChannel(), chrome::GetVersionString(),
-          ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET,
-          /*signin_scoped_device_id_callback=*/base::BindRepeating([]() {
-            return std::string();
-          }));
 
   return init_params;
-}
-
-std::unique_ptr<TestingProfile> MakeSignedInTestingProfile() {
-  std::unique_ptr<TestingProfile> profile =
-      IdentityTestEnvironmentProfileAdaptor::
-          CreateProfileForIdentityTestEnvironment();
-  auto identity_test_env_profile_adaptor =
-      std::make_unique<IdentityTestEnvironmentProfileAdaptor>(profile.get());
-
-  identity_test_env_profile_adaptor->identity_test_env()->SetPrimaryAccount(
-      "test@mail.com");
-  return profile;
 }
 
 std::unique_ptr<KeyedService> BuildMockProfileSyncService(

@@ -54,7 +54,9 @@ const base::Time kEvenLaterTime = base::Time::FromDoubleT(6000);
 
 class TwoClientWalletSyncTest : public UssWalletSwitchToggler, public SyncTest {
  public:
-  TwoClientWalletSyncTest() : SyncTest(TWO_CLIENT) {}
+  TwoClientWalletSyncTest() : SyncTest(TWO_CLIENT) {
+    InitWithDefaultFeatures();
+  }
   ~TwoClientWalletSyncTest() override {}
 
   bool TestUsesSelfNotifications() override { return false; }
@@ -86,8 +88,6 @@ class TwoClientWalletSyncTest : public UssWalletSwitchToggler, public SyncTest {
 };
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest, UpdateCreditCardMetadata) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -121,8 +121,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest, UpdateCreditCardMetadata) {
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        UpdateCreditCardMetadataWhileNotSyncing) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -164,8 +162,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        UpdateCreditCardMetadataConflictsWhileNotSyncing) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -213,8 +209,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 }
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest, UpdateServerAddressMetadata) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -249,8 +243,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest, UpdateServerAddressMetadata) {
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        UpdateServerAddressMetadataWhileNotSyncing) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletAddress(/*name=*/"address-1", /*company=*/"Company-1"),
        CreateDefaultSyncPaymentsCustomerData()});
@@ -291,8 +283,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        UpdateServerAddressMetadataConflictsWhileNotSyncing) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletAddress(/*name=*/"address-1", /*company=*/"Company-1"),
        CreateDefaultSyncPaymentsCustomerData()});
@@ -340,8 +330,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        UpdateCreditCardMetadataWithNewBillingAddressId) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             /*billing_address_id=*/""),
@@ -371,8 +359,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        UpdateCreditCardMetadataWithChangedBillingAddressId) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -403,8 +389,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 IN_PROC_BROWSER_TEST_P(
     TwoClientWalletSyncTest,
     UpdateCreditCardMetadataWithChangedBillingAddressId_RemoteToLocal) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -436,8 +420,6 @@ IN_PROC_BROWSER_TEST_P(
 IN_PROC_BROWSER_TEST_P(
     TwoClientWalletSyncTest,
     UpdateCreditCardMetadataWithChangedBillingAddressId_RemoteToLocalConflict) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -492,8 +474,6 @@ IN_PROC_BROWSER_TEST_P(
 IN_PROC_BROWSER_TEST_P(
     TwoClientWalletSyncTest,
     UpdateCreditCardMetadataWithChangedBillingAddressId_LocalToRemote) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kLocalBillingAddressId),
@@ -525,8 +505,6 @@ IN_PROC_BROWSER_TEST_P(
 IN_PROC_BROWSER_TEST_P(
     TwoClientWalletSyncTest,
     UpdateCreditCardMetadataWithChangedBillingAddressId_LocalToRemoteOffline) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kLocalBillingAddressId),
@@ -564,11 +542,8 @@ IN_PROC_BROWSER_TEST_P(
   EXPECT_EQ(kLocalBillingAddressId, credit_cards[0]->billing_address_id());
 }
 
-// Disabled due to flakiness: https://crbug.com/917498.
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
-                       DISABLED_ServerAddressConvertsToSameLocalAddress) {
-  InitWithDefaultFeatures();
-
+                       ServerAddressConvertsToSameLocalAddress) {
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletAddress(/*name=*/"address-1", /*company=*/"Company-1"),
        CreateDefaultSyncPaymentsCustomerData()});
@@ -584,19 +559,18 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
   EXPECT_TRUE(server_addresses[0]->has_converted());
 
   // Make sure they have the same local profile.
-  std::vector<AutofillProfile*> local_addresses = GetLocalProfiles(0);
-  EXPECT_EQ(1u, local_addresses.size());
-  const std::string& guid = local_addresses[0]->guid();
+  std::vector<AutofillProfile*> local_addresses_0 = GetLocalProfiles(0);
+  ASSERT_EQ(1u, local_addresses_0.size());
+  // Make a copy in case it gets freed later.
+  AutofillProfile local_address_0 = *local_addresses_0[0];
 
-  local_addresses = GetLocalProfiles(1);
-  EXPECT_EQ(1u, local_addresses.size());
-  EXPECT_EQ(guid, local_addresses[0]->guid());
+  std::vector<AutofillProfile*> local_addresses_1 = GetLocalProfiles(1);
+  ASSERT_EQ(1u, local_addresses_1.size());
+  EXPECT_TRUE(local_address_0.EqualsForSyncPurposes(*local_addresses_1[0]));
 }
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        DeleteServerCardMetadataWhenDataGetsRemoved) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -604,25 +578,30 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
        CreateDefaultSyncPaymentsCustomerData()});
   ASSERT_TRUE(SetupSync());
 
-  // Grab the current card on the first client.
-  std::vector<CreditCard*> credit_cards = GetServerCreditCards(0);
-  ASSERT_EQ(1u, credit_cards.size());
-  CreditCard card = *credit_cards[0];
+  // Grab the current address on the first client.
+  std::vector<AutofillProfile*> server_addresses = GetServerProfiles(0);
+  ASSERT_EQ(1u, server_addresses.size());
+  AutofillProfile address = *server_addresses[0];
 
   // Remove the card from the data.
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletAddress(/*name=*/"address-1", /*company=*/"Company-1"),
        CreateDefaultSyncPaymentsCustomerData()});
 
-  // Simulate using the card locally, only to force an update when committing
-  // a change.
-  ASSERT_EQ(1u, card.use_count());
-  card.set_use_count(2);
-  card.set_use_date(kLaterTime);
-  UpdateServerCardMetadata(0, card);
+  // Simulate using the address locally, only to force an update for wallet
+  // cards when committing a change.
+  ASSERT_EQ(1u, address.use_count());
+  address.set_use_count(2);
+  address.set_use_date(kLaterTime);
+  UpdateServerAddressMetadata(0, address);
 
   // Wait for the change to propagate.
   EXPECT_TRUE(AutofillWalletChecker(0, 1).Wait());
+  // Equal data does not mean equal metadata, there can be a metadata entity
+  // without a data entity that gets ignored by the PDM-based
+  // AutofillWalletChecker; we need to wait until the count of metadata entities
+  // converges.
+  EXPECT_TRUE(AutofillWalletMetadataSizeChecker(0, 1).Wait());
 
   EXPECT_EQ(0U, GetServerCreditCards(0).size());
   EXPECT_EQ(0U, GetServerCreditCards(1).size());
@@ -648,8 +627,6 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
 
 IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                        DeleteServerAddressMetadataWhenDataGetsRemoved) {
-  InitWithDefaultFeatures();
-
   GetFakeServer()->SetWalletData(
       {CreateSyncWalletCard(/*name=*/"card-1", /*last_four=*/"0001",
                             kDefaultBillingAddressID),
@@ -657,10 +634,10 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
        CreateDefaultSyncPaymentsCustomerData()});
   ASSERT_TRUE(SetupSync());
 
-  // Grab the current address on the first client.
-  std::vector<AutofillProfile*> server_addresses = GetServerProfiles(0);
-  ASSERT_EQ(1u, server_addresses.size());
-  AutofillProfile address = *server_addresses[0];
+  // Grab the current card on the first client.
+  std::vector<CreditCard*> credit_cards = GetServerCreditCards(0);
+  ASSERT_EQ(1u, credit_cards.size());
+  CreditCard card = *credit_cards[0];
 
   // Remove the address from the data.
   GetFakeServer()->SetWalletData(
@@ -668,15 +645,20 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
                             kDefaultBillingAddressID),
        CreateDefaultSyncPaymentsCustomerData()});
 
-  // Simulate using the address locally, only to force an update when committing
-  // a change.
-  ASSERT_EQ(1u, address.use_count());
-  address.set_use_count(2);
-  address.set_use_date(kLaterTime);
-  UpdateServerAddressMetadata(0, address);
+  // Simulate using the card locally, only to force an update for wallet
+  // addresses when committing a change.
+  ASSERT_EQ(1u, card.use_count());
+  card.set_use_count(2);
+  card.set_use_date(kLaterTime);
+  UpdateServerCardMetadata(0, card);
 
   // Wait for the change to propagate.
   EXPECT_TRUE(AutofillWalletChecker(0, 1).Wait());
+  // Equal data does not mean equal metadata, there can be a metadata entity
+  // without a data entity that gets ignored by the PDM-based
+  // AutofillWalletChecker; we need to wait until the count of metadata entities
+  // converges.
+  EXPECT_TRUE(AutofillWalletMetadataSizeChecker(0, 1).Wait());
 
   EXPECT_EQ(0U, GetServerProfiles(0).size());
   EXPECT_EQ(0U, GetServerProfiles(1).size());
@@ -700,8 +682,10 @@ IN_PROC_BROWSER_TEST_P(TwoClientWalletSyncTest,
   EXPECT_EQ(1U, cards_metadata_1.size());
 }
 
-INSTANTIATE_TEST_CASE_P(USS,
-                        TwoClientWalletSyncTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(USS,
+                         TwoClientWalletSyncTest,
+                         ::testing::Values(std::make_pair(false, false),
+                                           std::make_pair(true, false),
+                                           std::make_pair(true, true)));
 
 }  // namespace

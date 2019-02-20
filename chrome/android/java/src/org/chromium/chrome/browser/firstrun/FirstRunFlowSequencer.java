@@ -33,13 +33,12 @@ import org.chromium.chrome.browser.signin.SigninManager;
 import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.chrome.browser.vr.VrModuleProvider;
-import org.chromium.chrome.browser.webapps.WebApkActivity;
+import org.chromium.chrome.browser.webapps.WebappLauncherActivity;
 import org.chromium.components.signin.AccountManagerFacade;
 import org.chromium.components.signin.ChildAccountStatus;
 import org.chromium.components.signin.ChromeSigninController;
 import org.chromium.ui.base.DeviceFormFactor;
 
-import java.lang.ref.WeakReference;
 import java.util.List;
 
 /**
@@ -368,8 +367,8 @@ public abstract class FirstRunFlowSequencer  {
 
             Intent intentToLaunchAfterFreComplete = fromIntent;
             String associatedAppNameForLightweightFre = null;
-            WebApkActivity.FreParams webApkFreParams =
-                    WebApkActivity.slowGenerateFreParamsIfIntentIsForWebApkActivity(fromIntent);
+            WebappLauncherActivity.FreParams webApkFreParams =
+                    WebappLauncherActivity.slowGenerateFreParamsIfIntentIsForWebApk(fromIntent);
             if (webApkFreParams != null) {
                 intentToLaunchAfterFreComplete =
                         webApkFreParams.getIntentToLaunchAfterFreComplete();
@@ -402,6 +401,8 @@ public abstract class FirstRunFlowSequencer  {
             if (isVrIntent) {
                 freIntent =
                         VrModuleProvider.getIntentDelegate().setupVrFreIntent(caller, freIntent);
+                // We cannot access Chrome right now, e.g. because the VR module is not installed.
+                if (freIntent == null) return true;
             }
             IntentUtils.safeStartActivity(caller, freIntent);
         } else {
@@ -416,9 +417,7 @@ public abstract class FirstRunFlowSequencer  {
 
     /** Returns whether the generic FRE is active. */
     private static boolean checkIsGenericFreActive() {
-        List<WeakReference<Activity>> activities = ApplicationStatus.getRunningActivities();
-        for (WeakReference<Activity> weakActivity : activities) {
-            Activity activity = weakActivity.get();
+        for (Activity activity : ApplicationStatus.getRunningActivities()) {
             // TabbedModeFirstRunActivity extends FirstRunActivity. LightweightFirstRunActivity
             // does not.
             if (activity instanceof FirstRunActivity) {
@@ -430,12 +429,12 @@ public abstract class FirstRunFlowSequencer  {
 
     /**
      * On tablets, where FRE activity is a dialog, transitions from fillscreen activities
-     * (the ones that use TabbedModeTheme, e.g. ChromeTabbedActivity) look ugly, because
+     * (the ones that use Theme.Chromium.TabbedMode, e.g. ChromeTabbedActivity) look ugly, because
      * when FRE is started from CTA.onCreate(), currently running animation for CTA window
      * is aborted. This is perceived as a flash of white and doesn't look good.
      *
      * To solve this, we added TabbedMode FRE activity, which has the same window background
-     * as TabbedModeTheme activities, but shows content in a FRE-like dialog.
+     * as Theme.Chromium.TabbedMode activities, but shows content in a FRE-like dialog.
      *
      * This function returns whether to use the TabbedModeFRE.
      */

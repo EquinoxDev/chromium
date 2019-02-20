@@ -19,7 +19,7 @@
 #include "media/media_buildflags.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/viz/public/interfaces/compositing/compositing_mode_watcher.mojom.h"
-#include "ui/base/ui_features.h"
+#include "ui/base/buildflags.h"
 
 #if defined(OS_CHROMEOS)
 #include "content/browser/media/keyboard_mic_registration.h"
@@ -36,13 +36,9 @@ class CommandLine;
 class FilePath;
 class HighResolutionTimerManager;
 class MemoryPressureMonitor;
-class MessageLoop;
 class PowerMonitor;
 class SingleThreadTaskRunner;
 class SystemMonitor;
-namespace trace_event {
-class TraceEventSystemStatsMonitor;
-}  // namespace trace_event
 }  // namespace base
 
 namespace discardable_memory {
@@ -93,6 +89,7 @@ class BrowserMainParts;
 class BrowserOnlineStateObserver;
 class BrowserThreadImpl;
 class LoaderDelegateImpl;
+class MediaKeysListenerManagerImpl;
 class MediaStreamManager;
 class ResourceDispatcherHostImpl;
 class SaveFileManager;
@@ -176,6 +173,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   }
   net::NetworkChangeNotifier* network_change_notifier() const {
     return network_change_notifier_.get();
+  }
+  MediaKeysListenerManagerImpl* media_keys_listener_manager() const {
+    return media_keys_listener_manager_.get();
   }
 
 #if defined(OS_CHROMEOS)
@@ -302,7 +302,6 @@ class CONTENT_EXPORT BrowserMainLoop {
       scoped_execution_fence_;
 
   // Members initialized in |MainMessageLoopStart()| ---------------------------
-  std::unique_ptr<base::MessageLoop> main_message_loop_;
 
   // Members initialized in |PostMainMessageLoopStart()| -----------------------
   std::unique_ptr<BrowserProcessSubThread> io_thread_;
@@ -314,9 +313,6 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   // Per-process listener for online state changes.
   std::unique_ptr<BrowserOnlineStateObserver> online_state_observer_;
-
-  std::unique_ptr<base::trace_event::TraceEventSystemStatsMonitor>
-      system_stats_monitor_;
 
 #if defined(USE_AURA)
   std::unique_ptr<aura::Env> env_;
@@ -359,6 +355,7 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   // Members initialized in |BrowserThreadsStarted()| --------------------------
   std::unique_ptr<mojo::core::ScopedIPCSupport> mojo_ipc_support_;
+  std::unique_ptr<MediaKeysListenerManagerImpl> media_keys_listener_manager_;
 
   // |user_input_monitor_| has to outlive |audio_manager_|, so declared first.
   std::unique_ptr<media::UserInputMonitor> user_input_monitor_;

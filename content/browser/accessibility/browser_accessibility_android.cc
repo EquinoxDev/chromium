@@ -4,7 +4,6 @@
 
 #include "content/browser/accessibility/browser_accessibility_android.h"
 
-#include "base/containers/hash_tables.h"
 #include "base/i18n/break_iterator.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
@@ -222,6 +221,10 @@ bool BrowserAccessibilityAndroid::IsChecked() const {
 }
 
 bool BrowserAccessibilityAndroid::IsClickable() const {
+  // Explicitly disabled form controls shouldn't be clickable.
+  if (!IsEnabled())
+    return false;
+
   // If it has a custom default action verb except for
   // ax::mojom::DefaultActionVerb::kClickAncestor, it's definitely clickable.
   // ax::mojom::DefaultActionVerb::kClickAncestor is used when an element with a
@@ -487,21 +490,32 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
 }
 
 base::string16 BrowserAccessibilityAndroid::GetHint() const {
-  base::string16 description =
-      GetString16Attribute(ax::mojom::StringAttribute::kDescription);
+  std::vector<base::string16> strings;
 
-  // If we're returning the value as the main text, then return both the
-  // accessible name and description as the hint.
+  // If we're returning the value as the main text, the name needs to be
+  // part of the hint.
   if (ShouldExposeValueAsName()) {
     base::string16 name =
         GetString16Attribute(ax::mojom::StringAttribute::kName);
-    if (!name.empty() && !description.empty())
-      return name + base::ASCIIToUTF16(" ") + description;
-    else if (!name.empty())
-      return name;
+    if (!name.empty())
+      strings.push_back(name);
   }
 
-  return description;
+  if (GetData().GetNameFrom() != ax::mojom::NameFrom::kPlaceholder &&
+      GetData().GetIntAttribute(ax::mojom::IntAttribute::kDescriptionFrom) !=
+          static_cast<int32_t>(ax::mojom::DescriptionFrom::kPlaceholder)) {
+    base::string16 placeholder =
+        GetString16Attribute(ax::mojom::StringAttribute::kPlaceholder);
+    if (!placeholder.empty())
+      strings.push_back(placeholder);
+  }
+
+  base::string16 description =
+      GetString16Attribute(ax::mojom::StringAttribute::kDescription);
+  if (!description.empty())
+    strings.push_back(description);
+
+  return base::JoinString(strings, base::ASCIIToUTF16(" "));
 }
 
 std::string BrowserAccessibilityAndroid::GetRoleString() const {
@@ -517,7 +531,7 @@ base::string16 BrowserAccessibilityAndroid::GetRoleDescription() const {
     int level = GetIntAttribute(ax::mojom::IntAttribute::kHierarchicalLevel);
     if (level >= 1 && level <= 6) {
       std::vector<base::string16> values;
-      values.push_back(base::IntToString16(level));
+      values.push_back(base::NumberToString16(level));
       return base::ReplaceStringPlaceholders(
           content_client->GetLocalizedString(IDS_AX_ROLE_HEADING_WITH_LEVEL),
           values, nullptr);
@@ -1321,14 +1335,45 @@ base::string16 BrowserAccessibilityAndroid::GetTextChangeBeforeText() const {
 
 int BrowserAccessibilityAndroid::GetSelectionStart() const {
   int sel_start = 0;
-  GetIntAttribute(ax::mojom::IntAttribute::kTextSelStart, &sel_start);
-  return sel_start;
+  if (IsPlainTextField() &&
+      GetIntAttribute(ax::mojom::IntAttribute::kTextSelStart, &sel_start)) {
+    return sel_start;
+  }
+
+  int32_t anchor_id = manager()->GetTreeData().sel_anchor_object_id;
+  BrowserAccessibility* anchor_object = manager()->GetFromID(anchor_id);
+  if (!anchor_object) {
+    return 0;
+  }
+
+  auto position = anchor_object->CreatePositionAt(
+      manager()->GetTreeData().sel_anchor_offset,
+      manager()->GetTreeData().sel_anchor_affinity);
+  while (position->GetAnchor() && position->GetAnchor() != this)
+    position = position->CreateParentPosition();
+
+  return !position->IsNullPosition() ? position->text_offset() : 0;
 }
 
 int BrowserAccessibilityAndroid::GetSelectionEnd() const {
   int sel_end = 0;
-  GetIntAttribute(ax::mojom::IntAttribute::kTextSelEnd, &sel_end);
-  return sel_end;
+  if (IsPlainTextField() &&
+      GetIntAttribute(ax::mojom::IntAttribute::kTextSelEnd, &sel_end)) {
+    return sel_end;
+  }
+
+  int32_t focus_id = manager()->GetTreeData().sel_focus_object_id;
+  BrowserAccessibility* focus_object = manager()->GetFromID(focus_id);
+  if (!focus_object)
+    return 0;
+
+  auto position = focus_object->CreatePositionAt(
+      manager()->GetTreeData().sel_focus_offset,
+      manager()->GetTreeData().sel_focus_affinity);
+  while (position->GetAnchor() && position->GetAnchor() != this)
+    position = position->CreateParentPosition();
+
+  return !position->IsNullPosition() ? position->text_offset() : 0;
 }
 
 int BrowserAccessibilityAndroid::GetEditableTextLength() const {
@@ -1633,7 +1678,7 @@ bool BrowserAccessibilityAndroid::ShouldExposeValueAsName() const {
       break;
   }
 
-  if (HasState(ax::mojom::State::kEditable))
+  if (IsPlainTextField() || IsRichTextField())
     return true;
 
   base::string16 value = GetValue();
@@ -1666,37 +1711,6 @@ int BrowserAccessibilityAndroid::CountChildrenWithRole(
       count++;
   }
   return count;
-}
-
-base::string16 BrowserAccessibilityAndroid::GetContentInvalidErrorMessage()
-    const {
-  content::ContentClient* content_client = content::GetContentClient();
-  int message_id = -1;
-
-  switch (GetData().GetInvalidState()) {
-    case ax::mojom::InvalidState::kNone:
-    case ax::mojom::InvalidState::kFalse:
-      // No error message necessary
-      break;
-
-    case ax::mojom::InvalidState::kTrue:
-    case ax::mojom::InvalidState::kOther:
-      message_id = CONTENT_INVALID_TRUE;
-      break;
-
-    case ax::mojom::InvalidState::kSpelling:
-      message_id = CONTENT_INVALID_SPELLING;
-      break;
-
-    case ax::mojom::InvalidState::kGrammar:
-      message_id = CONTENT_INVALID_GRAMMAR;
-      break;
-  }
-
-  if (message_id != -1)
-    return content_client->GetLocalizedString(message_id);
-
-  return base::string16();
 }
 
 }  // namespace content

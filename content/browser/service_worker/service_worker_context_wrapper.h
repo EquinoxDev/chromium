@@ -131,13 +131,17 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       CountExternalRequestsCallback callback) override;
   void GetAllOriginsInfo(GetUsageInfoCallback callback) override;
   void DeleteForOrigin(const GURL& origin, ResultCallback callback) override;
+  void PerformStorageCleanup(base::OnceClosure callback) override;
   void CheckHasServiceWorker(const GURL& url,
-                             const GURL& other_url,
                              CheckHasServiceWorkerCallback callback) override;
   void ClearAllServiceWorkersForTest(base::OnceClosure callback) override;
   void StartWorkerForScope(const GURL& scope,
                            StartWorkerCallback info_callback,
                            base::OnceClosure failure_callback) override;
+  void StartServiceWorkerAndDispatchMessage(
+      const GURL& scope,
+      blink::TransferableMessage message,
+      ResultCallback result_callback) override;
   void StartServiceWorkerAndDispatchLongRunningMessage(
       const GURL& scope,
       blink::TransferableMessage message,
@@ -261,6 +265,9 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   void GetUserDataForAllRegistrationsByKeyPrefix(
       const std::string& key_prefix,
       GetUserDataForAllRegistrationsCallback callback);
+  void ClearUserDataForAllRegistrationsByKeyPrefix(
+      const std::string& key_prefix,
+      StatusCallback callback);
 
   // This function can be called from any thread, but the callback will always
   // be called on the UI thread.
@@ -283,11 +290,12 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   // connect to the host. The host stays alive as long as this info stays alive
   // (namely, as long as |out_provider_info->host_ptr_info| stays alive).
   //
+  // Returns null if context() is null.
+  //
   // Must be called on the IO thread.
   base::WeakPtr<ServiceWorkerProviderHost> PreCreateHostForSharedWorker(
       int process_id,
-      blink::mojom::ServiceWorkerProviderInfoForSharedWorkerPtr*
-          out_provider_info);
+      blink::mojom::ServiceWorkerProviderInfoForWorkerPtr* out_provider_info);
 
  private:
   friend class BackgroundSyncManagerTest;
@@ -372,18 +380,20 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       base::OnceClosure callback,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner_for_callback);
 
-  void DidFindRegistrationForLongRunningMessage(
+  void DidFindRegistrationForMessageDispatch(
       blink::TransferableMessage message,
       const GURL& source_origin,
       ResultCallback result_callback,
+      bool is_long_running_message,
       blink::ServiceWorkerStatusCode service_worker_status,
       scoped_refptr<ServiceWorkerRegistration> registration);
 
-  void DidStartServiceWorkerForLongRunningMessage(
+  void DidStartServiceWorkerForMessageDispatch(
       blink::TransferableMessage message,
       const GURL& source_origin,
       scoped_refptr<ServiceWorkerRegistration> registration,
       ServiceWorkerContext::ResultCallback result_callback,
+      bool is_long_running_message,
       blink::ServiceWorkerStatusCode service_worker_status);
 
   void SendActiveWorkerMessage(

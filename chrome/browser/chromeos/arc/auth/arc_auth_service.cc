@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/arc/auth/arc_auth_service.h"
 
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -41,7 +42,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
-#include "services/identity/public/cpp/identity_manager.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace arc {
@@ -64,7 +64,7 @@ class ArcAuthServiceFactory
  private:
   friend struct base::DefaultSingletonTraits<ArcAuthServiceFactory>;
 
-  ArcAuthServiceFactory() = default;
+  ArcAuthServiceFactory() { DependsOn(IdentityManagerFactory::GetInstance()); }
   ~ArcAuthServiceFactory() override = default;
 };
 
@@ -160,13 +160,27 @@ bool IsPrimaryAccount(const chromeos::AccountManager::AccountKey& account_key) {
 }
 
 std::string GetGaiaIdFromAccountName(
-    const AccountTrackerService* account_tracker_service,
+    const identity::IdentityManager* identity_manager,
     const std::string& account_name) {
   std::string gaia_id =
-      account_tracker_service->FindAccountInfoByEmail(account_name).gaia;
+      identity_manager
+          ->FindAccountInfoForAccountWithRefreshTokenByEmailAddress(
+              account_name)
+          ->gaia;
   DCHECK(!gaia_id.empty());
 
   return gaia_id;
+}
+
+chromeos::AccountManager* GetAccountManagerForProfile(Profile* profile) {
+  if (!chromeos::switches::IsAccountManagerEnabled())
+    return nullptr;
+
+  // TODO(sinhak): This will need to be independent of Profile, when
+  // Multi-Profile on Chrome OS is launched.
+  auto* factory =
+      g_browser_process->platform_part()->GetAccountManagerFactory();
+  return factory->GetAccountManager(profile->GetPath().value());
 }
 
 }  // namespace
@@ -183,8 +197,10 @@ ArcAuthService* ArcAuthService::GetForBrowserContext(
 ArcAuthService::ArcAuthService(content::BrowserContext* browser_context,
                                ArcBridgeService* arc_bridge_service)
     : profile_(Profile::FromBrowserContext(browser_context)),
+      account_manager_(GetAccountManagerForProfile(profile_)),
       account_tracker_service_(
           AccountTrackerServiceFactory::GetInstance()->GetForProfile(profile_)),
+      identity_manager_(IdentityManagerFactory::GetForProfile(profile_)),
       arc_bridge_service_(arc_bridge_service),
       account_mapper_util_(account_tracker_service_),
       url_loader_factory_(
@@ -195,32 +211,38 @@ ArcAuthService::ArcAuthService(content::BrowserContext* browser_context,
   arc_bridge_service_->auth()->AddObserver(this);
 
   ArcSessionManager::Get()->AddObserver(this);
-
-  // |ArcAuthService| needs to listen on |AccountTrackerService| for account
-  // removals (See crbug.com/904978) and |AccountManager| for account updates
-  // (|ArcAuthService| cannot rely on |AccountTrackerService| for account
-  // updates because |AccountTrackerService| does not notify its observers when
-  // an account's LST changes).
-  account_tracker_service_->AddObserver(this);
-
-  if (chromeos::switches::IsAccountManagerEnabled()) {
-    // TODO(sinhak): This will need to be independent of Profile, when
-    // Multi-Profile on Chrome OS is launched.
-    chromeos::AccountManagerFactory* factory =
-        g_browser_process->platform_part()->GetAccountManagerFactory();
-    account_manager_ = factory->GetAccountManager(profile_->GetPath().value());
+  identity_manager_->AddObserver(this);
+  if (account_manager_)
     account_manager_->AddObserver(this);
-  }
 }
 
 ArcAuthService::~ArcAuthService() {
-  if (chromeos::switches::IsAccountManagerEnabled())
+  if (account_manager_)
     account_manager_->RemoveObserver(this);
 
-  account_tracker_service_->RemoveObserver(this);
   ArcSessionManager::Get()->RemoveObserver(this);
   arc_bridge_service_->auth()->RemoveObserver(this);
   arc_bridge_service_->auth()->SetHost(nullptr);
+}
+
+void ArcAuthService::GetGoogleAccountsInArc(
+    GetGoogleAccountsInArcCallback callback) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  DCHECK(pending_get_arc_accounts_callback_.is_null())
+      << "Cannot have more than one pending GetGoogleAccountsInArc request";
+
+  if (!arc::IsArcProvisioned(profile_)) {
+    std::move(callback).Run(std::vector<mojom::ArcAccountInfoPtr>());
+    return;
+  }
+
+  if (!arc_bridge_service_->auth()->IsConnected()) {
+    pending_get_arc_accounts_callback_ = std::move(callback);
+    // Will be retried in |OnConnectionReady|.
+    return;
+  }
+
+  DispatchAccountsInArc(std::move(callback));
 }
 
 void ArcAuthService::OnConnectionReady() {
@@ -232,6 +254,9 @@ void ArcAuthService::OnConnectionReady() {
   // |ArcSessionManager::Get()->IsArcProvisioned()| will be |true|.
   if (arc::IsArcProvisioned(profile_))
     TriggerAccountsPushToArc();
+
+  if (pending_get_arc_accounts_callback_)
+    DispatchAccountsInArc(std::move(pending_get_arc_accounts_callback_));
 }
 
 void ArcAuthService::OnConnectionClosed() {
@@ -253,8 +278,7 @@ void ArcAuthService::OnAuthorizationComplete(
 
   if (!account_name.has_value() ||
       IsPrimaryAccount(chromeos::AccountManager::AccountKey{
-          GetGaiaIdFromAccountName(account_tracker_service_,
-                                   account_name.value()),
+          GetGaiaIdFromAccountName(identity_manager_, account_name.value()),
           chromeos::account_manager::AccountType::ACCOUNT_TYPE_GAIA})) {
     // Reauthorization for the Primary Account.
     // The check for |!account_name.has_value()| is for backwards compatibility
@@ -371,7 +395,7 @@ void ArcAuthService::RequestAccountInfo(const std::string& account_name,
 
   // Check if |account_name| points to a Secondary Account.
   if (!IsPrimaryAccount(chromeos::AccountManager::AccountKey{
-          GetGaiaIdFromAccountName(account_tracker_service_, account_name),
+          GetGaiaIdFromAccountName(identity_manager_, account_name),
           chromeos::account_manager::AccountType::ACCOUNT_TYPE_GAIA})) {
     FetchSecondaryAccountInfo(account_name, std::move(callback));
     return;
@@ -436,10 +460,8 @@ void ArcAuthService::FetchPrimaryAccountInfo(
     }
   } else {
     // Optionally retrieve auth code in silent mode.
-    const auto* const identity_manager =
-        IdentityManagerFactory::GetForProfile(profile_);
     auth_code_fetcher = CreateArcBackgroundAuthCodeFetcher(
-        identity_manager->GetPrimaryAccountId(), initial_signin);
+        identity_manager_->GetPrimaryAccountId(), initial_signin);
   }
 
   // Add the request to |pending_token_requests_| first, before starting a token
@@ -461,15 +483,25 @@ void ArcAuthService::OnTokenUpserted(
   if (!arc::IsArcProvisioned(profile_))
     return;
 
+  if (account_key.account_type !=
+      chromeos::account_manager::AccountType::ACCOUNT_TYPE_GAIA) {
+    // We are only interested in Gaia accounts.
+    return;
+  }
+
+  const AccountInfo account_info =
+      account_mapper_util_.AccountKeyToGaiaAccountInfo(account_key);
+
   // We may have received |OnTokenUpserted| for a variety of cases where a valid
   // Gaia LST is not available for the account: The account could have just been
   // migrated to Account Manager with a dummy initial token, the LST update
-  // could be an update to mark the LST as invalid etc. In all of these cases,
-  // we should ignore the notification. If and when Account Manager gets updated
-  // with a valid token, we would receive another notification and we can
-  // process the account update then. See |AccountManager::IsTokenAvailable| for
-  // details.
-  if (!account_manager_->IsTokenAvailable(account_key)) {
+  // could be an update to mark the LST as invalid, the token could have expired
+  // etc. In all of these cases, we should ignore the notification. If and when
+  // Account Manager gets updated with a valid token, we would receive another
+  // notification and we can process the account update then.
+  if (!identity_manager_->HasAccountWithRefreshToken(account_info.account_id) ||
+      identity_manager_->HasAccountWithRefreshTokenInPersistentErrorState(
+          account_info.account_id)) {
     VLOG(1) << "Ignoring account update due to lack of a valid token: "
             << account_key;
     return;
@@ -480,8 +512,7 @@ void ArcAuthService::OnTokenUpserted(
   if (!instance)
     return;
 
-  const std::string account_name =
-      account_mapper_util_.AccountKeyToGaiaAccountInfo(account_key).email;
+  const std::string account_name = account_info.email;
   DCHECK(!account_name.empty());
   instance->OnAccountUpdated(account_name, mojom::AccountUpdateType::UPSERT);
 }
@@ -493,7 +524,8 @@ void ArcAuthService::OnAccountRemoved(
   // notifications. See crbug.com/904978.
 }
 
-void ArcAuthService::OnAccountRemoved(const AccountInfo& account_info) {
+void ArcAuthService::OnExtendedAccountInfoRemoved(
+    const AccountInfo& account_info) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (!chromeos::switches::IsAccountManagerEnabled())
@@ -520,6 +552,10 @@ void ArcAuthService::OnAccountRemoved(const AccountInfo& account_info) {
 
 void ArcAuthService::OnArcInitialStart() {
   TriggerAccountsPushToArc();
+}
+
+void ArcAuthService::Shutdown() {
+  identity_manager_->RemoveObserver(this);
 }
 
 void ArcAuthService::OnActiveDirectoryEnrollmentTokenFetched(
@@ -571,10 +607,8 @@ void ArcAuthService::OnPrimaryAccountAuthCodeFetched(
   DeletePendingTokenRequest(fetcher);
 
   if (success) {
-    const auto* const identity_manager =
-        IdentityManagerFactory::GetForProfile(profile_);
     const std::string& full_account_id = base::UTF16ToUTF8(
-        signin_ui_util::GetAuthenticatedUsername(identity_manager));
+        signin_ui_util::GetAuthenticatedUsername(identity_manager_));
     std::move(callback).Run(
         mojom::ArcSignInStatus::SUCCESS,
         CreateAccountInfo(!IsArcOptInVerificationDisabled(), auth_code,
@@ -602,8 +636,13 @@ void ArcAuthService::FetchSecondaryAccountInfo(
     RequestAccountInfoCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  const std::string account_id =
-      account_tracker_service_->FindAccountInfoByEmail(account_name).account_id;
+  base::Optional<AccountInfo> account_info =
+      identity_manager_
+          ->FindAccountInfoForAccountWithRefreshTokenByEmailAddress(
+              account_name);
+  DCHECK(account_info.has_value());
+
+  const std::string& account_id = account_info->account_id;
   DCHECK(!account_id.empty());
 
   std::unique_ptr<ArcBackgroundAuthCodeFetcher> fetcher =
@@ -706,6 +745,19 @@ void ArcAuthService::TriggerAccountsPushToArc() {
   DCHECK(account_manager_);
   account_manager_->GetAccounts(base::BindOnce(&ArcAuthService::OnGetAccounts,
                                                weak_ptr_factory_.GetWeakPtr()));
+}
+
+void ArcAuthService::DispatchAccountsInArc(
+    GetGoogleAccountsInArcCallback callback) {
+  auto* instance = ARC_GET_INSTANCE_FOR_METHOD(arc_bridge_service_->auth(),
+                                               GetGoogleAccounts);
+  if (!instance) {
+    // Complete the callback so that it is not kept waiting forever.
+    std::move(callback).Run(std::vector<mojom::ArcAccountInfoPtr>());
+    return;
+  }
+
+  instance->GetGoogleAccounts(std::move(callback));
 }
 
 }  // namespace arc

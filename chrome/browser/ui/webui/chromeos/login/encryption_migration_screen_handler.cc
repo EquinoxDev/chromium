@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_macros.h"
@@ -253,8 +254,9 @@ FirstScreen GetFirstScreenForMode(chromeos::EncryptionMigrationMode mode) {
 
 namespace chromeos {
 
-EncryptionMigrationScreenHandler::EncryptionMigrationScreenHandler()
-    : BaseScreenHandler(kScreenId),
+EncryptionMigrationScreenHandler::EncryptionMigrationScreenHandler(
+    JSCallsContainer* js_calls_container)
+    : BaseScreenHandler(kScreenId, js_calls_container),
       tick_clock_(base::DefaultTickClock::GetInstance()),
       weak_ptr_factory_(this) {
   set_call_js_prefix(kJsScreenPath);
@@ -294,7 +296,7 @@ void EncryptionMigrationScreenHandler::SetUserContext(
 
 void EncryptionMigrationScreenHandler::SetMode(EncryptionMigrationMode mode) {
   mode_ = mode;
-  CallJSWithPrefix("setIsResuming", IsStartImmediately());
+  CallJS("login.EncryptionMigrationScreen.setIsResuming", IsStartImmediately());
 }
 
 void EncryptionMigrationScreenHandler::SetContinueLoginCallback(
@@ -309,8 +311,8 @@ void EncryptionMigrationScreenHandler::SetRestartLoginCallback(
 
 void EncryptionMigrationScreenHandler::SetupInitialView() {
   // Pass constant value(s) to the UI.
-  CallJSWithPrefix("setNecessaryBatteryPercent",
-                   arc::kMigrationMinimumBatteryPercent);
+  CallJS("login.EncryptionMigrationScreen.setNecessaryBatteryPercent",
+         arc::kMigrationMinimumBatteryPercent);
 
   // If old encryption is detected in ARC kiosk mode, skip all checks (user
   // confirmation, battery level, and remaining space) and start migration
@@ -426,11 +428,11 @@ void EncryptionMigrationScreenHandler::PowerChanged(
     current_battery_percent_ = 100.0;
   }
 
-  CallJSWithPrefix(
-      "setBatteryState", *current_battery_percent_,
-      *current_battery_percent_ >= arc::kMigrationMinimumBatteryPercent,
-      proto.battery_state() ==
-          power_manager::PowerSupplyProperties_BatteryState_CHARGING);
+  CallJS("login.EncryptionMigrationScreen.setBatteryState",
+         *current_battery_percent_,
+         *current_battery_percent_ >= arc::kMigrationMinimumBatteryPercent,
+         proto.battery_state() ==
+             power_manager::PowerSupplyProperties_BatteryState_CHARGING);
 
   // If the migration was already requested and the bettery level is enough now,
   // The migration should start immediately.
@@ -478,7 +480,7 @@ void EncryptionMigrationScreenHandler::HandleOpenFeedbackDialog() {
   const std::string description = base::StringPrintf(
       "Auto generated feedback for http://crbug.com/719266.\n"
       "(uniquifier:%s)",
-      base::Int64ToString(base::Time::Now().ToInternalValue()).c_str());
+      base::NumberToString(base::Time::Now().ToInternalValue()).c_str());
   login_feedback_.reset(new LoginFeedback(Profile::FromWebUI(web_ui())));
   login_feedback_->Request(description, base::Closure());
 }
@@ -488,7 +490,7 @@ void EncryptionMigrationScreenHandler::UpdateUIState(UIState state) {
     return;
 
   current_ui_state_ = state;
-  CallJSWithPrefix("setUIState", static_cast<int>(state));
+  CallJS("login.EncryptionMigrationScreen.setUIState", static_cast<int>(state));
 
   // When this handler is about to show the READY screen, we should get the
   // latest battery status and show it on the screen.
@@ -537,9 +539,10 @@ void EncryptionMigrationScreenHandler::OnGetAvailableStorage(int64_t size) {
     }
   } else {
     RecordFirstScreen(FirstScreen::FIRST_SCREEN_LOW_STORAGE);
-    CallJSWithPrefix("setAvailableSpaceInString", ui::FormatBytes(size));
-    CallJSWithPrefix("setNecessarySpaceInString",
-                     ui::FormatBytes(arc::kMigrationMinimumAvailableStorage));
+    CallJS("login.EncryptionMigrationScreen.setAvailableSpaceInString",
+           ui::FormatBytes(size));
+    CallJS("login.EncryptionMigrationScreen.setNecessarySpaceInString",
+           ui::FormatBytes(arc::kMigrationMinimumAvailableStorage));
     UpdateUIState(UIState::NOT_ENOUGH_STORAGE);
   }
 }
@@ -704,8 +707,8 @@ void EncryptionMigrationScreenHandler::DircryptoMigrationProgress(
       break;
     case cryptohome::DIRCRYPTO_MIGRATION_IN_PROGRESS:
       UpdateUIState(GetMigratingUIState());
-      CallJSWithPrefix("setMigrationProgress",
-                       static_cast<double>(current) / total);
+      CallJS("login.EncryptionMigrationScreen.setMigrationProgress",
+             static_cast<double>(current) / total);
       break;
     case cryptohome::DIRCRYPTO_MIGRATION_SUCCESS:
       RecordMigrationResultSuccess(IsResumingIncompleteMigration(),
@@ -803,7 +806,7 @@ void EncryptionMigrationScreenHandler::MaybeStopForcingMigration() {
   // We only want to disable auto-starting migration in the first case.
   if (mode_ == EncryptionMigrationMode::START_MIGRATION ||
       mode_ == EncryptionMigrationMode::START_MINIMAL_MIGRATION)
-    CallJSWithPrefix("setIsResuming", false);
+    CallJS("login.EncryptionMigrationScreen.setIsResuming", false);
 }
 
 }  // namespace chromeos

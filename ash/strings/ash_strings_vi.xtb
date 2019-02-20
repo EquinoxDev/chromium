@@ -14,6 +14,7 @@
 <translation id="1153356358378277386">Thiết bị được ghép nối</translation>
 <translation id="1195412055398077112">quét quá mức</translation>
 <translation id="119944043368869598">Xóa tất cả</translation>
+<translation id="123828989343052515">Không gian làm việc mới</translation>
 <translation id="1247372569136754018">Micrô (bên trong)</translation>
 <translation id="1252999807265626933">Đang sạc từ <ph name="POWER_SOURCE" /></translation>
 <translation id="1255033239764210633">Tình hình thời tiết thế nào?</translation>
@@ -68,10 +69,12 @@
 <translation id="1969011864782743497"><ph name="DEVICE_NAME" /> (USB)</translation>
 <translation id="1993072747612765854">Tìm hiểu thêm về bản cập nhật <ph name="SYSTEM_APP_NAME" /> mới nhất</translation>
 <translation id="1995660704900986789">Tắt nguồn</translation>
+<translation id="1999763610967697511">Kéo và thả</translation>
 <translation id="2012624427112548395">Ctrl+Search+H</translation>
 <translation id="2016340657076538683">Nhập tin nhắn</translation>
 <translation id="2050339315714019657">Khổ dọc</translation>
 <translation id="2067602449040652523">Độ sáng bàn phím</translation>
+<translation id="209965399369889474">Chưa kết nối với mạng</translation>
 <translation id="2127372758936585790">Bộ sạc công suất thấp</translation>
 <translation id="2135456203358955318">Phóng to ở vị trí cố định</translation>
 <translation id="2144487987174258011">Khởi động lại để cập nhật Adobe Flash Player</translation>
@@ -94,6 +97,7 @@
 <translation id="2412593942846481727">Đã có bản cập nhật</translation>
 <translation id="2413728805700750528"><ph name="DISPLAY_NAME" /> là một phiên được <ph name="DOMAIN" /> quản lý</translation>
 <translation id="2416346634399901812">Đã kết nối với <ph name="NETWORK_NAME" /></translation>
+<translation id="2427507373259914951">Nhấp chuột trái</translation>
 <translation id="2429753432712299108">Thiết bị Bluetooth "<ph name="DEVICE_NAME" />" muốn được phép ghép nối. Trước khi chấp nhận, vui lòng xác nhận rằng mã xác nhận này đã hiển thị trên thiết bị đó: <ph name="PASSKEY" /></translation>
 <translation id="2482878487686419369">Thông báo</translation>
 <translation id="2484513351006226581">Hãy nhấn <ph name="KEYBOARD_SHORTCUT" /> để chuyển bố cục bàn phím.</translation>
@@ -132,6 +136,7 @@
 <translation id="3000461861112256445">Đơn âm</translation>
 <translation id="3009178788565917040">Thiết bị ra</translation>
 <translation id="3019353588588144572">Thời gian còn lại cho đến khi pin được sạc đầy, <ph name="TIME_REMAINING" /></translation>
+<translation id="3051128274746680507">Hồ sơ người dùng được giám sát của bạn sẽ sớm bị xóa. Đăng nhập để tìm hiểu thêm.</translation>
 <translation id="3055162170959710888">Bạn đã dùng thiết bị này trong <ph name="USED_TIME" /> hôm nay</translation>
 <translation id="3077734595579995578">shift</translation>
 <translation id="3081696990447829002">Mở rộng menu</translation>
@@ -143,10 +148,10 @@
 <translation id="3153444934357957346">Bạn chỉ có thể có tối đa <ph name="MULTI_PROFILE_USER_LIMIT" /> tài khoản khi sử dụng tính năng đăng nhập nhiều tài khoản.</translation>
 <translation id="3154351730702813399">Quản trị viên thiết bị có thể theo dõi hoạt động duyệt web của bạn.</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{Đã kết nối với một thiết bị}other{Đã kết nối với # thiết bị}}</translation>
-<translation id="32244657276328332">Không kết nối được với mạng</translation>
 <translation id="3236488194889173876">Không có mạng di động nào</translation>
 <translation id="3255483164551725916">Bạn có thể làm gì?</translation>
 <translation id="3294437725009624529">Khách</translation>
+<translation id="3308453408813785101"><ph name="USER_EMAIL_ADDRESS" /> vẫn có thể đăng nhập vào lúc khác.</translation>
 <translation id="332587331255250389">Vui lòng thay pin</translation>
 <translation id="3351879221545518001">Bạn hiện đang truyền màn hình.</translation>
 <translation id="3364721542077212959">Công cụ bút cảm ứng</translation>
@@ -193,6 +198,7 @@
 <translation id="4072264167173457037">Tín hiệu trung bình</translation>
 <translation id="4146833061457621061">Phát nhạc</translation>
 <translation id="4181841719683918333">Ngôn ngữ</translation>
+<translation id="4195877955194704651">Nút Lượt nhấp tự động</translation>
 <translation id="4217571870635786043">Nhập bằng giọng nói</translation>
 <translation id="4261870227682513959">Hiển thị các tùy chọn cài đặt thông báo. Thông báo hiện đang tắt</translation>
 <translation id="4269883910223712419">Quản trị viên của thiết bị này có thể:</translation>
@@ -231,6 +237,7 @@
 <translation id="479989351350248267">search</translation>
 <translation id="4804818685124855865">Ngắt kết nối</translation>
 <translation id="4849058404725798627">Đánh dấu đối tượng bằng tiêu điểm bàn phím</translation>
+<translation id="485592688953820832">Không có hành động nào (tạm dừng)</translation>
 <translation id="4872237917498892622">Alt+Search hoặc Shift</translation>
 <translation id="4890187583552566966">Quản trị viên của bạn đã tắt Trợ lý Google.</translation>
 <translation id="4895488851634969361">Pin đầy.</translation>
@@ -257,6 +264,7 @@
 <translation id="5430931332414098647">Chia sẻ kết nối tức thì</translation>
 <translation id="5431825016875453137">OpenVPN / L2TP</translation>
 <translation id="544691375626129091">Tất cả người dùng hiện có mặt đã được thêm vào phiên này.</translation>
+<translation id="5465662442746197494">Bạn cần trợ giúp?</translation>
 <translation id="5496819745535887422">Quản trị viên đang hạ cấp hệ điều hành của thiết bị của bạn. Tất cả dữ liệu sẽ bị xóa khi thiết bị khởi động lại.</translation>
 <translation id="553675580533261935">Thoát phiên</translation>
 <translation id="5537725057119320332">Truyền</translation>
@@ -265,7 +273,6 @@
 <translation id="5571066253365925590">Đã bật bluetooth</translation>
 <translation id="5597451508971090205"><ph name="SHORT_WEEKDAY" />, <ph name="DATE" /></translation>
 <translation id="5600837773213129531">Nhấn Ctrl + Alt + Z để tắt phản hồi bằng giọng nói.</translation>
-<translation id="5626283214046138476">Tài khoản người dùng được giám sát của bạn sắp hết hạn.</translation>
 <translation id="5648021990716966815">Giắc cắm micrô</translation>
 <translation id="5669267381087807207">Đang kích hoạt</translation>
 <translation id="5673434351075758678">Từ "<ph name="FROM_LOCALE" />" sang "<ph name="TO_LOCALE" />" sau khi đồng bộ hóa cài đặt của bạn.</translation>
@@ -369,6 +376,7 @@
 <translation id="7348093485538360975">Bàn phím ảo</translation>
 <translation id="735745346212279324">Đã ngắt kết nối VPN</translation>
 <translation id="7377169924702866686">Caps Lock đang bật.</translation>
+<translation id="7384299914270925461"><ph name="SIGN" /><ph name="MINUTES_REMAINING" />:<ph name="SECONDS_REMAINING" />giây</translation>
 <translation id="7398254312354928459">Đã chuyển kết nối mạng</translation>
 <translation id="742594950370306541">Máy ảnh đang được sử dụng.</translation>
 <translation id="743058460480092004">Máy ảnh và micrô đang được sử dụng.</translation>
@@ -420,13 +428,17 @@
 <translation id="8113423164597455979">Đang bật trên tất cả ứng dụng</translation>
 <translation id="8132793192354020517">Đã kết nối với <ph name="NAME" /></translation>
 <translation id="813913629614996137">Đang khởi chạy...</translation>
+<translation id="8142441511840089262">Nhấp đúp</translation>
 <translation id="8142699993796781067">Mạng riêng</translation>
+<translation id="8167567890448493835">Đang dùng <ph name="LOCALE_NAME" /></translation>
 <translation id="8190698733819146287">Tùy chỉnh ngôn ngữ và dữ liệu nhập...</translation>
 <translation id="8192202700944119416">Đã ẩn thông báo.</translation>
+<translation id="8203795194971602413">Nhấp chuột phải</translation>
 <translation id="8236042855478648955">Giờ nghỉ giải lao</translation>
 <translation id="8261506727792406068">Xóa</translation>
 <translation id="8297006494302853456">Yếu</translation>
 <translation id="8308637677604853869">Menu trước</translation>
+<translation id="8332664326438198339">Quay lại trình khởi chạy</translation>
 <translation id="8341451174107936385"><ph name="UNLOCK_MORE_FEATURES" />  <ph name="GET_STARTED" /></translation>
 <translation id="8351131234907093545">Tạo ghi chú</translation>
 <translation id="8375916635258623388"><ph name="DEVICE_NAME" /> này và điện thoại của bạn sẽ tự động kết nối</translation>
@@ -442,7 +454,6 @@
 <translation id="8454013096329229812">Wi-Fi đang bật.</translation>
 <translation id="847056008324733326">Cài đặt tỷ lệ hiển thị</translation>
 <translation id="8477270416194247200">Nhấn phím Alt+Search hoặc Shift để hủy.</translation>
-<translation id="8484916590211895857"><ph name="NAME" />: Đang kết nối lại...</translation>
 <translation id="8513108775083588393">Tự động xoay</translation>
 <translation id="8517041960877371778"><ph name="DEVICE_TYPE" /> của bạn có thể không sạc khi được bật.</translation>
 <translation id="8627191004499078455">Đã kết nối với <ph name="DEVICE_NAME" /></translation>
@@ -457,9 +468,7 @@
 <translation id="8734991477317290293">Bàn phím này có thể đang cố gắng đánh cắp thao tác nhấn phím của bạn</translation>
 <translation id="8735953464173050365">Hiển thị các tùy chọn cài đặt bàn phím. <ph name="KEYBOARD_NAME" /> được chọn</translation>
 <translation id="875593634123171288">Hiển thị các tùy chọn cài đặt VPN</translation>
-<translation id="8809737090443522491">Nhập tên của ứng dụng hoặc tài liệu</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
-<translation id="8825534185036233643">Không hỗ trợ tính năng phản chiếu với hai màn hình trở lên.</translation>
 <translation id="8828714802988429505">90°</translation>
 <translation id="8843682306134542540">Bật/tắt khóa xoay. <ph name="STATE_TEXT" /></translation>
 <translation id="8850991929411075241">Search+Esc</translation>
@@ -467,7 +476,7 @@
 <translation id="8874184842967597500">Chưa kết nối</translation>
 <translation id="8877788021141246043">Đặt lời nhắc</translation>
 <translation id="8878886163241303700">Mở rộng màn hình</translation>
-<translation id="8898978413391960553">00:00 giây</translation>
+<translation id="890616557918890486">Thay đổi nguồn</translation>
 <translation id="8921624153894383499">Trợ lý Google không hỗ trợ ngôn ngữ này.</translation>
 <translation id="8938800817013097409">Thiết bị USB-C (cổng bên phải ở phía sau)</translation>
 <translation id="8940956008527784070">Pin yếu (<ph name="PERCENTAGE" />%)</translation>

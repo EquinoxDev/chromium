@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/frame/use_counter.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/loader/ping_loader.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/platform/network/encoded_form_data.h"
@@ -48,7 +49,8 @@ void ExecutionContextCSPDelegate::SetAddressSpace(mojom::IPAddressSpace space) {
 }
 
 void ExecutionContextCSPDelegate::SetRequireTrustedTypes() {
-  GetSecurityContext().SetRequireTrustedTypes();
+  if (origin_trials::TrustedDOMTypesEnabled(execution_context_))
+    GetSecurityContext().SetRequireTrustedTypes();
 }
 
 void ExecutionContextCSPDelegate::AddInsecureRequestPolicy(
@@ -73,11 +75,14 @@ void ExecutionContextCSPDelegate::AddInsecureRequestPolicy(
     // Step 4. Insert tuple into settings’s upgrade insecure navigations set.
     // [spec text]
     Count(WebFeature::kUpgradeInsecureRequestsEnabled);
-    if (!Url().Host().IsEmpty()) {
+    // We don't add the hash if |document| is null, to prevent
+    // WorkerGlobalScope::Url() before it's ready. https://crbug.com/861564
+    // This should be safe, because the insecure navigations set is not used
+    // in non-Document contexts.
+    if (document && !Url().Host().IsEmpty()) {
       uint32_t hash = Url().Host().Impl()->GetHash();
       security_context.AddInsecureNavigationUpgrade(hash);
-      if (document)
-        document->DidEnforceInsecureNavigationsSet();
+      document->DidEnforceInsecureNavigationsSet();
     }
   }
 }
@@ -134,7 +139,7 @@ void ExecutionContextCSPDelegate::PostViolationReport(
                 ContentSecurityPolicy::GetDirectiveType(
                     violation_data.effectiveDirective()));
 
-  // TODO(mkwst): Support POSTing violation reports from a Worker.
+  // TODO(crbug/929370): Support POSTing violation reports from a Worker.
   Document* document = GetDocument();
   if (!document)
     return;

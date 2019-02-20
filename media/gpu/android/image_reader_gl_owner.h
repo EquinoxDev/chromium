@@ -13,6 +13,12 @@
 #include "ui/gl/gl_fence_egl.h"
 #include "ui/gl/gl_image_ahardwarebuffer.h"
 
+namespace base {
+namespace android {
+class ScopedHardwareBufferFenceSync;
+}  // namespace android
+}  // namespace base
+
 namespace media {
 
 struct FrameAvailableEvent_ImageReader;
@@ -28,15 +34,17 @@ class MEDIA_GPU_EXPORT ImageReaderGLOwner : public TextureOwner {
   gl::GLContext* GetContext() const override;
   gl::GLSurface* GetSurface() const override;
   gl::ScopedJavaSurface CreateJavaSurface() const override;
-  void UpdateTexImage() override;
+  void UpdateTexImage(bool bind_egl_image) override;
   void GetTransformMatrix(float mtx[16]) override;
   void ReleaseBackBuffers() override;
   void SetReleaseTimeToNow() override;
   void IgnorePendingRelease() override;
   bool IsExpectingFrameAvailable() override;
   void WaitForFrameAvailable() override;
-  std::unique_ptr<gl::GLImage::ScopedHardwareBuffer> GetAHardwareBuffer()
-      override;
+  std::unique_ptr<base::android::ScopedHardwareBufferFenceSync>
+  GetAHardwareBuffer() override;
+
+  const AImageReader* image_reader_for_testing() const { return image_reader_; }
 
  protected:
   void OnTextureDestroyed(gpu::gles2::AbstractTexture*) override;
@@ -46,7 +54,8 @@ class MEDIA_GPU_EXPORT ImageReaderGLOwner : public TextureOwner {
 
   class ScopedHardwareBufferImpl;
 
-  ImageReaderGLOwner(std::unique_ptr<gpu::gles2::AbstractTexture> texture);
+  ImageReaderGLOwner(std::unique_ptr<gpu::gles2::AbstractTexture> texture,
+                     SecureMode secure_mode);
   ~ImageReaderGLOwner() override;
 
   // Deletes the current image if it has no pending refs. Returns false on
@@ -54,7 +63,10 @@ class MEDIA_GPU_EXPORT ImageReaderGLOwner : public TextureOwner {
   bool MaybeDeleteCurrentImage();
 
   void EnsureTexImageBound();
-  void ReleaseRefOnImage(AImage* image);
+
+  // Releases an external ref on the image, with the fence that must be signaled
+  // before the |image| can be resued by the AImageReader.
+  void ReleaseRefOnImage(AImage* image, base::ScopedFD fence_fd);
 
   // AImageReader instance
   AImageReader* image_reader_;
@@ -71,7 +83,19 @@ class MEDIA_GPU_EXPORT ImageReaderGLOwner : public TextureOwner {
   // A map consisting of pending external refs on an AImage. If an image has any
   // external refs, it is automatically released once the ref-count is 0 and the
   // image is no longer current.
-  using AImageRefMap = base::flat_map<AImage*, size_t>;
+  struct ImageRef {
+    ImageRef();
+    ~ImageRef();
+
+    ImageRef(ImageRef&& other);
+    ImageRef& operator=(ImageRef&& other);
+
+    size_t count = 0u;
+    base::ScopedFD fence_fd;
+
+    DISALLOW_COPY_AND_ASSIGN(ImageRef);
+  };
+  using AImageRefMap = base::flat_map<AImage*, ImageRef>;
   AImageRefMap external_image_refs_;
 
   // reference to the class instance which is used to dynamically

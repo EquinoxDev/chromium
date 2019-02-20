@@ -21,7 +21,7 @@
 #include "net/http/http_stream_factory.h"
 #include "net/third_party/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quic/core/quic_packets.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -151,6 +151,17 @@ TEST_F(NetworkSessionConfiguratorTest, EnableQuicForDataReductionProxy) {
   ParseFieldTrials();
 
   EXPECT_TRUE(params_.enable_quic);
+}
+
+TEST_F(NetworkSessionConfiguratorTest, EnableQuicProxiesForHttpsUrls) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["enable_quic_proxies_for_https_urls"] = "true";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_TRUE(params_.enable_quic_proxies_for_https_urls);
 }
 
 TEST_F(NetworkSessionConfiguratorTest,
@@ -386,6 +397,19 @@ TEST_F(NetworkSessionConfiguratorTest,
   ParseFieldTrials();
 
   EXPECT_TRUE(params_.quic_go_away_on_path_degrading);
+}
+
+TEST_F(NetworkSessionConfiguratorTest,
+       QuicIdleSessionMigrationPeriodFromFieldTrialParams) {
+  std::map<std::string, std::string> field_trial_params;
+  field_trial_params["idle_session_migration_period_seconds"] = "15";
+  variations::AssociateVariationParams("QUIC", "Enabled", field_trial_params);
+  base::FieldTrialList::CreateFieldTrial("QUIC", "Enabled");
+
+  ParseFieldTrials();
+
+  EXPECT_EQ(base::TimeDelta::FromSeconds(15),
+            params_.quic_idle_session_migration_period);
 }
 
 TEST_F(NetworkSessionConfiguratorTest,
@@ -714,59 +738,36 @@ TEST_F(NetworkSessionConfiguratorTest, HostRules) {
 }
 
 TEST_F(NetworkSessionConfiguratorTest, DefaultCacheBackend) {
-  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
 #if defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)
   EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE,
-            ChooseCacheType(command_line));
+            ChooseCacheType());
 #elif defined(OS_MACOSX) && !defined(OS_IOS)
   EXPECT_EQ(
       base::mac::IsAtLeastOS10_14()
           ? net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE
           : net::URLRequestContextBuilder::HttpCacheParams::DISK_BLOCKFILE,
-      ChooseCacheType(command_line));
+      ChooseCacheType());
 #else
   EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_BLOCKFILE,
-            ChooseCacheType(command_line));
-#endif
-}
-
-TEST_F(NetworkSessionConfiguratorTest, UseSimpleCacheBackendOn) {
-  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
-  command_line.AppendSwitchASCII(switches::kUseSimpleCacheBackend, "on");
-  EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE,
-            ChooseCacheType(command_line));
-}
-
-TEST_F(NetworkSessionConfiguratorTest, UseSimpleCacheBackendOff) {
-  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
-  command_line.AppendSwitchASCII(switches::kUseSimpleCacheBackend, "off");
-#if !defined(OS_ANDROID)
-  EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_BLOCKFILE,
-            ChooseCacheType(command_line));
-#else  // defined(OS_ANDROID)
-  // Android always uses the simple cache.
-  EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE,
-            ChooseCacheType(command_line));
+            ChooseCacheType());
 #endif
 }
 
 TEST_F(NetworkSessionConfiguratorTest, SimpleCacheTrialExperimentYes) {
-  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   base::FieldTrialList::CreateFieldTrial("SimpleCacheTrial", "ExperimentYes");
   EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE,
-            ChooseCacheType(command_line));
+            ChooseCacheType());
 }
 
 TEST_F(NetworkSessionConfiguratorTest, SimpleCacheTrialDisable) {
-  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   base::FieldTrialList::CreateFieldTrial("SimpleCacheTrial", "Disable");
 #if !defined(OS_ANDROID)
   EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_BLOCKFILE,
-            ChooseCacheType(command_line));
+            ChooseCacheType());
 #else  // defined(OS_ANDROID)
   // Android always uses the simple cache.
   EXPECT_EQ(net::URLRequestContextBuilder::HttpCacheParams::DISK_SIMPLE,
-            ChooseCacheType(command_line));
+            ChooseCacheType());
 #endif
 }
 

@@ -22,8 +22,6 @@ import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.UrlConstants;
-import org.chromium.chrome.browser.modelutil.ListModel;
-import org.chromium.chrome.browser.modelutil.RecyclerViewAdapter;
 import org.chromium.chrome.browser.native_page.BasicNativePage;
 import org.chromium.chrome.browser.native_page.ContextMenuManager;
 import org.chromium.chrome.browser.native_page.NativePageHost;
@@ -35,7 +33,9 @@ import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.widget.RoundedIconGenerator;
 import org.chromium.content_public.browser.NavigationController;
 import org.chromium.content_public.browser.NavigationEntry;
+import org.chromium.ui.modelutil.ListModel;
 import org.chromium.ui.modelutil.PropertyModel;
+import org.chromium.ui.modelutil.RecyclerViewAdapter;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -50,6 +50,7 @@ public class ExploreSitesPage extends BasicNativePage {
     private static final String TAG = "ExploreSitesPage";
     private static final String CONTEXT_MENU_USER_ACTION_PREFIX = "ExploreSites";
     private static final int INITIAL_SCROLL_POSITION = 3;
+    private static final int INITIAL_SCROLL_POSITION_PERSONALIZED = 0;
     private static final String NAVIGATION_ENTRY_SCROLL_POSITION_KEY =
             "ExploreSitesPageScrollPosition";
     static final PropertyModel.WritableIntPropertyKey STATUS_KEY =
@@ -82,6 +83,7 @@ public class ExploreSitesPage extends BasicNativePage {
     private String mNavFragment;
     private boolean mHasFetchedNetworkCatalog;
     private boolean mIsLoaded;
+    private int mInitialScrollPosition;
 
     /**
      * Create a new instance of the explore sites page.
@@ -135,6 +137,12 @@ public class ExploreSitesPage extends BasicNativePage {
         mRecyclerView.setLayoutManager(mLayoutManager);
         mRecyclerView.setAdapter(adapter);
 
+        // When we personalize, we don't want to scroll to the 4th category.
+        mInitialScrollPosition =
+                ExploreSitesBridge.getVariation() == ExploreSitesVariation.PERSONALIZED
+                ? INITIAL_SCROLL_POSITION_PERSONALIZED
+                : INITIAL_SCROLL_POSITION;
+
         ExploreSitesBridge.getEspCatalog(mProfile, this::translateToModel);
         RecordUserAction.record("Android.ExploreSitesPage.Open");
     }
@@ -153,7 +161,7 @@ public class ExploreSitesPage extends BasicNativePage {
                     mProfile, /* isImmediateFetch =*/true, this::onUpdatedCatalog);
             RecordHistogram.recordEnumeratedHistogram("ExploreSites.CatalogUpdateRequestSource",
                     ExploreSitesEnums.CatalogUpdateRequestSource.EXPLORE_SITES_PAGE,
-                    ExploreSitesEnums.CatalogUpdateRequestSource.COUNT);
+                    ExploreSitesEnums.CatalogUpdateRequestSource.NUM_ENTRIES);
             return;
         }
         mModel.set(STATUS_KEY, CatalogLoadingState.SUCCESS);
@@ -174,7 +182,7 @@ public class ExploreSitesPage extends BasicNativePage {
             lookupCategoryAndScroll();
         } else {
             mModel.set(SCROLL_TO_CATEGORY_KEY,
-                    Math.min(categoryListModel.size() - 1, INITIAL_SCROLL_POSITION));
+                    Math.min(categoryListModel.size() - 1, mInitialScrollPosition));
         }
         if (mTab != null) {
             // We want to observe page load start so that we can store the recycler view layout

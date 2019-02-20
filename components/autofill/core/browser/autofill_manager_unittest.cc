@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -33,6 +34,7 @@
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/credit_card.h"
+#include "components/autofill/core/browser/metrics/form_events.h"
 #include "components/autofill/core/browser/mock_autocomplete_history_manager.h"
 #include "components/autofill/core/browser/payments/test_payments_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
@@ -60,6 +62,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/security_state/core/security_state.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/sync/driver/test_sync_service.h"
 #include "components/variations/variations_associated_data.h"
 #include "components/variations/variations_params_manager.h"
 #include "components/version_info/channel.h"
@@ -294,7 +297,6 @@ class AutofillManagerTest : public testing::Test {
                         /*identity_manager=*/nullptr,
                         /*client_profile_validator=*/nullptr,
                         /*history_service=*/nullptr,
-                        /*cookie_manager_sevice=*/nullptr,
                         /*is_off_the_record=*/false);
     personal_data_.SetPrefService(autofill_client_.GetPrefs());
 
@@ -436,8 +438,8 @@ class AutofillManagerTest : public testing::Test {
   }
 
   void FormSubmitted(const FormData& form) {
-    autofill_manager_->OnFormSubmitted(
-        form, false, SubmissionSource::FORM_SUBMISSION, base::TimeTicks::Now());
+    autofill_manager_->OnFormSubmitted(form, false,
+                                       SubmissionSource::FORM_SUBMISSION);
   }
 
   void FillAutofillFormData(int query_id,
@@ -944,6 +946,16 @@ TEST_F(AutofillManagerTest,
   CheckSuggestions(kDefaultPageID,
                    Suggestion("Holley", "Charles Hardin Holley", "", 1),
                    Suggestion("Presley", "Elvis Aaron Presley", "", 2));
+}
+
+// Test that the call is properly forwarded to AutocompleteHistoryManager.
+TEST_F(AutofillManagerTest, OnAutocompleteEntrySelected) {
+  base::string16 test_value = ASCIIToUTF16("TestValue");
+  EXPECT_CALL(*autocomplete_history_manager_.get(),
+              OnAutocompleteEntrySelected(test_value))
+      .Times(1);
+
+  autofill_manager_->OnAutocompleteEntrySelected(test_value);
 }
 
 // Test that we return all address profile suggestions when all form fields are
@@ -1598,9 +1610,9 @@ TEST_F(AutofillManagerTest,
 
   base::HistogramTester histogram_tester;
   FormSubmitted(form);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.CreditCard",
-      AutofillMetrics::FORM_EVENT_SUGGESTION_SHOWN_SUBMITTED_ONCE, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.CreditCard",
+                                     FORM_EVENT_SUGGESTION_SHOWN_SUBMITTED_ONCE,
+                                     1);
 }
 
 // Test that we return normal autofill suggestions when trying to autofill
@@ -3708,8 +3720,7 @@ TEST_F(AutofillManagerTest, FormSubmittedSaveData) {
                                false);
 
   autofill_manager_->OnFormSubmitted(response_data, false,
-                                     SubmissionSource::FORM_SUBMISSION,
-                                     base::TimeTicks::Now());
+                                     SubmissionSource::FORM_SUBMISSION);
   EXPECT_EQ(1, personal_data_.num_times_save_imported_profile_called());
 }
 
@@ -4412,8 +4423,8 @@ class ProfileMatchingTypesTest
     : public AutofillManagerTest,
       public ::testing::WithParamInterface<
           std::tuple<ProfileMatchingTypesTestCase,
-                     int,        // AutofillProfile::ValidityState
-                     bool>> {};  // AutofillProfile::ValidationSource
+                     int,        // AutofillDataModel::ValidityState
+                     bool>> {};  // AutofillDataModel::ValidationSource
 
 const ProfileMatchingTypesTestCase kProfileMatchingTypesTestCases[] = {
     // Profile fields matches.
@@ -4507,9 +4518,9 @@ TEST_P(ProfileMatchingTypesTest, DeterminePossibleFieldTypesForUpload) {
   // Unpack the test paramters
   const auto& test_case = std::get<0>(GetParam());
   auto validity_state =
-      static_cast<AutofillProfile::ValidityState>(std::get<1>(GetParam()));
+      static_cast<AutofillDataModel::ValidityState>(std::get<1>(GetParam()));
   const auto& validation_source =
-      static_cast<AutofillProfile::ValidationSource>(std::get<2>(GetParam()));
+      static_cast<AutofillDataModel::ValidationSource>(std::get<2>(GetParam()));
 
   SCOPED_TRACE(base::StringPrintf(
       "Test: input_value='%s', field_type=%s, validity_state=%d, "
@@ -4518,8 +4529,8 @@ TEST_P(ProfileMatchingTypesTest, DeterminePossibleFieldTypesForUpload) {
       AutofillType(test_case.field_type).ToString().c_str(), validity_state,
       validation_source));
 
-  ASSERT_LE(AutofillProfile::UNVALIDATED, validity_state);
-  ASSERT_LE(validity_state, AutofillProfile::UNSUPPORTED);
+  ASSERT_LE(AutofillDataModel::UNVALIDATED, validity_state);
+  ASSERT_LE(validity_state, AutofillDataModel::UNSUPPORTED);
 
   // Set up the test profiles.
   std::vector<AutofillProfile> profiles;
@@ -4546,11 +4557,11 @@ TEST_P(ProfileMatchingTypesTest, DeterminePossibleFieldTypesForUpload) {
     for (auto& profile : profiles) {
       if (test_case.field_type == UNKNOWN_TYPE) {
         // An UNKNOWN type is always UNVALIDATED
-        validity_state = AutofillProfile::UNVALIDATED;
+        validity_state = AutofillDataModel::UNVALIDATED;
       } else if (profile.IsAnInvalidPhoneNumber(test_case.field_type)) {
         // a phone field is a compound field, an invalid part would make it
         // invalid.
-        validity_state = AutofillProfile::INVALID;
+        validity_state = AutofillDataModel::INVALID;
       }
       profile.SetValidityState(test_case.field_type, validity_state,
                                validation_source);
@@ -4595,19 +4606,19 @@ TEST_P(ProfileMatchingTypesTest, DeterminePossibleFieldTypesForUpload) {
     EXPECT_NE(possible_types_validities.end(),
               possible_types_validities.find(test_case.field_type));
     EXPECT_EQ(possible_types_validities[test_case.field_type][0],
-              (validation_source == AutofillProfile::SERVER)
+              (validation_source == AutofillDataModel::SERVER)
                   ? validity_state
-                  : AutofillProfile::UNVALIDATED);
+                  : AutofillDataModel::UNVALIDATED);
   }
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     AutofillManagerTest,
     ProfileMatchingTypesTest,
     testing::Combine(
         testing::ValuesIn(kProfileMatchingTypesTestCases),
-        testing::Range(static_cast<int>(AutofillProfile::UNVALIDATED),
-                       static_cast<int>(AutofillProfile::UNSUPPORTED) + 1),
+        testing::Range(static_cast<int>(AutofillDataModel::UNVALIDATED),
+                       static_cast<int>(AutofillDataModel::UNSUPPORTED) + 1),
         testing::Bool()));
 
 // Tests that DeterminePossibleFieldTypesForUpload is called when a form is
@@ -4673,8 +4684,8 @@ TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesWithMultipleValidities) {
                          "", "Memphis", "Tennessee", "38116", "US",
                          "(234) 567-8901");
     profile.set_guid("00000000-0000-0000-0000-000000000001");
-    profile.SetValidityState(ADDRESS_HOME_STATE, AutofillProfile::VALID,
-                             AutofillProfile::SERVER);
+    profile.SetValidityState(ADDRESS_HOME_STATE, AutofillDataModel::VALID,
+                             AutofillDataModel::SERVER);
     profiles.push_back(profile);
   }
   {
@@ -4683,8 +4694,8 @@ TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesWithMultipleValidities) {
                          "1331 W Georgia", "", "Vancouver", "Tennessee",
                          "V4D 4S4", "CA", "(778) 567-8901");
     profile.set_guid("00000000-0000-0000-0000-000000000002");
-    profile.SetValidityState(ADDRESS_HOME_STATE, AutofillProfile::INVALID,
-                             AutofillProfile::SERVER);
+    profile.SetValidityState(ADDRESS_HOME_STATE, AutofillDataModel::INVALID,
+                             AutofillDataModel::SERVER);
     profiles.push_back(profile);
   }
 
@@ -4692,7 +4703,7 @@ TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesWithMultipleValidities) {
   typedef struct {
     std::string input_value;
     ServerFieldType field_type;
-    std::vector<AutofillProfile::ValidityState> expected_validity_states;
+    std::vector<AutofillDataModel::ValidityState> expected_validity_states;
   } TestFieldData;
 
   std::vector<TestFieldData> test_cases[3];
@@ -4701,16 +4712,18 @@ TEST_F(AutofillManagerTest, DeterminePossibleFieldTypesWithMultipleValidities) {
   // possible_field_types would only include the type ADDRESS_HOME_STATE, and
   // the corresponding validity of that type would include both VALID and
   // INVALID.
-  test_cases[0].push_back({"Tennessee",
-                           ADDRESS_HOME_STATE,
-                           {AutofillProfile::VALID, AutofillProfile::INVALID}});
+  test_cases[0].push_back(
+      {"Tennessee",
+       ADDRESS_HOME_STATE,
+       {AutofillDataModel::VALID, AutofillDataModel::INVALID}});
   // Alice appears only in the second profile as a NAME_FIRST, and it's
   // UNVALIDATED.
   test_cases[1].push_back(
-      {"Alice", NAME_FIRST, {AutofillProfile::UNVALIDATED}});
+      {"Alice", NAME_FIRST, {AutofillDataModel::UNVALIDATED}});
   // An UNKNOWN type is always UNVALIDATED.
-  test_cases[2].push_back(
-      {"What a beautiful day!", UNKNOWN_TYPE, {AutofillProfile::UNVALIDATED}});
+  test_cases[2].push_back({"What a beautiful day!",
+                           UNKNOWN_TYPE,
+                           {AutofillDataModel::UNVALIDATED}});
 
   for (const std::vector<TestFieldData>& test_fields : test_cases) {
     FormData form;
@@ -5289,8 +5302,8 @@ TEST_F(AutofillManagerTest, DontOfferToSavePaymentsCard) {
   full_card_unmask_delegate()->OnUnmaskResponse(response);
   autofill_manager_->OnDidGetRealPan(AutofillClient::SUCCESS,
                                      "4012888888881881");
-  autofill_manager_->OnFormSubmitted(
-      form, false, SubmissionSource::FORM_SUBMISSION, base::TimeTicks::Now());
+  autofill_manager_->OnFormSubmitted(form, false,
+                                     SubmissionSource::FORM_SUBMISSION);
 }
 
 TEST_F(AutofillManagerTest, FillInUpdatedExpirationDate) {
@@ -6223,12 +6236,10 @@ TEST_F(AutofillManagerTest, DidShowSuggestions_LogAutofillAddressShownMetric) {
   histogram_tester.ExpectBucketCount("Autofill.UserHappiness.Address",
                                      AutofillMetrics::SUGGESTIONS_SHOWN_ONCE,
                                      1);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN, 1);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN_ONCE, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.Address",
+                                     FORM_EVENT_SUGGESTIONS_SHOWN, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.Address",
+                                     FORM_EVENT_SUGGESTIONS_SHOWN_ONCE, 1);
 
   // No Autocomplete or credit cards logs.
   const std::string histograms = histogram_tester.GetAllHistogramsRecorded();
@@ -6254,12 +6265,10 @@ TEST_F(AutofillManagerTest,
   histogram_tester.ExpectBucketCount("Autofill.UserHappiness.CreditCard",
                                      AutofillMetrics::SUGGESTIONS_SHOWN_ONCE,
                                      1);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.CreditCard",
-      AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN, 1);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.CreditCard",
-      AutofillMetrics::FORM_EVENT_SUGGESTIONS_SHOWN_ONCE, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.CreditCard",
+                                     FORM_EVENT_SUGGESTIONS_SHOWN, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.CreditCard",
+                                     FORM_EVENT_SUGGESTIONS_SHOWN_ONCE, 1);
 
   // No Autocomplete or address logs.
   const std::string histograms = histogram_tester.GetAllHistogramsRecorded();
@@ -6274,9 +6283,8 @@ TEST_F(AutofillManagerTest,
 
   base::HistogramTester histogram_tester;
   autofill_manager_->DidSuppressPopup(form, form.fields[0]);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.Address",
-      AutofillMetrics::FORM_EVENT_POPUP_SUPPRESSED, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.Address",
+                                     FORM_EVENT_POPUP_SUPPRESSED, 1);
 
   // No Autocomplete or credit cards logs.
   const std::string histograms = histogram_tester.GetAllHistogramsRecorded();
@@ -6293,15 +6301,55 @@ TEST_F(AutofillManagerTest,
 
   base::HistogramTester histogram_tester;
   autofill_manager_->DidSuppressPopup(form, form.fields[0]);
-  histogram_tester.ExpectBucketCount(
-      "Autofill.FormEvents.CreditCard",
-      AutofillMetrics::FORM_EVENT_POPUP_SUPPRESSED, 1);
+  histogram_tester.ExpectBucketCount("Autofill.FormEvents.CreditCard",
+                                     FORM_EVENT_POPUP_SUPPRESSED, 1);
 
   // No Autocomplete or address logs.
   const std::string histograms = histogram_tester.GetAllHistogramsRecorded();
   EXPECT_THAT(histograms, Not(AnyOf(HasSubstr("Autofill.UserHappiness"),
                                     HasSubstr("Autocomplete.Events"),
                                     HasSubstr("Autofill.FormEvents.Address"))));
+}
+
+// Tests that a call to the PDM's SyncServiceInitialized happens if in incognito
+// mode even if the sync service is null.
+TEST_F(AutofillManagerTest, CallingOnSyncServiceInitialized_NotOffTheRecord) {
+  // Setup the test PDM.
+  TestPersonalDataManager test_pdm;
+  ASSERT_FALSE(test_pdm.sync_service_initialized());
+
+  // Set the client to return a null sync service (default).
+  TestAutofillClient client;
+
+  // Create a new AutofillManager.
+  autofill_manager_.reset(
+      new TestAutofillManager(autofill_driver_.get(), &client, &test_pdm,
+                              autocomplete_history_manager_.get()));
+
+  // Make sure the PDM's sync service was initialized.
+  EXPECT_TRUE(test_pdm.sync_service_initialized());
+}
+
+// Tests that no call to the PDM's SyncServiceInitialized happens in incognito
+// mode.
+TEST_F(AutofillManagerTest, CallingOnSyncServiceInitialized_OffTheRecord) {
+  // Setup the test PDM.
+  TestPersonalDataManager test_pdm;
+  ASSERT_FALSE(test_pdm.sync_service_initialized());
+
+  // Set the client to return a null sync service (default).
+  TestAutofillClient client;
+
+  // Set the driver to return that the user is off the record.
+  TestAutofillDriver driver;
+  driver.SetIsIncognito(true);
+
+  // Create a new AutofillManager.
+  autofill_manager_.reset(new TestAutofillManager(
+      &driver, &client, &test_pdm, autocomplete_history_manager_.get()));
+
+  // Make sure the PDM's sync service was not initialized.
+  EXPECT_FALSE(test_pdm.sync_service_initialized());
 }
 
 // Test param indicates if there is an active screen reader.
@@ -6472,6 +6520,6 @@ TEST_P(OnFocusOnFormFieldTest, CreditCardSuggestions_Ablation) {
   CheckNoSuggestionsAvailableOnFieldFocus();
 }
 
-INSTANTIATE_TEST_CASE_P(All, OnFocusOnFormFieldTest, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(All, OnFocusOnFormFieldTest, testing::Bool());
 
 }  // namespace autofill

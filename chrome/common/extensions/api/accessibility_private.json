@@ -107,6 +107,25 @@
     ],
     "functions": [
       {
+        "name": "getBatteryDescription",
+        "type": "function",
+        "description": "Called to request battery status from Chrome OS system.",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "description": "Returns battery description as a string.",
+            "parameters": [
+              {
+                "name": "batteryDescription",
+                "type": "string"
+              }
+            ]
+          }
+        ],
+        "platforms": ["chromeos"]
+      },
+      {
         "name": "setNativeAccessibilityEnabled",
         "type": "function",
         "description": "Enables or disables native accessibility support. Once disabled, it is up to the calling extension to provide accessibility for web contents.",
@@ -217,9 +236,26 @@
                 "name": "element_bounds",
                 "$ref": "ScreenRect",
                 "description": "Position of an element, in global screen coordinates, to place the menu next to."
+              },
+              {
+                "name": "item_count",
+                "type": "integer",
+                "description": "The number of items that need to be shown in the menu."
               }
             ],
             "platforms": ["chromeos"]
+      },
+      {
+        "name": "forwardKeyEventsToSwitchAccess",
+        "type": "function",
+        "description": "When enabled, forwards key events to the Switch Access extension",
+        "parameters": [
+          {
+            "name": "shouldForward",
+            "type": "boolean"
+          }
+        ],
+        "platforms": ["chromeos"]
       },
       {
         "name": "setNativeChromeVoxArcSupportForCurrentApp",
@@ -327,6 +363,20 @@
         "type": "function",
         "description": "Called when Chrome OS wants to change the Select-to-Speak state, between selecting with the mouse, speaking, and inactive.",
         "parameters": [],
+        "platforms": ["chromeos"]
+      },
+      {
+        "name": "onAnnounceForAccessibility",
+        "type": "function",
+        "description": "Called when an internal component within accessibility wants to force speech output for an accessibility extension. Do not use without approval from accessibility owners.",
+        "parameters": [
+          {
+            "name": "announceText",
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Text to be announced."
+          }
+        ],
         "platforms": ["chromeos"]
       }
     ]

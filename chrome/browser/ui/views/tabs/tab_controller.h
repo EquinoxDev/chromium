@@ -10,10 +10,10 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ui_base_types.h"
 
+class SkPath;
 class Tab;
 
 namespace gfx {
-class Path;
 class Point;
 class Rect;
 }
@@ -79,10 +79,6 @@ class TabController {
   virtual bool IsFirstVisibleTab(const Tab* tab) const = 0;
   virtual bool IsLastVisibleTab(const Tab* tab) const = 0;
 
-  // Returns whether the strip is painting in single-tab mode.  This is true in
-  // a subset of the cases where ther is exactly one tab.
-  virtual bool SingleTabMode() const = 0;
-
   // Potentially starts a drag for the specified Tab.
   virtual void MaybeStartDrag(
       Tab* tab,
@@ -116,7 +112,7 @@ class TabController {
   // is set to the path which should be clipped out of the current tab's region
   // (for hit testing or painting), if any.  |clip| is only non-empty when
   // stacking tabs; if it is empty, no clipping is needed.
-  virtual bool ShouldPaintTab(const Tab* tab, float scale, gfx::Path* clip) = 0;
+  virtual bool ShouldPaintTab(const Tab* tab, float scale, SkPath* clip) = 0;
 
   // Returns the thickness of the stroke around the active tab in DIP.  Returns
   // 0 if there is no stroke.

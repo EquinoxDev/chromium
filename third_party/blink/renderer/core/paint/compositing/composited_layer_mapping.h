@@ -215,6 +215,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   bool ShouldThrottleRendering() const override;
   bool IsTrackingRasterInvalidations() const override;
   void SetOverlayScrollbarsHidden(bool) override;
+  void SetPaintArtifactCompositorNeedsUpdate() const override;
 
 #if DCHECK_IS_ON()
   void VerifyNotPainting() override;
@@ -276,12 +277,6 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
       const GraphicsLayer*) const override;
 
   LayoutSize ContentOffsetInCompositingLayer() const;
-
-  // Returned value does not include any composited scroll offset of
-  // the transform ancestor.
-  LayoutPoint SquashingOffsetFromTransformedAncestor() const {
-    return squashing_layer_offset_from_transformed_ancestor_;
-  }
 
   // If there is a squashed layer painting into this CLM that is an ancestor of
   // the given LayoutObject, return it. Otherwise return nullptr.
@@ -354,7 +349,6 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
       const PaintLayer* compositing_container,
       const IntPoint& snapped_offset_from_composited_ancestor,
       Vector<GraphicsLayerPaintInfo>& layers,
-      LayoutPoint* offset_from_transformed_ancestor,
       Vector<PaintLayer*>& layers_needing_paint_invalidation);
   void UpdateMainGraphicsLayerGeometry(
       const IntRect& relative_compositing_bounds,
@@ -421,7 +415,7 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   void UpdateScrollParent(const PaintLayer*);
   void UpdateClipParent(const PaintLayer* scroll_parent);
   bool UpdateSquashingLayers(bool needs_squashing_layers);
-  void UpdateDrawsContent();
+  void UpdateDrawsContentAndPaintsHitTest();
   void UpdateChildrenTransform();
   void UpdateCompositedBounds();
   void UpdateOverscrollBehavior();
@@ -665,7 +659,6 @@ class CORE_EXPORT CompositedLayerMapping final : public GraphicsLayerClient {
   // layers paint into.
   std::unique_ptr<GraphicsLayer> squashing_layer_;
   Vector<GraphicsLayerPaintInfo> squashed_layers_;
-  LayoutPoint squashing_layer_offset_from_transformed_ancestor_;
   IntSize squashing_layer_offset_from_layout_object_;
 
   LayoutRect composited_bounds_;

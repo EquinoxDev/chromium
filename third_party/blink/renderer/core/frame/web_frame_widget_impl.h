@@ -55,11 +55,10 @@ class Layer;
 }
 
 namespace blink {
-
 class AnimationWorkletMutatorDispatcherImpl;
-class CompositorAnimationHost;
 class Frame;
 class Element;
+class HTMLPlugInElement;
 class LocalFrame;
 class PaintLayerCompositor;
 class UserGestureToken;
@@ -84,12 +83,15 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void DidEnterFullscreen() override;
   void DidExitFullscreen() override;
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
-  void BeginFrame(base::TimeTicks last_frame_time) override;
+  void BeginFrame(base::TimeTicks last_frame_time,
+                  bool record_main_frame_metrics) override;
+  void BeginRafAlignedInput() override;
+  void EndRafAlignedInput() override;
+  void RecordStartOfFrameMetrics() override;
   void RecordEndOfFrameMetrics(base::TimeTicks) override;
   void UpdateLifecycle(LifecycleUpdate requested_update,
                        LifecycleUpdateReason reason) override;
   void PaintContent(cc::PaintCanvas*, const WebRect&) override;
-  void LayoutAndPaintAsync(base::OnceClosure callback) override;
   void CompositeAndReadbackAsync(
       base::OnceCallback<void(const SkBitmap&)> callback) override;
   void ThemeChanged() override;
@@ -103,7 +105,6 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void SetFocus(bool enable) override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool IsAcceleratedCompositingActive() const override;
-  void WillCloseLayerTreeView() override;
   void SetRemoteViewportIntersection(const WebRect&, bool) override;
   void SetIsInert(bool) override;
   void SetInheritedEffectiveTouchAction(TouchAction) override;
@@ -129,8 +130,7 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
                                         mutator_task_runner) override;
 
   // WebFrameWidgetBase overrides:
-  void Initialize() override;
-  void SetLayerTreeView(WebLayerTreeView*) override;
+  void SetLayerTreeView(WebLayerTreeView*, cc::AnimationHost*) override;
   bool ForSubframe() const override { return true; }
   void IntrinsicSizingInfoChanged(const IntrinsicSizingInfo&) override;
   void DidCreateLocalRootView() override;
@@ -138,7 +138,7 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   void SetRootGraphicsLayer(GraphicsLayer*) override;
   void SetRootLayer(scoped_refptr<cc::Layer>) override;
   WebLayerTreeView* GetLayerTreeView() const override;
-  CompositorAnimationHost* AnimationHost() const override;
+  cc::AnimationHost* AnimationHost() const override;
   HitTestResult CoreHitTestResultAt(const gfx::Point&) override;
   void ZoomToFindInPageRect(const WebRect& rect_in_root_frame) override;
 
@@ -152,7 +152,7 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
 
   GraphicsLayer* RootGraphicsLayer() const override {
     return root_graphics_layer_;
-  };
+  }
 
   void Trace(blink::Visitor*) override;
 
@@ -191,8 +191,8 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
 
   base::Optional<WebSize> size_;
 
-  // If set, the (plugin) node which has mouse capture.
-  Member<Node> mouse_capture_node_;
+  // If set, the (plugin) element which has mouse capture.
+  Member<HTMLPlugInElement> mouse_capture_element_;
   scoped_refptr<UserGestureToken> mouse_capture_gesture_token_;
 
   // This is owned by the LayerTreeHostImpl, and should only be used on the
@@ -201,21 +201,21 @@ class WebFrameWidgetImpl final : public WebFrameWidgetBase,
   base::WeakPtr<AnimationWorkletMutatorDispatcherImpl> mutator_dispatcher_;
   scoped_refptr<base::SingleThreadTaskRunner> mutator_task_runner_;
 
-  WebLayerTreeView* layer_tree_view_;
+  WebLayerTreeView* layer_tree_view_ = nullptr;
+  cc::AnimationHost* animation_host_ = nullptr;
   scoped_refptr<cc::Layer> root_layer_;
-  GraphicsLayer* root_graphics_layer_;
-  std::unique_ptr<CompositorAnimationHost> animation_host_;
-  bool is_accelerated_compositing_active_;
-  bool layer_tree_view_closed_;
+  GraphicsLayer* root_graphics_layer_ = nullptr;
+  base::TimeTicks raf_aligned_input_start_time_;
+  bool is_accelerated_compositing_active_ = false;
 
-  bool suppress_next_keypress_event_;
+  bool suppress_next_keypress_event_ = false;
 
   bool did_suspend_parsing_ = false;
 
   // TODO(ekaramad): Can we remove this and make sure IME events are not called
   // when there is no page focus?
   // Represents whether or not this object should process incoming IME events.
-  bool ime_accept_events_;
+  bool ime_accept_events_ = true;
 
   SelfKeepAlive<WebFrameWidgetImpl> self_keep_alive_;
 };

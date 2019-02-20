@@ -4,6 +4,7 @@
 
 #include <tuple>
 
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/run_loop.h"
@@ -74,7 +75,7 @@ class YUVReadbackTest : public testing::Test {
   }
 
   static void TraceDataCB(
-      const base::Callback<void()>& callback,
+      base::OnceClosure quit_closure,
       std::string* output,
       const scoped_refptr<base::RefCountedString>& json_events_str,
       bool has_more_events) {
@@ -83,7 +84,7 @@ class YUVReadbackTest : public testing::Test {
     }
     output->append(json_events_str->data());
     if (!has_more_events) {
-      callback.Run();
+      std::move(quit_closure).Run();
     }
   }
 
@@ -93,15 +94,16 @@ class YUVReadbackTest : public testing::Test {
     std::string json_data = "[";
     base::trace_event::TraceLog::GetInstance()->SetDisabled();
     base::RunLoop run_loop;
-    base::trace_event::TraceLog::GetInstance()->Flush(
-        base::Bind(&YUVReadbackTest::TraceDataCB, run_loop.QuitClosure(),
-                   base::Unretained(&json_data)));
+    base::trace_event::TraceLog::GetInstance()->Flush(base::BindRepeating(
+        &YUVReadbackTest::TraceDataCB, run_loop.QuitClosure(),
+        base::Unretained(&json_data)));
     run_loop.Run();
     json_data.append("]");
 
     std::string error_msg;
     std::unique_ptr<base::Value> trace_data =
-        base::JSONReader::ReadAndReturnError(json_data, 0, nullptr, &error_msg);
+        base::JSONReader::ReadAndReturnErrorDeprecated(json_data, 0, nullptr,
+                                                       &error_msg);
     CHECK(trace_data) << "JSON parsing failed (" << error_msg
                       << ") JSON data:" << std::endl
                       << json_data;
@@ -257,11 +259,6 @@ class YUVReadbackTest : public testing::Test {
     return ret;
   }
 
-  static void callcallback(const base::Callback<void()>& callback,
-                           bool result) {
-    callback.Run();
-  }
-
   void PrintPlane(unsigned char* plane, int xsize, int stride, int ysize) {
     for (int y = 0; y < std::min(24, ysize); y++) {
       std::string formatted;
@@ -391,16 +388,20 @@ class YUVReadbackTest : public testing::Test {
             base::TimeDelta::FromSeconds(0));
 
     base::RunLoop run_loop;
-    yuv_reader->ReadbackYUV(mailbox, sync_token, gfx::Size(xsize, ysize),
-                            gfx::Rect(0, 0, xsize, ysize),
-                            output_frame->stride(media::VideoFrame::kYPlane),
-                            output_frame->data(media::VideoFrame::kYPlane),
-                            output_frame->stride(media::VideoFrame::kUPlane),
-                            output_frame->data(media::VideoFrame::kUPlane),
-                            output_frame->stride(media::VideoFrame::kVPlane),
-                            output_frame->data(media::VideoFrame::kVPlane),
-                            gfx::Point(xmargin, ymargin),
-                            base::Bind(&callcallback, run_loop.QuitClosure()));
+    auto run_quit_closure = [](base::OnceClosure quit_closure, bool result) {
+      std::move(quit_closure).Run();
+    };
+    yuv_reader->ReadbackYUV(
+        mailbox, sync_token, gfx::Size(xsize, ysize),
+        gfx::Rect(0, 0, xsize, ysize),
+        output_frame->stride(media::VideoFrame::kYPlane),
+        output_frame->data(media::VideoFrame::kYPlane),
+        output_frame->stride(media::VideoFrame::kUPlane),
+        output_frame->data(media::VideoFrame::kUPlane),
+        output_frame->stride(media::VideoFrame::kVPlane),
+        output_frame->data(media::VideoFrame::kVPlane),
+        gfx::Point(xmargin, ymargin),
+        base::BindOnce(run_quit_closure, run_loop.QuitClosure()));
 
     const gfx::Rect paste_rect(gfx::Point(xmargin, ymargin),
                                gfx::Size(xsize, ysize));
@@ -550,7 +551,7 @@ TEST_P(YUVReadbackPixelTest, Test) {
 }
 
 // First argument is intentionally empty.
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ,
     YUVReadbackPixelTest,
     ::testing::Combine(

@@ -566,15 +566,6 @@ _BANNED_CPP_FUNCTIONS = (
       ),
     ),
     (
-      r'/\barraysize\b',
-      (
-          "arraysize is deprecated, please use base::size(array) instead ",
-          "(https://crbug.com/837308). ",
-      ),
-      False,
-      (),
-    ),
-    (
       r'std::random_shuffle',
       (
         'std::random_shuffle is deprecated in C++14, and removed in C++17. Use',
@@ -589,6 +580,15 @@ _BANNED_CPP_FUNCTIONS = (
         'web::HTTPserver is deprecated use net::EmbeddedTestServer instead.',
       ),
       False,
+      (),
+    ),
+    (
+      'GetAddressOf',
+      (
+        'Improper use of Microsoft::WRL::ComPtr<T>::GetAddressOf() has been ',
+        'implicated in a few leaks. Use operator& instead.'
+      ),
+      True,
       (),
     ),
 )
@@ -655,13 +655,16 @@ _ANDROID_SPECIFIC_PYDEPS_FILES = [
     'build/android/gyp/aar.pydeps',
     'build/android/gyp/aidl.pydeps',
     'build/android/gyp/apkbuilder.pydeps',
+    'build/android/gyp/assert_static_initializers.pydeps',
     'build/android/gyp/bytecode_processor.pydeps',
     'build/android/gyp/compile_resources.pydeps',
+    'build/android/gyp/create_app_bundle_minimal_apks.pydeps',
     'build/android/gyp/create_bundle_wrapper_script.pydeps',
     'build/android/gyp/copy_ex.pydeps',
     'build/android/gyp/create_app_bundle.pydeps',
     'build/android/gyp/create_apk_operations_script.pydeps',
     'build/android/gyp/create_java_binary_script.pydeps',
+    'build/android/gyp/create_size_info_files.pydeps',
     'build/android/gyp/create_stack_script.pydeps',
     'build/android/gyp/create_test_runner_script.pydeps',
     'build/android/gyp/create_tool_wrapper.pydeps',
@@ -679,7 +682,6 @@ _ANDROID_SPECIFIC_PYDEPS_FILES = [
     'build/android/gyp/jinja_template.pydeps',
     'build/android/gyp/lint.pydeps',
     'build/android/gyp/main_dex_list.pydeps',
-    'build/android/gyp/merge_jar_info_files.pydeps',
     'build/android/gyp/merge_manifest.pydeps',
     'build/android/gyp/prepare_resources.pydeps',
     'build/android/gyp/proguard.pydeps',
@@ -1652,19 +1654,19 @@ def _CheckSpamLogging(input_api, output_api):
                  r"^courgette[\\/]courgette_minimal_tool\.cc$",
                  r"^courgette[\\/]courgette_tool\.cc$",
                  r"^extensions[\\/]renderer[\\/]logging_native_handler\.cc$",
+                 r"^fuchsia[\\/]engine[\\/]browser[\\/]frame_impl.cc$",
+                 r"^headless[\\/]app[\\/]headless_shell\.cc$",
                  r"^ipc[\\/]ipc_logging\.cc$",
                  r"^native_client_sdk[\\/]",
                  r"^remoting[\\/]base[\\/]logging\.h$",
                  r"^remoting[\\/]host[\\/].*",
                  r"^sandbox[\\/]linux[\\/].*",
+                 r"^storage[\\/]browser[\\/]fileapi[\\/]" +
+                     r"dump_file_system.cc$",
                  r"^tools[\\/]",
                  r"^ui[\\/]base[\\/]resource[\\/]data_pack.cc$",
                  r"^ui[\\/]aura[\\/]bench[\\/]bench_main\.cc$",
-                 r"^ui[\\/]ozone[\\/]platform[\\/]cast[\\/]",
-                 r"^webrunner[\\/]browser[\\/]frame_impl.cc$",
-                 r"^storage[\\/]browser[\\/]fileapi[\\/]" +
-                     r"dump_file_system.cc$",
-                 r"^headless[\\/]app[\\/]headless_shell\.cc$"))
+                 r"^ui[\\/]ozone[\\/]platform[\\/]cast[\\/]"))
   source_file_filter = lambda x: input_api.FilterSourceFile(
       x, white_list=file_inclusion_pattern, black_list=black_list)
 

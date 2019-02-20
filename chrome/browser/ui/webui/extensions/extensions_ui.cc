@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
@@ -16,9 +17,9 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/chrome_extension_browser_constants.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/managed_ui.h"
 #include "chrome/browser/ui/webui/dark_mode_handler.h"
 #include "chrome/browser/ui/webui/localized_string.h"
+#include "chrome/browser/ui/webui/managed_ui_handler.h"
 #include "chrome/browser/ui/webui/metrics_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -121,7 +122,6 @@ content::WebUIDataSource* CreateMdExtensionsSource(Profile* profile,
     {"controlledSettingPolicy", IDS_CONTROLLED_SETTING_POLICY},
     {"done", IDS_DONE},
     {"learnMore", IDS_LEARN_MORE},
-    {"managedByOrg", IDS_MANAGED_BY_ORG_WITH_HYPERLINK},
     {"noSearchResults", IDS_SEARCH_NO_RESULTS},
     {"ok", IDS_OK},
     {"save", IDS_SAVE},
@@ -188,6 +188,14 @@ content::WebUIDataSource* CreateMdExtensionsSource(Profile* profile,
      IDS_MD_EXTENSIONS_ACCESSIBILITY_ERROR_MULTI_LINE},
     {"activityLogPageHeading", IDS_MD_EXTENSIONS_ACTIVITY_LOG_PAGE_HEADING},
     {"activityLogSearchLabel", IDS_MD_EXTENSIONS_ACTIVITY_LOG_SEARCH_LABEL},
+    {"activityLogHistoryTabHeading",
+     IDS_MD_EXTENSIONS_ACTIVITY_LOG_HISTORY_TAB_HEADING},
+    {"activityLogStreamTabHeading",
+     IDS_MD_EXTENSIONS_ACTIVITY_LOG_STREAM_TAB_HEADING},
+    {"startActivityStream", IDS_MD_EXTENSIONS_START_ACTIVITY_STREAM},
+    {"stopActivityStream", IDS_MD_EXTENSIONS_STOP_ACTIVITY_STREAM},
+    {"emptyStreamStarted", IDS_MD_EXTENSIONS_EMPTY_STREAM_STARTED},
+    {"emptyStreamStopped", IDS_MD_EXTENSIONS_EMPTY_STREAM_STOPPED},
     {"appIcon", IDS_MD_EXTENSIONS_APP_ICON},
     {"extensionIcon", IDS_MD_EXTENSIONS_EXTENSION_ICON},
     {"extensionA11yAssociation", IDS_MD_EXTENSIONS_EXTENSION_A11Y_ASSOCIATION},
@@ -284,8 +292,6 @@ content::WebUIDataSource* CreateMdExtensionsSource(Profile* profile,
   AddLocalizedStringsBulk(source, kLocalizedStrings,
                           base::size(kLocalizedStrings));
 
-  source->AddBoolean("isManaged", chrome::ShouldDisplayManagedUi(profile));
-
   source->AddString("errorLinesNotShownSingular",
                     l10n_util::GetPluralStringFUTF16(
                         IDS_MD_EXTENSIONS_ERROR_LINES_NOT_SHOWN, 1));
@@ -317,12 +323,8 @@ content::WebUIDataSource* CreateMdExtensionsSource(Profile* profile,
               GURL(extension_urls::GetWebstoreExtensionsCategoryURL()),
               g_browser_process->GetApplicationLocale())
               .spec()));
-  source->AddString(
-      "hostPermissionsLearnMoreLink",
-      l10n_util::GetStringFUTF16(
-          IDS_MD_EXTENSIONS_HOST_PERMISSIONS_LEARN_MORE,
-          base::ASCIIToUTF16(
-              chrome_extension_constants::kRuntimeHostPermissionsHelpURL)));
+  source->AddString("hostPermissionsLearnMoreLink",
+                    chrome_extension_constants::kRuntimeHostPermissionsHelpURL);
   source->AddBoolean(kInDevModeKey, in_dev_mode);
   source->AddBoolean(kShowActivityLogKey,
                      base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -360,6 +362,7 @@ ExtensionsUI::ExtensionsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   source = CreateMdExtensionsSource(profile, *in_dev_mode_);
   DarkModeHandler::Initialize(web_ui, source);
+  ManagedUIHandler::Initialize(web_ui, source);
 
 #if defined(OS_CHROMEOS)
   auto kiosk_app_handler = std::make_unique<chromeos::KioskAppsHandler>(

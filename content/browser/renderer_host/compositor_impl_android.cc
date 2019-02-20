@@ -19,7 +19,6 @@
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
@@ -768,7 +767,6 @@ void CompositorImpl::SetVisible(bool visible) {
 
   if (!visible) {
     DCHECK(host_->IsVisible());
-    CompositorDependencies::Get().OnCompositorHidden(this);
     // Tear down the display first, synchronously completing any pending
     // draws/readbacks if poosible.
     TearDownDisplayAndUnregisterRootFrameSink();
@@ -777,6 +775,10 @@ void CompositorImpl::SetVisible(bool visible) {
     host_->ReleaseLayerTreeFrameSink();
     has_layer_tree_frame_sink_ = false;
     pending_frames_ = 0;
+
+    // Notify CompositorDependencies of visibility changes last, to ensure that
+    // we don't disable the GPU watchdog until sync IPCs above are completed.
+    CompositorDependencies::Get().OnCompositorHidden(this);
   } else {
     DCHECK(!host_->IsVisible());
     CompositorDependencies::Get().OnCompositorVisible(this);
@@ -863,7 +865,17 @@ void CompositorImpl::SetNeedsComposite() {
   host_->SetNeedsAnimate();
 }
 
-void CompositorImpl::UpdateLayerTreeHost(bool record_main_frame_metrics) {
+void CompositorImpl::DidUpdateLayers() {
+  // Dump property trees and layers if run with:
+  //   --vmodule=compositor_impl_android=3
+  VLOG(3) << "After updating layers:\n"
+          << "property trees:\n"
+          << host_->property_trees()->ToString() << "\n"
+          << "cc::Layers:\n"
+          << host_->LayersAsString();
+}
+
+void CompositorImpl::UpdateLayerTreeHost() {
   client_->UpdateLayerTreeHost();
   if (needs_animate_) {
     needs_animate_ = false;
@@ -889,9 +901,10 @@ void CompositorImpl::DidInitializeLayerTreeFrameSink() {
 }
 
 void CompositorImpl::DidFailToInitializeLayerTreeFrameSink() {
-  // The context is bound/initialized before handing it to the
-  // LayerTreeFrameSink.
-  NOTREACHED();
+  layer_tree_frame_sink_request_pending_ = false;
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&CompositorImpl::RequestNewLayerTreeFrameSink,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void CompositorImpl::HandlePendingLayerTreeFrameSinkRequest() {
@@ -1194,6 +1207,7 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
       display_client_->GetBoundPtr(task_runner).PassInterface();
 
   viz::RendererSettings renderer_settings;
+  renderer_settings.partial_swap_enabled = true;
   renderer_settings.allow_antialiasing = false;
   renderer_settings.highp_threshold_min = 2048;
   renderer_settings.requires_alpha_channel = requires_alpha_channel_;
@@ -1202,6 +1216,7 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
           ->GetDisplayNearestWindow(root_window_)
           .GetSizeInPixel();
   renderer_settings.use_skia_renderer = features::IsUsingSkiaRenderer();
+  renderer_settings.color_space = display_color_space_;
   root_params->frame_sink_id = frame_sink_id_;
   root_params->widget = surface_handle_;
   root_params->gpu_compositing = true;
@@ -1218,8 +1233,6 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
                                          ->GetGpuMemoryBufferManager();
   params.pipes.compositor_frame_sink_associated_info = std::move(sink_info);
   params.pipes.client_request = std::move(client_request);
-  params.local_surface_id_provider =
-      std::make_unique<viz::DefaultLocalSurfaceIdProvider>();
   params.enable_surface_synchronization = true;
   params.hit_test_data_provider =
       std::make_unique<viz::HitTestDataProviderDrawQuad>(
@@ -1232,6 +1245,8 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
   host_->SetLayerTreeFrameSink(std::move(layer_tree_frame_sink));
   display_private_->SetDisplayVisible(true);
   display_private_->Resize(size_);
+  display_private_->SetDisplayColorSpace(display_color_space_,
+                                         display_color_space_);
   display_private_->SetVSyncPaused(vsync_paused_);
 }
 

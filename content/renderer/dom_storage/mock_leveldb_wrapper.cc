@@ -6,7 +6,9 @@
 
 #include "content/renderer/dom_storage/mock_leveldb_wrapper.h"
 
+#include "base/bind.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
+#include "third_party/blink/public/mojom/dom_storage/session_storage_namespace.mojom.h"
 
 namespace content {
 
@@ -39,16 +41,20 @@ MockLevelDBWrapper::~MockLevelDBWrapper() {}
 
 void MockLevelDBWrapper::OpenLocalStorage(
     const url::Origin& origin,
-    blink::mojom::StorageAreaRequest database) {
+    blink::mojom::StorageAreaRequest database,
+    OpenLocalStorageCallback done) {
   bindings_.AddBinding(this, std::move(database));
+  std::move(done).Run();
 }
 
 void MockLevelDBWrapper::OpenSessionStorage(
     const std::string& namespace_id,
-    blink::mojom::SessionStorageNamespaceRequest request) {
+    blink::mojom::SessionStorageNamespaceRequest request,
+    OpenSessionStorageCallback done) {
   namespace_bindings_.AddBinding(
       std::make_unique<MockSessionStorageNamespace>(namespace_id, this),
       std::move(request));
+  std::move(done).Run();
 }
 
 void MockLevelDBWrapper::AddObserver(

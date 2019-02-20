@@ -17,10 +17,7 @@
 
 namespace blink {
 
-template <typename T>
-class DOMWrapperMap;
 class HeapObjectHeader;
-class ScriptWrappable;
 class ScriptWrappableVisitor;
 template <typename T>
 class TraceWrapperV8Reference;
@@ -57,14 +54,13 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   template <typename T>
   inline static void WriteBarrier(const T* dst_object);
 
+  template <typename T>
+  static void WriteBarrier(TraceWrapperMember<T>* array, size_t length);
+
   static void WriteBarrier(v8::Isolate*, const WrapperTypeInfo*, void*);
 
   static void WriteBarrier(v8::Isolate*,
                            const TraceWrapperV8Reference<v8::Value>&);
-
-  static void WriteBarrier(v8::Isolate*,
-                           DOMWrapperMap<ScriptWrappable>*,
-                           ScriptWrappable* key);
 
   explicit ScriptWrappableMarkingVisitor(ThreadState* thread_state)
       : ScriptWrappableVisitor(thread_state) {}
@@ -83,12 +79,11 @@ class PLATFORM_EXPORT ScriptWrappableMarkingVisitor
   void TraceEpilogue() override;
   void EnterFinalPause(EmbedderStackState) override;
   bool IsTracingDone() override;
+  bool IsRootForNonTracingGC(const v8::TracedGlobal<v8::Value>&) override;
 
   // ScriptWrappableVisitor interface.
   void Visit(const TraceWrapperV8Reference<v8::Value>&) override;
   void VisitWithWrappers(void*, TraceDescriptor) override;
-  void Visit(DOMWrapperMap<ScriptWrappable>*,
-             const ScriptWrappable* key) override;
   void VisitBackingStoreStrongly(void* object,
                                  void** object_slot,
                                  TraceDescriptor desc) override;
@@ -227,6 +222,25 @@ inline void ScriptWrappableMarkingVisitor::WriteBarrier(const T* dst_object) {
   CurrentVisitor(thread_state->GetIsolate())
       ->VisitWithWrappers(const_cast<T*>(dst_object),
                           TraceDescriptorFor(dst_object));
+}
+
+template <typename T>
+inline void ScriptWrappableMarkingVisitor::WriteBarrier(
+    TraceWrapperMember<T>* array,
+    size_t length) {
+  if (!ThreadState::IsAnyWrapperTracing() || !array)
+    return;
+
+  const ThreadState* thread_state =
+      ThreadStateFor<ThreadingTrait<T>::kAffinity>::GetState();
+  DCHECK(thread_state);
+  // Bail out if tracing is not in progress.
+  if (!thread_state->IsWrapperTracing())
+    return;
+
+  for (size_t i = 0; i < length; ++i) {
+    CurrentVisitor(thread_state->GetIsolate())->Trace(array[i]);
+  }
 }
 
 }  // namespace blink

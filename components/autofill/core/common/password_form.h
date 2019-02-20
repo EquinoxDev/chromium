@@ -312,9 +312,10 @@ struct PasswordForm {
   // out only for submitted forms.
   SubmissionIndicatorEvent submission_event;
 
-  // True iff heuristics declined this form for saving (e.g. only credit card
-  // fields were found). But this form can be saved only with the fallback.
-  bool only_for_fallback_saving;
+  // True iff heuristics declined this form for normal saving or filling (e.g.
+  // only credit card fields were found). But this form can be saved or filled
+  // only with the fallback.
+  bool only_for_fallback;
 
   // True iff this is Gaia form which should be skipped on saving.
   bool is_gaia_with_skip_save_password_form;
@@ -332,6 +333,9 @@ struct PasswordForm {
   // without username field. We use only client heuristics, so it could
   // include signup forms.
   bool IsPossibleChangePasswordFormWithoutUsername() const;
+
+  // Returns true if current password element is set.
+  bool HasPasswordElement() const;
 
   // Equality operators for testing.
   bool operator==(const PasswordForm& form) const;

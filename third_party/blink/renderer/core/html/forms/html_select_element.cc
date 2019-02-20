@@ -793,7 +793,7 @@ void HTMLSelectElement::RecalcListItems() const {
 }
 
 void HTMLSelectElement::ResetToDefaultSelection(ResetReason reason) {
-  // https://html.spec.whatwg.org/multipage/forms.html#ask-for-a-reset
+  // https://html.spec.whatwg.org/C/#ask-for-a-reset
   if (IsMultiple())
     return;
   HTMLOptionElement* first_enabled_option = nullptr;
@@ -1843,7 +1843,7 @@ bool HTMLSelectElement::SupportsAutofocus() const {
   return true;
 }
 
-void HTMLSelectElement::Trace(blink::Visitor* visitor) {
+void HTMLSelectElement::Trace(Visitor* visitor) {
   visitor->Trace(list_items_);
   visitor->Trace(last_on_change_option_);
   visitor->Trace(active_selection_anchor_);
@@ -1996,7 +1996,7 @@ void HTMLSelectElement::HidePopup() {
     popup_->Hide();
 }
 
-void HTMLSelectElement::DidRecalcStyle(StyleRecalcChange change) {
+void HTMLSelectElement::DidRecalcStyle(const StyleRecalcChange change) {
   HTMLFormControlElementWithState::DidRecalcStyle(change);
   if (PopupIsVisible())
     popup_->UpdateFromElement(PopupMenu::kByStyleChange);
@@ -2059,7 +2059,7 @@ class HTMLSelectElement::PopupUpdater : public MutationObserver::Delegate {
 
   void Dispose() { observer_->disconnect(); }
 
-  void Trace(blink::Visitor* visitor) override {
+  void Trace(Visitor* visitor) override {
     visitor->Trace(select_);
     visitor->Trace(observer_);
     MutationObserver::Delegate::Trace(visitor);

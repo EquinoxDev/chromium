@@ -55,6 +55,8 @@ jumbo_source_set("base") {
     "audio_fifo.h",
     "audio_hash.cc",
     "audio_hash.h",
+    "audio_processing.cc",
+    "audio_processing.h",
     "audio_pull_fifo.cc",
     "audio_pull_fifo.h",
     "audio_push_fifo.cc",
@@ -152,6 +154,7 @@ jumbo_source_set("base") {
     "key_systems.h",
     "localized_strings.cc",
     "localized_strings.h",
+    "logging_override_if_enabled.h",
     "loopback_audio_converter.cc",
     "loopback_audio_converter.h",
     "media.cc",
@@ -232,6 +235,8 @@ jumbo_source_set("base") {
     "serial_runner.h",
     "silent_sink_suspender.cc",
     "silent_sink_suspender.h",
+    "simple_sync_token_client.cc",
+    "simple_sync_token_client.h",
     "sinc_resampler.cc",
     "sinc_resampler.h",
     "stream_parser.cc",
@@ -373,7 +378,7 @@ jumbo_source_set("base") {
   }
 
   if (is_win) {
-    deps += [ "//media/base/win" ]
+    public_deps += [ "//media/base/win:d3d11" ]
   }
 
   if (is_chromecast) {
@@ -456,6 +461,10 @@ static_library("test_support") {
     "//ui/gfx:test_support",
     "//url",
   ]
+
+  if (is_win) {
+    public_deps += [ "//media/base/win:d3d11_test_support" ]
+  }
 }
 
 source_set("unit_tests") {

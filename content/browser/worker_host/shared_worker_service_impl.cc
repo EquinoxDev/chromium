@@ -41,6 +41,7 @@
 #include "third_party/blink/public/common/service_worker/service_worker_utils.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_provider.mojom.h"
 #include "third_party/blink/public/mojom/worker/shared_worker_client.mojom.h"
+#include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
 #include "url/origin.h"
 
 namespace content {
@@ -201,8 +202,8 @@ void SharedWorkerServiceImpl::CreateWorker(
     // enabled.
     AppCacheNavigationHandleCore* appcache_handle_core = nullptr;
     if (base::FeatureList::IsEnabled(network::features::kNetworkService)) {
-      auto appcache_handle =
-          std::make_unique<AppCacheNavigationHandle>(appcache_service_.get());
+      auto appcache_handle = std::make_unique<AppCacheNavigationHandle>(
+          appcache_service_.get(), process_id);
       appcache_handle_core = appcache_handle->core();
       weak_host->SetAppCacheHandle(std::move(appcache_handle));
     }
@@ -237,7 +238,7 @@ void SharedWorkerServiceImpl::DidCreateScriptLoader(
     int process_id,
     int frame_id,
     const blink::MessagePortChannel& message_port,
-    blink::mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
+    blink::mojom::ServiceWorkerProviderInfoForWorkerPtr
         service_worker_provider_info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         main_script_loader_factory,
@@ -273,7 +274,7 @@ void SharedWorkerServiceImpl::StartWorker(
     int process_id,
     int frame_id,
     const blink::MessagePortChannel& message_port,
-    blink::mojom::ServiceWorkerProviderInfoForSharedWorkerPtr
+    blink::mojom::ServiceWorkerProviderInfoForWorkerPtr
         service_worker_provider_info,
     network::mojom::URLLoaderFactoryAssociatedPtrInfo
         main_script_loader_factory,
@@ -299,7 +300,7 @@ void SharedWorkerServiceImpl::StartWorker(
 
   // Get the factory used to instantiate the new shared worker instance in
   // the target process.
-  mojom::SharedWorkerFactoryPtr factory;
+  blink::mojom::SharedWorkerFactoryPtr factory;
   BindInterface(process_host, &factory);
 
   host->Start(std::move(factory), std::move(service_worker_provider_info),

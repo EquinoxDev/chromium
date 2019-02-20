@@ -12,10 +12,6 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/modules/app_banner/before_install_prompt_event.h"
-#include "third_party/blink/renderer/platform/weborigin/kurl.h"
-#include "third_party/blink/renderer/platform/weborigin/referrer.h"
-#include "third_party/blink/renderer/platform/weborigin/security_policy.h"
-#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
 namespace blink {
 
@@ -26,8 +22,10 @@ void AppBannerController::BindMojoRequest(
     mojom::blink::AppBannerControllerRequest request) {
   DCHECK(frame);
 
+  // See https://bit.ly/2S0zRAS for task types.
   mojo::MakeStrongBinding(std::make_unique<AppBannerController>(*frame),
-                          std::move(request));
+                          std::move(request),
+                          frame->GetTaskRunner(TaskType::kMiscPlatformAPI));
 }
 
 void AppBannerController::BannerPromptRequest(
@@ -37,7 +35,7 @@ void AppBannerController::BannerPromptRequest(
     bool require_gesture,
     BannerPromptRequestCallback callback) {
   if (!frame_ || !frame_->GetDocument()) {
-    std::move(callback).Run(mojom::blink::AppBannerPromptReply::NONE, "");
+    std::move(callback).Run(mojom::blink::AppBannerPromptReply::NONE);
     return;
   }
 
@@ -49,12 +47,7 @@ void AppBannerController::BannerPromptRequest(
           ? mojom::AppBannerPromptReply::NONE
           : mojom::AppBannerPromptReply::CANCEL;
 
-  AtomicString referrer = SecurityPolicy::GenerateReferrer(
-                              frame_->GetDocument()->GetReferrerPolicy(),
-                              KURL(), frame_->GetDocument()->OutgoingReferrer())
-                              .referrer;
-
-  std::move(callback).Run(reply, referrer.IsNull() ? g_empty_string : referrer);
+  std::move(callback).Run(reply);
 }
 
 }  // namespace blink

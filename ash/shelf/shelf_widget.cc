@@ -104,6 +104,8 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
   // ShelfBackgroundAnimatorObserver:
   void UpdateShelfBackground(SkColor color) override;
 
+  SkColor GetShelfBackgroundColor() const;
+
  private:
   ShelfWidget* shelf_widget_;
   FocusCycler* focus_cycler_;
@@ -238,9 +240,8 @@ void ShelfWidget::DelegateView::UpdateOpaqueBackground() {
       -shelf->SelectValueForShelfAlignment(0, 0, safety_margin),
       -shelf->SelectValueForShelfAlignment(safety_margin, 0, 0));
 
-  // Show rounded corners except in maximized and split modes.
-  if (background_type == SHELF_BACKGROUND_MAXIMIZED ||
-      background_type == SHELF_BACKGROUND_SPLIT_VIEW) {
+  // Show rounded corners except in maximized (which includes split view) mode.
+  if (background_type == SHELF_BACKGROUND_MAXIMIZED) {
     mask_ = nullptr;
     opaque_background_.SetMaskLayer(nullptr);
   } else {
@@ -263,17 +264,43 @@ void ShelfWidget::DelegateView::OnBoundsChanged(const gfx::Rect& old_bounds) {
 }
 
 views::View* ShelfWidget::DelegateView::GetDefaultFocusableChild() {
-  // If views-based login shelf is shown, we want to focus either its first or
-  // last child, otherwise focus on the first child as default.
-  if (IsUsingViewsShelf())
+  if (!IsUsingViewsShelf())
+    return GetFirstFocusableChild();
+
+  if (shelf_widget_->login_shelf_view_->visible())
     return FindFirstOrLastFocusableChild(shelf_widget_->login_shelf_view_,
                                          default_last_focusable_child_);
-  return GetFirstFocusableChild();
+  else
+    return shelf_widget_->shelf_view_->FindFirstOrLastFocusableChild(
+        default_last_focusable_child_);
 }
 
 void ShelfWidget::DelegateView::UpdateShelfBackground(SkColor color) {
   opaque_background_.SetColor(color);
   UpdateOpaqueBackground();
+}
+
+SkColor ShelfWidget::DelegateView::GetShelfBackgroundColor() const {
+  return opaque_background_.background_color();
+}
+
+bool ShelfWidget::GetHitTestRects(aura::Window* target,
+                                  gfx::Rect* hit_test_rect_mouse,
+                                  gfx::Rect* hit_test_rect_touch) {
+  // This should only get called when the login shelf is visible, i.e. not
+  // during an active session. In an active session, hit test rects should be
+  // calculated higher up in the class hierarchy by |EasyResizeWindowTargeter|.
+  // When in OOBE or locked/login screen, let events pass through empty parts
+  // of the shelf.
+  DCHECK(login_shelf_view_->visible());
+  gfx::Rect login_view_button_bounds =
+      login_shelf_view_->get_button_union_bounds();
+  aura::Window* source = login_shelf_view_->GetWidget()->GetNativeWindow();
+  aura::Window::ConvertRectToTarget(source, target->parent(),
+                                    &login_view_button_bounds);
+  *hit_test_rect_mouse = login_view_button_bounds;
+  *hit_test_rect_touch = login_view_button_bounds;
+  return true;
 }
 
 ShelfWidget::ShelfWidget(aura::Window* shelf_container, Shelf* shelf)
@@ -320,8 +347,6 @@ ShelfWidget::ShelfWidget(aura::Window* shelf_container, Shelf* shelf)
 
   views::Widget::AddObserver(this);
 
-  // Calls back into |this| and depends on |shelf_view_|.
-  background_animator_.AddObserver(this);
   background_animator_.AddObserver(delegate_view_);
   shelf_->AddObserver(this);
 }
@@ -349,7 +374,6 @@ void ShelfWidget::Shutdown() {
 
   // Don't need to update the shelf background during shutdown.
   background_animator_.RemoveObserver(delegate_view_);
-  background_animator_.RemoveObserver(this);
   shelf_->RemoveObserver(this);
 
   // Don't need to observe focus/activation during shutdown.
@@ -386,7 +410,6 @@ int ShelfWidget::GetBackgroundAlphaValue(
 void ShelfWidget::OnShelfAlignmentChanged() {
   // Check added for http://crbug.com/738011.
   CHECK(status_area_widget_);
-  shelf_view_->OnShelfAlignmentChanged();
   status_area_widget_->UpdateAfterShelfAlignmentChange();
   // This call will in turn trigger a call to delegate_view_->SchedulePaint().
   delegate_view_->UpdateOpaqueBackground();
@@ -398,9 +421,6 @@ void ShelfWidget::OnTabletModeChanged() {
 
 void ShelfWidget::PostCreateShelf() {
   SetFocusCycler(Shell::Get()->focus_cycler());
-
-  // Ensure the newly created |shelf_| gets current values.
-  background_animator_.NotifyObserver(this);
 
   shelf_layout_manager_->LayoutShelf();
   shelf_layout_manager_->UpdateAutoHideState();
@@ -479,10 +499,6 @@ void ShelfWidget::OnWidgetActivationChanged(views::Widget* widget,
   }
 }
 
-void ShelfWidget::UpdateShelfItemBackground(SkColor color) {
-  shelf_view_->UpdateShelfItemBackground(color);
-}
-
 void ShelfWidget::WillDeleteShelfLayoutManager() {
   shelf_layout_manager_->RemoveObserver(this);
   shelf_layout_manager_ = nullptr;
@@ -530,6 +546,10 @@ void ShelfWidget::OnSessionStateChanged(session_manager::SessionState state) {
     ShowIfHidden();
   }
   login_shelf_view_->UpdateAfterSessionStateChange(state);
+}
+
+SkColor ShelfWidget::GetShelfBackgroundColor() const {
+  return delegate_view_->GetShelfBackgroundColor();
 }
 
 void ShelfWidget::HideIfShown() {

@@ -41,7 +41,8 @@ PaintWorkletGlobalScopeProxy::PaintWorkletGlobalScopeProxy(
       worker_clients, frame->Client()->CreateWorkerContentSettingsClient());
 
   auto creation_params = std::make_unique<GlobalScopeCreationParams>(
-      document->Url(), mojom::ScriptType::kModule, document->UserAgent(),
+      document->Url(), mojom::ScriptType::kModule,
+      OffMainThreadWorkerScriptFetchOption::kEnabled, document->UserAgent(),
       frame->Client()->CreateWorkerFetchContext(),
       document->GetContentSecurityPolicy()->Headers(),
       document->GetReferrerPolicy(), document->GetSecurityOrigin(),
@@ -57,7 +58,7 @@ PaintWorkletGlobalScopeProxy::PaintWorkletGlobalScopeProxy(
 void PaintWorkletGlobalScopeProxy::FetchAndInvokeScript(
     const KURL& module_url_record,
     network::mojom::FetchCredentialsMode credentials_mode,
-    FetchClientSettingsObjectSnapshot* outside_settings_object,
+    const FetchClientSettingsObjectSnapshot& outside_settings_object,
     scoped_refptr<base::SingleThreadTaskRunner> outside_settings_task_runner,
     WorkletPendingTasks* pending_tasks) {
   DCHECK(IsMainThread());

@@ -13,8 +13,6 @@ class MyControl extends HTMLElement {
     this.disabledHistory_ = [];
   }
 
-  set value(v) {}
-
   disabledStateChangedCallback(isDisabled) {
     this.disabledHistory_.push(isDisabled);
   }

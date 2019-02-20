@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -13,6 +14,7 @@
 #include "base/i18n/file_util_icu.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "base/values.h"
@@ -69,34 +71,35 @@ gfx::Size GetDefaultPdfMediaSizeMicrons() {
                    pdf_media_size.height() * device_microns_per_device_unit);
 }
 
-std::unique_ptr<base::DictionaryValue> GetPdfCapabilities(
-    const std::string& locale) {
+base::Value GetPdfCapabilities(const std::string& locale) {
   cloud_devices::CloudDeviceDescription description;
   using namespace cloud_devices::printer;
 
   OrientationCapability orientation;
-  orientation.AddOption(cloud_devices::printer::PORTRAIT);
-  orientation.AddOption(cloud_devices::printer::LANDSCAPE);
-  orientation.AddDefaultOption(AUTO_ORIENTATION, true);
+  orientation.AddOption(cloud_devices::printer::OrientationType::PORTRAIT);
+  orientation.AddOption(cloud_devices::printer::OrientationType::LANDSCAPE);
+  orientation.AddDefaultOption(OrientationType::AUTO_ORIENTATION, true);
   orientation.SaveTo(&description);
 
   ColorCapability color;
   {
-    Color standard_color(STANDARD_COLOR);
-    standard_color.vendor_id = base::IntToString(COLOR);
+    Color standard_color(ColorType::STANDARD_COLOR);
+    standard_color.vendor_id = base::NumberToString(COLOR);
     color.AddDefaultOption(standard_color, true);
   }
   color.SaveTo(&description);
 
   static const cloud_devices::printer::MediaType kPdfMedia[] = {
-      ISO_A0, ISO_A1,   ISO_A2,    ISO_A3,   ISO_A4,
-      ISO_A5, NA_LEGAL, NA_LETTER, NA_LEDGER};
+      MediaType::ISO_A0,   MediaType::ISO_A1,    MediaType::ISO_A2,
+      MediaType::ISO_A3,   MediaType::ISO_A4,    MediaType::ISO_A5,
+      MediaType::NA_LEGAL, MediaType::NA_LETTER, MediaType::NA_LEDGER};
   const gfx::Size default_media_size = GetDefaultPdfMediaSizeMicrons();
   Media default_media("", "", default_media_size.width(),
                       default_media_size.height());
   if (!default_media.MatchBySize() ||
       !base::ContainsValue(kPdfMedia, default_media.type)) {
-    default_media = Media(locale == "en-US" ? NA_LETTER : ISO_A4);
+    default_media =
+        Media(locale == "en-US" ? MediaType::NA_LETTER : MediaType::ISO_A4);
   }
   MediaCapability media;
   for (const auto& pdf_media : kPdfMedia) {
@@ -106,7 +109,7 @@ std::unique_ptr<base::DictionaryValue> GetPdfCapabilities(
   }
   media.SaveTo(&description);
 
-  return std::unique_ptr<base::DictionaryValue>(description.root().DeepCopy());
+  return std::move(description).ToValue();
 }
 
 // Callback that stores a PDF file on disk.
@@ -171,19 +174,16 @@ void PdfPrinterHandler::StartGetCapability(const std::string& destination_id,
                                            GetCapabilityCallback callback) {
   base::Value printer_info(base::Value::Type::DICTIONARY);
   printer_info.SetKey(kSettingDeviceName, base::Value(destination_id));
-  printer_info.SetKey(kSettingCapabilities,
-                      std::move(*GetPdfCapabilities(
-                          g_browser_process->GetApplicationLocale())));
+  printer_info.SetKey(
+      kSettingCapabilities,
+      GetPdfCapabilities(g_browser_process->GetApplicationLocale()));
   std::move(callback).Run(std::move(printer_info));
 }
 
 void PdfPrinterHandler::StartPrint(
-    const std::string& destination_id,
-    const std::string& capability,
     const base::string16& job_title,
-    const std::string& ticket_json,
-    const gfx::Size& page_size,
-    const scoped_refptr<base::RefCountedMemory>& print_data,
+    base::Value settings,
+    scoped_refptr<base::RefCountedMemory> print_data,
     PrintCallback callback) {
   print_data_ = print_data;
   if (!print_to_pdf_path_.empty()) {

@@ -12,14 +12,9 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
-#include "base/sequence_checker.h"
 #include "mojo/public/cpp/bindings/binding_set.h"
 #include "services/service_manager/public/cpp/identity.h"
 #include "services/tracing/public/mojom/tracing.mojom.h"
-
-namespace service_manager {
-struct BindSourceInfo;
-}  // namespace service_manager
 
 namespace tracing {
 
@@ -69,10 +64,11 @@ class AgentRegistry : public mojom::AgentRegistry {
   AgentRegistry();
   ~AgentRegistry() override;
 
+  void DisconnectAllAgents();
+
   void BindAgentRegistryRequest(
-      scoped_refptr<base::SequencedTaskRunner> task_runner,
-      mojom::AgentRegistryRequest request,
-      const service_manager::BindSourceInfo& source_info);
+      mojom::AgentRegistryRequest request);
+
   // Returns the number of existing agents that the callback was run on.
   size_t SetAgentInitializationCallback(
       const AgentInitializationCallback& callback,
@@ -81,7 +77,6 @@ class AgentRegistry : public mojom::AgentRegistry {
 
   template <typename FunctionType>
   void ForAllAgents(FunctionType function) {
-    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     for (const auto& key_value : agents_) {
       function(key_value.second.get());
     }
@@ -89,11 +84,7 @@ class AgentRegistry : public mojom::AgentRegistry {
 
  private:
   friend class AgentRegistryTest;  // For testing.
-  friend class CoordinatorTest;    // For testing.
-
-  void BindAgentRegistryRequestOnSequence(
-      mojom::AgentRegistryRequest request,
-      const service_manager::BindSourceInfo& source_info);
+  friend class CoordinatorTestUtil;  // For testing.
 
   // mojom::AgentRegistry
   void RegisterAgent(mojom::AgentPtr agent,
@@ -103,12 +94,10 @@ class AgentRegistry : public mojom::AgentRegistry {
 
   void UnregisterAgent(size_t agent_id);
 
-  mojo::BindingSet<mojom::AgentRegistry, service_manager::Identity> bindings_;
+  mojo::BindingSet<mojom::AgentRegistry> bindings_;
   size_t next_agent_id_ = 0;
   std::map<size_t, std::unique_ptr<AgentEntry>> agents_;
   AgentInitializationCallback agent_initialization_callback_;
-
-  SEQUENCE_CHECKER(sequence_checker_);
 
   DISALLOW_COPY_AND_ASSIGN(AgentRegistry);
 };

@@ -7,8 +7,9 @@
 # be fixed and moved to the "Passing tests" section further down in this file.
 #
 # NOTE: Please do not add new exclusions to this file. Instead fix the test in
-# question such that it passes with --enable-features=WebUIPolymer2 (and with
-# GN optimize_webui=true and false).
+# question such that it passes with --enable-features=WebUIPolymer2 and, on
+# Chrome OS, --disable-features=WebUIPolymer2Exceptions (and with GN
+# optimize_webui=true and false).
 
 # Failing on Chrome OS only:
 -LoginUITest.OobeCatchException
@@ -36,16 +37,17 @@
 #
 # There are overall very few WebUI interactive_ui_tests, so list them here
 # explicitly, instead of running all interactive_ui_tests.
+BookmarksFocusTest.All
 CrElementsActionMenuTest.All
 CrElementsCheckboxTest.All
 CrElementsInputTest.All
 CrElementsProfileAvatarSelectorFocusTest.All
 CrElementsToggleTest.All
+CrExtensionsOptionsPageTest.All
 CrSettingsAnimatedPagesTest.All
 CrSettingsFocusRowBehavior.FocusTest
 CrSettingsSyncPageTest.All
-MaterialBookmarksFocusTest.All
-MaterialHistoryFocusTest.All
+HistoryFocusTest.All
 PrintPreviewDestinationDialogInteractiveTest.*
 PrintPreviewNumberSettingsSectionInteractiveTest.BlurResetsEmptyInput
 PrintPreviewPagesSettingsTest.*

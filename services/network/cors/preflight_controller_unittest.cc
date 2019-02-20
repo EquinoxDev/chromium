@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
 #include "net/base/load_flags.h"
@@ -349,6 +350,24 @@ TEST_F(PreflightControllerTest, CancelPreflightIsCalled) {
   ASSERT_FALSE(status());
   EXPECT_TRUE(cancel_preflight_called());
   EXPECT_EQ(1u, access_count());
+}
+
+TEST_F(PreflightControllerTest, CheckResponseWithNullHeaders) {
+  GURL url = GURL("https://google.com/finullurl");
+  const ResourceResponseHead response_head;
+  ResourceRequest request;
+  request.url = url;
+  request.request_initiator = url::Origin::Create(request.url);
+  const bool tainted = false;
+  base::Optional<CorsErrorStatus> detected_error_status;
+
+  EXPECT_FALSE(response_head.headers);
+
+  std::unique_ptr<PreflightResult> result =
+      PreflightController::CreatePreflightResultForTesting(
+          url, response_head, request, tainted, &detected_error_status);
+
+  EXPECT_FALSE(result);
 }
 
 }  // namespace

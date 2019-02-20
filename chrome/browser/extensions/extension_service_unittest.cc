@@ -32,6 +32,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -128,6 +129,7 @@
 #include "extensions/common/switches.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/value_builder.h"
+#include "extensions/common/verifier_formats.h"
 #include "extensions/test/test_extension_dir.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_options.h"
@@ -694,7 +696,7 @@ class ExtensionServiceTest : public ExtensionServiceTestWithInstall {
     msg += " ";
     msg += pref_path;
     msg += " = ";
-    msg += base::IntToString(value);
+    msg += base::NumberToString(value);
 
     SetPref(extension_id, pref_path, std::make_unique<base::Value>(value), msg);
   }
@@ -2709,8 +2711,8 @@ TEST_F(ExtensionServiceTest, UpdateExtensionDuringShutdown) {
 
   // Update should fail and extension should not be updated.
   path = data_dir().AppendASCII("good2.crx");
-  bool updated =
-      service()->UpdateExtension(CRXFileInfo(good_crx, path), true, NULL);
+  bool updated = service()->UpdateExtension(
+      CRXFileInfo(good_crx, GetTestVerifierFormat(), path), true, NULL);
   ASSERT_FALSE(updated);
   ASSERT_EQ(
       "1.0.0.0",
@@ -4807,7 +4809,8 @@ class ExtensionCookieCallback {
     result_ = result;
   }
 
-  void GetAllCookiesCallback(const net::CookieList& list) {
+  void GetAllCookiesCallback(const net::CookieList& list,
+                             const net::CookieStatusList& excluded_list) {
     list_ = list;
   }
   net::CookieList list_;
@@ -5875,59 +5878,73 @@ TEST_F(ExtensionServiceTestSimple, Enabledness) {
 
   LoadErrorReporter::Init(false);  // no noisy errors
   ExtensionsReadyRecorder recorder;
-  std::unique_ptr<TestingProfile> profile(new TestingProfile());
+
   std::unique_ptr<base::CommandLine> command_line;
-  base::FilePath install_dir =
-      profile->GetPath().AppendASCII(kInstallDirectoryName);
 
-  // By default, we are enabled.
-  command_line.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
-  ExtensionService* service =
-      static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
-          ->CreateExtensionService(command_line.get(), install_dir, false);
-  EXPECT_TRUE(service->extensions_enabled());
-  service->Init();
-  content::RunAllTasksUntilIdle();
-  EXPECT_TRUE(recorder.ready());
+  // The profile lifetimes must not overlap: services may use global variables.
+  {
+    auto profile = std::make_unique<TestingProfile>();
+    base::FilePath install_dir =
+        profile->GetPath().AppendASCII(kInstallDirectoryName);
 
-  // If either the command line or pref is set, we are disabled.
-  recorder.set_ready(false);
-  profile.reset(new TestingProfile());
-  command_line->AppendSwitch(::switches::kDisableExtensions);
-  service =
-      static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
-          ->CreateExtensionService(command_line.get(), install_dir, false);
-  EXPECT_FALSE(service->extensions_enabled());
-  service->Init();
-  content::RunAllTasksUntilIdle();
-  EXPECT_TRUE(recorder.ready());
+    // By default, we are enabled.
+    command_line.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
+    ExtensionService* service =
+        static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
+            ->CreateExtensionService(command_line.get(), install_dir, false);
+    EXPECT_TRUE(service->extensions_enabled());
+    service->Init();
+    content::RunAllTasksUntilIdle();
+    EXPECT_TRUE(recorder.ready());
+  }
 
-  recorder.set_ready(false);
-  profile.reset(new TestingProfile());
-  profile->GetPrefs()->SetBoolean(prefs::kDisableExtensions, true);
-  service =
-      static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
-          ->CreateExtensionService(command_line.get(), install_dir, false);
-  EXPECT_FALSE(service->extensions_enabled());
-  service->Init();
-  content::RunAllTasksUntilIdle();
-  EXPECT_TRUE(recorder.ready());
+  {
+    // If either the command line or pref is set, we are disabled.
+    recorder.set_ready(false);
+    auto profile = std::make_unique<TestingProfile>();
+    base::FilePath install_dir =
+        profile->GetPath().AppendASCII(kInstallDirectoryName);
+    command_line->AppendSwitch(::switches::kDisableExtensions);
+    ExtensionService* service =
+        static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
+            ->CreateExtensionService(command_line.get(), install_dir, false);
+    EXPECT_FALSE(service->extensions_enabled());
+    service->Init();
+    content::RunAllTasksUntilIdle();
+    EXPECT_TRUE(recorder.ready());
+  }
 
-  recorder.set_ready(false);
-  profile.reset(new TestingProfile());
-  profile->GetPrefs()->SetBoolean(prefs::kDisableExtensions, true);
-  command_line.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
-  service =
-      static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
-          ->CreateExtensionService(command_line.get(), install_dir, false);
-  EXPECT_FALSE(service->extensions_enabled());
-  service->Init();
-  content::RunAllTasksUntilIdle();
-  EXPECT_TRUE(recorder.ready());
+  {
+    recorder.set_ready(false);
+    auto profile = std::make_unique<TestingProfile>();
+    base::FilePath install_dir =
+        profile->GetPath().AppendASCII(kInstallDirectoryName);
+    profile->GetPrefs()->SetBoolean(prefs::kDisableExtensions, true);
+    ExtensionService* service =
+        static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
+            ->CreateExtensionService(command_line.get(), install_dir, false);
+    EXPECT_FALSE(service->extensions_enabled());
+    service->Init();
+    content::RunAllTasksUntilIdle();
+    EXPECT_TRUE(recorder.ready());
+  }
 
-  // Explicitly delete all the resources used in this test.
-  profile.reset();
-  service = NULL;
+  {
+    recorder.set_ready(false);
+    auto profile = std::make_unique<TestingProfile>();
+    base::FilePath install_dir =
+        profile->GetPath().AppendASCII(kInstallDirectoryName);
+    profile->GetPrefs()->SetBoolean(prefs::kDisableExtensions, true);
+    command_line.reset(new base::CommandLine(base::CommandLine::NO_PROGRAM));
+    ExtensionService* service =
+        static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile.get()))
+            ->CreateExtensionService(command_line.get(), install_dir, false);
+    EXPECT_FALSE(service->extensions_enabled());
+    service->Init();
+    content::RunAllTasksUntilIdle();
+    EXPECT_TRUE(recorder.ready());
+  }
+
   // Execute any pending deletion tasks.
   content::RunAllTasksUntilIdle();
 }

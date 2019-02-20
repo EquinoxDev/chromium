@@ -15,7 +15,7 @@ namespace blink {
 // Tests covering incremental updates of paint property trees.
 class PaintPropertyTreeUpdateTest : public PaintPropertyTreeBuilderTest {};
 
-INSTANTIATE_PAINT_TEST_CASE_P(PaintPropertyTreeUpdateTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(PaintPropertyTreeUpdateTest);
 
 TEST_P(PaintPropertyTreeUpdateTest,
        ThreadedScrollingDisabledMainThreadScrollReason) {
@@ -62,6 +62,10 @@ TEST_P(PaintPropertyTreeUpdateTest,
 
 TEST_P(PaintPropertyTreeUpdateTest,
        BackgroundAttachmentFixedMainThreadScrollReasonsWithNestedScrollers) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   SetBodyInnerHTML(R"HTML(
     <style>
       #overflowA {
@@ -145,6 +149,10 @@ TEST_P(PaintPropertyTreeUpdateTest,
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, ParentFrameMainThreadScrollReasons) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   SetBodyInnerHTML(R"HTML(
     <style>
       body { margin: 0; }
@@ -181,6 +189,10 @@ TEST_P(PaintPropertyTreeUpdateTest, ParentFrameMainThreadScrollReasons) {
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, ChildFrameMainThreadScrollReasons) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   SetBodyInnerHTML(R"HTML(
     <style>body { margin: 0; }</style>
     <iframe></iframe>
@@ -220,6 +232,10 @@ TEST_P(PaintPropertyTreeUpdateTest, ChildFrameMainThreadScrollReasons) {
 
 TEST_P(PaintPropertyTreeUpdateTest,
        BackgroundAttachmentFixedMainThreadScrollReasonsWithFixedScroller) {
+  // This test needs the |FastMobileScrolling| feature to be disabled
+  // although it is stable on Android.
+  ScopedFastMobileScrollingForTest fast_mobile_scrolling(false);
+
   SetBodyInnerHTML(R"HTML(
     <style>
       #overflowA {
@@ -1050,20 +1066,20 @@ TEST_P(PaintPropertyTreeUpdateTest, WillTransformChangeAboveFixed) {
   const auto* container = GetLayoutObjectByElementId("container");
   const auto* fixed = GetLayoutObjectByElementId("fixed");
   EXPECT_EQ(container->FirstFragment().PaintProperties()->Transform(),
-            fixed->FirstFragment().LocalBorderBoxProperties().Transform());
+            &fixed->FirstFragment().LocalBorderBoxProperties().Transform());
 
   ToElement(container->GetNode())
       ->setAttribute(html_names::kStyleAttr, "will-change: top");
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(
-      GetLayoutView().FirstFragment().LocalBorderBoxProperties().Transform(),
-      fixed->FirstFragment().LocalBorderBoxProperties().Transform());
+      &GetLayoutView().FirstFragment().LocalBorderBoxProperties().Transform(),
+      &fixed->FirstFragment().LocalBorderBoxProperties().Transform());
 
   ToElement(container->GetNode())
       ->setAttribute(html_names::kStyleAttr, "will-change: transform");
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(container->FirstFragment().PaintProperties()->Transform(),
-            fixed->FirstFragment().LocalBorderBoxProperties().Transform());
+            &fixed->FirstFragment().LocalBorderBoxProperties().Transform());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, CompositingReasonForAnimation) {
@@ -1384,8 +1400,9 @@ TEST_P(PaintPropertyTreeUpdateTest, ForwardReferencedSVGElementUpdate) {
             rect_properties->Transform()->Parent());
   EXPECT_EQ(TransformationMatrix().Translate(1, 0),
             GeometryMapper::SourceToDestinationProjection(
-                rect_properties->Transform(),
-                svg2_properties->PaintOffsetTranslation()));
+                *rect_properties->Transform(),
+                *svg2_properties->PaintOffsetTranslation())
+                .Matrix());
 
   // Change filter which forward references rect, and insert a transform
   // node above rect's transform.
@@ -1405,8 +1422,9 @@ TEST_P(PaintPropertyTreeUpdateTest, ForwardReferencedSVGElementUpdate) {
   // Ensure that GeometryMapper's cache is properly invalidated and updated.
   EXPECT_EQ(TransformationMatrix().Translate(3, 0),
             GeometryMapper::SourceToDestinationProjection(
-                rect_properties->Transform(),
-                svg2_properties->PaintOffsetTranslation()));
+                *rect_properties->Transform(),
+                *svg2_properties->PaintOffsetTranslation())
+                .Matrix());
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, OverflowClipUpdateForImage) {

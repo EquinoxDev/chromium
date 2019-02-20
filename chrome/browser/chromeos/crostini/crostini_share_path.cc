@@ -30,28 +30,28 @@
 namespace {
 
 void OnSeneschalSharePathResponse(
-    base::OnceCallback<void(bool, std::string)> callback,
+    crostini::CrostiniSharePath::SharePathCallback callback,
     base::Optional<vm_tools::seneschal::SharePathResponse> response) {
   if (!response) {
-    std::move(callback).Run(false, "System error");
+    std::move(callback).Run(base::FilePath(), false, "System error");
     return;
   }
-  std::move(callback).Run(response.value().success(),
+  std::move(callback).Run(base::FilePath(response.value().path()),
+                          response.value().success(),
                           response.value().failure_reason());
 }
 
 void OnVmRestartedForSeneschal(
     Profile* profile,
     std::string vm_name,
-    const base::FilePath path,
-    base::OnceCallback<void(bool, std::string)> callback,
+    crostini::CrostiniSharePath::SharePathCallback callback,
     vm_tools::seneschal::SharePathRequest request,
     crostini::CrostiniResult result) {
   auto* crostini_manager = crostini::CrostiniManager::GetForProfile(profile);
   base::Optional<crostini::VmInfo> vm_info =
       crostini_manager->GetVmInfo(std::move(vm_name));
   if (!vm_info || vm_info->state != crostini::VmState::STARTED) {
-    std::move(callback).Run(false, "VM could not be started");
+    std::move(callback).Run(base::FilePath(), false, "VM could not be started");
     return;
   }
   request.set_handle(vm_info->info.seneschal_server_handle());
@@ -72,11 +72,12 @@ void OnSeneschalUnsharePathResponse(
 }
 
 void LogErrorResult(const std::string& operation,
-                    const base::FilePath& path,
+                    const base::FilePath& cros_path,
+                    const base::FilePath& container_path,
                     bool result,
                     std::string failure_reason) {
   if (!result) {
-    LOG(WARNING) << "Error " << operation << " " << path << ": "
+    LOG(WARNING) << "Error " << operation << " " << cros_path << ": "
                  << failure_reason;
   }
 }
@@ -93,9 +94,12 @@ class ErrorCapture {
       std::move(callback_).Run(true, "");
   }
 
-  void Run(base::FilePath path, bool success, std::string failure_reason) {
+  void Run(const base::FilePath& cros_path,
+           const base::FilePath& container_path,
+           bool success,
+           std::string failure_reason) {
     if (!success) {
-      LOG(WARNING) << "Error SharePath=" << path.value()
+      LOG(WARNING) << "Error SharePath=" << cros_path.value()
                    << ", FailureReason=" << failure_reason;
       if (success_) {
         success_ = false;
@@ -135,15 +139,14 @@ void CrostiniSharePath::AddObserver(Observer* obs) {
   observers_.AddObserver(obs);
 }
 
-void CrostiniSharePath::CallSeneschalSharePath(
-    std::string vm_name,
-    const base::FilePath& path,
-    bool persist,
-    base::OnceCallback<void(bool, std::string)> callback) {
+void CrostiniSharePath::CallSeneschalSharePath(std::string vm_name,
+                                               const base::FilePath& path,
+                                               bool persist,
+                                               SharePathCallback callback) {
   // Verify path is in one of the allowable mount points.
   // This logic is similar to DownloadPrefs::SanitizeDownloadTargetPath().
   if (!path.IsAbsolute() || path.ReferencesParent()) {
-    std::move(callback).Run(false, "Path must be absolute");
+    std::move(callback).Run(base::FilePath(), false, "Path must be absolute");
     return;
   }
 
@@ -166,10 +169,13 @@ void CrostiniSharePath::CallSeneschalSharePath(
   base::FilePath removable_media(file_manager::util::kRemovableMediaPath);
   if (my_files == path || my_files.AppendRelativePath(path, &relative_path)) {
     allowed_path = true;
-    request.set_storage_location(
-        base::FeatureList::IsEnabled(chromeos::features::kMyFilesVolume)
-            ? vm_tools::seneschal::SharePathRequest::MY_FILES
-            : vm_tools::seneschal::SharePathRequest::DOWNLOADS);
+    if (base::FeatureList::IsEnabled(chromeos::features::kMyFilesVolume)) {
+      request.set_storage_location(
+          vm_tools::seneschal::SharePathRequest::MY_FILES);
+    } else {
+      request.set_storage_location(
+          vm_tools::seneschal::SharePathRequest::DOWNLOADS);
+    }
     request.set_owner_id(crostini::CryptohomeIdForProfile(profile_));
   } else if (base::FeatureList::IsEnabled(chromeos::features::kDriveFs) &&
              integration_service &&
@@ -203,6 +209,14 @@ void CrostiniSharePath::CallSeneschalSharePath(
       allowed_path = true;
       request.set_storage_location(
           vm_tools::seneschal::SharePathRequest::DRIVEFS_COMPUTERS);
+
+      // TODO(crbug.com/917920): Do not allow Computers Grand Root, or single
+      // Computer Root to be shared until DriveFS enforces allowed write paths.
+      std::vector<base::FilePath::StringType> components;
+      relative_path.GetComponents(&components);
+      if (components.size() < 2) {
+        allowed_path = false;
+      }
     } else if (trash == drivefs_path || trash.IsParent(drivefs_path)) {
       // Note: Do not expose .Trash which would allow linux apps to make
       // permanent deletes from Drive.  This branch is not especially required,
@@ -223,7 +237,7 @@ void CrostiniSharePath::CallSeneschalSharePath(
   }
 
   if (!allowed_path) {
-    std::move(callback).Run(false, "Path is not allowed");
+    std::move(callback).Run(base::FilePath(), false, "Path is not allowed");
     return;
   }
 
@@ -246,8 +260,7 @@ void CrostiniSharePath::CallSeneschalSharePath(
     crostini_manager->RestartCrostini(
         vm_name, crostini::kCrostiniDefaultContainerName,
         base::BindOnce(&OnVmRestartedForSeneschal, profile_, std::move(vm_name),
-                       std::move(path), std::move(callback),
-                       std::move(request)));
+                       std::move(callback), std::move(request)));
     return;
   }
 
@@ -280,7 +293,7 @@ void CrostiniSharePath::CallSeneschalUnsharePath(
   bool result = mount_points->GetVirtualPath(path, &virtual_path);
   if (result) {
     storage::FileSystemURL url = mount_points->CreateCrackedFileSystemURL(
-        GURL(), storage::kFileSystemTypeExternal, virtual_path);
+        url::Origin(), storage::kFileSystemTypeExternal, virtual_path);
     result = file_manager::util::ConvertFileSystemURLToPathInsideCrostini(
         profile_, url, &inside);
   }
@@ -299,17 +312,13 @@ void CrostiniSharePath::CallSeneschalUnsharePath(
       base::BindOnce(&OnSeneschalUnsharePathResponse, std::move(callback)));
 }
 
-void CrostiniSharePath::SharePath(
-    std::string vm_name,
-    const base::FilePath& path,
-    bool persist,
-    base::OnceCallback<void(bool, std::string)> callback) {
+void CrostiniSharePath::SharePath(std::string vm_name,
+                                  const base::FilePath& path,
+                                  bool persist,
+                                  SharePathCallback callback) {
   DCHECK(callback);
-  if (!base::FeatureList::IsEnabled(chromeos::features::kCrostiniFiles)) {
-    std::move(callback).Run(false, "Flag crostini-files not enabled");
-    return;
-  }
-  CallSeneschalSharePath(vm_name, path, persist, std::move(callback));
+  CallSeneschalSharePath(std::move(vm_name), path, persist,
+                         std::move(callback));
 }
 
 void CrostiniSharePath::SharePaths(
@@ -317,8 +326,9 @@ void CrostiniSharePath::SharePaths(
     std::vector<base::FilePath> paths,
     bool persist,
     base::OnceCallback<void(bool, std::string)> callback) {
-  base::RepeatingCallback<void(base::FilePath, bool, std::string)> barrier =
-      base::BindRepeating(
+  base::RepeatingCallback<void(const base::FilePath&, const base::FilePath&,
+                               bool, std::string)>
+      barrier = base::BindRepeating(
           &ErrorCapture::Run,
           base::Owned(new ErrorCapture(paths.size(), std::move(callback))));
   for (const auto& path : paths) {
@@ -336,7 +346,7 @@ void CrostiniSharePath::UnsharePath(
   base::ListValue* shared_paths = update.Get();
   if (!shared_paths->Remove(base::Value(path.value()), nullptr))
     LOG(WARNING) << "Unshared path not in prefs: " << path.value();
-  CallSeneschalUnsharePath(vm_name, path, std::move(callback));
+  CallSeneschalUnsharePath(std::move(vm_name), path, std::move(callback));
   for (Observer& observer : observers_) {
     observer.OnUnshare(path);
   }
@@ -350,8 +360,6 @@ bool CrostiniSharePath::GetAndSetFirstForSession() {
 
 std::vector<base::FilePath> CrostiniSharePath::GetPersistedSharedPaths() {
   std::vector<base::FilePath> result;
-  if (!base::FeatureList::IsEnabled(chromeos::features::kCrostiniFiles))
-    return result;
   PrefService* pref_service = profile_->GetPrefs();
   const base::ListValue* shared_paths =
       pref_service->GetList(prefs::kCrostiniSharedPaths);
@@ -410,8 +418,7 @@ void CrostiniSharePath::RegisterPersistedPath(const base::FilePath& path) {
 
 void CrostiniSharePath::OnVolumeMounted(chromeos::MountError error_code,
                                         const file_manager::Volume& volume) {
-  if (!base::FeatureList::IsEnabled(chromeos::features::kCrostiniFiles) ||
-      error_code != chromeos::MountError::MOUNT_ERROR_NONE ||
+  if (error_code != chromeos::MountError::MOUNT_ERROR_NONE ||
       !crostini::CrostiniManager::GetForProfile(profile_)->IsVmRunning(
           kCrostiniDefaultVmName)) {
     return;
@@ -428,8 +435,7 @@ void CrostiniSharePath::OnVolumeMounted(chromeos::MountError error_code,
 
 void CrostiniSharePath::OnVolumeUnmounted(chromeos::MountError error_code,
                                           const file_manager::Volume& volume) {
-  if (!base::FeatureList::IsEnabled(chromeos::features::kCrostiniFiles) ||
-      error_code != chromeos::MountError::MOUNT_ERROR_NONE ||
+  if (error_code != chromeos::MountError::MOUNT_ERROR_NONE ||
       !crostini::CrostiniManager::GetForProfile(profile_)->IsVmRunning(
           kCrostiniDefaultVmName)) {
     return;
@@ -437,9 +443,10 @@ void CrostiniSharePath::OnVolumeUnmounted(chromeos::MountError error_code,
   auto paths = GetPersistedSharedPaths();
   for (const auto& path : paths) {
     if (path == volume.mount_path() || volume.mount_path().IsParent(path)) {
-      CallSeneschalUnsharePath(kCrostiniDefaultVmName, path,
-                               base::BindOnce(mount_event_seneschal_callback_,
-                                              "unshare-on-unmount", path));
+      CallSeneschalUnsharePath(
+          kCrostiniDefaultVmName, path,
+          base::BindOnce(mount_event_seneschal_callback_, "unshare-on-unmount",
+                         path, path));
     }
   }
 }

@@ -201,13 +201,15 @@ class CONTENT_EXPORT RenderFrameProxy : public IPC::Listener,
                           bool has_user_gesture) override;
   void Navigate(const blink::WebURLRequest& request,
                 bool should_replace_current_entry,
+                bool is_opener_navigation,
+                bool prevent_sandboxed_download,
                 mojo::ScopedMessagePipeHandle blob_url_token) override;
   void FrameRectsChanged(const blink::WebRect& local_frame_rect,
                          const blink::WebRect& screen_space_rect) override;
   void UpdateRemoteViewportIntersection(
       const blink::WebRect& viewport_intersection,
       bool occluded_or_obscured) override;
-  void VisibilityChanged(bool visible) override;
+  void VisibilityChanged(blink::mojom::FrameVisibility visibility) override;
   void SetIsInert(bool) override;
   void SetInheritedEffectiveTouchAction(cc::TouchAction) override;
   void UpdateRenderThrottlingStatus(bool is_throttled,

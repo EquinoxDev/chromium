@@ -10,11 +10,6 @@
 
 namespace features {
 
-// Enables running draw occlusion algorithm to remove Draw Quads that are not
-// shown on screen from CompositorFrame.
-const base::Feature kEnableDrawOcclusion{"DrawOcclusion",
-                                         base::FEATURE_ENABLED_BY_DEFAULT};
-
 #if defined(USE_AURA) || defined(OS_MACOSX)
 const base::Feature kEnableSurfaceSynchronization{
     "SurfaceSynchronization", base::FEATURE_ENABLED_BY_DEFAULT};
@@ -26,7 +21,9 @@ const base::Feature kEnableSurfaceSynchronization{
 // Enables running the display compositor as part of the viz service in the GPU
 // process. This is also referred to as out-of-process display compositor
 // (OOP-D).
-#if defined(OS_CHROMEOS) || defined(OS_FUCHSIA)
+// TODO(dnicoara): Look at enabling Chromecast support when ChromeOS support is
+// ready.
+#if defined(OS_CHROMEOS) || defined(IS_CHROMECAST)
 const base::Feature kVizDisplayCompositor{"VizDisplayCompositor",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
 #else
@@ -44,6 +41,10 @@ const base::Feature kEnableVizHitTestSurfaceLayer{
 // Use the SkiaRenderer.
 const base::Feature kUseSkiaRenderer{"UseSkiaRenderer",
                                      base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Use the SkiaRenderer without DDL.
+const base::Feature kUseSkiaRendererNonDDL{"UseSkiaRendererNonDDL",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Use the SkiaRenderer to record SkPicture.
 const base::Feature kRecordSkPicture{"RecordSkPicture",
@@ -80,12 +81,12 @@ bool IsVizHitTestingSurfaceLayerEnabled() {
          base::FeatureList::IsEnabled(kEnableVizHitTestSurfaceLayer);
 }
 
-bool IsDrawOcclusionEnabled() {
-  return base::FeatureList::IsEnabled(kEnableDrawOcclusion);
-}
-
 bool IsUsingSkiaRenderer() {
   return base::FeatureList::IsEnabled(kUseSkiaRenderer);
+}
+
+bool IsUsingSkiaRendererNonDDL() {
+  return base::FeatureList::IsEnabled(kUseSkiaRendererNonDDL);
 }
 
 bool IsRecordingSkPicture() {

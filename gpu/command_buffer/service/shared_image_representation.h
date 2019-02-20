@@ -16,6 +16,7 @@
 
 class GrContext;
 typedef unsigned int GLenum;
+class SkPromiseImageTexture;
 
 namespace gpu {
 namespace gles2 {
@@ -42,15 +43,20 @@ class GPU_GLES2_EXPORT SharedImageRepresentation {
 
   // Indicates that the underlying graphics context has been lost, and the
   // backing should be treated as destroyed.
-  void OnContextLost() { backing_->OnContextLost(); }
+  void OnContextLost() {
+    has_context_ = false;
+    backing_->OnContextLost();
+  }
 
  protected:
   SharedImageBacking* backing() const { return backing_; }
+  bool has_context() const { return has_context_; }
 
  private:
   SharedImageManager* manager_;
   SharedImageBacking* backing_;
   MemoryTypeTracker* tracker_;
+  bool has_context_ = true;
 };
 
 class SharedImageRepresentationFactoryRef : public SharedImageRepresentation {
@@ -70,6 +76,24 @@ class SharedImageRepresentationFactoryRef : public SharedImageRepresentation {
 class GPU_GLES2_EXPORT SharedImageRepresentationGLTexture
     : public SharedImageRepresentation {
  public:
+  class ScopedAccess {
+   public:
+    ScopedAccess(SharedImageRepresentationGLTexture* representation,
+                 GLenum mode)
+        : representation_(representation),
+          success_(representation_->BeginAccess(mode)) {}
+    ~ScopedAccess() {
+      if (success_)
+        representation_->EndAccess();
+    }
+
+    bool success() const { return success_; }
+
+   private:
+    SharedImageRepresentationGLTexture* representation_;
+    bool success_;
+  };
+
   SharedImageRepresentationGLTexture(SharedImageManager* manager,
                                      SharedImageBacking* backing,
                                      MemoryTypeTracker* tracker)
@@ -86,6 +110,24 @@ class GPU_GLES2_EXPORT SharedImageRepresentationGLTexture
 class GPU_GLES2_EXPORT SharedImageRepresentationGLTexturePassthrough
     : public SharedImageRepresentation {
  public:
+  class ScopedAccess {
+   public:
+    ScopedAccess(SharedImageRepresentationGLTexturePassthrough* representation,
+                 GLenum mode)
+        : representation_(representation),
+          success_(representation_->BeginAccess(mode)) {}
+    ~ScopedAccess() {
+      if (success_)
+        representation_->EndAccess();
+    }
+
+    bool success() const { return success_; }
+
+   private:
+    SharedImageRepresentationGLTexturePassthrough* representation_;
+    bool success_;
+  };
+
   SharedImageRepresentationGLTexturePassthrough(SharedImageManager* manager,
                                                 SharedImageBacking* backing,
                                                 MemoryTypeTracker* tracker)
@@ -112,8 +154,8 @@ class SharedImageRepresentationSkia : public SharedImageRepresentation {
       int final_msaa_count,
       const SkSurfaceProps& surface_props) = 0;
   virtual void EndWriteAccess(sk_sp<SkSurface> surface) = 0;
-  virtual bool BeginReadAccess(SkSurface* sk_surface,
-                               GrBackendTexture* backend_texture_out) = 0;
+  virtual sk_sp<SkPromiseImageTexture> BeginReadAccess(
+      SkSurface* sk_surface) = 0;
   virtual void EndReadAccess() = 0;
 };
 

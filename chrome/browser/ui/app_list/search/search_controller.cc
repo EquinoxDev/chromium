@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include "ash/public/cpp/app_list/app_list_constants.h"
+#include "ash/public/cpp/app_list/app_list_config.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -81,7 +81,9 @@ void SearchController::OnResultsChanged() {
     return;
 
   size_t num_max_results =
-      query_for_recommendation_ ? kNumStartPageTiles : kMaxSearchResults;
+      query_for_recommendation_
+          ? AppListConfig::instance().num_start_page_tiles()
+          : AppListConfig::instance().max_search_results();
   mixer_->MixAndPublish(num_max_results);
 }
 
@@ -112,9 +114,10 @@ ChromeSearchResult* SearchController::GetResultByTitleForTest(
   return nullptr;
 }
 
-void SearchController::Train(const std::string& id) {
+void SearchController::Train(const std::string& id, RankingItemType type) {
   for (const auto& provider : providers_)
-    provider->Train(id);
+    provider->Train(id, type);
+  mixer_->Train(id, type);
 }
 
 }  // namespace app_list

@@ -89,11 +89,12 @@ class SyncAuthManager : public identity::IdentityManager::Observer {
   void Clear();
 
   // identity::IdentityManager::Observer implementation.
-  void OnPrimaryAccountSet(const AccountInfo& primary_account_info) override;
+  void OnPrimaryAccountSet(
+      const CoreAccountInfo& primary_account_info) override;
   void OnPrimaryAccountCleared(
-      const AccountInfo& previous_primary_account_info) override;
+      const CoreAccountInfo& previous_primary_account_info) override;
   void OnRefreshTokenUpdatedForAccount(
-      const AccountInfo& account_info) override;
+      const CoreAccountInfo& account_info) override;
   void OnRefreshTokenRemovedForAccount(const std::string& account_id) override;
   void OnAccountsInCookieUpdated(
       const identity::AccountsInCookieJarInfo& accounts_in_cookie_jar_info,

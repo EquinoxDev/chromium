@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/threading/platform_thread.h"
@@ -39,6 +40,7 @@ class SyncAwareCounterTest : public SyncTest {
     fake_web_history_service_ =
         std::make_unique<history::FakeWebHistoryService>();
     run_loop_.reset(new base::RunLoop());
+    SyncTest::SetUpOnMainThread();
   }
 
   history::WebHistoryService* GetFakeWebHistoryService(Profile* profile) {

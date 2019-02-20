@@ -72,9 +72,22 @@ int CallFutimes(PlatformFile file, const struct timeval times[2]) {
 }
 
 #if !defined(OS_FUCHSIA)
-File::Error CallFcntlFlock(PlatformFile file, bool do_lock) {
+short FcntlFlockType(base::Optional<File::LockMode> mode) {
+  if (!mode.has_value())
+    return F_UNLCK;
+  switch (mode.value()) {
+    case File::LockMode::kShared:
+      return F_RDLCK;
+    case File::LockMode::kExclusive:
+      return F_WRLCK;
+  }
+  NOTREACHED();
+}
+
+File::Error CallFcntlFlock(PlatformFile file,
+                           base::Optional<File::LockMode> mode) {
   struct flock lock;
-  lock.l_type = do_lock ? F_WRLCK : F_UNLCK;
+  lock.l_type = FcntlFlockType(std::move(mode));
   lock.l_whence = SEEK_SET;
   lock.l_start = 0;
   lock.l_len = 0;  // Lock entire file.
@@ -103,7 +116,8 @@ int CallFutimes(PlatformFile file, const struct timeval times[2]) {
   return 0;
 }
 
-File::Error CallFcntlFlock(PlatformFile file, bool do_lock) {
+File::Error CallFcntlFlock(PlatformFile file,
+                           base::Optional<File::LockMode> mode) {
   NOTIMPLEMENTED();  // NaCl doesn't implement flock struct.
   return File::FILE_ERROR_INVALID_OPERATION;
 }
@@ -374,14 +388,14 @@ bool File::GetInfo(Info* info) {
 }
 
 #if !defined(OS_FUCHSIA)
-File::Error File::Lock() {
+File::Error File::Lock(File::LockMode mode) {
   SCOPED_FILE_TRACE("Lock");
-  return CallFcntlFlock(file_.get(), true);
+  return CallFcntlFlock(file_.get(), mode);
 }
 
 File::Error File::Unlock() {
   SCOPED_FILE_TRACE("Unlock");
-  return CallFcntlFlock(file_.get(), false);
+  return CallFcntlFlock(file_.get(), base::Optional<File::LockMode>());
 }
 #endif
 
@@ -535,6 +549,23 @@ bool File::Flush() {
   return true;
 #elif defined(OS_LINUX) || defined(OS_ANDROID)
   return !HANDLE_EINTR(fdatasync(file_.get()));
+#elif defined(OS_MACOSX) || defined(OS_IOS)
+  // On macOS and iOS, fsync() is guaranteed to send the file's data to the
+  // underlying storage device, but may return before the device actually writes
+  // the data to the medium. When used by database systems, this may result in
+  // unexpected data loss.
+  // https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fsync.2.html
+  if (!HANDLE_EINTR(fcntl(file_.get(), F_FULLFSYNC)))
+    return true;
+
+  // Some filesystms do not support fcntl(F_FULLFSYNC). We handle these cases by
+  // falling back to fsync(). Unfortunately, lack of F_FULLFSYNC support results
+  // in various error codes, so we cannot use the error code as a definitive
+  // indicator that F_FULLFSYNC was not supported. So, if fcntl() errors out for
+  // any reason, we may end up making an unnecessary system call.
+  //
+  // See the CL description at https://crrev.com/c/1400159 for details.
+  return !HANDLE_EINTR(fsync(file_.get()));
 #else
   return !HANDLE_EINTR(fsync(file_.get()));
 #endif

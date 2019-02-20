@@ -125,8 +125,9 @@ void FetchEvent::OnNavigationPreloadResponse(
   if (data_pipe.is_valid()) {
     DataPipeBytesConsumer::CompletionNotifier* completion_notifier = nullptr;
     bytes_consumer = MakeGarbageCollected<DataPipeBytesConsumer>(
-        ExecutionContext::From(script_state), std::move(data_pipe),
-        &completion_notifier);
+        ExecutionContext::From(script_state)
+            ->GetTaskRunner(TaskType::kNetworking),
+        std::move(data_pipe), &completion_notifier);
     body_completion_notifier_ = completion_notifier;
   }
   // TODO(ricea): Verify that this response can't be aborted from JS.
@@ -194,8 +195,7 @@ void FetchEvent::OnNavigationPreloadComplete(
   // According to the Resource Timing spec, the initiator type of
   // navigation preload request is "navigation".
   scoped_refptr<ResourceTimingInfo> info = ResourceTimingInfo::Create(
-      "navigation", resource_response.GetResourceLoadTiming()->RequestTime(),
-      false /* is_main_resource */);
+      "navigation", resource_response.GetResourceLoadTiming()->RequestTime());
   info->SetNegativeAllowed(true);
   info->SetLoadFinishTime(completion_time);
   info->SetInitialURL(request_->url());

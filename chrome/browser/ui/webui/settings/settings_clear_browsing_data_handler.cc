@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
@@ -56,7 +57,6 @@ const char* kCounterPrefsAdvanced[] = {
     browsing_data::prefs::kDeleteDownloadHistory,
     browsing_data::prefs::kDeleteFormData,
     browsing_data::prefs::kDeleteHostedAppsData,
-    browsing_data::prefs::kDeleteMediaLicenses,
     browsing_data::prefs::kDeletePasswords,
     browsing_data::prefs::kDeleteSiteSettings,
 };
@@ -74,7 +74,8 @@ namespace settings {
 
 ClearBrowsingDataHandler::ClearBrowsingDataHandler(content::WebUI* webui)
     : profile_(Profile::FromWebUI(webui)),
-      sync_service_(ProfileSyncServiceFactory::GetForProfile(profile_)),
+      sync_service_(
+          ProfileSyncServiceFactory::GetSyncServiceForProfile(profile_)),
       sync_service_observer_(this),
       show_history_deletion_dialog_(false),
       weak_ptr_factory_(this) {}
@@ -197,9 +198,6 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
         remove_mask |=
             ChromeBrowsingDataRemoverDelegate::DATA_TYPE_CONTENT_SETTINGS;
         break;
-      case BrowsingDataType::MEDIA_LICENSES:
-        remove_mask |= content::BrowsingDataRemover::DATA_TYPE_MEDIA_LICENSES;
-        break;
       case BrowsingDataType::HOSTED_APPS_DATA:
         remove_mask |= site_data_mask;
         origin_mask |= content::BrowsingDataRemover::ORIGIN_TYPE_PROTECTED_WEB;
@@ -237,7 +235,6 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
         BrowsingDataType::HISTORY,        BrowsingDataType::DOWNLOADS,
         BrowsingDataType::CACHE,          BrowsingDataType::COOKIES,
         BrowsingDataType::FORM_DATA,      BrowsingDataType::HOSTED_APPS_DATA,
-        BrowsingDataType::MEDIA_LICENSES,
     };
     static size_t num_other_types = base::size(other_types);
     int checked_other_types =
@@ -254,9 +251,7 @@ void ClearBrowsingDataHandler::HandleClearBrowsingData(
   // However, if Sync is in error, clearing cookies should pause it.
   std::unique_ptr<AccountReconcilor::ScopedSyncedDataDeletion>
       scoped_data_deletion;
-  sync_ui_util::MessageType sync_status = sync_ui_util::GetStatus(
-      profile_, sync_service_, IdentityManagerFactory::GetForProfile(profile_));
-  if (sync_status == sync_ui_util::SYNCED) {
+  if (sync_ui_util::GetStatus(profile_) == sync_ui_util::SYNCED) {
     scoped_data_deletion = AccountReconcilorFactory::GetForProfile(profile_)
                                ->GetScopedSyncDataDeletion();
   }
@@ -344,8 +339,8 @@ void ClearBrowsingDataHandler::OnStateChanged(syncer::SyncService* sync) {
 void ClearBrowsingDataHandler::UpdateSyncState() {
   identity::IdentityManager* identity_manager =
       IdentityManagerFactory::GetForProfile(profile_);
-  CallJavascriptFunction(
-      "cr.webUIListenerCallback", base::Value("update-sync-state"),
+  FireWebUIListener(
+      "update-sync-state",
       base::Value(identity_manager && identity_manager->HasPrimaryAccount()),
       base::Value(sync_service_ && sync_service_->IsSyncFeatureActive() &&
                   sync_service_->GetActiveDataTypes().Has(
@@ -388,9 +383,8 @@ void ClearBrowsingDataHandler::AddCounter(
 
 void ClearBrowsingDataHandler::UpdateCounterText(
     std::unique_ptr<browsing_data::BrowsingDataCounter::Result> result) {
-  CallJavascriptFunction(
-      "cr.webUIListenerCallback", base::Value("update-counter-text"),
-      base::Value(result->source()->GetPrefName()),
+  FireWebUIListener(
+      "update-counter-text", base::Value(result->source()->GetPrefName()),
       base::Value(browsing_data_counter_utils::GetChromeCounterTextFromResult(
           result.get(), profile_)));
 }

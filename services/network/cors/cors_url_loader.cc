@@ -4,6 +4,7 @@
 
 #include "services/network/cors/cors_url_loader.h"
 
+#include "base/bind.h"
 #include "base/stl_util.h"
 #include "net/base/load_flags.h"
 #include "services/network/cors/preflight_controller.h"
@@ -56,6 +57,7 @@ CorsURLLoader::CorsURLLoader(
     mojom::URLLoaderFactory* network_loader_factory,
     const base::RepeatingCallback<void(int)>& request_finalizer,
     const OriginAccessList* origin_access_list,
+    const OriginAccessList* factory_bound_origin_access_list,
     PreflightController* preflight_controller)
     : binding_(this, std::move(loader_request)),
       routing_id_(routing_id),
@@ -69,6 +71,7 @@ CorsURLLoader::CorsURLLoader(
       request_finalizer_(request_finalizer),
       traffic_annotation_(traffic_annotation),
       origin_access_list_(origin_access_list),
+      factory_bound_origin_access_list_(factory_bound_origin_access_list),
       preflight_controller_(preflight_controller),
       weak_factory_(this) {
   binding_.set_connection_error_handler(base::BindOnce(
@@ -100,9 +103,8 @@ void CorsURLLoader::Start() {
 }
 
 void CorsURLLoader::FollowRedirect(
-    const base::Optional<std::vector<std::string>>&
-        to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const std::vector<std::string>& removed_headers,
+    const net::HttpRequestHeaders& modified_headers,
     const base::Optional<GURL>& new_url) {
   if (!network_loader_ || !deferred_redirect_url_) {
     HandleComplete(URLLoaderCompletionStatus(net::ERR_FAILED));
@@ -125,12 +127,9 @@ void CorsURLLoader::FollowRedirect(
     return;
   }
 
-  if (to_be_removed_request_headers) {
-    for (const auto& name : *to_be_removed_request_headers)
-      request_.headers.RemoveHeader(name);
-  }
-  if (modified_request_headers)
-    request_.headers.MergeFrom(*modified_request_headers);
+  for (const auto& name : removed_headers)
+    request_.headers.RemoveHeader(name);
+  request_.headers.MergeFrom(modified_headers);
 
   request_.url = redirect_info_.new_url;
   request_.method = redirect_info_.new_method;
@@ -160,8 +159,7 @@ void CorsURLLoader::FollowRedirect(
     response_tainting_ = CalculateResponseTainting(
         request_.url, request_.fetch_request_mode, request_.request_initiator,
         fetch_cors_flag_, tainted_, origin_access_list_);
-    network_loader_->FollowRedirect(to_be_removed_request_headers,
-                                    modified_request_headers, new_url);
+    network_loader_->FollowRedirect(removed_headers, modified_headers, new_url);
     return;
   }
   DCHECK_NE(request_.fetch_request_mode, mojom::FetchRequestMode::kNoCors);
@@ -473,9 +471,19 @@ void CorsURLLoader::SetCorsFlagIfNeeded() {
   DCHECK(request_.request_initiator);
 
   // The source origin and destination URL pair may be in the allow list.
-  if (origin_access_list_->IsAllowed(*request_.request_initiator,
-                                     request_.url)) {
-    return;
+  switch (origin_access_list_->CheckAccessState(*request_.request_initiator,
+                                                request_.url)) {
+    case OriginAccessList::AccessState::kAllowed:
+      return;
+    case OriginAccessList::AccessState::kBlocked:
+      break;
+    case OriginAccessList::AccessState::kNotListed:
+      if (factory_bound_origin_access_list_->CheckAccessState(
+              *request_.request_initiator, request_.url) ==
+          OriginAccessList::AccessState::kAllowed) {
+        return;
+      }
+      break;
   }
 
   // When a request is initiated in a unique opaque origin (e.g., in a sandboxed
@@ -530,7 +538,8 @@ mojom::FetchResponseType CorsURLLoader::CalculateResponseTainting(
   if (request_mode == mojom::FetchRequestMode::kNoCors) {
     if (tainted_origin ||
         (!origin->IsSameOriginWith(url::Origin::Create(url)) &&
-         !origin_access_list->IsAllowed(*origin, url))) {
+         origin_access_list->CheckAccessState(*origin, url) !=
+             OriginAccessList::AccessState::kAllowed)) {
       return mojom::FetchResponseType::kOpaque;
     }
   }

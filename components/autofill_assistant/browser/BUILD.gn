@@ -19,6 +19,14 @@ proto_java_library("proto_java") {
   ]
 }
 
+java_cpp_enum("autofill_assistant_enums_java") {
+  sources = [
+    "chip.h",
+    "metrics.h",
+    "overlay_state.h",
+  ]
+}
+
 jumbo_static_library("browser") {
   sources = [
     "access_token_fetcher.h",
@@ -63,14 +71,24 @@ jumbo_static_library("browser") {
     "actions/wait_for_dom_action.h",
     "batch_element_checker.cc",
     "batch_element_checker.h",
+    "chip.cc",
+    "chip.h",
     "client.h",
     "client_memory.cc",
     "client_memory.h",
     "controller.cc",
     "controller.h",
+    "details.cc",
+    "details.h",
     "element_area.cc",
     "element_area.h",
-    "payment_information.h",
+    "features.cc",
+    "features.h",
+    "metrics.cc",
+    "metrics.h",
+    "overlay_state.h",
+    "payment_request.cc",
+    "payment_request.h",
     "protocol_utils.cc",
     "protocol_utils.h",
     "rectf.cc",
@@ -86,8 +104,11 @@ jumbo_static_library("browser") {
     "script_tracker.h",
     "selector.cc",
     "selector.h",
+    "self_delete_full_card_requester.cc",
+    "self_delete_full_card_requester.h",
     "service.cc",
     "service.h",
+    "state.h",
     "ui_controller.cc",
     "ui_controller.h",
     "ui_delegate.h",
@@ -121,6 +142,8 @@ source_set("unit_tests") {
     "batch_element_checker_unittest.cc",
     "controller_unittest.cc",
     "element_area_unittest.cc",
+    "fake_script_executor_delegate.cc",
+    "fake_script_executor_delegate.h",
     "mock_client_memory.cc",
     "mock_client_memory.h",
     "mock_run_once_callback.h",

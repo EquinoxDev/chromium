@@ -12,20 +12,29 @@
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "net/base/completion_once_callback.h"
-#include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/cert/ct_policy_enforcer.h"
+#include "net/cert/mock_cert_verifier.h"
+#include "net/cert/multi_log_ct_verifier.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/http/http_proxy_connect_job.h"
+#include "net/http/transport_security_state.h"
 #include "net/log/net_log_with_source.h"
 #include "net/log/test_net_log.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/socket_tag.h"
 #include "net/socket/socket_test_util.h"
+#include "net/socket/socks_connect_job.h"
+#include "net/socket/ssl_connect_job.h"
 #include "net/socket/stream_socket.h"
 #include "net/socket/transport_client_socket_pool_test_util.h"
+#include "net/socket/transport_connect_job.h"
+#include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/gtest_util.h"
 #include "net/test/test_with_scoped_task_environment.h"
@@ -44,24 +53,84 @@ namespace {
 
 const int kMaxSockets = 32;
 const int kMaxSocketsPerGroup = 6;
+constexpr base::TimeDelta kUnusedIdleSocketTimeout =
+    base::TimeDelta::FromSeconds(10);
 const RequestPriority kDefaultPriority = LOW;
+
+class SOCKS5MockData {
+ public:
+  explicit SOCKS5MockData(IoMode mode) {
+    writes_.reset(new MockWrite[2]);
+    writes_[0] =
+        MockWrite(mode, kSOCKS5GreetRequest, kSOCKS5GreetRequestLength);
+    writes_[1] = MockWrite(mode, kSOCKS5OkRequest, kSOCKS5OkRequestLength);
+
+    reads_.reset(new MockRead[2]);
+    reads_[0] =
+        MockRead(mode, kSOCKS5GreetResponse, kSOCKS5GreetResponseLength);
+    reads_[1] = MockRead(mode, kSOCKS5OkResponse, kSOCKS5OkResponseLength);
+
+    data_.reset(new StaticSocketDataProvider(
+        base::make_span(reads_.get(), 2), base::make_span(writes_.get(), 2)));
+  }
+
+  SocketDataProvider* data_provider() { return data_.get(); }
+
+ private:
+  std::unique_ptr<StaticSocketDataProvider> data_;
+  std::unique_ptr<MockWrite[]> writes_;
+  std::unique_ptr<MockRead[]> reads_;
+};
 
 class TransportClientSocketPoolTest : public TestWithScopedTaskEnvironment {
  protected:
   TransportClientSocketPoolTest()
       : connect_backup_jobs_enabled_(
             ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(true)),
-        params_(new TransportSocketParams(HostPortPair("www.google.com", 80),
-                                          false,
-                                          OnHostResolutionCallback())),
+        ssl_config_service_(std::make_unique<SSLConfigServiceDefaults>()),
+        params_(TransportClientSocketPool::SocketParams::
+                    CreateFromTransportSocketParams(
+                        base::MakeRefCounted<TransportSocketParams>(
+                            HostPortPair("www.google.com", 80),
+                            false,
+                            OnHostResolutionCallback()))),
         host_resolver_(new MockHostResolver),
         client_socket_factory_(&net_log_),
         pool_(kMaxSockets,
               kMaxSocketsPerGroup,
-              host_resolver_.get(),
+              kUnusedIdleSocketTimeout,
               &client_socket_factory_,
-              NULL,
-              NULL) {}
+              host_resolver_.get(),
+              nullptr /* proxy_delegate */,
+              &cert_verifier_,
+              nullptr /* channel_id_server */,
+              &transport_security_state_,
+              &ct_verifier_,
+              &ct_policy_enforcer_,
+              nullptr /* ssl_client_session_cache */,
+              nullptr /* ssl_client_session_cache_privacy_mode */,
+              ssl_config_service_.get(),
+              nullptr /* socket_performance_watcher_factory */,
+              nullptr /* network_quality_estimator */,
+              nullptr /* net_log */),
+        pool_for_real_sockets_(
+            kMaxSockets,
+            kMaxSocketsPerGroup,
+            kUnusedIdleSocketTimeout,
+            ClientSocketFactory::GetDefaultFactory(),
+            host_resolver_.get(),
+            nullptr /* proxy_delegate */,
+            &cert_verifier_,
+            nullptr /* channel_id_server */,
+            &transport_security_state_,
+            &ct_verifier_,
+            &ct_policy_enforcer_,
+            nullptr /* ssl_client_session_cache */,
+            nullptr /* ssl_client_session_cache_privacy_mode */,
+            ssl_config_service_.get(),
+            nullptr /* socket_performance_watcher_factory */,
+            nullptr /* network_quality_estimator */,
+            nullptr /* net_log */) {}
 
   ~TransportClientSocketPoolTest() override {
     internal::ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(
@@ -69,8 +138,12 @@ class TransportClientSocketPoolTest : public TestWithScopedTaskEnvironment {
   }
 
   int StartRequest(const std::string& group_name, RequestPriority priority) {
-    scoped_refptr<TransportSocketParams> params(new TransportSocketParams(
-        HostPortPair("www.google.com", 80), false, OnHostResolutionCallback()));
+    scoped_refptr<TransportClientSocketPool::SocketParams> params(
+        TransportClientSocketPool::SocketParams::
+            CreateFromTransportSocketParams(
+                base::MakeRefCounted<TransportSocketParams>(
+                    HostPortPair("www.google.com", 80), false,
+                    OnHostResolutionCallback())));
     return test_base_.StartRequestUsingPool(
         &pool_, group_name, priority, ClientSocketPool::RespectLimits::ENABLED,
         params);
@@ -93,86 +166,31 @@ class TransportClientSocketPoolTest : public TestWithScopedTaskEnvironment {
   }
   size_t completion_count() const { return test_base_.completion_count(); }
 
+  SSLConfig GetSSLConfig() const {
+    SSLConfig ssl_config;
+    ssl_config_service_->GetSSLConfig(&ssl_config);
+    return ssl_config;
+  }
+
   bool connect_backup_jobs_enabled_;
   TestNetLog net_log_;
-  scoped_refptr<TransportSocketParams> params_;
+  std::unique_ptr<SSLConfigService> ssl_config_service_;
+  scoped_refptr<TransportClientSocketPool::SocketParams> params_;
   std::unique_ptr<MockHostResolver> host_resolver_;
   MockTransportClientSocketFactory client_socket_factory_;
+  MockCertVerifier cert_verifier_;
+  TransportSecurityState transport_security_state_;
+  MultiLogCTVerifier ct_verifier_;
+  DefaultCTPolicyEnforcer ct_policy_enforcer_;
   TransportClientSocketPool pool_;
+  // Just like |pool_|, except it uses a real ClientSocketFactory instead of
+  // |client_socket_factory_|.
+  TransportClientSocketPool pool_for_real_sockets_;
   ClientSocketPoolTest test_base_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TransportClientSocketPoolTest);
 };
-
-TEST(TransportConnectJobTest, MakeAddrListStartWithIPv4) {
-  IPEndPoint addrlist_v4_1(IPAddress(192, 168, 1, 1), 80);
-  IPEndPoint addrlist_v4_2(IPAddress(192, 168, 1, 2), 80);
-  IPAddress ip_address;
-  ASSERT_TRUE(ip_address.AssignFromIPLiteral("2001:4860:b006::64"));
-  IPEndPoint addrlist_v6_1(ip_address, 80);
-  ASSERT_TRUE(ip_address.AssignFromIPLiteral("2001:4860:b006::66"));
-  IPEndPoint addrlist_v6_2(ip_address, 80);
-
-  AddressList addrlist;
-
-  // Test 1: IPv4 only.  Expect no change.
-  addrlist.clear();
-  addrlist.push_back(addrlist_v4_1);
-  addrlist.push_back(addrlist_v4_2);
-  TransportConnectJob::MakeAddressListStartWithIPv4(&addrlist);
-  ASSERT_EQ(2u, addrlist.size());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[0].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[1].GetFamily());
-
-  // Test 2: IPv6 only.  Expect no change.
-  addrlist.clear();
-  addrlist.push_back(addrlist_v6_1);
-  addrlist.push_back(addrlist_v6_2);
-  TransportConnectJob::MakeAddressListStartWithIPv4(&addrlist);
-  ASSERT_EQ(2u, addrlist.size());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[0].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[1].GetFamily());
-
-  // Test 3: IPv4 then IPv6.  Expect no change.
-  addrlist.clear();
-  addrlist.push_back(addrlist_v4_1);
-  addrlist.push_back(addrlist_v4_2);
-  addrlist.push_back(addrlist_v6_1);
-  addrlist.push_back(addrlist_v6_2);
-  TransportConnectJob::MakeAddressListStartWithIPv4(&addrlist);
-  ASSERT_EQ(4u, addrlist.size());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[0].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[1].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[2].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[3].GetFamily());
-
-  // Test 4: IPv6, IPv4, IPv6, IPv4.  Expect first IPv6 moved to the end.
-  addrlist.clear();
-  addrlist.push_back(addrlist_v6_1);
-  addrlist.push_back(addrlist_v4_1);
-  addrlist.push_back(addrlist_v6_2);
-  addrlist.push_back(addrlist_v4_2);
-  TransportConnectJob::MakeAddressListStartWithIPv4(&addrlist);
-  ASSERT_EQ(4u, addrlist.size());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[0].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[1].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[2].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[3].GetFamily());
-
-  // Test 5: IPv6, IPv6, IPv4, IPv4.  Expect first two IPv6's moved to the end.
-  addrlist.clear();
-  addrlist.push_back(addrlist_v6_1);
-  addrlist.push_back(addrlist_v6_2);
-  addrlist.push_back(addrlist_v4_1);
-  addrlist.push_back(addrlist_v4_2);
-  TransportConnectJob::MakeAddressListStartWithIPv4(&addrlist);
-  ASSERT_EQ(4u, addrlist.size());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[0].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV4, addrlist[1].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[2].GetFamily());
-  EXPECT_EQ(ADDRESS_FAMILY_IPV6, addrlist[3].GetFamily());
-}
 
 TEST_F(TransportClientSocketPoolTest, Basic) {
   TestCompletionCallback callback;
@@ -432,8 +450,17 @@ TEST_F(TransportClientSocketPoolTest, ReprioritizeRequests) {
 }
 
 TEST_F(TransportClientSocketPoolTest, RequestIgnoringLimitsIsNotReprioritized) {
-  TransportClientSocketPool pool(kMaxSockets, 1, host_resolver_.get(),
-                                 &client_socket_factory_, nullptr, nullptr);
+  TransportClientSocketPool pool(
+      kMaxSockets, 1, kUnusedIdleSocketTimeout, &client_socket_factory_,
+      host_resolver_.get(), nullptr /* proxy_delegate */,
+      nullptr /* cert_verifier */, nullptr /* channel_id_server */,
+      nullptr /* transport_security_state */,
+      nullptr /* cert_transparency_verifier */,
+      nullptr /* ct_policy_enforcer */, nullptr /* ssl_client_session_cache */,
+      nullptr /* ssl_client_session_cache_privacy_mode */,
+      nullptr /* ssl_config_service */,
+      nullptr /* socket_performance_watcher_factory */,
+      nullptr /* network_quality_estimator */, nullptr /* net_log */);
 
   // Creates a job which ignores limits whose priority is MAXIMUM_PRIORITY
   TestCompletionCallback callback1;
@@ -463,8 +490,10 @@ TEST_F(TransportClientSocketPoolTest, InitHostResolutionFailure) {
   TestCompletionCallback callback;
   ClientSocketHandle handle;
   HostPortPair host_port_pair("unresolvable.host.name", 80);
-  scoped_refptr<TransportSocketParams> dest(new TransportSocketParams(
-      host_port_pair, false, OnHostResolutionCallback()));
+  scoped_refptr<TransportClientSocketPool::SocketParams> dest(
+      TransportClientSocketPool::SocketParams::CreateFromTransportSocketParams(
+          base::MakeRefCounted<TransportSocketParams>(
+              host_port_pair, false, OnHostResolutionCallback())));
   EXPECT_EQ(ERR_IO_PENDING,
             handle.Init("a", dest, kDefaultPriority, SocketTag(),
                         ClientSocketPool::RespectLimits::ENABLED,
@@ -753,9 +782,12 @@ class RequestSocketCallback : public TestCompletionCallbackBase {
       handle_->Reset();
       base::RunLoop(base::RunLoop::Type::kNestableTasksAllowed).RunUntilIdle();
       within_callback_ = true;
-      scoped_refptr<TransportSocketParams> dest(
-          new TransportSocketParams(HostPortPair("www.google.com", 80), false,
-                                    OnHostResolutionCallback()));
+      scoped_refptr<TransportClientSocketPool::SocketParams> dest(
+          TransportClientSocketPool::SocketParams::
+              CreateFromTransportSocketParams(
+                  base::MakeRefCounted<TransportSocketParams>(
+                      HostPortPair("www.google.com", 80), false,
+                      OnHostResolutionCallback())));
       int rv = handle_->Init("a", dest, LOWEST, SocketTag(),
                              ClientSocketPool::RespectLimits::ENABLED,
                              callback(), pool_, NetLogWithSource());
@@ -773,8 +805,11 @@ class RequestSocketCallback : public TestCompletionCallbackBase {
 TEST_F(TransportClientSocketPoolTest, RequestTwice) {
   ClientSocketHandle handle;
   RequestSocketCallback callback(&handle, &pool_);
-  scoped_refptr<TransportSocketParams> dest(new TransportSocketParams(
-      HostPortPair("www.google.com", 80), false, OnHostResolutionCallback()));
+  scoped_refptr<TransportClientSocketPool::SocketParams> dest(
+      TransportClientSocketPool::SocketParams::CreateFromTransportSocketParams(
+          base::MakeRefCounted<TransportSocketParams>(
+              HostPortPair("www.google.com", 80), false,
+              OnHostResolutionCallback())));
   int rv = handle.Init("a", dest, LOWEST, SocketTag(),
                        ClientSocketPool::RespectLimits::ENABLED,
                        callback.callback(), &pool_, NetLogWithSource());
@@ -867,7 +902,7 @@ TEST_F(TransportClientSocketPoolTest, IdleSocketLoadTiming) {
   TestLoadTimingInfoConnectedReused(handle);
 }
 
-TEST_F(TransportClientSocketPoolTest, ResetIdleSocketsOnIPAddressChange) {
+TEST_F(TransportClientSocketPoolTest, CloseIdleSocketsOnIPAddressChange) {
   TestCompletionCallback callback;
   ClientSocketHandle handle;
   int rv = handle.Init("a", params_, LOW, SocketTag(),
@@ -891,6 +926,35 @@ TEST_F(TransportClientSocketPoolTest, ResetIdleSocketsOnIPAddressChange) {
 
   // After an IP address change, we should have 0 idle sockets.
   NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
+  base::RunLoop().RunUntilIdle();  // Notification happens async.
+
+  EXPECT_EQ(0, pool_.IdleSocketCount());
+}
+
+TEST_F(TransportClientSocketPoolTest, CloseIdleSocketsOnSSLConfigChange) {
+  TestCompletionCallback callback;
+  ClientSocketHandle handle;
+  int rv = handle.Init("a", params_, LOW, SocketTag(),
+                       ClientSocketPool::RespectLimits::ENABLED,
+                       callback.callback(), &pool_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+  EXPECT_FALSE(handle.is_initialized());
+  EXPECT_FALSE(handle.socket());
+
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
+  EXPECT_TRUE(handle.is_initialized());
+  EXPECT_TRUE(handle.socket());
+
+  handle.Reset();
+
+  // Need to run all pending to release the socket back to the pool.
+  base::RunLoop().RunUntilIdle();
+
+  // Now we should have 1 idle socket.
+  EXPECT_EQ(1, pool_.IdleSocketCount());
+
+  // After an SSL configuration change, we should have 0 idle sockets.
+  ssl_config_service_->NotifySSLConfigChange();
   base::RunLoop().RunUntilIdle();  // Notification happens async.
 
   EXPECT_EQ(0, pool_.IdleSocketCount());
@@ -1096,183 +1160,73 @@ TEST_F(TransportClientSocketPoolTest, BackupSocketFailAfterDelay) {
   handle.Reset();
 }
 
-// Test the case of the IPv6 address stalling, and falling back to the IPv4
-// socket which finishes first.
-TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv4FinishesFirst) {
-  // Create a pool without backup jobs.
-  ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
-  TransportClientSocketPool pool(kMaxSockets, kMaxSocketsPerGroup,
-                                 host_resolver_.get(), &client_socket_factory_,
-                                 NULL, NULL);
+// Test the case that SOCKSSocketParams are provided.
+TEST_F(TransportClientSocketPoolTest, SOCKS) {
+  for (IoMode socket_io_mode : {SYNCHRONOUS, ASYNC}) {
+    MockTaggingClientSocketFactory socket_factory;
+    TransportClientSocketPool pool(
+        kMaxSockets, kMaxSocketsPerGroup, kUnusedIdleSocketTimeout,
+        &socket_factory, host_resolver_.get(), nullptr /* proxy_delegate */,
+        nullptr /* cert_verifier */, nullptr /* channel_id_server */,
+        nullptr /* transport_security_state */,
+        nullptr /* cert_transparency_verifier */,
+        nullptr /* ct_policy_enforcer */,
+        nullptr /* ssl_client_session_cache */,
+        nullptr /* ssl_client_session_cache_privacy_mode */,
+        nullptr /* ssl_config_service */,
+        nullptr /* socket_performance_watcher_factory */,
+        nullptr /* network_quality_estimator */, nullptr /* netlog */);
 
-  MockTransportClientSocketFactory::ClientSocketType case_types[] = {
-      // This is the IPv6 socket. It stalls, but presents one failed connection
-      // attempt on GetConnectionAttempts.
-      MockTransportClientSocketFactory::MOCK_STALLED_FAILING_CLIENT_SOCKET,
-      // This is the IPv4 socket.
-      MockTransportClientSocketFactory::MOCK_PENDING_CLIENT_SOCKET};
+    scoped_refptr<TransportSocketParams> tcp_params =
+        base::MakeRefCounted<TransportSocketParams>(
+            HostPortPair("proxy", 80), false, OnHostResolutionCallback());
+    scoped_refptr<TransportClientSocketPool::SocketParams> socks_params(
+        TransportClientSocketPool::SocketParams::CreateFromSOCKSSocketParams(
+            base::MakeRefCounted<SOCKSSocketParams>(
+                tcp_params, true /* socks_v5 */, HostPortPair("host", 80),
+                TRAFFIC_ANNOTATION_FOR_TESTS)));
 
-  client_socket_factory_.set_client_socket_types(case_types, 2);
-
-  // Resolve an AddressList with a IPv6 address first and then a IPv4 address.
-  host_resolver_->rules()
-      ->AddIPLiteralRule("*", "2:abcd::3:4:ff,2.2.2.2", std::string());
-
-  TestCompletionCallback callback;
-  ClientSocketHandle handle;
-  int rv = handle.Init("a", params_, LOW, SocketTag(),
-                       ClientSocketPool::RespectLimits::ENABLED,
-                       callback.callback(), &pool, NetLogWithSource());
-  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
-  EXPECT_FALSE(handle.is_initialized());
-  EXPECT_FALSE(handle.socket());
-
-  EXPECT_THAT(callback.WaitForResult(), IsOk());
-  EXPECT_TRUE(handle.is_initialized());
-  EXPECT_TRUE(handle.socket());
-  IPEndPoint endpoint;
-  handle.socket()->GetLocalAddress(&endpoint);
-  EXPECT_TRUE(endpoint.address().IsIPv4());
-
-  // Check that the failed connection attempt on the main socket is collected.
-  ConnectionAttempts attempts;
-  handle.socket()->GetConnectionAttempts(&attempts);
-  ASSERT_EQ(1u, attempts.size());
-  EXPECT_THAT(attempts[0].result, IsError(ERR_CONNECTION_FAILED));
-  EXPECT_TRUE(attempts[0].endpoint.address().IsIPv6());
-
-  EXPECT_EQ(2, client_socket_factory_.allocation_count());
-}
-
-// Test the case of the IPv6 address being slow, thus falling back to trying to
-// connect to the IPv4 address, but having the connect to the IPv6 address
-// finish first.
-TEST_F(TransportClientSocketPoolTest, IPv6FallbackSocketIPv6FinishesFirst) {
-  // Create a pool without backup jobs.
-  ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
-  TransportClientSocketPool pool(kMaxSockets, kMaxSocketsPerGroup,
-                                 host_resolver_.get(), &client_socket_factory_,
-                                 NULL, NULL);
-
-  MockTransportClientSocketFactory::ClientSocketType case_types[] = {
-      // This is the IPv6 socket.
-      MockTransportClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET,
-      // This is the IPv4 socket. It stalls, but presents one failed connection
-      // attempt on GetConnectionATtempts.
-      MockTransportClientSocketFactory::MOCK_STALLED_FAILING_CLIENT_SOCKET};
-
-  client_socket_factory_.set_client_socket_types(case_types, 2);
-  client_socket_factory_.set_delay(base::TimeDelta::FromMilliseconds(
-      TransportConnectJob::kIPv6FallbackTimerInMs + 50));
-
-  // Resolve an AddressList with a IPv6 address first and then a IPv4 address.
-  host_resolver_->rules()
-      ->AddIPLiteralRule("*", "2:abcd::3:4:ff,2.2.2.2", std::string());
-
-  TestCompletionCallback callback;
-  ClientSocketHandle handle;
-  int rv = handle.Init("a", params_, LOW, SocketTag(),
-                       ClientSocketPool::RespectLimits::ENABLED,
-                       callback.callback(), &pool, NetLogWithSource());
-  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
-  EXPECT_FALSE(handle.is_initialized());
-  EXPECT_FALSE(handle.socket());
-
-  EXPECT_THAT(callback.WaitForResult(), IsOk());
-  EXPECT_TRUE(handle.is_initialized());
-  EXPECT_TRUE(handle.socket());
-  IPEndPoint endpoint;
-  handle.socket()->GetLocalAddress(&endpoint);
-  EXPECT_TRUE(endpoint.address().IsIPv6());
-
-  // Check that the failed connection attempt on the fallback socket is
-  // collected.
-  ConnectionAttempts attempts;
-  handle.socket()->GetConnectionAttempts(&attempts);
-  ASSERT_EQ(1u, attempts.size());
-  EXPECT_THAT(attempts[0].result, IsError(ERR_CONNECTION_FAILED));
-  EXPECT_TRUE(attempts[0].endpoint.address().IsIPv4());
-
-  EXPECT_EQ(2, client_socket_factory_.allocation_count());
-}
-
-TEST_F(TransportClientSocketPoolTest, IPv6NoIPv4AddressesToFallbackTo) {
-  // Create a pool without backup jobs.
-  ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
-  TransportClientSocketPool pool(kMaxSockets, kMaxSocketsPerGroup,
-                                 host_resolver_.get(), &client_socket_factory_,
-                                 NULL, NULL);
-
-  client_socket_factory_.set_default_client_socket_type(
-      MockTransportClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET);
-
-  // Resolve an AddressList with only IPv6 addresses.
-  host_resolver_->rules()
-      ->AddIPLiteralRule("*", "2:abcd::3:4:ff,3:abcd::3:4:ff", std::string());
-
-  TestCompletionCallback callback;
-  ClientSocketHandle handle;
-  int rv = handle.Init("a", params_, LOW, SocketTag(),
-                       ClientSocketPool::RespectLimits::ENABLED,
-                       callback.callback(), &pool, NetLogWithSource());
-  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
-  EXPECT_FALSE(handle.is_initialized());
-  EXPECT_FALSE(handle.socket());
-
-  EXPECT_THAT(callback.WaitForResult(), IsOk());
-  EXPECT_TRUE(handle.is_initialized());
-  EXPECT_TRUE(handle.socket());
-  IPEndPoint endpoint;
-  handle.socket()->GetLocalAddress(&endpoint);
-  EXPECT_TRUE(endpoint.address().IsIPv6());
-  EXPECT_EQ(0u, handle.connection_attempts().size());
-  EXPECT_EQ(1, client_socket_factory_.allocation_count());
-}
-
-TEST_F(TransportClientSocketPoolTest, IPv4HasNoFallback) {
-  // Create a pool without backup jobs.
-  ClientSocketPoolBaseHelper::set_connect_backup_jobs_enabled(false);
-  TransportClientSocketPool pool(kMaxSockets, kMaxSocketsPerGroup,
-                                 host_resolver_.get(), &client_socket_factory_,
-                                 NULL, NULL);
-
-  client_socket_factory_.set_default_client_socket_type(
-      MockTransportClientSocketFactory::MOCK_DELAYED_CLIENT_SOCKET);
-
-  // Resolve an AddressList with only IPv4 addresses.
-  host_resolver_->rules()->AddIPLiteralRule("*", "1.1.1.1", std::string());
-
-  TestCompletionCallback callback;
-  ClientSocketHandle handle;
-  int rv = handle.Init("a", params_, LOW, SocketTag(),
-                       ClientSocketPool::RespectLimits::ENABLED,
-                       callback.callback(), &pool, NetLogWithSource());
-  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
-  EXPECT_FALSE(handle.is_initialized());
-  EXPECT_FALSE(handle.socket());
-
-  EXPECT_THAT(callback.WaitForResult(), IsOk());
-  EXPECT_TRUE(handle.is_initialized());
-  EXPECT_TRUE(handle.socket());
-  IPEndPoint endpoint;
-  handle.socket()->GetLocalAddress(&endpoint);
-  EXPECT_TRUE(endpoint.address().IsIPv4());
-  EXPECT_EQ(0u, handle.connection_attempts().size());
-  EXPECT_EQ(1, client_socket_factory_.allocation_count());
+    SOCKS5MockData data(socket_io_mode);
+    data.data_provider()->set_connect_data(MockConnect(socket_io_mode, OK));
+    socket_factory.AddSocketDataProvider(data.data_provider());
+    ClientSocketHandle handle;
+    TestCompletionCallback callback;
+    int rv = handle.Init("a", socks_params, LOW, SocketTag(),
+                         ClientSocketPool::RespectLimits::ENABLED,
+                         callback.callback(), &pool, NetLogWithSource());
+    EXPECT_THAT(callback.GetResult(rv), IsOk());
+    EXPECT_TRUE(handle.is_initialized());
+    EXPECT_TRUE(handle.socket());
+    EXPECT_TRUE(data.data_provider()->AllReadDataConsumed());
+    EXPECT_TRUE(data.data_provider()->AllWriteDataConsumed());
+  }
 }
 
 // Test that SocketTag passed into TransportClientSocketPool is applied to
 // returned sockets.
 #if defined(OS_ANDROID)
 TEST_F(TransportClientSocketPoolTest, Tag) {
+  if (!CanGetTaggedBytes()) {
+    DVLOG(0) << "Skipping test - GetTaggedBytes unsupported.";
+    return;
+  }
+
   // Start test server.
   EmbeddedTestServer test_server;
   test_server.AddDefaultHandlers(base::FilePath());
   ASSERT_TRUE(test_server.Start());
 
   TransportClientSocketPool pool(
-      kMaxSockets, kMaxSocketsPerGroup, host_resolver_.get(),
-      ClientSocketFactory::GetDefaultFactory(), NULL, NULL);
+      kMaxSockets, kMaxSocketsPerGroup, kUnusedIdleSocketTimeout,
+      ClientSocketFactory::GetDefaultFactory(), host_resolver_.get(),
+      nullptr /* proxy_delegate */, nullptr /* cert_verifier */,
+      nullptr /* channel_id_server */, nullptr /* transport_security_state */,
+      nullptr /* cert_transparency_verifier */,
+      nullptr /* ct_policy_enforcer */, nullptr /* ssl_client_session_cache */,
+      nullptr /* ssl_client_session_cache_privacy_mode */,
+      nullptr /* ssl_config_service */,
+      nullptr /* socket_performance_watcher_factory */,
+      nullptr /* network_quality_estimator */, nullptr /* netlog */);
   ClientSocketHandle handle;
   int32_t tag_val1 = 0x12345678;
   SocketTag tag1(SocketTag::UNSET_UID, tag_val1);
@@ -1281,8 +1235,10 @@ TEST_F(TransportClientSocketPoolTest, Tag) {
 
   // Test socket is tagged before connected.
   uint64_t old_traffic = GetTaggedBytes(tag_val1);
-  scoped_refptr<TransportSocketParams> params(new TransportSocketParams(
-      test_server.host_port_pair(), false, OnHostResolutionCallback()));
+  scoped_refptr<TransportClientSocketPool::SocketParams> params =
+      TransportClientSocketPool::SocketParams::CreateFromTransportSocketParams(
+          base::MakeRefCounted<TransportSocketParams>(
+              test_server.host_port_pair(), false, OnHostResolutionCallback()));
   TestCompletionCallback callback;
   int rv = handle.Init("a", params, LOW, tag1,
                        ClientSocketPool::RespectLimits::ENABLED,
@@ -1382,7 +1338,323 @@ TEST_F(TransportClientSocketPoolTest, Tag) {
   EXPECT_EQ(static_cast<int>(strlen(kRequest)), callback.GetResult(rv));
   EXPECT_GT(GetTaggedBytes(tag_val1), old_traffic);
 }
-#endif
+
+TEST_F(TransportClientSocketPoolTest, TagSOCKSProxy) {
+  host_resolver_->set_synchronous_mode(true);
+  MockTaggingClientSocketFactory socket_factory;
+  TransportClientSocketPool pool(
+      kMaxSockets, kMaxSocketsPerGroup, kUnusedIdleSocketTimeout,
+      &socket_factory, host_resolver_.get(), nullptr /* proxy_delegate */,
+      nullptr /* cert_verifier */, nullptr /* channel_id_server */,
+      nullptr /* transport_security_state */,
+      nullptr /* cert_transparency_verifier */,
+      nullptr /* ct_policy_enforcer */, nullptr /* ssl_client_session_cache */,
+      nullptr /* ssl_client_session_cache_privacy_mode */,
+      nullptr /* ssl_config_service */,
+      nullptr /* socket_performance_watcher_factory */,
+      nullptr /* network_quality_estimator */, nullptr /* netlog */);
+
+  SocketTag tag1(SocketTag::UNSET_UID, 0x12345678);
+  SocketTag tag2(getuid(), 0x87654321);
+  scoped_refptr<TransportSocketParams> tcp_params =
+      base::MakeRefCounted<TransportSocketParams>(
+          HostPortPair("proxy", 80), false, OnHostResolutionCallback());
+  scoped_refptr<TransportClientSocketPool::SocketParams> socks_params(
+      TransportClientSocketPool::SocketParams::CreateFromSOCKSSocketParams(
+          base::MakeRefCounted<SOCKSSocketParams>(
+              tcp_params, true /* socks_v5 */, HostPortPair("host", 80),
+              TRAFFIC_ANNOTATION_FOR_TESTS)));
+
+  // Test socket is tagged when created synchronously.
+  SOCKS5MockData data_sync(SYNCHRONOUS);
+  data_sync.data_provider()->set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  socket_factory.AddSocketDataProvider(data_sync.data_provider());
+  ClientSocketHandle handle;
+  int rv = handle.Init("a", socks_params, LOW, tag1,
+                       ClientSocketPool::RespectLimits::ENABLED,
+                       CompletionOnceCallback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(handle.is_initialized());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_EQ(socket_factory.GetLastProducedTCPSocket()->tag(), tag1);
+  EXPECT_TRUE(
+      socket_factory.GetLastProducedTCPSocket()->tagged_before_connected());
+
+  // Test socket is tagged when reused synchronously.
+  StreamSocket* socket = handle.socket();
+  handle.Reset();
+  rv = handle.Init("a", socks_params, LOW, tag2,
+                   ClientSocketPool::RespectLimits::ENABLED,
+                   CompletionOnceCallback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_TRUE(handle.socket()->IsConnected());
+  EXPECT_EQ(handle.socket(), socket);
+  EXPECT_EQ(socket_factory.GetLastProducedTCPSocket()->tag(), tag2);
+  handle.socket()->Disconnect();
+  handle.Reset();
+
+  // Test socket is tagged when created asynchronously.
+  SOCKS5MockData data_async(ASYNC);
+  socket_factory.AddSocketDataProvider(data_async.data_provider());
+  TestCompletionCallback callback;
+  rv = handle.Init("a", socks_params, LOW, tag1,
+                   ClientSocketPool::RespectLimits::ENABLED,
+                   callback.callback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
+  EXPECT_TRUE(handle.is_initialized());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_EQ(socket_factory.GetLastProducedTCPSocket()->tag(), tag1);
+  EXPECT_TRUE(
+      socket_factory.GetLastProducedTCPSocket()->tagged_before_connected());
+
+  // Test socket is tagged when reused after being created asynchronously.
+  socket = handle.socket();
+  handle.Reset();
+  rv = handle.Init("a", socks_params, LOW, tag2,
+                   ClientSocketPool::RespectLimits::ENABLED,
+                   CompletionOnceCallback(), &pool, NetLogWithSource());
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_TRUE(handle.socket()->IsConnected());
+  EXPECT_EQ(handle.socket(), socket);
+  EXPECT_EQ(socket_factory.GetLastProducedTCPSocket()->tag(), tag2);
+}
+
+TEST_F(TransportClientSocketPoolTest, TagSSLDirect) {
+  if (!CanGetTaggedBytes()) {
+    DVLOG(0) << "Skipping test - GetTaggedBytes unsupported.";
+    return;
+  }
+
+  const char kGroupName[] = "group_name";
+
+  // Start test server.
+  EmbeddedTestServer test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  test_server.SetSSLConfig(net::EmbeddedTestServer::CERT_OK, SSLServerConfig());
+  test_server.AddDefaultHandlers(base::FilePath());
+  ASSERT_TRUE(test_server.Start());
+
+  // TLS 1.3 sockets aren't reused until the read side has been pumped.
+  // TODO(crbug.com/906668): Support pumping the read side and setting the
+  // socket to be reusable.
+  SSLConfig ssl_config = GetSSLConfig();
+  ssl_config.version_max = SSL_PROTOCOL_VERSION_TLS1_2;
+
+  cert_verifier_.set_default_result(OK);
+  TestCompletionCallback callback;
+  ClientSocketHandle handle;
+  int32_t tag_val1 = 0x12345678;
+  SocketTag tag1(SocketTag::UNSET_UID, tag_val1);
+  int32_t tag_val2 = 0x87654321;
+  SocketTag tag2(getuid(), tag_val2);
+  scoped_refptr<TransportSocketParams> tcp_params =
+      base::MakeRefCounted<TransportSocketParams>(
+          test_server.host_port_pair(), false, OnHostResolutionCallback());
+  scoped_refptr<SSLSocketParams> params(new SSLSocketParams(
+      tcp_params, nullptr, nullptr, test_server.host_port_pair(), ssl_config,
+      PRIVACY_MODE_DISABLED));
+
+  // Test socket is tagged before connected.
+  uint64_t old_traffic = GetTaggedBytes(tag_val1);
+  int rv = handle.Init(
+      kGroupName,
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          params),
+      LOW, tag1, ClientSocketPool::RespectLimits::ENABLED, callback.callback(),
+      &pool_for_real_sockets_, NetLogWithSource());
+  EXPECT_THAT(callback.GetResult(rv), IsOk());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_TRUE(handle.socket()->IsConnected());
+  EXPECT_GT(GetTaggedBytes(tag_val1), old_traffic);
+
+  // Test reused socket is retagged.
+  StreamSocket* socket = handle.socket();
+  handle.Reset();
+  old_traffic = GetTaggedBytes(tag_val2);
+  TestCompletionCallback callback2;
+  rv = handle.Init(
+      kGroupName,
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          params),
+      LOW, tag2, ClientSocketPool::RespectLimits::ENABLED, callback2.callback(),
+      &pool_for_real_sockets_, NetLogWithSource());
+  EXPECT_THAT(rv, IsOk());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_TRUE(handle.socket()->IsConnected());
+  EXPECT_EQ(handle.socket(), socket);
+  const char kRequest[] = "GET / HTTP/1.1\r\n\r\n";
+  scoped_refptr<IOBuffer> write_buffer =
+      base::MakeRefCounted<StringIOBuffer>(kRequest);
+  rv =
+      handle.socket()->Write(write_buffer.get(), strlen(kRequest),
+                             callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
+  EXPECT_EQ(static_cast<int>(strlen(kRequest)), callback.GetResult(rv));
+  scoped_refptr<IOBufferWithSize> read_buffer =
+      base::MakeRefCounted<IOBufferWithSize>(1);
+  rv = handle.socket()->Read(read_buffer.get(), read_buffer->size(),
+                             callback.callback());
+  EXPECT_EQ(read_buffer->size(), callback.GetResult(rv));
+  EXPECT_GT(GetTaggedBytes(tag_val2), old_traffic);
+  // Disconnect socket to prevent reuse.
+  handle.socket()->Disconnect();
+  handle.Reset();
+}
+
+TEST_F(TransportClientSocketPoolTest, TagSSLDirectTwoSockets) {
+  if (!CanGetTaggedBytes()) {
+    DVLOG(0) << "Skipping test - GetTaggedBytes unsupported.";
+    return;
+  }
+
+  const char kGroupName[] = "group_name";
+
+  // Start test server.
+  EmbeddedTestServer test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  test_server.SetSSLConfig(net::EmbeddedTestServer::CERT_OK, SSLServerConfig());
+  test_server.AddDefaultHandlers(base::FilePath());
+  ASSERT_TRUE(test_server.Start());
+
+  cert_verifier_.set_default_result(OK);
+  ClientSocketHandle handle;
+  int32_t tag_val1 = 0x12345678;
+  SocketTag tag1(SocketTag::UNSET_UID, tag_val1);
+  int32_t tag_val2 = 0x87654321;
+  SocketTag tag2(getuid(), tag_val2);
+  scoped_refptr<TransportSocketParams> tcp_params =
+      base::MakeRefCounted<TransportSocketParams>(
+          test_server.host_port_pair(), false, OnHostResolutionCallback());
+  scoped_refptr<SSLSocketParams> params(new SSLSocketParams(
+      tcp_params, nullptr, nullptr, test_server.host_port_pair(),
+      GetSSLConfig(), PRIVACY_MODE_DISABLED));
+
+  // Test connect jobs that are orphaned and then adopted, appropriately apply
+  // new tag. Request socket with |tag1|.
+  TestCompletionCallback callback;
+  int rv = handle.Init(
+      kGroupName,
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          params),
+      LOW, tag1, ClientSocketPool::RespectLimits::ENABLED, callback.callback(),
+      &pool_for_real_sockets_, NetLogWithSource());
+  EXPECT_TRUE(rv == OK || rv == ERR_IO_PENDING) << "Result: " << rv;
+  // Abort and request socket with |tag2|.
+  handle.Reset();
+  TestCompletionCallback callback2;
+  rv = handle.Init(
+      kGroupName,
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          params),
+      LOW, tag2, ClientSocketPool::RespectLimits::ENABLED, callback2.callback(),
+      &pool_for_real_sockets_, NetLogWithSource());
+  EXPECT_THAT(callback2.GetResult(rv), IsOk());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_TRUE(handle.socket()->IsConnected());
+  // Verify socket has |tag2| applied.
+  uint64_t old_traffic = GetTaggedBytes(tag_val2);
+  const char kRequest[] = "GET / HTTP/1.1\r\n\r\n";
+  scoped_refptr<IOBuffer> write_buffer =
+      base::MakeRefCounted<StringIOBuffer>(kRequest);
+  rv = handle.socket()->Write(write_buffer.get(), strlen(kRequest),
+                              callback2.callback(),
+                              TRAFFIC_ANNOTATION_FOR_TESTS);
+  EXPECT_EQ(static_cast<int>(strlen(kRequest)), callback2.GetResult(rv));
+  scoped_refptr<IOBufferWithSize> read_buffer =
+      base::MakeRefCounted<IOBufferWithSize>(1);
+  rv = handle.socket()->Read(read_buffer.get(), read_buffer->size(),
+                             callback2.callback());
+  EXPECT_EQ(read_buffer->size(), callback2.GetResult(rv));
+  EXPECT_GT(GetTaggedBytes(tag_val2), old_traffic);
+}
+
+TEST_F(TransportClientSocketPoolTest, TagSSLDirectTwoSocketsFullPool) {
+  if (!CanGetTaggedBytes()) {
+    DVLOG(0) << "Skipping test - GetTaggedBytes unsupported.";
+    return;
+  }
+
+  const char kGroupName[] = "group_name";
+
+  // Start test server.
+  EmbeddedTestServer test_server(net::EmbeddedTestServer::TYPE_HTTPS);
+  test_server.SetSSLConfig(net::EmbeddedTestServer::CERT_OK, SSLServerConfig());
+  test_server.AddDefaultHandlers(base::FilePath());
+  ASSERT_TRUE(test_server.Start());
+
+  cert_verifier_.set_default_result(OK);
+  TestCompletionCallback callback;
+  ClientSocketHandle handle;
+  int32_t tag_val1 = 0x12345678;
+  SocketTag tag1(SocketTag::UNSET_UID, tag_val1);
+  int32_t tag_val2 = 0x87654321;
+  SocketTag tag2(getuid(), tag_val2);
+  scoped_refptr<TransportSocketParams> tcp_params =
+      base::MakeRefCounted<TransportSocketParams>(
+          test_server.host_port_pair(), false, OnHostResolutionCallback());
+  scoped_refptr<SSLSocketParams> params(new SSLSocketParams(
+      tcp_params, nullptr, nullptr, test_server.host_port_pair(),
+      GetSSLConfig(), PRIVACY_MODE_DISABLED));
+
+  // Test that sockets paused by a full underlying socket pool are properly
+  // connected and tagged when underlying pool is freed up.
+  // Fill up all slots in TCP pool.
+  ClientSocketHandle tcp_handles[kMaxSocketsPerGroup];
+  int rv;
+  for (auto& tcp_handle : tcp_handles) {
+    rv = tcp_handle.Init(kGroupName,
+                         TransportClientSocketPool::SocketParams::
+                             CreateFromTransportSocketParams(tcp_params),
+                         LOW, tag1, ClientSocketPool::RespectLimits::ENABLED,
+                         callback.callback(), &pool_for_real_sockets_,
+                         NetLogWithSource());
+    EXPECT_THAT(callback.GetResult(rv), IsOk());
+    EXPECT_TRUE(tcp_handle.socket());
+    EXPECT_TRUE(tcp_handle.socket()->IsConnected());
+  }
+  // Request two SSL sockets.
+  ClientSocketHandle handle_to_be_canceled;
+  rv = handle_to_be_canceled.Init(
+      kGroupName,
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          params),
+      LOW, tag1, ClientSocketPool::RespectLimits::ENABLED, callback.callback(),
+      &pool_for_real_sockets_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+  rv = handle.Init(
+      kGroupName,
+      TransportClientSocketPool::SocketParams::CreateFromSSLSocketParams(
+          params),
+      LOW, tag2, ClientSocketPool::RespectLimits::ENABLED, callback.callback(),
+      &pool_for_real_sockets_, NetLogWithSource());
+  EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+  // Cancel first request.
+  handle_to_be_canceled.Reset();
+  // Disconnect a TCP socket to free up a slot.
+  tcp_handles[0].socket()->Disconnect();
+  tcp_handles[0].Reset();
+  // Verify |handle| gets a valid tagged socket.
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
+  EXPECT_TRUE(handle.socket());
+  EXPECT_TRUE(handle.socket()->IsConnected());
+  uint64_t old_traffic = GetTaggedBytes(tag_val2);
+  const char kRequest[] = "GET / HTTP/1.1\r\n\r\n";
+  scoped_refptr<IOBuffer> write_buffer =
+      base::MakeRefCounted<StringIOBuffer>(kRequest);
+  rv =
+      handle.socket()->Write(write_buffer.get(), strlen(kRequest),
+                             callback.callback(), TRAFFIC_ANNOTATION_FOR_TESTS);
+  EXPECT_EQ(static_cast<int>(strlen(kRequest)), callback.GetResult(rv));
+  scoped_refptr<IOBufferWithSize> read_buffer =
+      base::MakeRefCounted<IOBufferWithSize>(1);
+  EXPECT_EQ(handle.socket()->Read(read_buffer.get(), read_buffer->size(),
+                                  callback.callback()),
+            ERR_IO_PENDING);
+  EXPECT_THAT(callback.WaitForResult(), read_buffer->size());
+  EXPECT_GT(GetTaggedBytes(tag_val2), old_traffic);
+}
+
+#endif  // defined(OS_ANDROID)
 
 }  // namespace
 

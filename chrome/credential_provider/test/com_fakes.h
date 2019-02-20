@@ -98,8 +98,10 @@ class FakeGaiaCredentialProvider : public IGaiaCredentialProvider,
   const CComBSTR& password() const { return password_; }
   const CComBSTR& sid() const { return sid_; }
   bool credentials_changed_fired() const { return credentials_changed_fired_; }
+  void ResetCredentialsChangedFired() { credentials_changed_fired_ = FALSE; }
 
   // IGaiaCredentialProvider
+  IFACEMETHODIMP GetUsageScenario(DWORD* cpus) override;
   IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
   ULONG STDMETHODCALLTYPE AddRef() override;
   ULONG STDMETHODCALLTYPE Release(void) override;
@@ -107,7 +109,7 @@ class FakeGaiaCredentialProvider : public IGaiaCredentialProvider,
                                      BSTR username,
                                      BSTR password,
                                      BSTR sid,
-                                     BOOL password_stale) override;
+                                     BOOL fire_credentials_changed) override;
   IFACEMETHODIMP HasInternetConnection() override;
 
   // IGaiaCredentialProviderForTesting

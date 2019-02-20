@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_param_associator.h"
@@ -23,6 +24,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/data_reduction_proxy/core/common/data_reduction_proxy_features.h"
 #include "components/infobars/core/confirm_infobar_delegate.h"
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_delegate.h"
@@ -145,9 +147,6 @@ class PageLoadCappingBrowserTest : public InProcessBrowserTest {
 
  private:
   void SetUp() override {
-    std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
-    scoped_refptr<base::FieldTrial> trial =
-        base::FieldTrialList::CreateFieldTrial("TrialName1", "GroupName1");
     std::map<std::string, std::string> feature_parameters = {
         {"PageCapMiB", "0"},
         {"PageFuzzingKiB", "0"},
@@ -155,15 +154,12 @@ class PageLoadCappingBrowserTest : public InProcessBrowserTest {
         {"InfoBarTimeoutInMilliseconds", "500000"}};
     ChangeParams(&feature_parameters);
 
-    base::FieldTrialParamAssociator::GetInstance()->AssociateFieldTrialParams(
-        "TrialName1", "GroupName1", feature_parameters);
-
-    feature_list->RegisterFieldTrialOverride(
-        data_use_measurement::page_load_capping::features::kDetectingHeavyPages
-            .name,
-        base::FeatureList::OVERRIDE_ENABLE_FEATURE, trial.get());
-
-    scoped_feature_list_.InitWithFeatureList(std::move(feature_list));
+    scoped_parameterized_feature_list_.InitAndEnableFeatureWithParameters(
+        data_use_measurement::page_load_capping::features::kDetectingHeavyPages,
+        feature_parameters);
+    scoped_feature_list_.InitAndEnableFeature(
+        data_reduction_proxy::features::
+            kDataReductionProxyEnabledWithNetworkService);
 
     https_test_server_.RegisterRequestHandler(base::BindRepeating(
         &PageLoadCappingBrowserTest::HandleRequest, base::Unretained(this)));
@@ -204,6 +200,7 @@ class PageLoadCappingBrowserTest : public InProcessBrowserTest {
   std::unique_ptr<base::RunLoop> run_loop_;
 
   base::test::ScopedFeatureList scoped_feature_list_;
+  base::test::ScopedFeatureList scoped_parameterized_feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_F(PageLoadCappingBrowserTest, PageLoadCappingBlocksLoads) {
@@ -225,7 +222,7 @@ IN_PROC_BROWSER_TEST_F(PageLoadCappingBrowserTest, PageLoadCappingBlocksLoads) {
             "var image = document.createElement('img'); "
             "document.body.appendChild(image); image.src = '")
             .append(kImagePrefix)
-            .append(base::IntToString(i))
+            .append(base::NumberToString(i))
             .append(".png';");
     EXPECT_TRUE(content::ExecuteScript(contents(), create_image_script));
   }
@@ -320,7 +317,7 @@ IN_PROC_BROWSER_TEST_F(PageLoadCappingBrowserTest,
               "var image = document.createElement('img'); "
               "document.body.appendChild(image); image.src = '")
               .append(GetURL(std::string(kImagePrefix)
-                                 .append(base::IntToString(++j))
+                                 .append(base::NumberToString(++j))
                                  .append(".png';"))
                           .spec());
 

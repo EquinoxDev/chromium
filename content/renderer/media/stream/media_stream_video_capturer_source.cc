@@ -13,7 +13,6 @@
 #include "base/location.h"
 #include "base/macros.h"
 #include "base/strings/utf_string_conversions.h"
-#include "content/public/common/media_stream_request.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/media/stream/media_stream_constraints_util.h"
 #include "content/renderer/media/video_capture_impl_manager.h"
@@ -23,6 +22,7 @@
 #include "media/base/video_frame.h"
 #include "media/capture/video_capturer_source.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 
 namespace content {
@@ -38,18 +38,20 @@ class LocalVideoCapturerSource final : public media::VideoCapturerSource {
   explicit LocalVideoCapturerSource(int session_id);
   ~LocalVideoCapturerSource() override;
 
-  // VideoCaptureDelegate Implementation.
+  // VideoCaptureSource Implementation.
   media::VideoCaptureFormats GetPreferredFormats() override;
   void StartCapture(const media::VideoCaptureParams& params,
-                    const VideoCaptureDeliverFrameCB& new_frame_callback,
+                    const blink::VideoCaptureDeliverFrameCB& new_frame_callback,
                     const RunningCallback& running_callback) override;
   void RequestRefreshFrame() override;
   void MaybeSuspend() override;
   void Resume() override;
   void StopCapture() override;
+  void OnFrameDropped(media::VideoCaptureFrameDropReason reason) override;
+  void OnLog(const std::string& message) override;
 
  private:
-  void OnStateUpdate(VideoCaptureState state);
+  void OnStateUpdate(blink::VideoCaptureState state);
 
   // |session_id_| identifies the capture device used for this capture session.
   const media::VideoCaptureSessionId session_id_;
@@ -92,7 +94,7 @@ media::VideoCaptureFormats LocalVideoCapturerSource::GetPreferredFormats() {
 
 void LocalVideoCapturerSource::StartCapture(
     const media::VideoCaptureParams& params,
-    const VideoCaptureDeliverFrameCB& new_frame_callback,
+    const blink::VideoCaptureDeliverFrameCB& new_frame_callback,
     const RunningCallback& running_callback) {
   DCHECK(params.requested_format.IsValid());
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -130,27 +132,46 @@ void LocalVideoCapturerSource::StopCapture() {
     base::ResetAndReturn(&stop_capture_cb_).Run();
 }
 
-void LocalVideoCapturerSource::OnStateUpdate(VideoCaptureState state) {
+void LocalVideoCapturerSource::OnFrameDropped(
+    media::VideoCaptureFrameDropReason reason) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  if (running_callback_.is_null())
+  manager_->OnFrameDropped(session_id_, reason);
+}
+
+void LocalVideoCapturerSource::OnLog(const std::string& message) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  manager_->OnLog(session_id_, message);
+}
+
+void LocalVideoCapturerSource::OnStateUpdate(blink::VideoCaptureState state) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (running_callback_.is_null()) {
+    OnLog("LocalVideoCapturerSource::OnStateUpdate discarding state update.");
     return;
+  }
   switch (state) {
-    case VIDEO_CAPTURE_STATE_STARTED:
+    case blink::VIDEO_CAPTURE_STATE_STARTED:
+      OnLog(
+          "LocalVideoCapturerSource::OnStateUpdate signaling to "
+          "consumer that source is now running.");
       running_callback_.Run(true);
       break;
 
-    case VIDEO_CAPTURE_STATE_STOPPING:
-    case VIDEO_CAPTURE_STATE_STOPPED:
-    case VIDEO_CAPTURE_STATE_ERROR:
-    case VIDEO_CAPTURE_STATE_ENDED:
+    case blink::VIDEO_CAPTURE_STATE_STOPPING:
+    case blink::VIDEO_CAPTURE_STATE_STOPPED:
+    case blink::VIDEO_CAPTURE_STATE_ERROR:
+    case blink::VIDEO_CAPTURE_STATE_ENDED:
       release_device_cb_.Run();
       release_device_cb_ = manager_->UseDevice(session_id_);
+      OnLog(
+          "LocalVideoCapturerSource::OnStateUpdate signaling to "
+          "consumer that source is no longer running.");
       running_callback_.Run(false);
       break;
 
-    case VIDEO_CAPTURE_STATE_STARTING:
-    case VIDEO_CAPTURE_STATE_PAUSED:
-    case VIDEO_CAPTURE_STATE_RESUMED:
+    case blink::VIDEO_CAPTURE_STATE_STARTING:
+    case blink::VIDEO_CAPTURE_STATE_PAUSED:
+    case blink::VIDEO_CAPTURE_STATE_RESUMED:
       // Not applicable to reporting on device starts or errors.
       break;
   }
@@ -176,7 +197,7 @@ MediaStreamVideoCapturerSource::MediaStreamVideoCapturerSource(
 MediaStreamVideoCapturerSource::MediaStreamVideoCapturerSource(
     int render_frame_id,
     const SourceStoppedCallback& stop_callback,
-    const MediaStreamDevice& device,
+    const blink::MediaStreamDevice& device,
     const media::VideoCaptureParams& capture_params)
     : render_frame_id_(render_frame_id),
       source_(new LocalVideoCapturerSource(device.session_id)),
@@ -203,6 +224,17 @@ void MediaStreamVideoCapturerSource::RequestRefreshFrame() {
   source_->RequestRefreshFrame();
 }
 
+void MediaStreamVideoCapturerSource::OnFrameDropped(
+    media::VideoCaptureFrameDropReason reason) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  source_->OnFrameDropped(reason);
+}
+
+void MediaStreamVideoCapturerSource::OnLog(const std::string& message) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  source_->OnLog(message);
+}
+
 void MediaStreamVideoCapturerSource::OnHasConsumers(bool has_consumers) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (has_consumers)
@@ -221,7 +253,7 @@ void MediaStreamVideoCapturerSource::OnCapturingLinkSecured(bool is_secure) {
 }
 
 void MediaStreamVideoCapturerSource::StartSourceImpl(
-    const VideoCaptureDeliverFrameCB& frame_callback) {
+    const blink::VideoCaptureDeliverFrameCB& frame_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   state_ = STARTING;
   frame_callback_ = frame_callback;
@@ -247,7 +279,7 @@ void MediaStreamVideoCapturerSource::StopSourceForRestartImpl() {
 
   // Force state update for nondevice sources, since they do not
   // automatically update state after StopCapture().
-  if (device().type == MEDIA_NO_SERVICE)
+  if (device().type == blink::MEDIA_NO_SERVICE)
     OnRunStateChanged(capture_params_, false);
 }
 
@@ -276,7 +308,7 @@ MediaStreamVideoCapturerSource::GetCurrentCaptureParams() const {
 }
 
 void MediaStreamVideoCapturerSource::ChangeSourceImpl(
-    const MediaStreamDevice& new_device) {
+    const blink::MediaStreamDevice& new_device) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(device_video_capturer_factory_callback_);
 
@@ -300,13 +332,14 @@ void MediaStreamVideoCapturerSource::OnRunStateChanged(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   switch (state_) {
     case STARTING:
+      source_->OnLog("MediaStreamVideoCapturerSource sending OnStartDone");
       if (is_running) {
         state_ = STARTED;
         DCHECK(capture_params_ == new_capture_params);
-        OnStartDone(MEDIA_DEVICE_OK);
+        OnStartDone(blink::MEDIA_DEVICE_OK);
       } else {
         state_ = STOPPED;
-        OnStartDone(MEDIA_DEVICE_TRACK_START_FAILURE_VIDEO);
+        OnStartDone(blink::MEDIA_DEVICE_TRACK_START_FAILURE_VIDEO);
       }
       break;
     case STARTED:
@@ -316,6 +349,8 @@ void MediaStreamVideoCapturerSource::OnRunStateChanged(
       }
       break;
     case STOPPING_FOR_RESTART:
+      source_->OnLog(
+          "MediaStreamVideoCapturerSource sending OnStopForRestartDone");
       state_ = is_running ? STARTED : STOPPED;
       OnStopForRestartDone(!is_running);
       break;
@@ -329,6 +364,7 @@ void MediaStreamVideoCapturerSource::OnRunStateChanged(
       } else {
         state_ = STOPPED;
       }
+      source_->OnLog("MediaStreamVideoCapturerSource sending OnRestartDone");
       OnRestartDone(is_running);
       break;
     case STOPPED:
@@ -336,7 +372,7 @@ void MediaStreamVideoCapturerSource::OnRunStateChanged(
   }
 }
 
-const mojom::MediaStreamDispatcherHostPtr&
+const blink::mojom::MediaStreamDispatcherHostPtr&
 MediaStreamVideoCapturerSource::GetMediaStreamDispatcherHost(
     RenderFrame* render_frame) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);

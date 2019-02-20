@@ -127,12 +127,13 @@
   "angle_perftests": {
     "args": [
       "angle_perftests",
+      "--non-telemetry=true",
       "--test-launcher-print-test-stdio=always",
       "--test-launcher-jobs=1",
       "--test-launcher-retry-limit=0",
     ],
     "label": "//chrome/test:angle_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "angle_translator_fuzzer": {
@@ -251,12 +252,13 @@
   "base_perftests": {
     "args": [
       "base_perftests",
+      "--non-telemetry=true",
       "--test-launcher-print-test-stdio=always",
       "--test-launcher-jobs=1",
       "--test-launcher-retry-limit=0",
     ],
     "label": "//base:base_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "base_unittests": {
@@ -303,6 +305,14 @@
     "label": "//third_party/blink/renderer/platform:blink_png_decoder_fuzzer",
     "type": "fuzzer",
   },
+  "blink_python_tests": {
+    "args": [
+      "../../third_party/blink/tools/run_blinkpy_tests.py",
+    ],
+    "label": "//:blink_python_tests",
+    "script": "//testing/scripts/run_isolated_script_test.py",
+    "type": "script",
+  },
   "blink_tests": {
     "label": "//:blink_tests",
     "type": "additional_compile_target",
@@ -314,6 +324,30 @@
   "blink_text_codec_WINDOWS_1252_fuzzer": {
     "label": "//third_party/blink/renderer/platform:blink_text_codec_WINDOWS_1252_fuzzer",
     "type": "fuzzer",
+  },
+  "blink_unittests": {
+    "label": "//third_party/blink/renderer/controller:blink_unittests",
+    "type": "console_test_launcher",
+  },
+  "blink_web_tests_exparchive": {
+    "args": [
+      "../../third_party/blink/tools/run_web_tests.py",
+      "--seed",
+      "4",
+      "--no-show-results",
+      "--zero-tests-executed-ok",
+      "--clobber-old-results",
+      "--exit-after-n-failures",
+      "5000",
+      "--exit-after-n-crashes-or-timeouts",
+      "100",
+      "--debug-rwt-logging",
+      "--results-directory",
+      "${ISOLATED_OUTDIR}/layout-test-results",
+    ],
+    "label": "//:blink_web_tests_exparchive",
+    "script": "//testing/scripts/run_isolated_script_test.py",
+    "type": "script",
   },
   "boringssl_arm_cpuinfo_fuzzer": {
     "label": "//third_party/boringssl:boringssl_arm_cpuinfo_fuzzer",
@@ -403,16 +437,29 @@
     "label": "//chrome/test:browser_tests",
     "type": "windowed_test_launcher",
   },
+  "browser_tests_apprtc": {
+    "label": "//chrome/test:browser_tests_apprtc",
+    "type": "windowed_test_launcher",
+    "executable": "browser_tests",
+  },
   "cacheinvalidation_unittests": {
     "label": "//third_party/cacheinvalidation:cacheinvalidation_unittests",
     "type": "console_test_launcher",
+  },
+  "captured_sites_interactive_tests": {
+    "label": "//chrome/test:captured_sites_interactive_tests",
+    "type": "windowed_test_launcher",
   },
   "capture_unittests": {
     "label": "//media/capture:capture_unittests",
     "type": "windowed_test_launcher",
   },
-  "castrunner_unittests": {
-    "label": "//webrunner:castrunner_unittests",
+  "cast_runner_browsertests": {
+    "label": "//fuchsia/runners:cast_runner_browsertests",
+    "type": "console_test_launcher",
+  },
+  "cast_runner_integration_tests": {
+    "label": "//fuchsia/runners:cast_runner_integration_tests",
     "type": "console_test_launcher",
   },
   "cast_audio_backend_unittests": {
@@ -567,6 +614,18 @@
     "script": "//testing/xvfb.py",
     "type": "script",
   },
+  "webdriver_wpt_tests": {
+    "label": "//:webdriver_wpt_tests",
+    "type": "script",
+    "script": "//testing/xvfb.py",
+    "args": [
+      "../../chrome/test/chromedriver/test/run_webdriver_tests.py",
+      "-v",
+      "--chromedriver=chromedriver",
+      "--isolated-script-test-output=${ISOLATED_OUTDIR}/results.json",
+      "--test-path=../../third_party/blink/web_tests/external/wpt/webdriver/tests/navigate_to/navigate.py",
+    ],
+  },
   "chromedriver_replay_unittests": {
     "label": "//chrome/test/chromedriver:chromedriver_replay_unittests",
     "script": "//chrome/test/chromedriver/log_replay/client_replay_unittest.py",
@@ -611,11 +670,12 @@
   "command_buffer_perftests": {
     "args": [
       "command_buffer_perftests",
+      "--non-telemetry=true",
       "--adb-path",
       "src/third_party/android_tools/sdk/platform-tools/adb",
     ],
     "label": "//gpu:command_buffer_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "compact_enc_det_fuzzer": {
@@ -641,10 +701,11 @@
   "components_perftests": {
     "args": [
       "--xvfb",
+      "--non-telemetry=true",
       "components_perftests",
     ],
     "label": "//components:components_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "components_policy_junit_tests": {
@@ -710,6 +771,10 @@
   },
   "courgette_unittests": {
     "label": "//courgette:courgette_unittests",
+    "type": "console_test_launcher",
+  },
+  "cr_fuchsia_base_unittests": {
+    "label": "//fuchsia/base:cr_fuchsia_base_unittests",
     "type": "console_test_launcher",
   },
   "crashpad_tests": {
@@ -1017,11 +1082,12 @@
   "gpu_perftests": {
     "args": [
       "gpu_perftests",
+      "--non-telemetry=true",
       "--adb-path",
       "src/third_party/android_tools/sdk/platform-tools/adb",
     ],
     "label": "//gpu:gpu_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "gpu_raster_angle_fuzzer": {
@@ -1068,18 +1134,6 @@
     "label": "//headless:headless_browsertests",
     "type": "console_test_launcher",
   },
-  "headless_lib": {
-    "label": "//headless:headless_lib",
-    "type": "additional_compile_target",
-  },
-  "headless_shell": {
-    "label": "//headless:headless_shell",
-    "type": "additional_compile_target",
-  },
-  "headless_tests": {
-    "label": "//headless:headless_tests",
-    "type": "additional_compile_target",
-  },
   "headless_unittests": {
     "label": "//headless:headless_unittests",
     "type": "console_test_launcher",
@@ -1101,8 +1155,12 @@
     "type": "fuzzer",
   },
   "http_service_tests": {
-    "label": "//webrunner/net_http:http_service_tests",
+    "label": "//fuchsia/http:http_service_tests",
     "type": "console_test_launcher",
+  },
+  "http_structured_header_fuzzer": {
+    "label": "//content/test/fuzzer:http_structured_header_fuzzer",
+    "type": "fuzzer",
   },
   "hunspell_fuzzer": {
     "label": "//third_party/hunspell:hunspell_fuzzer",
@@ -1338,19 +1396,16 @@
   "load_library_perf_tests": {
     "args": [
       "load_library_perf_tests",
+      "--non-telemetry=true",
       "--test-launcher-print-test-stdio=always",
     ],
     "label": "//chrome/test:load_library_perf_tests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "lookup_affiliation_response_parser_fuzzer": {
     "label": "//components/password_manager/core/browser:lookup_affiliation_response_parser_fuzzer",
     "type": "fuzzer",
-  },
-  "mash:all": {
-    "label": "//mash:all",
-    "type": "additional_compile_target",
   },
   "mdns_parser_fuzzer": {
     "label": "//third_party/webrtc/test/fuzzers:mdns_parser_fuzzer",
@@ -1379,12 +1434,13 @@
   "media_perftests": {
     "args": [
       "media_perftests",
+      "--non-telemetry=true",
       "--single-process-tests",
       "--test-launcher-retry-limit=0",
       "--isolated-script-test-filter=*::-*_unoptimized::*_unaligned::*unoptimized_aligned",
     ],
     "label": "//media:media_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "media_pipeline_integration_fuzzer": {
@@ -1778,9 +1834,10 @@
   "net_perftests": {
     "args": [
       "net_perftests",
+      "--non-telemetry=true",
     ],
     "label": "//net:net_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "net_quic_crypto_framer_parse_message_fuzzer": {
@@ -2006,18 +2063,21 @@
   },
   "performance_browser_tests": {
     "args": [
-      "performance_browser_tests",
-      "--test-launcher-print-test-stdio=always",
-      # TODO(crbug.com/759866): Figure out why CastV2PerformanceTest/0 sometimes
-      # takes 15-30 seconds to start up and, once fixed, remove this workaround
-      # (extends the watchdog timeout to 2 minutes, normally 30 seconds).
-      "--test-launcher-timeout=120000",
-      "--gtest_filter=TabCapturePerformanceTest.*:CastV2PerformanceTest.*",
+      "browser_tests",
+      "--non-telemetry=true",
+      "--full-performance-run",
       "--test-launcher-jobs=1",
-      "--enable-gpu",
+      "--test-launcher-retry-limit=0",
+      "--test-launcher-print-test-stdio=always",
+      # Allow the full performance runs to take up to 60 seconds (rather than
+      # the default of 30 for normal CQ browser test runs).
+      "--ui-test-action-timeout=60000",
+      "--ui-test-action-max-timeout=60000",
+      "--test-launcher-timeout=60000",
+      "--gtest_filter=TabCapturePerformanceTest.*:CastV2PerformanceTest.*",
     ],
     "label": "//chrome/test:performance_browser_tests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "performance_test_suite": {
@@ -2205,10 +2265,6 @@
   },
   "signed_exchange_envelope_fuzzer": {
     "label": "//content/test/fuzzer:signed_exchange_envelope_fuzzer",
-    "type": "fuzzer",
-  },
-  "signed_exchange_signature_header_field_fuzzer": {
-    "label": "//content/test/fuzzer:signed_exchange_signature_header_field_fuzzer",
     "type": "fuzzer",
   },
   "skia_image_filter_proto_fuzzer": {
@@ -2427,12 +2483,13 @@
   "tracing_perftests": {
     "args": [
       "tracing_perftests",
+      "--non-telemetry=true",
       "--test-launcher-print-test-stdio=always",
       "--adb-path",
       "src/third_party/android_tools/sdk/platform-tools/adb",
     ],
     "label": "//components/tracing:tracing_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "traffic_annotation_auditor_unittests": {
@@ -2564,21 +2621,14 @@
     "label": "//media/gpu:video_decode_accelerator_unittest",
     "type": "raw",
   },
-  "views_mus_interactive_ui_tests": {
-    "label": "//ui/views/mus:views_mus_interactive_ui_tests",
-    "type": "windowed_test_launcher",
-  },
-  "views_mus_unittests": {
-    "label": "//ui/views/mus:views_mus_unittests",
-    "type": "windowed_test_launcher",
-  },
   "views_perftests": {
     "args": [
       "--xvfb",
+      "--non-telemetry=true",
       "views_perftests",
     ],
     "label": "//ui/views:views_perftests",
-    "script": "//testing/scripts/run_performance_tests_wrapper.py",
+    "script": "//testing/scripts/run_performance_tests.py",
     "type": "script",
   },
   "views_unittests": {
@@ -2612,7 +2662,7 @@
   "vr_common_perftests": {
     "args": [
       "vr_common_perftests",
-      "--non-telemetry=1",
+      "--non-telemetry=true",
       "--adb-path",
       "src/third_party/android_tools/sdk/platform-tools/adb",
     ],
@@ -2652,9 +2702,21 @@
     "label": "//components/exo/wayland:wayland_client_perftests",
     "type": "windowed_test_launcher",
   },
+  "web_engine_browsertests": {
+    "label": "//fuchsia/engine:web_engine_browsertests",
+    "type": "console_test_launcher",
+  },
+  "web_engine_unittests": {
+    "label": "//fuchsia/engine:web_engine_unittests",
+    "type": "console_test_launcher",
+  },
   "web_icon_sizes_fuzzer": {
     "label": "//third_party/blink/renderer/platform:web_icon_sizes_fuzzer",
     "type": "fuzzer",
+  },
+  "web_runner_integration_tests": {
+    "label": "//fuchsia/runners:web_runner_integration_tests",
+    "type": "console_test_launcher",
   },
   "webapk_client_junit_tests": {
     "label": "//chrome/android/webapk/libs/client:webapk_client_junit_tests",
@@ -2690,7 +2752,6 @@
   },
   "webkit_layout_tests": {
     "args": [
-      "--xvfb",
       "../../third_party/blink/tools/run_web_tests.py",
       "--clobber-old-results",
       "--debug-rwt-logging",
@@ -2698,50 +2759,9 @@
       "--results-directory",
       "${ISOLATED_OUTDIR}/layout-test-results",
     ],
-    "label": "//:webkit_layout_tests",
+    "label": "//:blink_web_tests",
     "script": "//testing/scripts/run_isolated_script_test.py",
     "type": "script",
-  },
-  "webkit_layout_tests_exparchive": {
-    "args": [
-      "--xvfb",
-      "../../third_party/blink/tools/run_web_tests.py",
-      "--seed",
-      "4",
-      "--no-show-results",
-      "--zero-tests-executed-ok",
-      "--clobber-old-results",
-      "--exit-after-n-failures",
-      "5000",
-      "--exit-after-n-crashes-or-timeouts",
-      "100",
-      "--debug-rwt-logging",
-      "--results-directory",
-      "${ISOLATED_OUTDIR}/layout-test-results",
-    ],
-    "label": "//:webkit_layout_tests_exparchive",
-    "script": "//testing/scripts/run_isolated_script_test.py",
-    "type": "script",
-  },
-  "webkit_python_tests": {
-    "args": [
-      "../../third_party/blink/tools/run_blinkpy_tests.py",
-    ],
-    "label": "//:webkit_python_tests",
-    "script": "//testing/scripts/run_isolated_script_test.py",
-    "type": "script",
-  },
-  "webkit_unit_tests": {
-    "label": "//third_party/blink/renderer/controller:webkit_unit_tests",
-    "type": "console_test_launcher",
-  },
-  "webrunner_browsertests": {
-    "label": "//webrunner:webrunner_browsertests",
-    "type": "console_test_launcher",
-  },
-  "webrunner_unittests": {
-    "label": "//webrunner:webrunner_unittests",
-    "type": "console_test_launcher",
   },
   "webusb_descriptors_fuzzer": {
     "label": "//device/usb:webusb_descriptors_fuzzer",
@@ -2749,16 +2769,11 @@
   },
   "webview_cts_tests": {
     "args": [
-      "remove",
-      "--package",
-      "com.android.webview",
-      "com.google.android.webview",
-      "com.android.chrome",
-      "-v",
-      "--",
+      "--logdog-bin-cmd",
+      "../../bin/logdog_butler",
       "../../android_webview/tools/run_cts.py",
       "--skip-expected-failures",
-      "--additional-apk",
+      "--use-webview-provider",
       "apks/SystemWebView.apk",
       "--apk-under-test",
       "apks/SystemWebView.apk",
@@ -2766,7 +2781,7 @@
       "-v",
     ],
     "label": "//android_webview/test:webview_cts_tests",
-    "script": "//third_party/catapult/devil/devil/android/tools/system_app.py",
+    "script": "//build/android/test_wrapper/logdog_wrapper.py",
     "type": "script",
   },
   "webview_instrumentation_test_apk": {

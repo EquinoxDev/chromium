@@ -11,8 +11,6 @@ namespace learning {
 
 Value::Value() = default;
 
-Value::Value(int x) : value_(x) {}
-
 Value::Value(const char* x) {
   // std::hash would be nice, but it can (and does) change values between
   // different instances of the class.  In other words, Value("foo") !=
@@ -24,6 +22,12 @@ Value::Value(const char* x) {
 Value::Value(const std::string& x) : value_(base::PersistentHash(x)) {}
 
 Value::Value(const Value& other) : value_(other.value_) {}
+
+Value::Value(Value&& rhs) noexcept = default;
+
+Value& Value::operator=(const Value& rhs) = default;
+
+Value& Value::operator=(Value&& rhs) noexcept = default;
 
 bool Value::operator==(const Value& rhs) const {
   return value_ == rhs.value_;

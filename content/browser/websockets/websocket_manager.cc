@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
@@ -82,8 +83,10 @@ class WebSocketManager::Delegate final : public network::WebSocket::Delegate {
   }
 
   bool CanReadRawCookies(const GURL& url) override {
-    return ChildProcessSecurityPolicyImpl::GetInstance()->CanReadRawCookies(
-        manager_->process_id_);
+    ChildProcessSecurityPolicyImpl* impl =
+        ChildProcessSecurityPolicyImpl::GetInstance();
+    return impl->CanReadRawCookies(manager_->process_id_) &&
+           impl->CanAccessDataForWebSocket(manager_->process_id_, url);
   }
 
   void OnCreateURLRequest(int child_id,

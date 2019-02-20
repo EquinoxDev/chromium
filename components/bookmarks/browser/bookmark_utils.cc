@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/string_search.h"
@@ -460,8 +459,7 @@ void RegisterManagedBookmarksPrefs(PrefRegistrySimple* registry) {
   // will cause a deadlock (see http://crbug.com/97955).  If we truly
   // want to sync the expanded state of folders, it should be part of
   // bookmark sync itself (i.e., a property of the sync folder nodes).
-  registry->RegisterListPref(prefs::kBookmarkEditorExpandedNodes,
-                             std::make_unique<base::ListValue>());
+  registry->RegisterListPref(prefs::kBookmarkEditorExpandedNodes);
   registry->RegisterListPref(prefs::kManagedBookmarks);
   registry->RegisterStringPref(
       prefs::kManagedBookmarksFolderName, std::string());

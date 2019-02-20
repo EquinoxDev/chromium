@@ -70,7 +70,8 @@ void LocalStorageCachedAreas::CloneNamespace(
             .first;
     storage_partition_service_->OpenSessionStorage(
         source_namespace,
-        mojo::MakeRequest(&namespace_it->second.session_storage_namespace));
+        mojo::MakeRequest(&namespace_it->second.session_storage_namespace),
+        base::DoNothing());
   }
   DCHECK(namespace_it->second.session_storage_namespace);
   namespace_it->second.session_storage_namespace->Clone(destination_namespace);
@@ -134,7 +135,6 @@ scoped_refptr<LocalStorageCachedArea> LocalStorageCachedAreas::GetCachedArea(
     LOCAL_HISTOGRAM_ENUMERATION("SessionStorage.RendererAreaCacheHit", metric);
 
   if (!result) {
-    ClearAreasIfNeeded();
     if (!dom_namespace) {
       dom_namespace = &cached_namespaces_[namespace_id];
     }
@@ -148,13 +148,15 @@ scoped_refptr<LocalStorageCachedArea> LocalStorageCachedAreas::GetCachedArea(
       if (!dom_namespace->session_storage_namespace) {
         storage_partition_service_->OpenSessionStorage(
             namespace_id,
-            mojo::MakeRequest(&dom_namespace->session_storage_namespace));
+            mojo::MakeRequest(&dom_namespace->session_storage_namespace),
+            base::DoNothing());
       }
       result = base::MakeRefCounted<LocalStorageCachedArea>(
           namespace_id, origin, dom_namespace->session_storage_namespace.get(),
           this, scheduler);
     }
     dom_namespace->cached_areas.emplace(origin, result);
+    ClearAreasIfNeeded();
   }
   return result;
 }

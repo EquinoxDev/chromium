@@ -6,6 +6,11 @@
 
 #include <algorithm>
 
+// TODO(crbug.com/636188): required to implement ViewHierarchyContainsWKWebView
+// for -drawViewHierarchyInRect:afterScreenUpdates:, remove once the workaround
+// is no longer needed.
+#import <WebKit/WebKit.h>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/task/post_task.h"
@@ -13,18 +18,41 @@
 #import "ios/chrome/browser/snapshots/snapshot_cache.h"
 #import "ios/chrome/browser/snapshots/snapshot_cache_factory.h"
 #import "ios/chrome/browser/snapshots/snapshot_generator_delegate.h"
-#import "ios/chrome/browser/snapshots/snapshot_overlay.h"
 #include "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/web/public/web_state/web_state.h"
 #import "ios/web/public/web_state/web_state_observer_bridge.h"
 #include "ios/web/public/web_task_traits.h"
 #include "ios/web/public/web_thread.h"
+#include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/image/image.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
+
+namespace {
+
+// Contains information needed for snapshotting.
+struct SnapshotInfo {
+  UIView* baseView;
+  CGRect snapshotFrameInBaseView;
+  CGRect snapshotFrameInWindow;
+  NSArray<UIView*>* overlays;
+};
+
+// Returns YES if |view| or any view it contains is a WKWebView.
+BOOL ViewHierarchyContainsWKWebView(UIView* view) {
+  if ([view isKindOfClass:[WKWebView class]])
+    return YES;
+  for (UIView* subview in view.subviews) {
+    if (ViewHierarchyContainsWKWebView(subview))
+      return YES;
+  }
+  return NO;
+}
+
+}  // namespace
 
 @interface SnapshotGenerator ()<CRWWebStateObserver>
 
@@ -104,13 +132,8 @@
 }
 
 - (void)updateWebViewSnapshotWithCompletion:(void (^)(UIImage*))completion {
-  DCHECK(self.webState);
-  UIView* snapshotView = [self.delegate snapshotGenerator:self
-                                      baseViewForWebState:self.webState];
-  CGRect snapshotFrame =
-      [self.webState->GetView() convertRect:[self snapshotFrame]
-                                   fromView:snapshotView];
-  if (CGRectIsEmpty(snapshotFrame)) {
+  DCHECK(self.webState->ContentIsHTML());
+  if (![self canTakeSnapshot]) {
     if (completion) {
       base::PostTaskWithTraits(FROM_HERE, {web::WebThread::UI},
                                base::BindOnce(^{
@@ -119,23 +142,23 @@
     }
     return;
   }
-  CGSize size = snapshotFrame.size;
-  DCHECK(std::isnormal(size.width) && (size.width > 0))
-      << ": snapshotFrame.size.width=" << size.width;
-  DCHECK(std::isnormal(size.height) && (size.height > 0))
-      << ": snapshotFrame.size.height=" << size.height;
-  NSArray<SnapshotOverlay*>* overlays =
-      [self.delegate snapshotGenerator:self
-           snapshotOverlaysForWebState:self.webState];
-
+  SnapshotInfo snapshotInfo = [self getSnapshotInfo];
+  CGRect snapshotFrameInWebView =
+      [self.webState->GetView() convertRect:snapshotInfo.snapshotFrameInBaseView
+                                   fromView:snapshotInfo.baseView];
   [self.delegate snapshotGenerator:self
       willUpdateSnapshotForWebState:self.webState];
   __weak SnapshotGenerator* weakSelf = self;
   self.webState->TakeSnapshot(
-      snapshotFrame, base::BindOnce(^(const gfx::Image& image) {
-        UIImage* snapshot = [weakSelf snapshotWithOverlays:overlays
-                                                     image:image
-                                                     frame:snapshotFrame];
+      gfx::RectF(snapshotFrameInWebView),
+      base::BindOnce(^(const gfx::Image& image) {
+        UIImage* snapshot = nil;
+        if (!image.IsEmpty()) {
+          snapshot = [weakSelf
+              snapshotWithOverlays:snapshotInfo.overlays
+                         baseImage:image.ToUIImage()
+                     frameInWindow:snapshotInfo.snapshotFrameInWindow];
+        }
         [weakSelf updateSnapshotCacheWithImage:snapshot];
         if (completion)
           completion(snapshot);
@@ -143,23 +166,18 @@
 }
 
 - (UIImage*)generateSnapshotWithOverlays:(BOOL)shouldAddOverlay {
-  CGRect frame = [self snapshotFrame];
-  if (CGRectIsEmpty(frame))
+  if (![self canTakeSnapshot])
     return nil;
-
-  NSArray<SnapshotOverlay*>* overlays =
-      shouldAddOverlay ? [self.delegate snapshotGenerator:self
-                              snapshotOverlaysForWebState:self.webState]
-                       : nil;
-
+  SnapshotInfo snapshotInfo = [self getSnapshotInfo];
   [self.delegate snapshotGenerator:self
       willUpdateSnapshotForWebState:self.webState];
-  UIView* view = [self.delegate snapshotGenerator:self
-                              baseViewForWebState:self.webState];
-  UIImage* snapshot = [self generateSnapshotForView:view
-                                           withRect:frame
-                                           overlays:overlays];
-  return snapshot;
+  UIImage* baseImage =
+      [self snapshotBaseView:snapshotInfo.baseView
+             frameInBaseView:snapshotInfo.snapshotFrameInBaseView];
+  return [self
+      snapshotWithOverlays:(shouldAddOverlay ? snapshotInfo.overlays : nil)
+                 baseImage:baseImage
+             frameInWindow:snapshotInfo.snapshotFrameInWindow];
 }
 
 - (void)removeSnapshot {
@@ -168,127 +186,91 @@
 
 #pragma mark - Private methods
 
-// Returns the frame of the snapshot. Will return an empty rectangle if the
-// WebState is not ready to capture a snapshot.
-- (CGRect)snapshotFrame {
+// Returns NO if WebState or the view is not ready for snapshot.
+- (BOOL)canTakeSnapshot {
+  // This allows for easier unit testing of classes that use SnapshotGenerator.
+  if (!self.delegate)
+    return NO;
+
   // Do not generate a snapshot if web usage is disabled (as the WebState's
   // view is blank in that case).
   if (!self.webState->IsWebUsageEnabled())
-    return CGRectZero;
+    return NO;
 
-  // Do not generate a snapshot if the delegate says the WebState view is
-  // not ready (this generally mean a placeholder is displayed).
-  if (self.delegate && ![self.delegate snapshotGenerator:self
-                              canTakeSnapshotForWebState:self.webState])
-    return CGRectZero;
-
-  UIView* view = [self.delegate snapshotGenerator:self
-                              baseViewForWebState:self.webState];
-  UIEdgeInsets headerInsets = [self.delegate snapshotGenerator:self
-                                 snapshotEdgeInsetsForWebState:self.webState];
-  return UIEdgeInsetsInsetRect(view.bounds, headerInsets);
+  return [self.delegate snapshotGenerator:self
+               canTakeSnapshotForWebState:self.webState];
 }
 
-// Takes a snapshot for the supplied view (which should correspond to the given
-// type of web view). Returns an autoreleased image cropped and scaled
-// appropriately. The image can also contain overlays (if |overlays| is not
-// nil and not empty).
-- (UIImage*)generateSnapshotForView:(UIView*)view
-                           withRect:(CGRect)rect
-                           overlays:(NSArray<SnapshotOverlay*>*)overlays {
-  DCHECK(view);
-  CGSize size = rect.size;
-  DCHECK(std::isnormal(size.width) && (size.width > 0))
-      << ": size.width=" << size.width;
-  DCHECK(std::isnormal(size.height) && (size.height > 0))
-      << ": size.height=" << size.height;
+// Returns a snapshot of |baseView| with |frameInBaseView|.
+- (UIImage*)snapshotBaseView:(UIView*)baseView
+             frameInBaseView:(CGRect)frameInBaseView {
+  DCHECK(baseView);
+  DCHECK(!CGRectIsEmpty(frameInBaseView));
   const CGFloat kScale =
       std::max<CGFloat>(1.0, [self.snapshotCache snapshotScaleForDevice]);
-  UIGraphicsBeginImageContextWithOptions(size, YES, kScale);
+  UIGraphicsBeginImageContextWithOptions(frameInBaseView.size, YES, kScale);
   CGContext* context = UIGraphicsGetCurrentContext();
-  DCHECK(context);
-
-  BOOL useDrawViewHierarchy = base::FeatureList::IsEnabled(kSnapshotDrawView);
+  // This shifts the origin of the context to be the origin of the snapshot
+  // frame.
+  CGContextTranslateCTM(context, -frameInBaseView.origin.x,
+                        -frameInBaseView.origin.y);
   BOOL snapshotSuccess = YES;
-  CGContextSaveGState(context);
-  CGContextTranslateCTM(context, -rect.origin.x, -rect.origin.y);
-  if (useDrawViewHierarchy) {
-    snapshotSuccess =
-        [view drawViewHierarchyInRect:view.bounds afterScreenUpdates:NO];
+
+  // TODO(crbug.com/636188): |-drawViewHierarchyInRect:afterScreenUpdates:| is
+  // buggy on iOS 8/9/10 (and state is unknown for iOS 11) causing GPU glitches,
+  // screen redraws during animations, broken pinch to dismiss on tablet, etc.
+  // Ensure iOS 11 is not affected by these issues before turning on
+  // |kSnapshotDrawView| experiment. On the other hand, |-renderInContext:| is
+  // buggy for WKWebView, which is used for some Chromium pages such as "No
+  // internet" or "Site can't be reached".
+  BOOL useDrawViewHierarchy = ViewHierarchyContainsWKWebView(baseView) ||
+                              base::FeatureList::IsEnabled(kSnapshotDrawView);
+  // |drawViewHierarchyInRect:| has undefined behavior when the view is not
+  // in the visible view hierarchy. In practice, when this method is called
+  // on a view that is part of view controller containment and not in the view
+  // hierarchy, an UIViewControllerHierarchyInconsistency exception will be
+  // thrown.
+  if (useDrawViewHierarchy && baseView.window) {
+    snapshotSuccess = [baseView drawViewHierarchyInRect:baseView.bounds
+                                     afterScreenUpdates:YES];
   } else {
-    [[view layer] renderInContext:context];
-  }
-  if ([overlays count]) {
-    for (SnapshotOverlay* overlay in overlays) {
-      // Render the overlay view at the desired offset. It is achieved
-      // by shifting origin of context because view frame is ignored when
-      // drawing to context.
-      CGContextSaveGState(context);
-      CGContextTranslateCTM(context, 0, overlay.yOffset);
-      // |drawViewHierarchyInRect:| has undefined behavior when the view is not
-      // in the visible view hierarchy. In practice, when this method is called
-      // on a view that is part of view controller containment, an
-      // UIViewControllerHierarchyInconsistency exception will be thrown.
-      if (useDrawViewHierarchy && overlay.view.window) {
-        [overlay.view drawViewHierarchyInRect:overlay.view.bounds
-                           afterScreenUpdates:YES];
-      } else {
-        [[overlay.view layer] renderInContext:context];
-      }
-      CGContextRestoreGState(context);
-    }
+    [[baseView layer] renderInContext:context];
   }
   UIImage* image = nil;
   if (snapshotSuccess)
     image = UIGraphicsGetImageFromCurrentImageContext();
-  CGContextRestoreGState(context);
   UIGraphicsEndImageContext();
   return image;
 }
 
-// Returns an image of the |image| overlaid with |overlays| with the given
-// |frame|.
-- (UIImage*)snapshotWithOverlays:(NSArray<SnapshotOverlay*>*)overlays
-                           image:(const gfx::Image&)image
-                           frame:(CGRect)frame {
-  if (image.IsEmpty())
+// Returns an image of the |baseImage| overlaid with |overlays| with the given
+// |frameInWindow|.
+- (UIImage*)snapshotWithOverlays:(NSArray<UIView*>*)overlays
+                       baseImage:(UIImage*)baseImage
+                   frameInWindow:(CGRect)frameInWindow {
+  DCHECK(!CGRectIsEmpty(frameInWindow));
+  if (!baseImage)
     return nil;
+  DCHECK(CGSizeEqualToSize(baseImage.size, frameInWindow.size));
   if (overlays.count == 0)
-    return image.ToUIImage();
-  CGSize size = frame.size;
-  DCHECK(std::isnormal(size.width) && (size.width > 0))
-      << ": size.width=" << size.width;
-  DCHECK(std::isnormal(size.height) && (size.height > 0))
-      << ": size.height=" << size.height;
+    return baseImage;
   const CGFloat kScale =
       std::max<CGFloat>(1.0, [self.snapshotCache snapshotScaleForDevice]);
-  UIGraphicsBeginImageContextWithOptions(size, YES, kScale);
+  UIGraphicsBeginImageContextWithOptions(frameInWindow.size, YES, kScale);
   CGContext* context = UIGraphicsGetCurrentContext();
-  DCHECK(context);
-  CGContextSaveGState(context);
-  [image.ToUIImage() drawAtPoint:CGPointZero];
-  for (SnapshotOverlay* overlay in overlays) {
-    // Render the overlay view at the desired offset. It is achieved
-    // by shifting origin of context because view frame is ignored when
-    // drawing to context.
-    CGContextSaveGState(context);
-    CGContextTranslateCTM(context, 0, overlay.yOffset - frame.origin.y);
-    // |drawViewHierarchyInRect:| has undefined behavior when the view is not in
-    // the visible view hierarchy. In practice, when this method is called on a
-    // view that is part of view controller containment, an
-    // UIViewControllerHierarchyInconsistency exception will be thrown.
-    if (overlay.view.window) {
-      [overlay.view drawViewHierarchyInRect:overlay.view.bounds
-                         afterScreenUpdates:YES];
-    } else {
-      [[overlay.view layer] renderInContext:context];
-    }
-    CGContextRestoreGState(context);
-  }
-  UIImage* snapshotWithOverlays = UIGraphicsGetImageFromCurrentImageContext();
-  CGContextRestoreGState(context);
+  // The base image is already a cropped snapshot so it is drawn at the origin
+  // of the new image.
+  [baseImage drawAtPoint:CGPointZero];
+  // This shifts the origin of the context so that future drawings can be in
+  // window coordinates. For example, suppose that the desired snapshot area is
+  // at (0, 99) in the window coordinate space. Drawing at (0, 99) will appear
+  // as (0, 0) in the resulting image.
+  CGContextTranslateCTM(context, -frameInWindow.origin.x,
+                        -frameInWindow.origin.y);
+  [self drawOverlays:overlays context:context];
+  UIImage* snapshot = UIGraphicsGetImageFromCurrentImageContext();
   UIGraphicsEndImageContext();
-  return snapshotWithOverlays;
+  return snapshot;
 }
 
 // Updates the snapshot cache with |snapshot|.
@@ -299,6 +281,49 @@
     // Remove any stale snapshot since the snapshot failed.
     [self.snapshotCache removeImageWithSessionID:self.sessionID];
   }
+}
+
+// Draws |overlays| onto |context| at offsets relative to the window.
+- (void)drawOverlays:(NSArray<UIView*>*)overlays context:(CGContext*)context {
+  for (UIView* overlay in overlays) {
+    CGContextSaveGState(context);
+    CGRect frameInWindow = [overlay.superview convertRect:overlay.frame
+                                                   toView:nil];
+    // This shifts the context so that drawing starts at the overlay's offset.
+    CGContextTranslateCTM(context, frameInWindow.origin.x,
+                          frameInWindow.origin.y);
+    // |drawViewHierarchyInRect:| has undefined behavior when the view is not
+    // in the visible view hierarchy. In practice, when this method is called
+    // on a view that is part of view controller containment, an
+    // UIViewControllerHierarchyInconsistency exception will be thrown.
+    if (base::FeatureList::IsEnabled(kSnapshotDrawView) && overlay.window) {
+      // The rect's origin is ignored. Only size is used.
+      [overlay drawViewHierarchyInRect:overlay.bounds afterScreenUpdates:YES];
+    } else {
+      [[overlay layer] renderInContext:context];
+    }
+    CGContextRestoreGState(context);
+  }
+}
+
+// Retrieves information needed for snapshotting.
+- (SnapshotInfo)getSnapshotInfo {
+  SnapshotInfo snapshotInfo;
+  snapshotInfo.baseView = [self.delegate snapshotGenerator:self
+                                       baseViewForWebState:self.webState];
+  DCHECK(snapshotInfo.baseView);
+  UIEdgeInsets baseViewInsets = [self.delegate snapshotGenerator:self
+                                   snapshotEdgeInsetsForWebState:self.webState];
+  snapshotInfo.snapshotFrameInBaseView =
+      UIEdgeInsetsInsetRect(snapshotInfo.baseView.bounds, baseViewInsets);
+  DCHECK(!CGRectIsEmpty(snapshotInfo.snapshotFrameInBaseView));
+  snapshotInfo.snapshotFrameInWindow =
+      [snapshotInfo.baseView convertRect:snapshotInfo.snapshotFrameInBaseView
+                                  toView:nil];
+  DCHECK(!CGRectIsEmpty(snapshotInfo.snapshotFrameInWindow));
+  snapshotInfo.overlays = [self.delegate snapshotGenerator:self
+                               snapshotOverlaysForWebState:self.webState];
+  return snapshotInfo;
 }
 
 #pragma mark - Properties

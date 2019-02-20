@@ -8,6 +8,7 @@ namespace credential_provider {
 
 // Names of keys returned on json data from UI process.
 const char kKeyEmail[] = "email";
+const char kKeyPicture[] = "picture";
 const char kKeyFullname[] = "full_name";
 const char kKeyId[] = "id";
 const char kKeyMdmUrl[] = "mdm_url";
@@ -18,12 +19,14 @@ const char kKeyAccessToken[] = "access_token";
 const char kKeySID[] = "sid";
 const char kKeyTokenHandle[] = "token_handle";
 const char kKeyUsername[] = "user_name";
+const char kKeyDomain[] = "domain";
 const char kKeyExitCode[] = "exit_code";
 
 // Name of registry value that holds user properties.
 const wchar_t kUserTokenHandle[] = L"th";
 const wchar_t kUserEmail[] = L"email";
 const wchar_t kUserId[] = L"id";
+const wchar_t kUserPictureUrl[] = L"pic";
 
 // Username and password key for special GAIA account to run GLS.
 const wchar_t kDefaultGaiaAccountName[] = L"gaia";
@@ -43,6 +46,10 @@ const wchar_t kRegUpdaterClientStateAppPath[] =
 const wchar_t kRegUpdaterClientsAppPath[] =
     L"SOFTWARE\\Google\\Update\\Clients\\" GCPW_UPDATE_CLIENT_GUID;
 
+// Google MDM related registry paths.
+const wchar_t kRegMdmUrl[] = L"mdm";
+const wchar_t kRegMdmSupportsMultiUser[] = L"mdm_mu";
+
 // Chrome is being opened to show the credential provider logon page.  This
 // page is always shown in incognito mode.
 const char kGcpwSigninSwitch[] = "gcpw-signin";
@@ -59,11 +66,16 @@ const char kEmailDomainsSwitch[] = "email-domains";
 // match after signin, no LST will be minted and an error will be reported.
 const char kGaiaIdSwitch[] = "gaia-id";
 
+// Allows specification of the gaia endpoint to use to display the signin page
+// for GCPW.
+const char kGcpwEndpointPathSwitch[] = "gcpw-endpoint-path";
+
 // Parameter appended to sign in URL to pass valid signin domains to the inline
 // login handler. These domains are separated by ','.
 const char kEmailDomainsSigninPromoParameter[] = "emailDomains";
 const char kEmailDomainsSeparator[] = ",";
 const char kValidateGaiaIdSigninPromoParameter[] = "validate_gaia_id";
+const char kGcpwEndpointPathPromoParameter[] = "gcpw_endpoint_path";
 
 const wchar_t kRunAsCrashpadHandlerEntryPoint[] = L"RunAsCrashpadHandler";
 

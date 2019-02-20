@@ -45,10 +45,20 @@ source_set("wayland") {
     "wayland_touch_delegate.h",
     "wayland_watcher.cc",
     "wayland_watcher.h",
+    "wl_compositor.cc",
+    "wl_compositor.h",
+    "wl_data_device_manager.cc",
+    "wl_data_device_manager.h",
     "wl_output.cc",
     "wl_output.h",
     "wl_seat.cc",
     "wl_seat.h",
+    "wl_shm.cc",
+    "wl_shm.h",
+    "wl_subcompositor.cc",
+    "wl_subcompositor.h",
+    "zcr_vsync_feedback.cc",
+    "zcr_vsync_feedback.h",
   ]
 
   defines = [ "EXO_IMPLEMENTATION" ]
@@ -79,6 +89,8 @@ source_set("wayland") {
       "zcr_stylus_tools.h",
       "zwp_input_timestamps_manager.cc",
       "zwp_input_timestamps_manager.h",
+      "zwp_linux_explicit_synchronization.cc",
+      "zwp_linux_explicit_synchronization.h",
       "zwp_pointer_gestures.cc",
       "zwp_pointer_gestures.h",
       "zwp_text_input_manager.cc",
@@ -91,7 +103,7 @@ source_set("wayland") {
   deps = [
     "//base",
     "//components/exo",
-    "//components/exo/wayland/public:aura_shell_protocol",
+    "//components/exo/wayland/protocol:aura_shell_protocol",
     "//device/gamepad",
     "//services/viz/public/interfaces",
     "//skia",
@@ -102,6 +114,7 @@ source_set("wayland") {
     "//third_party/wayland-protocols:input_timestamps_protocol",
     "//third_party/wayland-protocols:keyboard_configuration_protocol",
     "//third_party/wayland-protocols:keyboard_extension_protocol",
+    "//third_party/wayland-protocols:linux_explicit_synchronization_protocol",
     "//third_party/wayland-protocols:notification_shell_protocol",
     "//third_party/wayland-protocols:pointer_gestures_protocol",
     "//third_party/wayland-protocols:presentation_time_protocol",
@@ -124,6 +137,11 @@ source_set("wayland") {
   ]
 
   if (use_ozone) {
+    sources += [
+      "zwp_linux_dmabuf.cc",
+      "zwp_linux_dmabuf.h",
+    ]
+
     deps += [
       "//build/config/linux/libdrm",
       "//third_party/wayland-protocols:linux_dmabuf_protocol",
@@ -168,6 +186,14 @@ source_set("unit_tests") {
     "//testing/gtest",
     "//third_party/wayland:wayland_client",
   ]
+
+  if (is_chromeos) {
+    sources += [ "server_util_unittest.cc" ]
+    deps += [
+      "//ui/display",
+      "//ui/gfx",
+    ]
+  }
 }
 
 config("client_support_config") {
@@ -189,17 +215,18 @@ source_set("client_support") {
 
   deps = [
     "//base",
-    "//components/exo/wayland/public:aura_shell_protocol",
     "//ui/gl",
     "//ui/gl/init",
   ]
 
   public_deps = [
+    "//components/exo/wayland/protocol:aura_shell_protocol",
     "//skia",
     "//third_party/wayland:wayland_client",
     "//third_party/wayland-protocols:fullscreen_shell_protocol",
     "//third_party/wayland-protocols:input_timestamps_protocol",
     "//third_party/wayland-protocols:linux_dmabuf_protocol",
+    "//third_party/wayland-protocols:linux_explicit_synchronization_protocol",
     "//third_party/wayland-protocols:presentation_time_protocol",
   ]
 
@@ -452,6 +479,25 @@ if (ozone_platform_gbm) {
     configs += [ "//ui/gl:gl_config" ]
     deps += [ "//third_party/minigbm" ]
   }
+
+  executable("wayland_explicit_synchronization_client") {
+    sources = [
+      "clients/explicit_synchronization.cc",
+    ]
+
+    deps = [
+      ":client_support",
+      "//base",
+      "//build/config/linux/libdrm",
+      "//skia",
+      "//third_party/wayland:wayland_client",
+      "//third_party/wayland-protocols:linux_explicit_synchronization_protocol",
+      "//ui/gl",
+    ]
+
+    configs += [ "//ui/gl:gl_config" ]
+  }
+
   if (enable_vulkan_wayland_client) {
     executable("wayland_vulkan_client") {
       sources = [

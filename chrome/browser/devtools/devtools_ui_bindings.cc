@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/guid.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -57,7 +58,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
@@ -69,6 +69,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "third_party/blink/public/public_buildflags.h"
 #include "ui/base/page_transition_types.h"
 
@@ -163,7 +164,7 @@ class DefaultBindingsDelegate : public DevToolsUIBindings::Delegate {
   void SetOpenNewWindowForPopups(bool value) override {}
   InfoBarService* GetInfoBarService() override;
   void RenderProcessGone(bool crashed) override {}
-  void ShowCertificateViewer(const std::string& cert_chain) override{};
+  void ShowCertificateViewer(const std::string& cert_chain) override {}
 
   content::WebContents* web_contents_;
   DISALLOW_COPY_AND_ASSIGN(DefaultBindingsDelegate);
@@ -426,7 +427,6 @@ class DevToolsUIBindings::FrontendWebContentsObserver
   void RenderProcessGone(base::TerminationStatus status) override;
   void ReadyToCommitNavigation(
       content::NavigationHandle* navigation_handle) override;
-  void DocumentAvailableInMainFrame() override;
   void DocumentOnLoadCompletedInMainFrame() override;
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
@@ -495,11 +495,6 @@ void DevToolsUIBindings::FrontendWebContentsObserver::ReadyToCommitNavigation(
 }
 
 void DevToolsUIBindings::FrontendWebContentsObserver::
-    DocumentAvailableInMainFrame() {
-  devtools_bindings_->DocumentAvailableInMainFrame();
-}
-
-void DevToolsUIBindings::FrontendWebContentsObserver::
     DocumentOnLoadCompletedInMainFrame() {
   devtools_bindings_->DocumentOnLoadCompletedInMainFrame();
 }
@@ -532,7 +527,6 @@ DevToolsUIBindings::DevToolsUIBindings(content::WebContents* web_contents)
       delegate_(new DefaultBindingsDelegate(web_contents_)),
       devices_updates_enabled_(false),
       frontend_loaded_(false),
-      reloading_(false),
       weak_factory_(this) {
   g_devtools_ui_bindings_instances.Get().push_back(this);
   frontend_contents_observer_.reset(new FrontendWebContentsObserver(this));
@@ -577,7 +571,8 @@ void DevToolsUIBindings::HandleMessageFromDevToolsFrontend(
   base::ListValue* params = &empty_params;
 
   base::DictionaryValue* dict = NULL;
-  std::unique_ptr<base::Value> parsed_message = base::JSONReader::Read(message);
+  std::unique_ptr<base::Value> parsed_message =
+      base::JSONReader::ReadDeprecated(message);
   if (!parsed_message ||
       !parsed_message->GetAsDictionary(&dict) ||
       !dict->GetString(kFrontendHostMethod, &method) ||
@@ -600,7 +595,7 @@ void DevToolsUIBindings::HandleMessageFromDevToolsFrontend(
 void DevToolsUIBindings::DispatchProtocolMessage(
     content::DevToolsAgentHost* agent_host, const std::string& message) {
   DCHECK(agent_host == agent_host_.get());
-  if (!frontend_host_ || reloading_)
+  if (!frontend_host_)
     return;
 
   if (message.length() < kMaxMessageChunkSize) {
@@ -725,6 +720,9 @@ void DevToolsUIBindings::LoadNetworkResource(const DispatchCallback& callback,
 
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->url = gurl;
+  // TODO(caseq): this preserves behavior of URLFetcher-based implementation.
+  // We really need to pass proper first party origin from the front-end.
+  resource_request->site_for_cookies = gurl;
   resource_request->headers.AddHeadersFromString(headers);
 
   auto* partition = content::BrowserContext::GetStoragePartitionForSite(
@@ -809,7 +807,7 @@ void DevToolsUIBindings::IndexPath(
     return;
   std::vector<std::string> excluded_folders;
   std::unique_ptr<base::Value> parsed_excluded_folders =
-      base::JSONReader::Read(excluded_folders_message);
+      base::JSONReader::ReadDeprecated(excluded_folders_message);
   if (parsed_excluded_folders && parsed_excluded_folders->is_list()) {
     const std::vector<base::Value>& folder_paths =
         parsed_excluded_folders->GetList();
@@ -894,7 +892,7 @@ void DevToolsUIBindings::SetDevicesDiscoveryConfig(
     const std::string& network_discovery_config) {
   base::DictionaryValue* port_forwarding_dict = nullptr;
   std::unique_ptr<base::Value> parsed_port_forwarding =
-      base::JSONReader::Read(port_forwarding_config);
+      base::JSONReader::ReadDeprecated(port_forwarding_config);
   if (!parsed_port_forwarding ||
       !parsed_port_forwarding->GetAsDictionary(&port_forwarding_dict)) {
     return;
@@ -902,7 +900,7 @@ void DevToolsUIBindings::SetDevicesDiscoveryConfig(
 
   base::ListValue* network_list = nullptr;
   std::unique_ptr<base::Value> parsed_network =
-      base::JSONReader::Read(network_discovery_config);
+      base::JSONReader::ReadDeprecated(network_discovery_config);
   if (!parsed_network || !parsed_network->GetAsList(&network_list))
     return;
 
@@ -1069,7 +1067,7 @@ void DevToolsUIBindings::SetOpenNewWindowForPopups(bool value) {
 
 void DevToolsUIBindings::DispatchProtocolMessageFromDevToolsFrontend(
     const std::string& message) {
-  if (agent_host_.get() && !reloading_)
+  if (agent_host_.get())
     agent_host_->DispatchProtocolMessage(this, message);
 }
 
@@ -1313,11 +1311,6 @@ void DevToolsUIBindings::AttachTo(
   InnerAttach();
 }
 
-void DevToolsUIBindings::Reload() {
-  reloading_ = true;
-  web_contents_->GetController().Reload(content::ReloadType::NORMAL, false);
-}
-
 void DevToolsUIBindings::Detach() {
   if (agent_host_.get())
     agent_host_->DetachClient(this);
@@ -1357,6 +1350,10 @@ void DevToolsUIBindings::CallClientFunction(const std::string& function_name,
 void DevToolsUIBindings::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
   if (navigation_handle->IsInMainFrame()) {
+    if (frontend_loaded_ && agent_host_.get()) {
+      agent_host_->DetachClient(this);
+      InnerAttach();
+    }
     if (!IsValidFrontendURL(navigation_handle->GetURL())) {
       LOG(ERROR) << "Attempt to navigate to an invalid DevTools front-end URL: "
                  << navigation_handle->GetURL().spec();
@@ -1376,10 +1373,10 @@ void DevToolsUIBindings::ReadyToCommitNavigation(
       if (!opener_bindings || !opener_bindings->frontend_host_)
         return;
     }
-    frontend_host_.reset(content::DevToolsFrontendHost::Create(
+    frontend_host_ = content::DevToolsFrontendHost::Create(
         navigation_handle->GetRenderFrameHost(),
         base::Bind(&DevToolsUIBindings::HandleMessageFromDevToolsFrontend,
-                   base::Unretained(this))));
+                   base::Unretained(this)));
     return;
   }
 
@@ -1391,16 +1388,6 @@ void DevToolsUIBindings::ReadyToCommitNavigation(
   std::string script = base::StringPrintf("%s(\"%s\")", it->second.c_str(),
                                           base::GenerateGUID().c_str());
   content::DevToolsFrontendHost::SetupExtensionsAPI(frame, script);
-}
-
-void DevToolsUIBindings::DocumentAvailableInMainFrame() {
-  if (!reloading_)
-    return;
-  reloading_ = false;
-  if (agent_host_.get()) {
-    agent_host_->DetachClient(this);
-    InnerAttach();
-  }
 }
 
 void DevToolsUIBindings::DocumentOnLoadCompletedInMainFrame() {

@@ -64,8 +64,25 @@ HRESULT CGaiaCredentialProvider::CreateGaiaCredential() {
     return E_UNEXPECTED;
   }
 
+  // If MDM enrollment is required and multiple users is not supported, only
+  // create the Gaia credential if there does not yet exist an OS user created
+  // from a Google account.  Otherwise we always create the Gaia credential.
+  wchar_t mdm_url[256];
+  ULONG mdm_url_length = base::size(mdm_url);
+  HRESULT hr = GetGlobalFlag(kRegMdmUrl, mdm_url, &mdm_url_length);
+  if (SUCCEEDED(hr) && mdm_url_length > 0) {
+    DWORD multi_user_supported = 0;
+    hr = GetGlobalFlag(kRegMdmSupportsMultiUser, &multi_user_supported);
+    if (FAILED(hr) || multi_user_supported == 0) {
+      DWORD user_count;
+      hr = GetUserCount(&user_count);
+      if (SUCCEEDED(hr) && user_count > 0)
+        return S_OK;
+    }
+  }
+
   CComPtr<IGaiaCredential> cred;
-  HRESULT hr = CComCreator<CComObject<CGaiaCredential>>::CreateInstance(
+  hr = CComCreator<CComObject<CGaiaCredential>>::CreateInstance(
       nullptr, IID_IGaiaCredential, (void**)&cred);
   if (FAILED(hr)) {
     LOG(ERROR) << "Could not create credential hr=" << putHR(hr);
@@ -112,7 +129,8 @@ void CGaiaCredentialProvider::CleanupStaleTokenHandles() {
 
   OSUserManager* manager = OSUserManager::Get();
   for (auto it = handles.cbegin(); it != handles.cend(); ++it) {
-    HRESULT hr = manager->FindUserBySID(it->first.c_str(), nullptr, 0);
+    HRESULT hr =
+        manager->FindUserBySID(it->first.c_str(), nullptr, 0, nullptr, 0);
     if (hr == HRESULT_FROM_WIN32(ERROR_NONE_MAPPED)) {
       RemoveAllUserProperties(it->first.c_str());
     } else if (FAILED(hr)) {
@@ -127,7 +145,19 @@ void CGaiaCredentialProvider::CleanupOlderVersions() {
     DeleteVersionsExcept(versions_directory, TEXT(CHROME_VERSION_STRING));
 }
 
+// Static.
+bool CGaiaCredentialProvider::IsUsageScenarioSupported(
+    CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus) {
+  return cpus == CPUS_LOGON || cpus == CPUS_UNLOCK_WORKSTATION;
+}
+
 // IGaiaCredentialProvider ////////////////////////////////////////////////////
+
+HRESULT CGaiaCredentialProvider::GetUsageScenario(DWORD* cpus) {
+  DCHECK(cpus);
+  *cpus = static_cast<DWORD>(cpus_);
+  return S_OK;
+}
 
 HRESULT CGaiaCredentialProvider::OnUserAuthenticated(
     IUnknown* credential,
@@ -205,7 +235,8 @@ HRESULT CGaiaCredentialProvider::SetHasInternetConnection(
 HRESULT CGaiaCredentialProvider::SetUserArray(
     ICredentialProviderUserArray* users) {
   LOGFN(INFO);
-  std::map<base::string16, base::string16> sid_to_username;
+  std::map<base::string16, std::pair<base::string16, base::string16>>
+      sid_to_userinfo;
 
   // Get the SIDs of all users being shown in the logon UI.
   {
@@ -231,6 +262,7 @@ HRESULT CGaiaCredentialProvider::SetUserArray(
 
     for (DWORD i = 0; i < count; ++i) {
       CComPtr<ICredentialProviderUser> user;
+      OSUserManager* manager = OSUserManager::Get();
       hr = users->GetAt(i, &user);
       if (FAILED(hr)) {
         LOGFN(ERROR) << "users->GetAt hr=" << putHR(hr);
@@ -238,63 +270,77 @@ HRESULT CGaiaCredentialProvider::SetUserArray(
       }
 
       wchar_t* sid = nullptr;
-      wchar_t* username = nullptr;
+      wchar_t username[kWindowsUsernameBufferLength];
+      wchar_t domain[kWindowsDomainBufferLength];
 
       hr = user->GetSid(&sid);
-      if (SUCCEEDED(hr))
-        hr = user->GetStringValue(PKEY_Identity_UserName, &username);
+      if (SUCCEEDED(hr)) {
+        hr = manager->FindUserBySID(sid, username, base::size(username), domain,
+                                    base::size(domain));
+      }
 
       if (SUCCEEDED(hr)) {
-        sid_to_username.emplace(sid, username);
+        sid_to_userinfo.emplace(sid, std::make_pair(domain, username));
       } else {
         LOGFN(ERROR) << "Can't get sid or username hr=" << putHR(hr);
       }
 
-      ::CoTaskMemFree(username);
       ::CoTaskMemFree(sid);
     }
   }
 
   // For each SID, check to see if this user requires reauth.
-  for (const auto& kv : sid_to_username) {
-    // Get the user's email address.  If not found, proceed anyway.  The net
-    // effect is that the user will need to enter their email address
-    // manually instead of it being pre-filled.  Need to see if it would be
-    // better to just fail.
-    wchar_t email[64];
-    ULONG length = base::size(email);
-    HRESULT hr = GetUserProperty(kv.first.c_str(), kUserEmail, email, &length);
+  for (const auto& kv : sid_to_userinfo) {
+    // Gaia id must exist in the registry for the user to be considered
+    // registered.
+    wchar_t gaia_id[64];
+    ULONG id_length = base::size(gaia_id);
+    HRESULT hr =
+        GetUserProperty(kv.first.c_str(), kUserId, gaia_id, &id_length);
     if (FAILED(hr)) {
-      LOGFN(ERROR) << "GetUserProperty(" << kv.first << ", email)"
-                   << " hr=" << putHR(hr);
-      email[0] = 0;
+      // Local users that are not associated are disabled.
       continue;
     }
 
-    LOGFN(INFO) << "Existing gaia user: sid=" << kv.first
-                << " user=" << kv.second << " email=" << email;
-    CComPtr<IGaiaCredential> cred;
-    hr = CComCreator<CComObject<CReauthCredential>>::CreateInstance(
-        nullptr, IID_IGaiaCredential, (void**)&cred);
+    // Get the user's email address.  If not found, proceed anyway.  The net
+    // effect is that the user will need to enter their email address
+    // manually instead of it being pre-filled.
+    wchar_t email[64];
+    ULONG email_length = base::size(email);
+    hr = GetUserProperty(kv.first.c_str(), kUserEmail, email, &email_length);
+    if (FAILED(hr))
+      email[0] = 0;
 
+    LOGFN(INFO) << "Existing gaia user: sid=" << kv.first
+                << " domain=" << kv.second.first << " user=" << kv.second.second
+                << " email=" << email;
+
+    CComPtr<IReauthCredential> reauth;
+    hr = CComCreator<CComObject<CReauthCredential>>::CreateInstance(
+        nullptr, IID_IReauthCredential, reinterpret_cast<void**>(&reauth));
+    if (FAILED(hr)) {
+      LOG(ERROR) << "Could not create credential hr=" << putHR(hr);
+      return hr;
+    }
+
+    hr = reauth->SetOSUserInfo(CComBSTR(W2COLE(kv.first.c_str())),
+                               CComBSTR(W2COLE(kv.second.first.c_str())),
+                               CComBSTR(W2COLE(kv.second.second.c_str())));
+    if (FAILED(hr)) {
+      LOG(ERROR) << "cred->SetOSUserInfo hr=" << putHR(hr);
+      return hr;
+    }
+
+    if (email[0])
+      hr = reauth->SetEmailForReauth(CComBSTR(email));
+    if (FAILED(hr))
+      LOG(ERROR) << "reauth->SetEmailForReauth hr=" << putHR(hr);
+
+    CComPtr<IGaiaCredential> cred;
+    cred = reauth;
     hr = cred->Initialize(this);
     if (FAILED(hr)) {
       LOG(ERROR) << "Could not initialize credential hr=" << putHR(hr);
-      return hr;
-    }
-
-    CComPtr<IReauthCredential> reauth;
-    reauth = cred;
-    hr = reauth->SetOSUserInfo(CComBSTR(W2COLE(kv.first.c_str())),
-                               CComBSTR(W2COLE(kv.second.c_str())));
-    if (FAILED(hr)) {
-      LOG(ERROR) << "reauth->SetOSUserInfo hr=" << putHR(hr);
-      return hr;
-    }
-
-    hr = reauth->SetEmailForReauth(CComBSTR(email));
-    if (FAILED(hr)) {
-      LOG(ERROR) << "reauth->SetEmailForReauth hr=" << putHR(hr);
       return hr;
     }
 
@@ -315,19 +361,8 @@ HRESULT CGaiaCredentialProvider::SetUsageScenario(
   cpus_flags_ = flags;
 
   // This credential provider only supports signing in and unlocking the screen.
-  HRESULT hr = E_INVALIDARG;
-  switch (cpus) {
-    case CPUS_LOGON:
-    case CPUS_UNLOCK_WORKSTATION:
-      hr = CreateGaiaCredential();
-      break;
-    case CPUS_CHANGE_PASSWORD:
-    case CPUS_CREDUI:
-    case CPUS_PLAP:
-    default:
-      hr = E_NOTIMPL;
-      break;
-  }
+  HRESULT hr =
+      IsUsageScenarioSupported(cpus) ? CreateGaiaCredential() : E_NOTIMPL;
 
   LOGFN(INFO) << "hr=" << putHR(hr) << " cpu=" << cpus
               << " flags=" << std::setbase(16) << flags;
@@ -366,6 +401,26 @@ HRESULT CGaiaCredentialProvider::UnAdvise() {
   ClearTransient();
   HRESULT hr = DestroyCredentials();
   LOGFN(INFO) << "hr=" << putHR(hr);
+
+  // Delete the startup sentinel file if any still exists. It can still exist
+  // in 2 cases:
+
+  // 1. The UnAdvise should only occur after the user has logged in, so if
+  // they never selected any gaia credential and just used normal credentials
+  // this function will be called in that situation and it is guaranteed that
+  // the user has at least been able provide some input to winlogon.
+  // 2. When no usage scenario is supported, none of the credentials will be
+  // selected and thus the gcpw startup sentinel file will not be deleted.
+  // So in the case where the user is asked for CPUS_CRED_UI enough times,
+  // the sentinel file size will keep growing without being deleted and
+  // eventually GCPW will be disabled completely. In the unsupported usage
+  // scenario, FinalRelease will be called shortly after SetUsageScenario
+  // if the function returns E_NOTIMPL so try to catch potential crashes
+  // of the destruction of the provider when it is not used because
+  // crashes in this case will prevent the cred ui from coming up and not
+  // allow the user to access their desired resource.
+  DeleteStartupSentinel();
+
   return S_OK;
 }
 

@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/guid.h"
+#include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
@@ -180,26 +181,23 @@ class AutofillActionTest : public testing::Test {
   std::unique_ptr<autofill::PersonalDataManager> personal_data_manager_;
 };
 
-TEST_F(AutofillActionTest, FillManually) {
+#if !defined(OS_ANDROID)
+#define MAYBE_FillManually FillManually
+#else
+#define MAYBE_FillManually DISABLED_FillManually
+#endif
+TEST_F(AutofillActionTest, MAYBE_FillManually) {
   InSequence seq;
 
   ActionProto action_proto = CreateUseAddressAction();
   action_proto.mutable_use_address()->set_prompt(kSelectionPrompt);
 
   // No selection was made previously.
-  EXPECT_CALL(mock_client_memory_, has_selected_address(kAddressName))
-      .WillOnce(Return(false));
-
-  // Expect prompt.
-  EXPECT_CALL(mock_action_delegate_, ShowStatusMessage(kSelectionPrompt));
-
-  // Return empty address guid (manual filling).
-  EXPECT_CALL(mock_action_delegate_, OnChooseAddress(_))
-      .WillOnce(RunOnceCallback<0>(""));
-
-  // We save the selection in memory.
-  EXPECT_CALL(mock_client_memory_,
-              set_selected_address(kAddressName, IsNull()));
+  // Note: We use ON_CALL instead of EXPECT_CALL as the `has_selected_address`
+  // call is made inside a DCHECK, which means this won't be called when testing
+  // a release build.
+  ON_CALL(mock_client_memory_, has_selected_address(kAddressName))
+      .WillByDefault(Return(true));
 
   ExpectActionToStopScript(action_proto, kFillForm);
 }

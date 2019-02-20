@@ -29,17 +29,18 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESOURCE_REQUEST_H_
 
 #include <memory>
+
 #include "base/macros.h"
 #include "base/optional.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
+#include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/cors.mojom-blink.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "services/network/public/mojom/request_context_frame_type.mojom-shared.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-blink.h"
 #include "third_party/blink/public/platform/resource_request_blocked_reason.h"
-#include "third_party/blink/public/platform/web_content_security_policy_struct.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_priority.h"
 #include "third_party/blink/renderer/platform/network/http_header_map.h"
@@ -73,7 +74,7 @@ class PLATFORM_EXPORT ResourceRequest final {
   explicit ResourceRequest(const KURL&);
 
   // TODO(toyoshim): Use std::unique_ptr as much as possible, and hopefully
-  // make ResourceRequest WTF_MAKE_NONCOPYABLE. See crbug.com/787704.
+  // make ResourceRequest DISALLOW_COPY_AND_ASSIGN. See crbug.com/787704.
   ResourceRequest(const ResourceRequest&);
   ResourceRequest& operator=(const ResourceRequest&);
 
@@ -93,6 +94,14 @@ class PLATFORM_EXPORT ResourceRequest final {
 
   const KURL& Url() const;
   void SetURL(const KURL&);
+
+  // ThreadableLoader sometimes breaks redirect chains into separate Resource
+  // and ResourceRequests. The ResourceTiming API needs the initial URL for the
+  // name attribute of PerformanceResourceTiming entries. This property
+  // remembers the initial URL for that purpose. Note that it can return a null
+  // URL. In that case, use Url() instead.
+  const KURL& GetInitialUrlForResourceTiming() const;
+  void SetInitialUrlForResourceTiming(const KURL&);
 
   void RemoveUserAndPassFromURL();
 
@@ -338,9 +347,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool CacheControlContainsNoStore() const;
   bool HasCacheValidatorFields() const;
 
-  bool WasDiscarded() const { return was_discarded_; }
-  void SetWasDiscarded(bool was_discarded) { was_discarded_ = was_discarded; }
-
   // https://wicg.github.io/cors-rfc1918/#external-request
   bool IsExternalRequest() const { return is_external_request_; }
   void SetExternalRequestStateFromRequestorAddressSpace(mojom::IPAddressSpace);
@@ -364,13 +370,6 @@ class PLATFORM_EXPORT ResourceRequest final {
 
   void SetIsAdResource() { is_ad_resource_ = true; }
   bool IsAdResource() const { return is_ad_resource_; }
-
-  void SetInitiatorCSP(const WebContentSecurityPolicyList& initiator_csp) {
-    initiator_csp_ = initiator_csp;
-  }
-  const WebContentSecurityPolicyList& GetInitiatorCSP() const {
-    return initiator_csp_;
-  }
 
   void SetUpgradeIfInsecure(bool upgrade_if_insecure) {
     upgrade_if_insecure_ = upgrade_if_insecure;
@@ -402,9 +401,6 @@ class PLATFORM_EXPORT ResourceRequest final {
     devtools_token_ = devtools_token;
   }
 
-  void SetOriginPolicy(const String& policy) { origin_policy_ = policy; }
-  const String& GetOriginPolicy() const { return origin_policy_; }
-
   void SetRequestedWithHeader(const String& value) {
     requested_with_header_ = value;
   }
@@ -415,8 +411,10 @@ class PLATFORM_EXPORT ResourceRequest final {
   void SetClientDataHeader(const String& value) { client_data_header_ = value; }
   const String& GetClientDataHeader() const { return client_data_header_; }
 
-  void SetUkmSourceId(int64_t ukm_source_id) { ukm_source_id_ = ukm_source_id; }
-  int64_t GetUkmSourceId() const { return ukm_source_id_; }
+  void SetUkmSourceId(ukm::SourceId ukm_source_id) {
+    ukm_source_id_ = ukm_source_id;
+  }
+  ukm::SourceId GetUkmSourceId() const { return ukm_source_id_; }
 
   // https://fetch.spec.whatwg.org/#concept-request-window
   // See network::ResourceRequest::fetch_window_id for details.
@@ -436,6 +434,9 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool NeedsHTTPOrigin() const;
 
   KURL url_;
+  // TODO(yoav): initial_url_for_resource_timing_ is a stop-gap only needed
+  // until Out-of-Blink CORS lands: https://crbug.com/736308
+  KURL initial_url_for_resource_timing_;
   // TimeDelta::Max() represents the default timeout on platforms that have one.
   base::TimeDelta timeout_interval_;
   KURL site_for_cookies_;
@@ -479,7 +480,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   String referrer_string_;
   network::mojom::ReferrerPolicy referrer_policy_;
   bool did_set_http_referrer_;
-  bool was_discarded_;
   bool is_external_request_;
   network::mojom::CorsPreflightPolicy cors_preflight_policy_;
   RedirectStatus redirect_status_;
@@ -490,7 +490,6 @@ class PLATFORM_EXPORT ResourceRequest final {
   static base::TimeDelta default_timeout_interval_;
 
   bool is_ad_resource_ = false;
-  WebContentSecurityPolicyList initiator_csp_;
 
   bool upgrade_if_insecure_ = false;
   bool is_revalidating_ = false;
@@ -498,11 +497,10 @@ class PLATFORM_EXPORT ResourceRequest final {
   bool is_automatic_upgrade_ = false;
 
   base::Optional<base::UnguessableToken> devtools_token_;
-  String origin_policy_;
   String requested_with_header_;
   String client_data_header_;
 
-  int64_t ukm_source_id_;
+  ukm::SourceId ukm_source_id_ = ukm::kInvalidSourceId;
 
   base::UnguessableToken fetch_window_id_;
 };

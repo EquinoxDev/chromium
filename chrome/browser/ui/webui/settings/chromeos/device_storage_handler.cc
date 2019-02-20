@@ -9,6 +9,7 @@
 #include <numeric>
 #include <string>
 
+#include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/system/sys_info.h"
 #include "base/task/post_task.h"
@@ -100,6 +101,11 @@ void StorageHandler::RegisterMessages() {
       "clearDriveCache",
       base::BindRepeating(&StorageHandler::HandleClearDriveCache,
                           base::Unretained(this)));
+}
+
+void StorageHandler::OnJavascriptDisallowed() {
+  // Ensure that pending callbacks do not complete and cause JS to be evaluated.
+  weak_ptr_factory_.InvalidateWeakPtrs();
 }
 
 void StorageHandler::HandleUpdateStorageInfo(const base::ListValue* args) {

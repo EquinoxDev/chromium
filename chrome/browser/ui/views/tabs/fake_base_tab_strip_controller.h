@@ -35,6 +35,7 @@ class FakeBaseTabStripController : public TabStripController {
   void ExtendSelectionTo(int index) override;
   void ToggleSelected(int index) override;
   void AddSelectionFromAnchorTo(int index) override;
+  bool BeforeCloseTab(int index, CloseTabSource source) override;
   void CloseTab(int index, CloseTabSource source) override;
   void ShowContextMenuForTab(Tab* tab,
                              const gfx::Point& p,
@@ -46,7 +47,6 @@ class FakeBaseTabStripController : public TabStripController {
   void CreateNewTab() override;
   void CreateNewTabWithLocation(const base::string16& loc) override;
   void StackedLayoutMaybeChanged() override;
-  bool IsSingleTabModeAvailable() override;
   void OnStartedDraggingTabs() override;
   void OnStoppedDraggingTabs() override;
   bool IsFrameCondensed() const override;

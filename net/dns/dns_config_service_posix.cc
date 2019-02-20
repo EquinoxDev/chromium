@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 
 #include "base/bind.h"
 #include "base/files/file.h"
@@ -272,8 +273,9 @@ class DnsConfigServicePosix::Watcher {
     // Ignore transient flutter of resolv.conf by delaying the signal a bit.
     const base::TimeDelta kDelay = base::TimeDelta::FromMilliseconds(50);
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, base::Bind(&Watcher::OnConfigChangedDelayed,
-                              weak_factory_.GetWeakPtr(), succeeded),
+        FROM_HERE,
+        base::BindOnce(&Watcher::OnConfigChangedDelayed,
+                       weak_factory_.GetWeakPtr(), succeeded),
         kDelay);
   }
 
@@ -465,8 +467,8 @@ ConfigParsePosixResult ConvertResStateToDnsConfig(const struct __res_state& res,
     dns_config->nameservers.push_back(ipe);
   }
 #elif defined(OS_LINUX)
-  static_assert(arraysize(res.nsaddr_list) >= MAXNS &&
-                    arraysize(res._u._ext.nsaddrs) >= MAXNS,
+  static_assert(std::extent<decltype(res.nsaddr_list)>() >= MAXNS &&
+                    std::extent<decltype(res._u._ext.nsaddrs)>() >= MAXNS,
                 "incompatible libresolv res_state");
   DCHECK_LE(res.nscount, MAXNS);
   // Initially, glibc stores IPv6 in |_ext.nsaddrs| and IPv4 in |nsaddr_list|.

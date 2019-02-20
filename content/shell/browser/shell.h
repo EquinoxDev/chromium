@@ -179,6 +179,7 @@ class Shell : public WebContentsDelegate,
                               const base::string16& message,
                               int32_t line_no,
                               const base::string16& source_id) override;
+  void PortalWebContentsCreated(WebContents* portal_web_contents) override;
   void RendererUnresponsive(
       WebContents* source,
       RenderWidgetHost* render_widget_host,
@@ -193,7 +194,8 @@ class Shell : public WebContentsDelegate,
                                          bool allowed_per_prefs,
                                          const url::Origin& origin,
                                          const GURL& resource_url) override;
-  gfx::Size EnterPictureInPicture(const viz::SurfaceId&,
+  gfx::Size EnterPictureInPicture(content::WebContents* web_contents,
+                                  const viz::SurfaceId&,
                                   const gfx::Size& natural_size) override;
   bool ShouldResumeRequestsForCreatedWindow() override;
 

@@ -29,6 +29,7 @@
 #include <memory>
 #include <set>
 
+#include "base/macros.h"
 #include "base/numerics/checked_math.h"
 #include "base/optional.h"
 #include "base/single_thread_task_runner.h"
@@ -123,8 +124,6 @@ class ScopedRGBEmulationColorMask {
 
 class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
                                                  public DrawingBuffer::Client {
-  WTF_MAKE_NONCOPYABLE(WebGLRenderingContextBase);
-
  public:
   ~WebGLRenderingContextBase() override;
 
@@ -565,6 +564,7 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
 
   scoped_refptr<Uint8Array> PaintRenderingResultsToDataArray(
       SourceDrawingBuffer) override;
+  void ProvideBackBufferToResourceProvider() const override;
 
   unsigned MaxVertexAttribs() const { return max_vertex_attribs_; }
 
@@ -688,7 +688,23 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   // Check if each enabled vertex attribute is bound to a buffer.
   bool ValidateRenderingState(const char*);
 
-  bool ValidateWebGLObject(const char*, WebGLObject*);
+  // Helper function for APIs which can legally receive null objects, including
+  // the bind* calls (bindBuffer, bindTexture, etc.) and useProgram. Checks that
+  // the object belongs to this context and that it's not marked for deletion.
+  // Returns false if the caller should return without further processing.
+  // Performs a context loss check internally.
+  // This returns true for null WebGLObject arguments!
+  bool ValidateNullableWebGLObject(const char* function_name, WebGLObject*);
+
+  // Validates the incoming WebGL object, which is assumed to be non-null.
+  // Checks that the object belongs to this context and that it's not marked for
+  // deletion. Performs a context loss check internally.
+  bool ValidateWebGLObject(const char* function_name, WebGLObject*);
+
+  // Validates the incoming WebGL program or shader, which is assumed to be
+  // non-null. OpenGL ES's validation rules differ for these types of objetcts
+  // compared to others. Performs a context loss check internally.
+  bool ValidateWebGLProgramOrShader(const char* function_name, WebGLObject*);
 
   // Adds a compressed texture format.
   void AddCompressedTextureFormat(GLenum);
@@ -1496,13 +1512,6 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   // Return false if caller should return without further processing.
   bool DeleteObject(WebGLObject*);
 
-  // Helper function for bind* (bindBuffer, bindTexture, etc) and useProgram.
-  // If the object has already been deleted, set deleted to true upon return.
-  // Return false if caller should return without further processing.
-  bool CheckObjectToBeBound(const char* function_name,
-                            WebGLObject*,
-                            bool& deleted);
-
   void DispatchContextLostEvent(TimerBase*);
   // Helper for restoration after context lost.
   void MaybeRestoreContext(TimerBase*);
@@ -1722,12 +1731,14 @@ class MODULES_EXPORT WebGLRenderingContextBase : public CanvasRenderingContext,
   void HoldReferenceToDrawingBuffer(DrawingBuffer*);
 
   static void InitializeWebGLContextLimits(
-      const DrawingBuffer::WebGLContextLimits&);
+      WebGraphicsContext3DProvider* context_provider);
   static unsigned CurrentMaxGLContexts();
 
   static bool webgl_context_limits_initialized_;
   static unsigned max_active_webgl_contexts_;
   static unsigned max_active_webgl_contexts_on_worker_;
+
+  DISALLOW_COPY_AND_ASSIGN(WebGLRenderingContextBase);
 };
 
 // TODO(fserb): remove this.
@@ -1740,6 +1751,6 @@ DEFINE_TYPE_CASTS(WebGLRenderingContextBase,
 }  // namespace blink
 
 WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(
-    blink::WebGLRenderingContextBase::TextureUnitState);
+    blink::WebGLRenderingContextBase::TextureUnitState)
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_WEBGL_RENDERING_CONTEXT_BASE_H_

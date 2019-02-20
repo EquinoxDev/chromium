@@ -4,6 +4,7 @@
 
 #include "services/device/generic_sensor/linux/sensor_device_manager.h"
 
+#include "base/bind.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -45,8 +46,8 @@ void SensorDeviceManager::Start(Delegate* delegate) {
 
   task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&SensorDeviceManager::Delegate::OnSensorNodesEnumerated,
-                 base::Unretained(delegate_)));
+      base::BindOnce(&SensorDeviceManager::Delegate::OnSensorNodesEnumerated,
+                     base::Unretained(delegate_)));
 }
 
 std::string SensorDeviceManager::GetUdevDeviceGetSubsystem(udev_device* dev) {
@@ -142,9 +143,9 @@ void SensorDeviceManager::OnDeviceAdded(udev_device* dev) {
         sensor_offset_value, reporting_mode, data.apply_scaling_func,
         std::move(sensor_file_names)));
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&SensorDeviceManager::Delegate::OnDeviceAdded,
-                              base::Unretained(delegate_), data.type,
-                              base::Passed(&device)));
+        FROM_HERE, base::BindOnce(&SensorDeviceManager::Delegate::OnDeviceAdded,
+                                  base::Unretained(delegate_), data.type,
+                                  std::move(device)));
 
     // One |dev| can represent more than one sensor.
     // For example, there is an accelerometer and gyroscope represented by one
@@ -169,8 +170,9 @@ void SensorDeviceManager::OnDeviceRemoved(udev_device* dev) {
   sensors_by_node_.erase(sensor);
 
   task_runner_->PostTask(
-      FROM_HERE, base::Bind(&SensorDeviceManager::Delegate::OnDeviceRemoved,
-                            base::Unretained(delegate_), type, device_node));
+      FROM_HERE,
+      base::BindOnce(&SensorDeviceManager::Delegate::OnDeviceRemoved,
+                     base::Unretained(delegate_), type, device_node));
 }
 
 }  // namespace device

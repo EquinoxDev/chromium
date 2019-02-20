@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_FRAME_REMOTE_FRAME_VIEW_H_
 
 #include "cc/paint/paint_canvas.h"
+#include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/document_lifecycle.h"
 #include "third_party/blink/renderer/core/frame/frame_view.h"
 #include "third_party/blink/renderer/core/layout/intrinsic_sizing_info.h"
@@ -76,9 +77,16 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
  private:
   LocalFrameView* ParentFrameView() const;
 
+  // This function returns the LocalFrameView associated with the parent frame's
+  // local root, or nullptr if the parent frame is not a local frame. For
+  // portals, this will return the local root associated with the portal's
+  // owner.
+  LocalFrameView* ParentLocalRootFrameView() const;
+
   void UpdateRenderThrottlingStatus(bool hidden, bool subtree_throttled);
   bool CanThrottleRendering() const;
   void SetupRenderThrottling();
+  void UpdateVisibility(bool scroll_visible);
 
   // The properties and handling of the cycle between RemoteFrame
   // and its RemoteFrameView corresponds to that between LocalFrame
@@ -91,6 +99,9 @@ class RemoteFrameView final : public GarbageCollectedFinalized<RemoteFrameView>,
   IntRect frame_rect_;
   bool self_visible_;
   bool parent_visible_;
+  bool scroll_visible_ = true;
+  blink::mojom::FrameVisibility visibility_ =
+      blink::mojom::FrameVisibility::kRenderedInViewport;
 
   Member<ElementVisibilityObserver> visibility_observer_;
   bool subtree_throttled_ = false;

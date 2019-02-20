@@ -392,15 +392,6 @@ gfx::NativeView OmniboxViewIOS::GetRelativeWindowForPopup() const {
   return nullptr;
 }
 
-int OmniboxViewIOS::GetTextWidth() const {
-  return 0;
-}
-
-// TODO(crbug.com/329527): [Merge r241107] implement OmniboxViewIOS::GetWidth().
-int OmniboxViewIOS::GetWidth() const {
-  return 0;
-}
-
 void OmniboxViewIOS::OnDidBeginEditing() {
   // Reset the changed flag.
   omnibox_interacted_while_focused_ = NO;
@@ -474,18 +465,16 @@ bool OmniboxViewIOS::OnWillChange(NSRange range, NSString* new_text) {
     [field_ setClearingPreEditText:YES];
 
     // Exit the pre-editing state in OnWillChange() instead of OnDidChange(), as
-    // that allows IME to continue working.  The following code clears the text
-    // field but continues the normal text editing flow, so UIKit behaves as
-    // though the user had typed into an empty field.
+    // that allows IME to continue working.  The following code selects the text
+    // as if the pre-edit fake selection was real.
     [field_ exitPreEditState];
 
-    // Clearing the text field will trigger a call to OnDidChange().  This is
-    // ok, because the autocomplete system will process it as if the user had
-    // deleted all the omnibox text.
-    [field_ setText:@""];
+    field_.selectedTextRange =
+        [field_ textRangeFromPosition:field_.beginningOfDocument
+                           toPosition:field_.endOfDocument];
 
-    // Reset |range| to be of zero-length at location zero, as the field is now
-    // cleared.
+    // Reset |range| to be of zero-length at location zero, as the field will be
+    // now cleared.
     range = NSMakeRange(0, 0);
   }
 
@@ -548,7 +537,7 @@ bool OmniboxViewIOS::OnWillChange(NSRange range, NSString* new_text) {
 
 void OmniboxViewIOS::OnDidChange(bool processing_user_event) {
   omnibox_interacted_while_focused_ = YES;
-  DCHECK(processing_user_event);
+
   // Sanitize pasted text.
   if (model()->is_pasting()) {
     base::string16 pastedText = base::SysNSStringToUTF16([field_ text]);

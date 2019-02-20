@@ -105,7 +105,7 @@ enum class CtapDeviceResponseCode : uint8_t {
   kCtap2ErrUserActionPending = 0x23,
   kCtap2ErrOperationPending = 0x24,
   kCtap2ErrNoOperations = 0x25,
-  kCtap2ErrUnsupportedAlgorithms = 0x26,
+  kCtap2ErrUnsupportedAlgorithm = 0x26,
   kCtap2ErrOperationDenied = 0x27,
   kCtap2ErrKeyStoreFull = 0x28,
   kCtap2ErrNotBusy = 0x29,
@@ -156,7 +156,7 @@ constexpr std::array<CtapDeviceResponseCode, 51> GetCtapResponseCodeList() {
           CtapDeviceResponseCode::kCtap2ErrUserActionPending,
           CtapDeviceResponseCode::kCtap2ErrOperationPending,
           CtapDeviceResponseCode::kCtap2ErrNoOperations,
-          CtapDeviceResponseCode::kCtap2ErrUnsupportedAlgorithms,
+          CtapDeviceResponseCode::kCtap2ErrUnsupportedAlgorithm,
           CtapDeviceResponseCode::kCtap2ErrOperationDenied,
           CtapDeviceResponseCode::kCtap2ErrKeyStoreFull,
           CtapDeviceResponseCode::kCtap2ErrNotBusy,
@@ -385,6 +385,16 @@ COMPONENT_EXPORT(DEVICE_FIDO) extern const char kExtensionHmacSecret[];
 // https://fidoalliance.org/specs/fido-v2.0-rd-20170927/fido-client-to-authenticator-protocol-v2.0-rd-20170927.html#BTCORE
 COMPONENT_EXPORT(DEVICE_FIDO)
 extern const base::TimeDelta kBleDevicePairingModeWaitingInterval;
+
+// https://w3c.github.io/webauthn/#attestation-convey
+enum class AttestationConveyancePreference : uint8_t {
+  NONE,
+  INDIRECT,
+  DIRECT,
+  // Non-standard value for individual attestation that we hope to end up in
+  // the standard eventually.
+  ENTERPRISE,
+};
 
 }  // namespace device
 

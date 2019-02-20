@@ -54,6 +54,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="1346059596910821859">Tip</translation>
 <translation id="1346748346194534595">Højre</translation>
 <translation id="135978014023467274">Du har opdateret til ChromeVox 63</translation>
+<translation id="1360699455582016846">Klik på elementet under routing-tasten <ph name="ROUTING_KEY_NUMBER" /></translation>
 <translation id="136718599399906424">Næste tabelrække</translation>
 <translation id="1377925789329510816">Dette er den sidste overskrift. Tryk på søgetasten+H for at gå til den første overskrift, eller tryk på søgetasten+Shift+H for at gå til den anden overskrift på siden.</translation>
 <translation id="1383876407941801731">Søg</translation>
@@ -112,6 +113,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="1905379170753160525">Vis overskriftliste</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">#ed</translation>
+<translation id="1914635379910604678">Tastekombinationen <ph name="DOT" /></translation>
 <translation id="1954623340234317532">Kontrol for en uge om året</translation>
 <translation id="1964135212174907577">Næste objekt</translation>
 <translation id="1969092762068865084">Juli</translation>
@@ -267,6 +269,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="316542773973815724">Navigation</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{mellemrum}one{# mellemrum}other{# mellemrum}}</translation>
 <translation id="320961988183078793"><ph name="TYPE" /> er indtastet</translation>
+<translation id="3218691001991391708">indsæt <ph name="TEXT" />.</translation>
 <translation id="3223701887221307104">Fanen <ph name="NAME" /></translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">Besøgt link</translation>
@@ -286,48 +289,6 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="3322936298410871309">Forrige niveau 1-overskrift</translation>
 <translation id="3323447499041942178">Tekstfelt</translation>
 <translation id="3338224621010291843"><ph name="VALUE" /> <ph name="NAME" /> skyder</translation>
-<translation id="3353420241558113817">{"ar": "arabisk",
-        "bg": "bulgarsk",
-        "ca": "catalansk",
-        "cs": "tjekkisk",
-        "da": "dansk",
-        "de": "tysk",
-        "de_CH": "tysk (Schweiz)",
-        "de_DE": "tysk (Tyskland)",
-        "el": "græsk",
-        "en": "engelsk",
-        "en_CA": "engelsk (Canada)",
-        "en_GB": "engelsk (Storbritannien)",
-        "en_US": "engelsk (USA)",
-        "es": "spansk",
-        "et": "estisk",
-        "fr": "fransk",
-        "fr_CA": "fransk (Canada)",
-        "fr_FR": "fransk (Frankrig)",
-        "fi": "finsk",
-        "he": "hebraisk",
-        "hi": "hindi",
-        "hr": "kroatisk",
-        "hu": "ungarsk",
-        "is": "islandsk",
-        "it": "italiensk",
-        "ko": "koreansk",
-        "lt": "litauisk",
-        "lv": "lettisk",
-        "nb": "norsk bokmål",
-        "nl": "hollandsk",
-        "pl": "polsk",
-        "pt": "portugisisk",
-        "ro": "rumænsk",
-        "ru": "russisk",
-        "sk": "slovakisk",
-        "sl": "slovensk",
-        "sr": "serbisk",
-        "sv": "svensk",
-        "tr": "tyrkisk",
-        "vi": "vietnamesisk",
-        "zh": "kinesisk",
-        "zh_TW": "kinesisk (traditionelt han)"}</translation>
 <translation id="335581015389089642">Tale</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{plus}one{# plustegn}other{# plustegn}}</translation>
@@ -344,12 +305,14 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="3468959318854349468">Ingen titel</translation>
 <translation id="3473644018603298796">sld <ph name="COUNT" /></translation>
 <translation id="3486232535569802404"><ph name="V1" /> til <ph name="V2" /></translation>
+<translation id="3490765818161916458">Listegitter</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{højre kantet parentes}one{# højre kantede parenteser}other{# højre kantede parenteser}}</translation>
 <translation id="3493915602752813531">Ikke flere ankre.</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{spørgsmålstegn}one{# spørgsmålstegn}other{# spørgsmålstegn}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{cirkumfleks}one{ # cirkumflekser}other{# cirkumflekser}}</translation>
 <translation id="352577523970648069">Et justerbart tekstfelt</translation>
+<translation id="3549141990712742152">klip <ph name="TEXT" />.</translation>
 <translation id="3549680091535286226">Tryk med to fingre for midlertidigt at stoppe tale</translation>
 <translation id="3568702578574425662">Afkrydsningsfeltet <ph name="NAME" /> er ikke markeret</translation>
 <translation id="3589661172894441357">Ordliste</translation>
@@ -381,6 +344,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="3856075812838139784">Skrivebeskyttet</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">Menu</translation>
+<translation id="3907138069015388678">lstgttr</translation>
 <translation id="3909320334364316587">Forrige niveau 6-overskrift</translation>
 <translation id="3914173277599553213">Påkrævet</translation>
 <translation id="3914732343065571127">Kommandoreference i ChromeVox</translation>
@@ -515,7 +479,6 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="4973762002207131920">Ændret til <ph name="KEY" />.</translation>
 <translation id="4975416682604111799">millisekunder</translation>
 <translation id="49787999531187221">ChromeVox er nu deaktiveret.</translation>
-<translation id="4979263087381759787">Indstillinger for udviklere</translation>
 <translation id="4979404613699303341">Knappen Forrige</translation>
 <translation id="4982773647088557172">Listefeltet <ph name="VALUE" />, <ph name="NAME" /></translation>
 <translation id="4983588134362688868">Gå til toppen af siden</translation>
@@ -530,6 +493,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="5020651427400641814">Aktivér talelogning</translation>
 <translation id="5041394372352067729">Flyt braille-visningen til toppen af siden</translation>
 <translation id="5042770794184672516">Skru op for talevolumen</translation>
+<translation id="5042992464904238023">Webindhold</translation>
 <translation id="5050015258024679800">Forrige niveau 4-overskrift</translation>
 <translation id="5054047268577924192">Forrige punkt på listen</translation>
 <translation id="5075936896689244141">Næste tastaturoversigt</translation>
@@ -674,6 +638,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="6129953537138746214">Mellemrum</translation>
 <translation id="6132506484792346370">Et listefelt eller kombifelt</translation>
 <translation id="6142308968191113180">Overskrift 4</translation>
+<translation id="6158882249329863701">række <ph name="TABLECELLROWINDEX" /> kolonne <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="6164829606128959761">måler</translation>
 <translation id="6169420925157477918">Billede med lang beskrivelse</translation>
 <translation id="6186305613600865047">Gå til bunden af siden</translation>
@@ -689,6 +654,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="6307969636681130414">Trykket på</translation>
 <translation id="6322856989298155004">Lyde</translation>
 <translation id="6324551002951139333">Der blev fundet en grammatisk fejl</translation>
+<translation id="6325241889020214828">kopiér <ph name="TEXT" />.</translation>
 <translation id="6348657800373377022">Kombifelt</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{punkttegn}one{# punkttegn}other{# punkttegn}}</translation>
 <translation id="6355910664415701303">Ingen tidligere elementer på listen.</translation>
@@ -698,6 +664,7 @@ Hvis du er færdig med selvstudiet, kan du gå til knappen Luk via ChromeVox og 
 <translation id="6387719785439924554">tilsi</translation>
 <translation id="6411426777058107714">Ingen tidligere alternativknapper.</translation>
 <translation id="6414968628640960377">Forrige anderledes element.</translation>
+<translation id="6417265370957905582">Google Assistent</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{kolon}one{# koloner}other{# koloner}}</translation>
 <translation id="6438968337250688271">Menuen <ph name="NAME" /></translation>
 <translation id="6444046323172968959">Underretningsdialogboks</translation>
@@ -877,6 +844,89 @@ Tryk på Alt+F for at åbne browsermenuen i Chrome.</translation>
 <translation id="8037651341025652929">Konklusion</translation>
 <translation id="8042761080832772327">Rediger tekst, søgeindtastning</translation>
 <translation id="8049189770492311300">Timer</translation>
+<translation id="8056782883599416672">{"ar": "Arabisk",
+        "as": "Assamesisk",
+        "aw": "Awadhi",
+        "be": "Bengali",
+        "bg": "Bulgarsk",
+        "bh": "Bihari",
+        "bo": "Tibetansk",
+        "br": "Braj",
+        "ca": "Catalansk",
+        "ckb": "Sorani",
+        "cs": "Tjekkisk",
+        "cy": "Walisisk",
+        "da": "Dansk",
+        "de": "Tysk",
+        "de_CH": "Tysk (Schweiz)",
+        "de_DE": "Tysk (Tyskland)",
+        "dra": "Dravidisk",
+        "el": "Græsk",
+        "en": "Engelsk",
+        "en_CA": "Engelsk (Canada)",
+        "en_GB": "Engelsk (Storbritannien)",
+        "en_US": "Engelsk (USA)",
+        "eo": "Esperanto",
+        "es": "Spansk",
+        "et": "Estisk",
+        "fa": "Persisk",
+        "fr": "Fransk",
+        "fr_CA": "Fransk (Canada)",
+        "fr_FR": "Fransk (Frankrig)",
+        "fi": "Finsk",
+        "ga": "Irsk",
+        "gd": "Gælisk",
+        "gon": "Gondi",
+        "gu": "Gujarati",
+        "he": "Hebræisk",
+        "hi": "Hindi",
+        "hr": "Kroatisk",
+        "hu": "Ungarsk",
+        "hy": "Armensk",
+        "is": "Islandsk",
+        "it": "Italiensk",
+        "iu": "Inuktitut",
+        "ka": "Kannada",
+        "kh": "Khasi",
+        "ko": "Koreansk",
+        "kok": "Konkani",
+        "kru": "Kurukh",
+        "ks": "Kashmirisk",
+        "lt": "Litauisk",
+        "lv": "Lettisk",
+        "mao": "Maori",
+        "ml": "Malayalam",
+        "mt": "Maltesisk",
+        "mwr": "Marwari",
+        "mn": "Mongolsk",
+        "mun": "Munda",
+        "nb": "Norsk bokmål",
+        "ne": "Nepalesisk",
+        "nl": "Hollandsk",
+        "no": "Norsk",
+        "or": "Oriya",
+        "pi": "Pali",
+        "pl": "Polsk",
+        "pt": "Portugisisk",
+        "pu": "Punjabi",
+        "ro": "Rumænsk",
+        "ru": "Russisk",
+        "sa": "Sanskrit",
+        "si": "Sindhi",
+        "sin": "Singalesisk",
+        "sk": "Slovakisk",
+        "sl": "Slovensk",
+        "sr": "Serbisk",
+        "sv": "Svensk",
+        "ta": "Tamil",
+        "te": "Telugu",
+        "tr": "Tyrkisk",
+        "tsn": "Afrikaans",
+        "uk": "Ukrainsk",
+        "ur": "Urdu",
+        "vi": "Vietnamesisk",
+        "zh": "Kinesisk",
+        "zh_TW": "Kinesisk (traditionelt han)"}</translation>
 <translation id="8065607967589909823">Det valgte er</translation>
 <translation id="8066678206530322333">Banner</translation>
 <translation id="8076492880354921740">Faner</translation>
@@ -886,6 +936,7 @@ Tryk på Alt+F for at åbne browsermenuen i Chrome.</translation>
 <translation id="8153880621934657047">Ikke i tabel.</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{understregning}one{# understregninger}other{# understregninger}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">Registrer og skift automatisk ChromeVox-sprog.</translation>
 <translation id="8184828902145951186">rk</translation>
 <translation id="8186185314313222077">slå fuld skærm til eller fra</translation>
 <translation id="8199231515320852133">Offentliggør overskrifterne for den aktuelle celle</translation>
@@ -960,6 +1011,7 @@ Tryk på Alt+F for at åbne browsermenuen i Chrome.</translation>
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">Ændringstaster</translation>
 <translation id="8943175951035496220">Ingen celle til højre.</translation>
+<translation id="8946628535652548639">r<ph name="TABLECELLROWINDEX" />k<ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">Glem</translation>
 <translation id="900114243503212879">fil</translation>

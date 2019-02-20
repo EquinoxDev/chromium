@@ -15,8 +15,8 @@ if (is_android) {
 
 assert(enable_vr)
 
-buildflag_header("vr_build_features") {
-  header = "vr_features.h"
+buildflag_header("vr_buildflags") {
+  header = "vr_buildflags.h"
   flags = [ "USE_VR_ASSETS_COMPONENT=$use_vr_assets_component" ]
 }
 
@@ -129,6 +129,9 @@ component("vr_ui") {
     "elements/viewport_aware_root.h",
     "font_fallback.cc",
     "font_fallback.h",
+    "font_fallback_android.cc",
+    "font_fallback_linux.cc",
+    "font_fallback_win.cc",
     "frame_lifecycle.cc",
     "frame_lifecycle.h",
     "model/color_scheme.cc",
@@ -186,12 +189,8 @@ component("vr_ui") {
     "//base",
     "//cc/animation",
     "//chrome/app:generated_resources",
-    "//chrome/app/vector_icons",
-    "//chrome/browser/vr/vector_icons",
     "//chrome/common:constants",
-    "//components/omnibox/browser:vector_icons",
     "//components/url_formatter",
-    "//components/vector_icons",
     "//media",
     "//net",
     "//skia",
@@ -276,14 +275,11 @@ component("vr_common") {
     "//base",
     "//cc/animation",
     "//cc/paint",
-    "//chrome/browser/vr/vector_icons",
     "//chrome/common:constants",
     "//components/omnibox/browser",
     "//components/omnibox/browser",
-    "//components/omnibox/browser:vector_icons",
     "//components/rappor/public:public",
     "//components/ukm/content",
-    "//components/vector_icons",
     "//content/public/browser",
     "//device/vr",
     "//device/vr/buildflags:buildflags",
@@ -402,7 +398,7 @@ component("vr_base") {
   defines = [ "VR_BASE_IMPLEMENTATION" ]
 
   public_deps = [
-    ":vr_build_features",
+    ":vr_buildflags",
     ":vr_gl_bindings",
     "//components/omnibox/browser",
     "//components/strings:components_strings_grit",
@@ -413,10 +409,14 @@ component("vr_base") {
   deps = [
     "//base",
     "//chrome/app:generated_resources",
+    "//chrome/app/vector_icons",
+    "//chrome/browser/vr/vector_icons",
+    "//components/omnibox/browser:vector_icons",
     "//components/rappor:rappor",
     "//components/security_state/core",
     "//components/ukm/content",
     "//components/url_formatter",
+    "//components/vector_icons",
     "//content/public/browser:browser",
     "//media",
     "//net",
@@ -657,8 +657,12 @@ if (is_win) {
   # easily skip tests at runtime).
   test("xr_browser_tests") {
     sources = [
+      "test/browser_test_browser_renderer_browser_interface.cc",
+      "test/browser_test_browser_renderer_browser_interface.h",
       "test/mock_openvr_device_hook_base.cc",
       "test/mock_openvr_device_hook_base.h",
+      "test/ui_utils.cc",
+      "test/ui_utils.h",
       "test/webvr_browser_test.cc",
       "test/webvr_browser_test.h",
       "test/webxr_browser_test.cc",
@@ -669,6 +673,7 @@ if (is_win) {
       "test/xr_browser_test.h",
       "webxr_vr_frame_pose_browser_test.cc",
       "webxr_vr_input_browser_test.cc",
+      "webxr_vr_permission_request_browser_test.cc",
       "webxr_vr_pixel_browser_test.cc",
       "webxr_vr_tab_browser_test.cc",
       "webxr_vr_transition_browser_test.cc",
@@ -677,6 +682,7 @@ if (is_win) {
     defines = [ "HAS_OUT_OF_PROC_TEST_RUNNER" ]
 
     deps = [
+      ":vr_common",
       "//base",
       "//chrome/test:browser_tests_runner",
       "//chrome/test:test_support",

@@ -4,6 +4,8 @@
 
 import("//base/android/linker/config.gni")
 import("//build/config/android/rules.gni")
+import("//build/config/locales.gni")
+import("//chrome/android/modules/module_names_to_package_ids.gni")
 import("//device/vr/buildflags/buildflags.gni")
 
 assert(enable_vr)
@@ -30,6 +32,7 @@ template("vr_module_tmpl") {
                            [
                              "base_module_target",
                              "module_name",
+                             "uncompress_shared_libraries",
                              "version_code",
                              "version_name",
                            ])
@@ -39,6 +42,14 @@ template("vr_module_tmpl") {
       "//chrome/browser/android/vr:java",
     ]
     proguard_enabled = !is_java_debug
-    uncompress_shared_libraries = chromium_linker_supported
+    if (!defined(invoker.uncompress_shared_libraries)) {
+      uncompress_shared_libraries = chromium_linker_supported
+    }
+
+    # Don't embed more localized strings than required (http://crbug.com/932017)
+    aapt_locale_whitelist = locales
+
+    package_name = "vr"
+    package_name_to_id_mapping = resource_packages_id_mapping
   }
 }

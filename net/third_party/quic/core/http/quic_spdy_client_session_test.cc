@@ -172,9 +172,9 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
   QuicStreamId associated_stream_id_;
 };
 
-INSTANTIATE_TEST_CASE_P(Tests,
-                        QuicSpdyClientSessionTest,
-                        ::testing::ValuesIn(AllSupportedVersions()));
+INSTANTIATE_TEST_SUITE_P(Tests,
+                         QuicSpdyClientSessionTest,
+                         ::testing::ValuesIn(AllSupportedVersions()));
 
 TEST_P(QuicSpdyClientSessionTest, CryptoConnect) {
   CompleteCryptoHandshake();
@@ -454,7 +454,7 @@ TEST_P(QuicSpdyClientSessionTest, InvalidPacketReceived) {
   QuicReceivedPacket valid_packet(buf, 2, QuicTime::Zero(), false);
   // Close connection shouldn't be called.
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
-  if (connection_->transport_version() == QUIC_VERSION_99) {
+  if (connection_->transport_version() > QUIC_VERSION_45) {
     // Illegal fixed bit value.
     EXPECT_CALL(*connection_, OnError(_)).Times(1);
   }

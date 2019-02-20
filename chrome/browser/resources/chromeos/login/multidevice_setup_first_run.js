@@ -111,17 +111,14 @@ cr.define('multidevice_setup', function() {
     /** @override */
     attached: function() {
       this.delegate_ = new MultiDeviceSetupFirstRunDelegate();
-      this.addWebUIListener(
-          'multidevice_setup.initializeSetupFlow',
-          this.initializeSetupFlow.bind(this));
     },
 
-    initializeSetupFlow: function() {
+    onForwardButtonFocusRequested_: function() {
       this.$$('#next-button').focus();
     },
 
     /**
-     * @param {!{detail:{didUserCompleteSetup: boolean}}} event
+     * @param {!CustomEvent<!{didUserCompleteSetup: boolean}>} event
      * @private
      */
     onExitRequested_: function(event) {
@@ -152,7 +149,7 @@ cr.define('multidevice_setup', function() {
     },
 
     /**
-     * @param {!{detail: string}} event
+     * @param {!CustomEvent<string>} event
      * @private
      */
     onOpenLearnMoreWebviewRequested_: function(event) {

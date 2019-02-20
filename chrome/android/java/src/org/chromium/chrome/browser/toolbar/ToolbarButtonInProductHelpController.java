@@ -10,7 +10,7 @@ import android.text.TextUtils;
 import android.view.View;
 
 import org.chromium.base.Callback;
-import org.chromium.base.ThreadUtils;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
@@ -28,6 +28,7 @@ import org.chromium.chrome.browser.widget.textbubble.TextBubble;
 import org.chromium.components.feature_engagement.EventConstants;
 import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.ui.widget.ViewRectProvider;
 
 /**
@@ -173,20 +174,29 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
                         accessibilityStringId, anchorView, appMenuHandler, activity));
     }
 
+    private static boolean shouldHighlightForIPH(String featureName) {
+        switch (featureName) {
+            case FeatureConstants.PREVIEWS_OMNIBOX_UI_FEATURE:
+                return false;
+            default:
+                return true;
+        }
+    }
+
     private static void maybeShowIPH(Tracker tracker, String featureName,
             Integer highlightMenuItemId, @StringRes int stringId,
             @StringRes int accessibilityStringId, View anchorView, AppMenuHandler appMenuHandler,
             ChromeActivity activity) {
         // Activity was destroyed; don't show IPH.
-        if (activity.isActivityDestroyed() || anchorView == null) return;
+        if (activity.isActivityFinishingOrDestroyed() || anchorView == null) return;
 
         assert(stringId != 0 && accessibilityStringId != 0);
 
         // Post a request to show the IPH bubble to allow time for a layout pass. Since the bubble
         // is shown on startup, the anchor view may not have a height initially see
         // https://crbug.com/871537.
-        ThreadUtils.postOnUiThread(() -> {
-            if (activity.isActivityDestroyed()) return;
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
+            if (activity.isActivityFinishingOrDestroyed()) return;
 
             if (TextUtils.equals(featureName, FeatureConstants.NTP_BUTTON_FEATURE)
                     && !canShowNTPButtonIPH(activity)) {
@@ -201,10 +211,14 @@ public class ToolbarButtonInProductHelpController implements Destroyable {
             textBubble.setDismissOnTouchInteraction(true);
             textBubble.addOnDismissListener(() -> anchorView.getHandler().postDelayed(() -> {
                 tracker.dismissed(featureName);
-                turnOffHighlightForTextBubble(appMenuHandler, anchorView);
+                if (shouldHighlightForIPH(featureName)) {
+                    turnOffHighlightForTextBubble(appMenuHandler, anchorView);
+                }
             }, ViewHighlighter.IPH_MIN_DELAY_BETWEEN_TWO_HIGHLIGHTS));
 
-            turnOnHighlightForTextBubble(appMenuHandler, highlightMenuItemId, anchorView);
+            if (shouldHighlightForIPH(featureName)) {
+                turnOnHighlightForTextBubble(appMenuHandler, highlightMenuItemId, anchorView);
+            }
 
             int yInsetPx = activity.getResources().getDimensionPixelOffset(
                     R.dimen.text_bubble_menu_anchor_y_inset);

@@ -11,6 +11,8 @@
 #include <limits>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/cancelable_callback.h"
 #include "base/location.h"
 #include "base/macros.h"
@@ -145,8 +147,8 @@ class RasterBufferProviderTest
   RasterBufferProviderTest()
       : all_tile_tasks_finished_(
             base::ThreadTaskRunnerHandle::Get().get(),
-            base::Bind(&RasterBufferProviderTest::AllTileTasksFinished,
-                       base::Unretained(this))),
+            base::BindRepeating(&RasterBufferProviderTest::AllTileTasksFinished,
+                                base::Unretained(this))),
         timeout_seconds_(5),
         timed_out_(false) {}
 
@@ -322,7 +324,6 @@ class RasterBufferProviderTest
   std::unique_ptr<RasterBufferProvider> raster_buffer_provider_;
   viz::TestGpuMemoryBufferManager gpu_memory_buffer_manager_;
   SynchronousTaskGraphRunner task_graph_runner_;
-  base::CancelableClosure timeout_;
   UniqueNotifier all_tile_tasks_finished_;
   int timeout_seconds_;
   bool timed_out_;
@@ -410,9 +411,7 @@ TEST_P(RasterBufferProviderTest, ReadyToDrawCallback) {
 
   base::RunLoop run_loop;
   uint64_t callback_id = raster_buffer_provider_->SetReadyToDrawCallback(
-      array,
-      base::Bind([](base::RunLoop* run_loop) { run_loop->Quit(); }, &run_loop),
-      0);
+      array, run_loop.QuitClosure(), 0);
 
   if (GetParam() == RASTER_BUFFER_PROVIDER_TYPE_GPU ||
       GetParam() == RASTER_BUFFER_PROVIDER_TYPE_ONE_COPY)
@@ -503,9 +502,7 @@ TEST_P(RasterBufferProviderTest, MeasureGpuRasterDuration) {
   for (const auto& resource : resources_)
     array.push_back(&resource);
   uint64_t callback_id = raster_buffer_provider_->SetReadyToDrawCallback(
-      array,
-      base::Bind([](base::RunLoop* run_loop) { run_loop->Quit(); }, &run_loop),
-      0);
+      array, run_loop.QuitClosure(), 0);
   ASSERT_TRUE(callback_id);
   run_loop.Run();
 
@@ -519,7 +516,7 @@ TEST_P(RasterBufferProviderTest, MeasureGpuRasterDuration) {
   histogram_tester.ExpectTotalCount(histogram, 1);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     RasterBufferProviderTests,
     RasterBufferProviderTest,
     ::testing::Values(RASTER_BUFFER_PROVIDER_TYPE_ZERO_COPY,

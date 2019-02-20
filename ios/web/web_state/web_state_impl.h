@@ -45,7 +45,6 @@ namespace web {
 class BrowserState;
 struct ContextMenuParams;
 struct FaviconURL;
-struct LoadCommittedDetails;
 class NavigationContextImpl;
 class NavigationManager;
 class SessionCertificatePolicyCacheImpl;
@@ -199,6 +198,7 @@ class WebStateImpl : public WebState, public NavigationManagerDelegate {
   SessionCertificatePolicyCache* GetSessionCertificatePolicyCache() override;
   CRWSessionStorage* BuildSessionStorage() override;
   CRWJSInjectionReceiver* GetJSInjectionReceiver() const override;
+  void LoadData(NSData* data, NSString* mime_type, const GURL& url) override;
   void ExecuteJavaScript(const base::string16& javascript) override;
   void ExecuteJavaScript(const base::string16& javascript,
                          JavaScriptResultCallback callback) override;
@@ -215,7 +215,6 @@ class WebStateImpl : public WebState, public NavigationManagerDelegate {
   const GURL& GetVisibleURL() const override;
   const GURL& GetLastCommittedURL() const override;
   GURL GetCurrentURL(URLVerificationTrustLevel* trust_level) const override;
-  void ShowTransientContentView(CRWContentView* content_view) override;
   bool IsShowingWebInterstitial() const override;
   WebInterstitial* GetWebInterstitial() const override;
   void AddScriptCommandCallback(const ScriptCommandCallback& callback,
@@ -229,7 +228,7 @@ class WebStateImpl : public WebState, public NavigationManagerDelegate {
       mojo::ScopedMessagePipeHandle interface_pipe) override;
   bool HasOpener() const override;
   void SetHasOpener(bool has_opener) override;
-  void TakeSnapshot(CGRect rect, SnapshotCallback callback) override;
+  void TakeSnapshot(const gfx::RectF& rect, SnapshotCallback callback) override;
   void AddObserver(WebStateObserver* observer) override;
   void RemoveObserver(WebStateObserver* observer) override;
 
@@ -278,12 +277,11 @@ class WebStateImpl : public WebState, public NavigationManagerDelegate {
   void OnGoToIndexSameDocumentNavigation(NavigationInitiationType type,
                                          bool has_user_gesture) override;
   void WillChangeUserAgentType() override;
-  void LoadCurrentItem() override;
+  void LoadCurrentItem(NavigationInitiationType type) override;
   void LoadIfNecessary() override;
   void Reload() override;
   void OnNavigationItemsPruned(size_t pruned_item_count) override;
-  void OnNavigationItemCommitted(
-      const LoadCommittedDetails& load_details) override;
+  void OnNavigationItemCommitted(NavigationItem* item) override;
 
   // Updates the HTTP response headers for the main page using the headers
   // passed to the OnHttpResponseHeadersReceived() function below.

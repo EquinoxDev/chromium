@@ -7,9 +7,11 @@
 #include <memory>
 #include <string>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
 #include "base/test/simple_test_tick_clock.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
@@ -53,8 +55,10 @@ class MockTabLifecycleObserver : public TabLifecycleObserver {
  public:
   MockTabLifecycleObserver() = default;
 
-  MOCK_METHOD2(OnDiscardedStateChange,
-               void(content::WebContents* contents, bool is_discarded));
+  MOCK_METHOD3(OnDiscardedStateChange,
+               void(content::WebContents* contents,
+                    LifecycleUnitDiscardReason reason,
+                    bool is_discarded));
   MOCK_METHOD2(OnAutoDiscardableStateChange,
                void(content::WebContents* contents, bool is_auto_discardable));
 
@@ -89,6 +93,8 @@ class TabLifecycleUnitTest : public testing::ChromeTestHarnessWithLocalDB {
   class ScopedEnterpriseOptOut;
 
   TabLifecycleUnitTest() : scoped_set_tick_clock_for_testing_(&test_clock_) {
+    // Advance the clock so that it doesn't yield null time ticks.
+    test_clock_.Advance(base::TimeDelta::FromSeconds(1));
     observers_.AddObserver(&observer_);
   }
 
@@ -391,9 +397,9 @@ TEST_F(TabLifecycleUnitTest, CannotDiscardVideoCapture) {
   test_clock_.Advance(kBackgroundUrgentProtectionTime);
   ExpectCanDiscardTrueAllReasons(&tab_lifecycle_unit);
 
-  content::MediaStreamDevices video_devices{
-      content::MediaStreamDevice(content::MEDIA_DEVICE_VIDEO_CAPTURE,
-                                 "fake_media_device", "fake_media_device")};
+  blink::MediaStreamDevices video_devices{
+      blink::MediaStreamDevice(blink::MEDIA_DEVICE_VIDEO_CAPTURE,
+                               "fake_media_device", "fake_media_device")};
   std::unique_ptr<content::MediaStreamUI> ui =
       MediaCaptureDevicesDispatcher::GetInstance()
           ->GetMediaStreamCaptureIndicator()
@@ -414,9 +420,9 @@ TEST_F(TabLifecycleUnitTest, CannotDiscardDesktopCapture) {
   test_clock_.Advance(kBackgroundUrgentProtectionTime);
   ExpectCanDiscardTrueAllReasons(&tab_lifecycle_unit);
 
-  content::MediaStreamDevices desktop_capture_devices{
-      content::MediaStreamDevice(content::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE,
-                                 "fake_media_device", "fake_media_device")};
+  blink::MediaStreamDevices desktop_capture_devices{
+      blink::MediaStreamDevice(blink::MEDIA_GUM_DESKTOP_VIDEO_CAPTURE,
+                               "fake_media_device", "fake_media_device")};
   std::unique_ptr<content::MediaStreamUI> ui =
       MediaCaptureDevicesDispatcher::GetInstance()
           ->GetMediaStreamCaptureIndicator()

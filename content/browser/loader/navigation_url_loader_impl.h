@@ -13,6 +13,7 @@
 #include "content/common/navigation_params.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/ssl_status.h"
+#include "content/public/common/previews_state.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 
@@ -45,10 +46,9 @@ class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
   ~NavigationURLLoaderImpl() override;
 
   // NavigationURLLoader implementation:
-  void FollowRedirect(const base::Optional<std::vector<std::string>>&
-                          to_be_removed_request_headers,
-                      const base::Optional<net::HttpRequestHeaders>&
-                          modified_request_headers) override;
+  void FollowRedirect(const std::vector<std::string>& removed_headers,
+                      const net::HttpRequestHeaders& modified_headers,
+                      PreviewsState new_previews_state) override;
   void ProceedWithResponse() override;
 
   void OnReceiveResponse(
@@ -57,9 +57,12 @@ class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
       std::unique_ptr<NavigationData> navigation_data,
       const GlobalRequestID& global_request_id,
       bool is_download,
-      bool is_stream);
+      bool is_stream,
+      base::TimeDelta total_ui_to_io_time,
+      base::Time io_post_time);
   void OnReceiveRedirect(const net::RedirectInfo& redirect_info,
-                         scoped_refptr<network::ResourceResponse> response);
+                         scoped_refptr<network::ResourceResponse> response,
+                         base::Time io_post_time);
   void OnComplete(const network::URLLoaderCompletionStatus& status);
 
   // Overrides loading of frame requests when the network service is disabled.
@@ -106,6 +109,9 @@ class CONTENT_EXPORT NavigationURLLoaderImpl : public NavigationURLLoader {
   // Factories to handle navigation requests for non-network resources.
   ContentBrowserClient::NonNetworkURLLoaderFactoryMap
       non_network_url_loader_factories_;
+
+  // Counts the time overhead of all the hops from the IO to the UI threads.
+  base::TimeDelta io_to_ui_time_;
 
   base::WeakPtrFactory<NavigationURLLoaderImpl> weak_factory_;
 

@@ -16,10 +16,10 @@
 #include "ash/app_list/views/contents_view.h"
 #include "ash/app_list/views/search_box_view.h"
 #include "ash/public/cpp/app_list/app_list_config.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/wallpaper_types.h"
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
@@ -42,10 +42,11 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/path.h"
+#include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/strings/grit/ui_strings.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/fill_layout.h"
@@ -68,10 +69,6 @@ constexpr int kHalfAppListHeight = 561;
 // order to transition to the next state.
 constexpr int kAppListThresholdDenominator = 3;
 
-// The velocity the app list must be dragged in order to transition to the next
-// state, measured in DIPs/event.
-constexpr int kAppListDragVelocityThreshold = 6;
-
 // The scroll offset in order to transition from PEEKING to FULLSCREEN
 constexpr int kAppListMinScrollToSwitchStates = 20;
 
@@ -87,9 +84,6 @@ constexpr int kAppInfoDialogHeight = 384;
 constexpr float kAppListAnimationDurationTestMs = 0;
 constexpr float kAppListAnimationDurationMs = 200;
 constexpr float kAppListAnimationDurationFromFullscreenMs = 250;
-
-// The background corner radius in peeking and fullscreen state.
-constexpr int kAppListBackgroundRadius = 28;
 
 // Events within this threshold from the top of the view will be reserved for
 // home launcher gestures, if they can be processed.
@@ -120,9 +114,15 @@ class SearchBoxFocusHost : public views::View {
   DISALLOW_COPY_AND_ASSIGN(SearchBoxFocusHost);
 };
 
-SkColor GetBackgroundShieldColor(const std::vector<SkColor>& prominent_colors) {
+SkColor GetBackgroundShieldColor(const std::vector<SkColor>& prominent_colors,
+                                 float color_opacity) {
+  const U8CPU sk_opacity_value = static_cast<U8CPU>(255 * color_opacity);
+
+  const SkColor default_color = SkColorSetA(
+      app_list::AppListView::kDefaultBackgroundColor, sk_opacity_value);
+
   if (prominent_colors.empty())
-    return app_list::AppListView::kDefaultBackgroundColor;
+    return default_color;
 
   DCHECK_EQ(static_cast<size_t>(ColorProfileType::NUM_OF_COLOR_PROFILES),
             prominent_colors.size());
@@ -130,13 +130,16 @@ SkColor GetBackgroundShieldColor(const std::vector<SkColor>& prominent_colors) {
   const SkColor dark_muted =
       prominent_colors[static_cast<int>(ColorProfileType::DARK_MUTED)];
   if (SK_ColorTRANSPARENT == dark_muted)
-    return app_list::AppListView::kDefaultBackgroundColor;
-  return color_utils::GetResultingPaintColor(
-      SkColorSetA(SK_ColorBLACK, AppListView::kAppListColorDarkenAlpha),
-      dark_muted);
+    return default_color;
+
+  return SkColorSetA(
+      color_utils::GetResultingPaintColor(
+          SkColorSetA(SK_ColorBLACK, AppListView::kAppListColorDarkenAlpha),
+          dark_muted),
+      sk_opacity_value);
 }
 
-DEFINE_UI_CLASS_PROPERTY_KEY(bool, kExcludeWindowFromEventHandling, false);
+DEFINE_UI_CLASS_PROPERTY_KEY(bool, kExcludeWindowFromEventHandling, false)
 
 // This targeter prevents routing events to sub-windows, such as
 // RenderHostWindow in order to handle events in context of app list.
@@ -258,11 +261,56 @@ class AppListBackgroundShieldView : public views::View {
     canvas->DrawRoundRect(GetContentsBounds(), corner_radius_, flags);
   }
 
+  SkColor GetColorForTest() const { return color_; }
+
  private:
   SkColor color_;
   int corner_radius_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListBackgroundShieldView);
+};
+
+// Animation used to translate AppListView as well as its child views.
+class AppListAnimation : public ui::LayerAnimationElement {
+ public:
+  AppListAnimation(gfx::PointF start_pos,
+                   gfx::PointF end_pos,
+                   base::TimeDelta duration,
+                   gfx::Tween::Type tween_type,
+                   AppListView* view)
+      : ui::LayerAnimationElement(ui::LayerAnimationElement::TRANSFORM,
+                                  duration),
+        transform_(
+            std::make_unique<ui::InterpolatedTranslation>(start_pos, end_pos)),
+        view_(view),
+        tween_type_(tween_type) {}
+
+  ~AppListAnimation() override = default;
+
+  // ui::LayerAnimationElement:
+  void OnStart(ui::LayerAnimationDelegate* delegate) override {}
+  bool OnProgress(double current,
+                  ui::LayerAnimationDelegate* delegate) override {
+    const double progress = gfx::Tween::CalculateValue(tween_type_, current);
+    delegate->SetTransformFromAnimation(
+        transform_->Interpolate(progress),
+        ui::PropertyChangeReason::FROM_ANIMATION);
+
+    // Update child views' layout at each animation frame because child views'
+    // padding changes along with the app list view's bounds.
+    view_->app_list_main_view()->contents_view()->UpdateYPositionAndOpacity();
+
+    return true;
+  }
+  void OnGetTarget(TargetValue* target) const override {}
+  void OnAbort(ui::LayerAnimationDelegate* delegate) override {}
+
+ private:
+  std::unique_ptr<ui::InterpolatedTransform> transform_;
+  AppListView* view_;
+  gfx::Tween::Type tween_type_;
+
+  DISALLOW_COPY_AND_ASSIGN(AppListAnimation);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -417,14 +465,34 @@ bool AppListView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 void AppListView::Layout() {
   const gfx::Rect contents_bounds = GetContentsBounds();
 
-  // Make sure to layout |app_list_main_view_| at the center of the widget.
-  gfx::Rect centered_bounds = contents_bounds;
-  ContentsView* contents_view = app_list_main_view_->contents_view();
-  centered_bounds.ClampToCenteredSize(
-      gfx::Size(contents_view->GetMaximumContentsSize().width(),
-                contents_bounds.height()));
+  // Exclude the shelf height from the contents bounds to avoid apps grid from
+  // overlapping with shelf.
+  gfx::Rect main_bounds = contents_bounds;
+  main_bounds.Inset(0, 0, 0, AppListConfig::instance().shelf_height());
 
-  app_list_main_view_->SetBoundsRect(centered_bounds);
+  // The AppListMainView's size is supposed to be the same as AppsContainerView.
+  const gfx::Size min_main_size = GetAppsContainerView()->GetMinimumSize();
+
+  if ((main_bounds.width() > 0 && main_bounds.height() > 0) &&
+      (main_bounds.width() < min_main_size.width() ||
+       main_bounds.height() < min_main_size.height())) {
+    // Scale down the AppListMainView if AppsContainerView does not fit in the
+    // display.
+    const float scale = std::min(
+        (main_bounds.width()) / static_cast<float>(min_main_size.width()),
+        main_bounds.height() / static_cast<float>(min_main_size.height()));
+    DCHECK_GT(scale, 0);
+    const gfx::RectF scaled_main_bounds(main_bounds.x(), main_bounds.y(),
+                                        main_bounds.width() / scale,
+                                        main_bounds.height() / scale);
+    gfx::Transform transform;
+    transform.Scale(scale, scale);
+    app_list_main_view_->SetTransform(transform);
+    app_list_main_view_->SetBoundsRect(gfx::ToEnclosedRect(scaled_main_bounds));
+  } else {
+    app_list_main_view_->SetTransform(gfx::Transform());
+    app_list_main_view_->SetBoundsRect(main_bounds);
+  }
 
   gfx::Rect app_list_background_shield_bounds = contents_bounds;
   // Inset bottom by 2 * |kAppListBackgroundRadius| to account for the rounded
@@ -446,11 +514,6 @@ void AppListView::Layout() {
   }
 
   UpdateAppListBackgroundYPosition();
-}
-
-void AppListView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
-  node_data->SetName(state_announcement_);
-  node_data->role = ax::mojom::Role::kAlert;
 }
 
 ax::mojom::Role AppListView::GetAccessibleWindowRole() const {
@@ -486,14 +549,17 @@ views::View* AppListView::GetAppListBackgroundShieldForTest() {
   return app_list_background_shield_;
 }
 
+SkColor AppListView::GetAppListBackgroundShieldColorForTest() {
+  DCHECK(app_list_background_shield_);
+  return app_list_background_shield_->GetColorForTest();
+}
+
 void AppListView::InitContents(int initial_apps_page) {
   // The shield view that colors/blurs the background of the app list and
   // makes it transparent.
   bool use_background_blur = is_background_blur_enabled_ && !is_tablet_mode();
   app_list_background_shield_ = new AppListBackgroundShieldView(
       use_background_blur ? ui::LAYER_SOLID_COLOR : ui::LAYER_TEXTURED);
-  app_list_background_shield_->layer()->SetOpacity(
-      is_background_blur_enabled_ ? kAppListOpacityWithBlur : kAppListOpacity);
   SetBackgroundShieldColor();
   if (use_background_blur) {
     app_list_background_shield_mask_ = views::Painter::CreatePaintedLayer(
@@ -516,6 +582,9 @@ void AppListView::InitContents(int initial_apps_page) {
   search_box_view_->Init();
 
   app_list_main_view_->Init(0, search_box_view_);
+
+  announcement_view_ = new views::View();
+  AddChildView(announcement_view_);
 }
 
 void AppListView::InitChildWidgets() {
@@ -598,6 +667,12 @@ void AppListView::HandleClickOrTap(ui::LocatedEvent* event) {
   // Clear focus if the located event is not handled by any child view.
   GetFocusManager()->ClearFocus();
 
+  // Back to |search_result_page_view_| if the embedded Assistant UI is shown.
+  if (app_list_main_view()->contents_view()->IsShowingEmbeddedAssistantUI()) {
+    Back();
+    return;
+  }
+
   if (GetAppsContainerView()->IsInFolderView()) {
     // Close the folder if it is opened.
     GetAppsContainerView()->app_list_folder_view()->CloseFolderPage();
@@ -663,7 +738,7 @@ void AppListView::EndDrag(const gfx::Point& location) {
   // Change the app list state based on where the drag ended. If fling velocity
   // was over the threshold, snap to the next state in the direction of the
   // fling.
-  if (std::abs(last_fling_velocity_) >= kAppListDragVelocityThreshold) {
+  if (std::abs(last_fling_velocity_) >= kDragVelocityThreshold) {
     // If the user releases drag with velocity over the threshold, snap to
     // the next state, ignoring the drag release position.
 
@@ -854,17 +929,17 @@ void AppListView::MaybeCreateAccessibilityEvent(AppListViewState new_state) {
       new_state != AppListViewState::FULLSCREEN_ALL_APPS)
     return;
 
-  DCHECK(state_announcement_ == base::string16());
+  base::string16 state_announcement;
 
   if (new_state == AppListViewState::PEEKING) {
-    state_announcement_ = l10n_util::GetStringUTF16(
+    state_announcement = l10n_util::GetStringUTF16(
         IDS_APP_LIST_SUGGESTED_APPS_ACCESSIBILITY_ANNOUNCEMENT);
   } else {
-    state_announcement_ = l10n_util::GetStringUTF16(
+    state_announcement = l10n_util::GetStringUTF16(
         IDS_APP_LIST_ALL_APPS_ACCESSIBILITY_ANNOUNCEMENT);
   }
-  NotifyAccessibilityEvent(ax::mojom::Event::kAlert, true);
-  state_announcement_ = base::string16();
+  announcement_view_->GetViewAccessibility().OverrideName(state_announcement);
+  announcement_view_->NotifyAccessibilityEvent(ax::mojom::Event::kAlert, true);
 }
 
 display::Display AppListView::GetDisplayNearestView() const {
@@ -1084,6 +1159,12 @@ void AppListView::OnKeyEvent(ui::KeyEvent* event) {
 
 void AppListView::OnTabletModeChanged(bool started) {
   is_tablet_mode_ = started;
+
+  // Bottom shelf is enforced in tablet mode. When tablet mode ends, the
+  // AppListView is destroyed so no need to update |is_side_shelf_|.
+  if (started)
+    is_side_shelf_ = false;
+
   search_box_view_->OnTabletModeChanged(started);
   search_model_->SetTabletMode(started);
   GetAppsContainerView()->OnTabletModeChanged(started);
@@ -1114,8 +1195,8 @@ void AppListView::OnTabletModeChanged(bool started) {
   if (parent_window && !parent_window->Contains(window))
     parent_window->AddChild(window);
 
-  // Update background opacity.
-  app_list_background_shield_->layer()->SetOpacity(0.f);
+  // Update background color opacity.
+  SetBackgroundShieldColor();
 
   // Update background blur.
   if (is_background_blur_enabled_)
@@ -1187,6 +1268,12 @@ void AppListView::SetState(AppListViewState new_state) {
   RecordStateTransitionForUma(new_state_override);
   model_->SetStateFullscreen(new_state_override);
   app_list_state_ = new_state_override;
+
+  // Animations are skipped for side shelf mode, so trigger a layout to update
+  // children immediately.
+  if (is_side_shelf_)
+    Layout();
+
   if (new_state_override == AppListViewState::CLOSED) {
     return;
   }
@@ -1243,7 +1330,8 @@ void AppListView::StartAnimationForState(AppListViewState target_state) {
   ui::Layer* layer = fullscreen_widget_->GetLayer();
   layer->SetBounds(target_bounds);
   gfx::Transform transform;
-  transform.Translate(0, original_state_y - target_state_y);
+  const int y_offset = original_state_y - target_state_y;
+  transform.Translate(0, y_offset);
   layer->SetTransform(transform);
 
   ui::LayerAnimator* animator = layer->GetAnimator();
@@ -1257,12 +1345,11 @@ void AppListView::StartAnimationForState(AppListViewState target_state) {
   settings.SetAnimationMetricsReporter(state_animation_metrics_reporter_.get());
   settings.AddObserver(transition_animation_observer_.get());
 
-  layer->SetTransform(gfx::Transform());
-
-  // In transition animation, layout is only performed after it is complete,
-  // which makes the child views jump. So update y positions in advance here to
-  // avoid that.
-  app_list_main_view_->contents_view()->UpdateYPositionAndOpacity();
+  animator->StartAnimation(
+      new ui::LayerAnimationSequence(std::make_unique<AppListAnimation>(
+          gfx::PointF(0, y_offset), gfx::PointF(),
+          base::TimeDelta::FromMilliseconds(animation_duration),
+          gfx::Tween::EASE_OUT, this)));
 }
 
 void AppListView::StartCloseAnimation(base::TimeDelta animation_duration) {
@@ -1345,7 +1432,7 @@ void AppListView::UpdateYPositionAndOpacity(int y_position_in_screen,
   }
 
   SetIsInDrag(true);
-  background_opacity_ = background_opacity;
+  background_opacity_in_drag_ = background_opacity;
   gfx::Rect new_widget_bounds = fullscreen_widget_->GetWindowBoundsInScreen();
   app_list_y_position_in_screen_ = std::min(
       std::max(y_position_in_screen, GetDisplayNearestView().work_area().y()),
@@ -1429,6 +1516,49 @@ int AppListView::GetFullscreenStateHeight() const {
   return display_bounds.height() - display.work_area().y() + display_bounds.y();
 }
 
+AppListViewState AppListView::CalculateStateAfterShelfDrag(
+    const ui::GestureEvent& gesture_in_screen,
+    float launcher_above_shelf_bottom_amount) const {
+  AppListViewState app_list_state = AppListViewState::PEEKING;
+  if (gesture_in_screen.type() == ui::ET_SCROLL_FLING_START &&
+      fabs(gesture_in_screen.details().velocity_y()) > kDragVelocityThreshold) {
+    // If the scroll sequence terminates with a fling, show the fullscreen app
+    // list if the fling was fast enough and in the correct direction, otherwise
+    // close it.
+    app_list_state = gesture_in_screen.details().velocity_y() < 0
+                         ? AppListViewState::FULLSCREEN_ALL_APPS
+                         : AppListViewState::CLOSED;
+  } else {
+    // Snap the app list to corresponding state according to the snapping
+    // thresholds.
+    if (is_tablet_mode_) {
+      app_list_state =
+          launcher_above_shelf_bottom_amount > kDragSnapToFullscreenThreshold
+              ? AppListViewState::FULLSCREEN_ALL_APPS
+              : AppListViewState::CLOSED;
+    } else {
+      if (launcher_above_shelf_bottom_amount <= kDragSnapToClosedThreshold)
+        app_list_state = AppListViewState::CLOSED;
+      else if (launcher_above_shelf_bottom_amount <=
+               kDragSnapToPeekingThreshold)
+        app_list_state = AppListViewState::PEEKING;
+      else
+        app_list_state = AppListViewState::FULLSCREEN_ALL_APPS;
+    }
+  }
+
+  // Deal with the situation of dragging app list from shelf while typing in
+  // the search box.
+  if (app_list_state == AppListViewState::FULLSCREEN_ALL_APPS) {
+    ash::AppListState active_state =
+        app_list_main_view_->contents_view()->GetActiveState();
+    if (active_state == ash::AppListState::kStateSearchResults)
+      app_list_state = AppListViewState::FULLSCREEN_SEARCH;
+  }
+
+  return app_list_state;
+}
+
 void AppListView::UpdateChildViewsYPositionAndOpacity() {
   if (app_list_state_ == AppListViewState::CLOSED)
     return;
@@ -1436,10 +1566,7 @@ void AppListView::UpdateChildViewsYPositionAndOpacity() {
   UpdateAppListBackgroundYPosition();
 
   // Update the opacity of the background shield.
-  const float shield_opacity =
-      is_background_blur_enabled_ ? kAppListOpacityWithBlur : kAppListOpacity;
-  app_list_background_shield_->layer()->SetOpacity(
-      is_in_drag_ ? background_opacity_ : shield_opacity);
+  SetBackgroundShieldColor();
 
   search_box_view_->UpdateOpacity();
   app_list_main_view_->contents_view()->UpdateYPositionAndOpacity();
@@ -1449,23 +1576,25 @@ void AppListView::RedirectKeyEventToSearchBox(ui::KeyEvent* event) {
   if (event->handled())
     return;
 
+  // Allow text input inside the Assistant page.
+  if (app_list_main_view()->contents_view()->IsShowingEmbeddedAssistantUI())
+    return;
+
   views::Textfield* search_box = search_box_view_->search_box();
   const bool is_search_box_focused = search_box->HasFocus();
   const bool is_folder_header_view_focused = GetAppsContainerView()
                                                  ->app_list_folder_view()
                                                  ->folder_header_view()
                                                  ->HasTextFocus();
-  if (is_search_box_focused || is_folder_header_view_focused) {
-    // Do not redirect the key event to the |search_box_| when focus is on a
-    // text field.
-    return;
-  }
 
-  if (CanProcessLeftRightKeyTraversal(*event) ||
-      CanProcessUpDownKeyTraversal(*event)) {
-    // Do not redirect the arrow keys that are used to do focus traversal.
+  // Do not redirect the key event to the |search_box_| when focus is on a
+  // text field.
+  if (is_search_box_focused || is_folder_header_view_focused)
     return;
-  }
+
+  // Do not redirect the arrow keys as they are are used for focus traversal.
+  if (IsUnhandledArrowKeyEvent(*event))
+    return;
 
   // Redirect key event to |search_box_|.
   search_box->OnKeyEvent(event);
@@ -1474,11 +1603,11 @@ void AppListView::RedirectKeyEventToSearchBox(ui::KeyEvent* event) {
     search_box->RequestFocus();
     return;
   }
-  if (event->type() == ui::ET_KEY_PRESSED) {
-    // Insert it into search box if the key event is a character. Released
-    // key should not be handled to prevent inserting duplicate character.
+
+  // Insert it into search box if the key event is a character. Released
+  // key should not be handled to prevent inserting duplicate character.
+  if (event->type() == ui::ET_KEY_PRESSED)
     search_box->InsertChar(*event);
-  }
 }
 
 void AppListView::OnScreenKeyboardShown(bool shown) {
@@ -1546,13 +1675,28 @@ void AppListView::SetBackgroundShieldColor() {
   if (!app_list_background_shield_)
     return;
 
+  // Opacity is set on the color instead of the layer because changing opacity
+  // of the layer changes opacity of the blur effect, which is not desired.
+  float color_opacity = kAppListOpacity;
+
+  if (is_tablet_mode_) {
+    // The Homecher background should have an opacity of 0.
+    color_opacity = 0;
+  } else if (is_in_drag_) {
+    // Allow a custom opacity while the AppListView is dragging to show a
+    // gradual opacity change when dragging from the shelf.
+    color_opacity = background_opacity_in_drag_;
+  } else if (is_background_blur_enabled_) {
+    color_opacity = kAppListOpacityWithBlur;
+  }
+
   GetWallpaperProminentColors(base::BindOnce(
-      [](base::WeakPtr<AppListView> self,
+      [](base::WeakPtr<AppListView> self, float color_opacity,
          const std::vector<SkColor>& prominent_colors) {
         self->app_list_background_shield_->UpdateColor(
-            GetBackgroundShieldColor(prominent_colors));
+            GetBackgroundShieldColor(prominent_colors, color_opacity));
       },
-      weak_ptr_factory_.GetWeakPtr()));
+      weak_ptr_factory_.GetWeakPtr(), color_opacity));
 }
 
 void AppListView::RecordFolderMetrics() {

@@ -12,6 +12,8 @@
 #include "third_party/blink/renderer/core/workers/worker_fetch_test_helper.h"
 #include "third_party/blink/renderer/platform/loader/testing/fetch_testing_platform_support.h"
 #include "third_party/blink/renderer/platform/loader/testing/mock_fetch_context.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_loader_factory.h"
+#include "third_party/blink/renderer/platform/loader/testing/test_resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
@@ -22,13 +24,13 @@ namespace blink {
 
 class WorkletModuleResponsesMapTest : public testing::Test {
  public:
-  WorkletModuleResponsesMapTest() = default;
-
-  void SetUp() override {
+  WorkletModuleResponsesMapTest() {
     platform_->AdvanceClockSeconds(1.);  // For non-zero DocumentParserTimings
-    auto* context = MakeGarbageCollected<MockFetchContext>(
-        MockFetchContext::kShouldLoadNewResource);
-    fetcher_ = MakeGarbageCollected<ResourceFetcher>(context);
+    auto* properties = MakeGarbageCollected<TestResourceFetcherProperties>();
+    auto* context = MakeGarbageCollected<MockFetchContext>();
+    fetcher_ = MakeGarbageCollected<ResourceFetcher>(ResourceFetcherInit(
+        *properties, context, base::MakeRefCounted<scheduler::FakeTaskRunner>(),
+        MakeGarbageCollected<TestLoaderFactory>()));
     map_ = MakeGarbageCollected<WorkletModuleResponsesMap>();
   }
 
@@ -45,15 +47,15 @@ class WorkletModuleResponsesMapTest : public testing::Test {
   }
 
   void RunUntilIdle() {
-    base::SingleThreadTaskRunner* runner =
-        fetcher_->Context().GetLoadingTaskRunner().get();
-    static_cast<scheduler::FakeTaskRunner*>(runner)->RunUntilIdle();
+    static_cast<scheduler::FakeTaskRunner*>(fetcher_->GetTaskRunner().get())
+        ->RunUntilIdle();
   }
 
  protected:
   ScopedTestingPlatformSupport<FetchTestingPlatformSupport> platform_;
   Persistent<ResourceFetcher> fetcher_;
   Persistent<WorkletModuleResponsesMap> map_;
+  const scoped_refptr<scheduler::FakeTaskRunner> task_runner_;
 };
 
 TEST_F(WorkletModuleResponsesMapTest, Basic) {

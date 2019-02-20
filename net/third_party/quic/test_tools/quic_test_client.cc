@@ -24,7 +24,7 @@
 #include "net/third_party/quic/test_tools/quic_client_peer.h"
 #include "net/third_party/quic/test_tools/quic_connection_peer.h"
 #include "net/third_party/quic/test_tools/quic_spdy_session_peer.h"
-#include "net/third_party/quic/test_tools/quic_stream_peer.h"
+#include "net/third_party/quic/test_tools/quic_spdy_stream_peer.h"
 #include "net/third_party/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quic/tools/quic_url.h"
 
@@ -167,7 +167,7 @@ MockableQuicClient::MockableQuicClient(
     QuicSocketAddress server_address,
     const QuicServerId& server_id,
     const ParsedQuicVersionVector& supported_versions,
-    net::EpollServer* epoll_server)
+    QuicEpollServer* epoll_server)
     : MockableQuicClient(server_address,
                          server_id,
                          QuicConfig(),
@@ -179,7 +179,7 @@ MockableQuicClient::MockableQuicClient(
     const QuicServerId& server_id,
     const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
-    net::EpollServer* epoll_server)
+    QuicEpollServer* epoll_server)
     : MockableQuicClient(server_address,
                          server_id,
                          config,
@@ -192,7 +192,7 @@ MockableQuicClient::MockableQuicClient(
     const QuicServerId& server_id,
     const QuicConfig& config,
     const ParsedQuicVersionVector& supported_versions,
-    net::EpollServer* epoll_server,
+    QuicEpollServer* epoll_server,
     std::unique_ptr<ProofVerifier> proof_verifier)
     : QuicClient(
           server_address,
@@ -204,7 +204,8 @@ MockableQuicClient::MockableQuicClient(
                                                                this),
           QuicWrapUnique(
               new RecordingProofVerifier(std::move(proof_verifier)))),
-      override_connection_id_(EmptyQuicConnectionId()) {}
+      override_connection_id_(EmptyQuicConnectionId()),
+      connection_id_overridden_(false) {}
 
 MockableQuicClient::~MockableQuicClient() {
   if (connected()) {
@@ -225,12 +226,12 @@ MockableQuicClient::mockable_network_helper() const {
 }
 
 QuicConnectionId MockableQuicClient::GenerateNewConnectionId() {
-  return !override_connection_id_.IsEmpty()
-             ? override_connection_id_
-             : QuicClient::GenerateNewConnectionId();
+  return connection_id_overridden_ ? override_connection_id_
+                                   : QuicClient::GenerateNewConnectionId();
 }
 
 void MockableQuicClient::UseConnectionId(QuicConnectionId connection_id) {
+  connection_id_overridden_ = true;
   override_connection_id_ = connection_id;
 }
 
@@ -379,7 +380,7 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
   if (stream == nullptr) {
     return 0;
   }
-  QuicStreamPeer::set_ack_listener(stream, ack_listener);
+  QuicSpdyStreamPeer::set_ack_listener(stream, ack_listener);
 
   ssize_t ret = 0;
   if (headers != nullptr) {
@@ -390,7 +391,7 @@ ssize_t QuicTestClient::GetOrCreateStreamAndSendRequest(
     ret = stream->SendRequest(std::move(spdy_headers), body, fin);
     ++num_requests_;
   } else {
-    stream->WriteOrBufferBody(QuicString(body), fin, ack_listener);
+    stream->WriteOrBufferBody(QuicString(body), fin);
     ret = body.length();
   }
   if (GetQuicReloadableFlag(enable_quic_stateless_reject_support)) {
@@ -680,8 +681,8 @@ int64_t QuicTestClient::response_size() const {
 
 size_t QuicTestClient::bytes_read() const {
   for (std::pair<QuicStreamId, QuicSpdyClientStream*> stream : open_streams_) {
-    size_t bytes_read =
-        stream.second->stream_bytes_read() + stream.second->header_bytes_read();
+    size_t bytes_read = stream.second->total_body_bytes_read() +
+                        stream.second->header_bytes_read();
     if (bytes_read > 0) {
       return bytes_read;
     }
@@ -727,7 +728,7 @@ void QuicTestClient::OnClose(QuicSpdyStream* stream) {
           (buffer_body() ? client_stream->data() : ""),
           client_stream->received_trailers(),
           // Use NumBytesConsumed to avoid counting retransmitted stream frames.
-          QuicStreamPeer::sequencer(client_stream)->NumBytesConsumed() +
+          client_stream->total_body_bytes_read() +
               client_stream->header_bytes_read(),
           client_stream->stream_bytes_written() +
               client_stream->header_bytes_written(),
@@ -746,7 +747,7 @@ void QuicTestClient::OnRendezvousResult(QuicSpdyStream* stream) {
       std::move(push_promise_data_to_resend_);
   SetLatestCreatedStream(static_cast<QuicSpdyClientStream*>(stream));
   if (stream) {
-    stream->OnDataAvailable();
+    stream->OnBodyAvailable();
   } else if (data_to_resend) {
     data_to_resend->Resend();
   }

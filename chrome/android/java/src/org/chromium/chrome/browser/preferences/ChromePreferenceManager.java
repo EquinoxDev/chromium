@@ -8,11 +8,14 @@ import android.content.SharedPreferences;
 import android.support.annotation.Nullable;
 
 import org.chromium.base.ContextUtils;
+import org.chromium.base.StrictModeContext;
 import org.chromium.chrome.browser.crash.MinidumpUploadService.ProcessType;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -89,6 +92,22 @@ public class ChromePreferenceManager {
      */
     public static final String CONTEXTUAL_SEARCH_PRE_UNIFIED_CONSENT_PREF =
             "contextual_search_pre_unified_consent_pref";
+    /**
+     * A user interaction event ID for interaction with Contextual Search, stored as a long.
+     */
+    public static final String CONTEXTUAL_SEARCH_PREVIOUS_INTERACTION_EVENT_ID =
+            "contextual_search_previous_interaction_event_id";
+    /**
+     * An encoded set of outcomes of user interaction with Contextual Search, stored as an int.
+     */
+    public static final String CONTEXTUAL_SEARCH_PREVIOUS_INTERACTION_ENCODED_OUTCOMES =
+            "contextual_search_previous_interaction_encoded_outcomes";
+    /**
+     * A timestamp indicating when we updated the user interaction with Contextual Search, stored
+     * as a long, with resolution in days.
+     */
+    public static final String CONTEXTUAL_SEARCH_PREVIOUS_INTERACTION_TIMESTAMP =
+            "contextual_search_previous_interaction_timestamp";
 
     /**
      * Whether the promotion for data reduction has been skipped on first invocation.
@@ -165,6 +184,25 @@ public class ChromePreferenceManager {
      * Default value is false.
      */
     public static final String BOTTOM_TOOLBAR_ENABLED_KEY = "bottom_toolbar_enabled";
+
+    /**
+     * Whether or not night mode is available.
+     * Default value is false.
+     */
+    public static final String NIGHT_MODE_AVAILABLE_KEY = "night_mode_available";
+
+    /**
+     * Whether or not night mode is enabled from user settings.
+     * Default value is false.
+     */
+    public static final String NIGHT_MODE_SETTINGS_ENABLED_KEY = "night_mode_settings_enabled";
+
+    /**
+     * Whether or not the download auto-resumption is enabled in native.
+     * Default value is true.
+     */
+    public static final String DOWNLOAD_AUTO_RESUMPTION_IN_NATIVE_KEY =
+            "download_auto_resumption_in_native";
 
     /**
      * Marks that the content suggestions surface has been shown.
@@ -253,7 +291,20 @@ public class ChromePreferenceManager {
         static final ChromePreferenceManager INSTANCE = new ChromePreferenceManager();
     }
 
+    /**
+     * Observes preference changes.
+     */
+    public interface Observer {
+        /**
+         * Notifies when a preference maintained by {@link ChromePreferenceManager} is changed.
+         * @param key The key of the preference changed.
+         */
+        void onPreferenceChanged(String key);
+    }
+
     private final SharedPreferences mSharedPreferences;
+    private final Map<Observer, SharedPreferences.OnSharedPreferenceChangeListener> mObservers =
+            new HashMap<>();
 
     private ChromePreferenceManager() {
         mSharedPreferences = ContextUtils.getAppSharedPreferences();
@@ -265,6 +316,25 @@ public class ChromePreferenceManager {
      */
     public static ChromePreferenceManager getInstance() {
         return LazyHolder.INSTANCE;
+    }
+
+    /**
+     * @param observer The {@link Observer} to be added for observing preference changes.
+     */
+    public void addObserver(Observer observer) {
+        SharedPreferences.OnSharedPreferenceChangeListener listener =
+                (SharedPreferences sharedPreferences, String s) -> observer.onPreferenceChanged(s);
+        mObservers.put(observer, listener);
+        mSharedPreferences.registerOnSharedPreferenceChangeListener(listener);
+    }
+
+    /**
+     * @param observer The {@link Observer} to be removed from observing preference changes.
+     */
+    public void removeObserver(Observer observer) {
+        SharedPreferences.OnSharedPreferenceChangeListener listener = mObservers.get(observer);
+        if (listener == null) return;
+        mSharedPreferences.unregisterOnSharedPreferenceChangeListener(listener);
     }
 
     /**
@@ -525,7 +595,9 @@ public class ChromePreferenceManager {
      * @return The value of the preference.
      */
     public int readInt(String key) {
-        return mSharedPreferences.getInt(key, 0);
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+            return mSharedPreferences.getInt(key, 0);
+        }
     }
 
     /**
@@ -546,7 +618,7 @@ public class ChromePreferenceManager {
      * @param key The name of the preference to modify.
      * @param value The new value for the preference.
      */
-    private void writeLong(String key, long value) {
+    public void writeLong(String key, long value) {
         SharedPreferences.Editor ed = mSharedPreferences.edit();
         ed.putLong(key, value);
         ed.apply();
@@ -559,8 +631,10 @@ public class ChromePreferenceManager {
      * @param defaultValue The default value to return if there's no value stored.
      * @return The value of the preference if stored; defaultValue otherwise.
      */
-    private long readLong(String key, long defaultValue) {
-        return mSharedPreferences.getLong(key, defaultValue);
+    public long readLong(String key, long defaultValue) {
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+            return mSharedPreferences.getLong(key, defaultValue);
+        }
     }
 
     /**
@@ -583,7 +657,9 @@ public class ChromePreferenceManager {
      * @return The value of the preference if stored; defaultValue otherwise.
      */
     public boolean readBoolean(String key, boolean defaultValue) {
-        return mSharedPreferences.getBoolean(key, defaultValue);
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+            return mSharedPreferences.getBoolean(key, defaultValue);
+        }
     }
 
     /**
@@ -606,7 +682,9 @@ public class ChromePreferenceManager {
      * @return The value of the preference if stored; defaultValue otherwise.
      */
     public String readString(String key, @Nullable String defaultValue) {
-        return mSharedPreferences.getString(key, defaultValue);
+        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
+            return mSharedPreferences.getString(key, defaultValue);
+        }
     }
 
     /**

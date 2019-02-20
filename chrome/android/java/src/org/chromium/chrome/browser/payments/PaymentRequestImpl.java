@@ -41,10 +41,10 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabModel;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorObserver;
+import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 import org.chromium.chrome.browser.widget.prefeditor.Completable;
 import org.chromium.chrome.browser.widget.prefeditor.EditableOption;
 import org.chromium.components.payments.CurrencyFormatter;
@@ -55,8 +55,10 @@ import org.chromium.content_public.browser.RenderFrameHost;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsStatics;
 import org.chromium.mojo.system.MojoException;
+import org.chromium.payments.mojom.AddressErrors;
 import org.chromium.payments.mojom.CanMakePaymentQueryResult;
 import org.chromium.payments.mojom.HasEnrolledInstrumentQueryResult;
+import org.chromium.payments.mojom.PayerErrors;
 import org.chromium.payments.mojom.PaymentComplete;
 import org.chromium.payments.mojom.PaymentCurrencyAmount;
 import org.chromium.payments.mojom.PaymentDetails;
@@ -79,9 +81,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 
 /**
@@ -133,6 +137,11 @@ public class PaymentRequestImpl
          * Called when the hasEnrolledInstrument() request has been responded to.
          */
         void onPaymentRequestServiceHasEnrolledInstrumentQueryResponded();
+
+        /**
+         * Called when the payment response is ready.
+         */
+        void onPaymentResponseReady();
     }
 
     /** Limit in the number of suggested items in a section. */
@@ -153,33 +162,31 @@ public class PaymentRequestImpl
      * Rule 5: Frequently and recently used instruments before rarely and non-recently used
      *         instruments.
      */
-    private static final Comparator<PaymentInstrument> PAYMENT_INSTRUMENT_COMPARATOR =
-            (a, b) -> {
-                // Payment apps (not autofill) first.
-                int autofill =
-                        (a.isAutofillInstrument() ? 1 : 0) - (b.isAutofillInstrument() ? 1 : 0);
-                if (autofill != 0) return autofill;
+    private static final Comparator<PaymentInstrument> PAYMENT_INSTRUMENT_COMPARATOR = (a, b) -> {
+        // Payment apps (not autofill) first.
+        int autofill = (a.isAutofillInstrument() ? 1 : 0) - (b.isAutofillInstrument() ? 1 : 0);
+        if (autofill != 0) return autofill;
 
-                // Complete cards before cards with missing information.
-                int completeness = (b.isComplete() ? 1 : 0) - (a.isComplete() ? 1 : 0);
-                if (completeness != 0) return completeness;
+        // Complete cards before cards with missing information.
+        int completeness = (b.isComplete() ? 1 : 0) - (a.isComplete() ? 1 : 0);
+        if (completeness != 0) return completeness;
 
-                // Cards with matching type before unknown type cards.
-                int typeMatch = (b.isExactlyMatchingMerchantRequest() ? 1 : 0)
-                        - (a.isExactlyMatchingMerchantRequest() ? 1 : 0);
-                if (typeMatch != 0) return typeMatch;
+        // Cards with matching type before unknown type cards.
+        int typeMatch = (b.isExactlyMatchingMerchantRequest() ? 1 : 0)
+                - (a.isExactlyMatchingMerchantRequest() ? 1 : 0);
+        if (typeMatch != 0) return typeMatch;
 
-                // Preselectable instruments before non-preselectable instruments.
-                // Note that this only affects service worker payment apps' instruments for now
-                // since autofill payment instruments have already been sorted by preselect
-                // after sorting by completeness and typeMatch. And the other payment apps'
-                // instruments can always be preselected.
-                int canPreselect = (b.canPreselect() ? 1 : 0) - (a.canPreselect() ? 1 : 0);
-                if (canPreselect != 0) return canPreselect;
+        // Preselectable instruments before non-preselectable instruments.
+        // Note that this only affects service worker payment apps' instruments for now
+        // since autofill payment instruments have already been sorted by preselect
+        // after sorting by completeness and typeMatch. And the other payment apps'
+        // instruments can always be preselected.
+        int canPreselect = (b.canPreselect() ? 1 : 0) - (a.canPreselect() ? 1 : 0);
+        if (canPreselect != 0) return canPreselect;
 
-                // More frequently and recently used instruments first.
-                return compareInstrumentsByFrecency(b, a);
-            };
+        // More frequently and recently used instruments first.
+        return compareInstrumentsByFrecency(b, a);
+    };
 
     private static PaymentRequestServiceObserverForTest sObserverForTest;
     private static boolean sIsLocalCanMakePaymentQueryQuotaEnforcedForTest;
@@ -221,8 +228,11 @@ public class PaymentRequestImpl
 
     private PaymentRequestClient mClient;
     private boolean mIsCanMakePaymentResponsePending;
+    private boolean mUseLegacyCanMakePayment;
     private boolean mIsHasEnrolledInstrumentResponsePending;
+    private boolean mHasEnrolledInstrumentUsesPerMethodQuota;
     private boolean mIsCurrentPaymentRequestShowing;
+    private final Queue<Runnable> mRetryQueue = new LinkedList<>();
 
     /**
      * The raw total amount being charged, as it was received from the website. This data is passed
@@ -383,7 +393,7 @@ public class PaymentRequestImpl
 
         if (!OriginSecurityChecker.isSchemeCryptographic(mWebContents.getLastCommittedUrl())
                 && !OriginSecurityChecker.isOriginLocalhostOrFile(
-                           mWebContents.getLastCommittedUrl())) {
+                        mWebContents.getLastCommittedUrl())) {
             Log.d(TAG, "Only localhost, file://, and cryptographic scheme origins allowed");
             // Don't show any UI. Resolve .canMakePayment() with "false". Reject .show() with
             // "NotSupportedError".
@@ -626,7 +636,7 @@ public class PaymentRequestImpl
             // missing.
             if (mPaymentMethodsSection.getSize() > 1 || selectedInstrument == null
                     || (selectedInstrument.isUserGestureRequiredToSkipUi()
-                               && !mIsUserGestureShow)) {
+                            && !mIsUserGestureShow)) {
                 mUI.show();
             } else {
                 mUI.dimBackground();
@@ -687,7 +697,10 @@ public class PaymentRequestImpl
         }
 
         if (mIsCanMakePaymentResponsePending) {
-            respondCanMakePaymentQuery(mArePaymentMethodsSupported);
+            // New canMakePayment doesn't need to wait for all apps to be queried.
+            if (!mUseLegacyCanMakePayment || queryApps.isEmpty()) {
+                respondCanMakePaymentQuery(mUseLegacyCanMakePayment);
+            }
         }
 
         if (mIsHasEnrolledInstrumentResponsePending && queryApps.isEmpty()) {
@@ -1144,6 +1157,7 @@ public class PaymentRequestImpl
         if (optionType == PaymentRequestUI.DataType.SHIPPING_ADDRESSES) {
             editAddress((AutofillAddress) option);
             mPaymentInformationCallback = callback;
+
             return PaymentRequestUI.SelectionResult.ASYNCHRONOUS_VALIDATION;
         }
 
@@ -1197,6 +1211,8 @@ public class PaymentRequestImpl
                 if (mUI == null) return;
 
                 if (editedAddress != null) {
+                    mAddressEditor.setAddressErrors(null);
+
                     // Sets or updates the shipping address label.
                     editedAddress.setShippingAddressLabelWithCountry();
 
@@ -1230,6 +1246,8 @@ public class PaymentRequestImpl
                 } else {
                     providePaymentInformation();
                 }
+
+                if (!mRetryQueue.isEmpty()) mHandler.post(mRetryQueue.remove());
             }
         });
     }
@@ -1245,6 +1263,8 @@ public class PaymentRequestImpl
                 if (mUI == null) return;
 
                 if (editedContact != null) {
+                    mContactEditor.setPayerErrors(null);
+
                     // A partial or complete contact came back from the editor (could have been from
                     // adding/editing or cancelling out of the edit flow).
                     if (!editedContact.isComplete()) {
@@ -1263,6 +1283,8 @@ public class PaymentRequestImpl
                 // action to take (if a contact was selected in the UI, it will stay selected).
 
                 mUI.updateSection(PaymentRequestUI.DataType.CONTACT_DETAILS, mContactSection);
+
+                if (!mRetryQueue.isEmpty()) mHandler.post(mRetryQueue.remove());
             }
         });
     }
@@ -1439,8 +1461,43 @@ public class PaymentRequestImpl
             return;
         }
 
-        // TODO(zino): Should implement this method (including updating UI part).
-        // Please see https://crbug.com/861704
+        // Go back to the payment sheet
+        mUI.onPayButtonProcessingCancelled();
+
+        if (mRequestShipping && hasShippingAddressError(errors.shippingAddress)) {
+            mRetryQueue.add(() -> {
+                mAddressEditor.setAddressErrors(errors.shippingAddress);
+                AutofillAddress selectedAddress =
+                        (AutofillAddress) mShippingAddressesSection.getSelectedItem();
+                editAddress(selectedAddress);
+            });
+        }
+
+        if ((mRequestPayerName || mRequestPayerPhone || mRequestPayerEmail)
+                && hasPayerError(errors.payer)) {
+            mRetryQueue.add(() -> {
+                mContactEditor.setPayerErrors(errors.payer);
+                AutofillContact selectedContact =
+                        (AutofillContact) mContactSection.getSelectedItem();
+                editContact(selectedContact);
+            });
+        }
+
+        if (!mRetryQueue.isEmpty()) mHandler.post(mRetryQueue.remove());
+    }
+
+    private boolean hasShippingAddressError(AddressErrors errors) {
+        return !TextUtils.isEmpty(errors.addressLine) || !TextUtils.isEmpty(errors.city)
+                || !TextUtils.isEmpty(errors.country)
+                || !TextUtils.isEmpty(errors.dependentLocality)
+                || !TextUtils.isEmpty(errors.organization) || !TextUtils.isEmpty(errors.phone)
+                || !TextUtils.isEmpty(errors.postalCode) || !TextUtils.isEmpty(errors.recipient)
+                || !TextUtils.isEmpty(errors.region) || !TextUtils.isEmpty(errors.sortingCode);
+    }
+
+    private boolean hasPayerError(PayerErrors errors) {
+        return !TextUtils.isEmpty(errors.name) || !TextUtils.isEmpty(errors.phone)
+                || !TextUtils.isEmpty(errors.email);
     }
 
     @Override
@@ -1524,25 +1581,41 @@ public class PaymentRequestImpl
      * Called by the merchant website to check if the user has complete payment instruments.
      */
     @Override
-    public void canMakePayment() {
+    public void canMakePayment(boolean legacyMode) {
         if (mClient == null) return;
 
         if (isFinishedQueryingPaymentApps()) {
-            respondCanMakePaymentQuery(mArePaymentMethodsSupported);
+            respondCanMakePaymentQuery(legacyMode);
         } else {
             mIsCanMakePaymentResponsePending = true;
+            mUseLegacyCanMakePayment = legacyMode;
         }
     }
 
-    private void respondCanMakePaymentQuery(boolean response) {
+    private void respondCanMakePaymentQuery(boolean legacyMode) {
         if (mClient == null) return;
 
         mIsCanMakePaymentResponsePending = false;
-        mClient.onCanMakePayment(response ? CanMakePaymentQueryResult.CAN_MAKE_PAYMENT
-                                          : CanMakePaymentQueryResult.CANNOT_MAKE_PAYMENT);
 
-        // TODO(https://crbug.com/915907): emit JourneyLogger event once the event names are
-        // updated.
+        boolean response = legacyMode ? mHasEnrolledInstrument : mArePaymentMethodsSupported;
+
+        // Only need to enforce query quota in legacy mode. Per-method quota not supported.
+        if (legacyMode
+                && !CanMakePaymentQuery.canQuery(mWebContents, mTopLevelOrigin,
+                        mPaymentRequestOrigin, mMethodData, /*perMethodQuota=*/false)) {
+            if (shouldEnforceCanMakePaymentQueryQuota()) {
+                mClient.onCanMakePayment(CanMakePaymentQueryResult.QUERY_QUOTA_EXCEEDED);
+            } else {
+                mClient.onCanMakePayment(response
+                                ? CanMakePaymentQueryResult.WARNING_CAN_MAKE_PAYMENT
+                                : CanMakePaymentQueryResult.WARNING_CANNOT_MAKE_PAYMENT);
+            }
+        } else {
+            mClient.onCanMakePayment(response ? CanMakePaymentQueryResult.CAN_MAKE_PAYMENT
+                                              : CanMakePaymentQueryResult.CANNOT_MAKE_PAYMENT);
+        }
+
+        mJourneyLogger.setCanMakePaymentValue(response || mIsIncognito);
 
         if (sObserverForTest != null) {
             sObserverForTest.onPaymentRequestServiceCanMakePaymentQueryResponded();
@@ -1553,8 +1626,10 @@ public class PaymentRequestImpl
      * Called by the merchant website to check if the user has complete payment instruments.
      */
     @Override
-    public void hasEnrolledInstrument() {
+    public void hasEnrolledInstrument(boolean perMethodQuota) {
         if (mClient == null) return;
+
+        mHasEnrolledInstrumentUsesPerMethodQuota = perMethodQuota;
 
         if (isFinishedQueryingPaymentApps()) {
             respondHasEnrolledInstrumentQuery(mHasEnrolledInstrument);
@@ -1568,8 +1643,8 @@ public class PaymentRequestImpl
 
         mIsHasEnrolledInstrumentResponsePending = false;
 
-        if (CanMakePaymentQuery.canQuery(
-                    mWebContents, mTopLevelOrigin, mPaymentRequestOrigin, mMethodData)) {
+        if (CanMakePaymentQuery.canQuery(mWebContents, mTopLevelOrigin, mPaymentRequestOrigin,
+                    mMethodData, mHasEnrolledInstrumentUsesPerMethodQuota)) {
             mClient.onHasEnrolledInstrument(response
                             ? HasEnrolledInstrumentQueryResult.HAS_ENROLLED_INSTRUMENT
                             : HasEnrolledInstrumentQueryResult.HAS_NO_ENROLLED_INSTRUMENT);
@@ -1581,7 +1656,7 @@ public class PaymentRequestImpl
                             : HasEnrolledInstrumentQueryResult.WARNING_HAS_NO_ENROLLED_INSTRUMENT);
         }
 
-        mJourneyLogger.setCanMakePaymentValue(response || mIsIncognito);
+        mJourneyLogger.setHasEnrolledInstrumentValue(response || mIsIncognito);
 
         if (sObserverForTest != null) {
             sObserverForTest.onPaymentRequestServiceHasEnrolledInstrumentQueryResponded();
@@ -1594,7 +1669,11 @@ public class PaymentRequestImpl
      * localhost and file:// scheme origins to verify its behavior.
      */
     private boolean shouldEnforceCanMakePaymentQueryQuota() {
-        return !OriginSecurityChecker.isOriginLocalhostOrFile(mWebContents.getLastCommittedUrl())
+        // If |mWebContents| is destroyed, don't bother checking the localhost or file:// scheme
+        // exemption. It doesn't really matter anyways.
+        return mWebContents.isDestroyed()
+                || !OriginSecurityChecker.isOriginLocalhostOrFile(
+                        mWebContents.getLastCommittedUrl())
                 || sIsLocalCanMakePaymentQueryQuotaEnforcedForTest;
     }
 
@@ -1689,6 +1768,10 @@ public class PaymentRequestImpl
         int selection = !mPendingInstruments.isEmpty() && mPendingInstruments.get(0).canPreselect()
                 ? 0
                 : SectionInformation.NO_SELECTION;
+
+        if (mIsCanMakePaymentResponsePending) {
+            respondCanMakePaymentQuery(mUseLegacyCanMakePayment);
+        }
 
         if (mIsHasEnrolledInstrumentResponsePending) {
             respondHasEnrolledInstrumentQuery(mHasEnrolledInstrument);
@@ -1787,6 +1870,7 @@ public class PaymentRequestImpl
     public void onPaymentResponseReady(PaymentResponse response) {
         mClient.onPaymentResponse(response);
         mPaymentResponseHelper = null;
+        if (sObserverForTest != null) sObserverForTest.onPaymentResponseReady();
     }
 
     /**

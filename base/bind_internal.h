@@ -7,9 +7,11 @@
 
 #include <stddef.h>
 
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback_internal.h"
 #include "base/compiler_specific.h"
 #include "base/memory/raw_scoped_refptr_mismatch_checker.h"

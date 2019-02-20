@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_CHROMEOS_ARC_TRACING_ARC_TRACING_BRIDGE_H_
 #define CHROME_BROWSER_CHROMEOS_ARC_TRACING_ARC_TRACING_BRIDGE_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,8 @@ class ArcTracingBridge : public KeyedService,
                    ArcBridgeService* bridge_service);
   ~ArcTracingBridge() override;
 
+  void GetCategories(std::set<std::string>* category_set);
+
   // ConnectionObserver<mojom::TracingInstance> overrides:
   void OnConnectionReady() override;
 
@@ -70,10 +73,12 @@ class ArcTracingBridge : public KeyedService,
     ~ArcTracingAgent() override;
 
    private:
+    // tracing::BaseAgent.
+    void GetCategories(std::set<std::string>* category_set) override;
+
     // tracing::mojom::Agent.
     void StartTracing(const std::string& config,
-                      base::TimeTicks coordinator_time,
-                      Agent::StartTracingCallback callback) override;
+                      base::TimeTicks coordinator_time) override;
     void StopAndFlush(tracing::mojom::RecorderPtr recorder) override;
 
     void OnTraceData(const std::string& data);

@@ -11,13 +11,18 @@ namespace blink {
 
 WebViewFrameWidget::WebViewFrameWidget(WebWidgetClient& client,
                                        WebViewImpl& web_view)
-    : WebFrameWidgetBase(client),
-      web_view_(&web_view),
-      self_keep_alive_(this) {}
+    : WebFrameWidgetBase(client), web_view_(&web_view), self_keep_alive_(this) {
+  // TODO(danakj): SetLayerTreeView() here as well, then we can Close() the
+  // WebViewImpl's widget bits in Close().
+  web_view_->SetWebWidgetClient(&client);
+}
 
 WebViewFrameWidget::~WebViewFrameWidget() = default;
 
 void WebViewFrameWidget::Close() {
+  // TODO(danakj): Close() the WebViewImpl here, when we reset the LayerTreeView
+  // in the constructor.
+  web_view_->SetWebWidgetClient(nullptr);
   web_view_ = nullptr;
   WebFrameWidgetBase::Close();
 
@@ -51,8 +56,21 @@ void WebViewFrameWidget::SetSuppressFrameRequestsWorkaroundFor704763Only(
   web_view_->SetSuppressFrameRequestsWorkaroundFor704763Only(
       suppress_frame_requests);
 }
-void WebViewFrameWidget::BeginFrame(base::TimeTicks last_frame_time) {
-  web_view_->BeginFrame(last_frame_time);
+void WebViewFrameWidget::BeginFrame(base::TimeTicks last_frame_time,
+                                    bool record_main_frame_metrics) {
+  web_view_->BeginFrame(last_frame_time, record_main_frame_metrics);
+}
+
+void WebViewFrameWidget::BeginRafAlignedInput() {
+  web_view_->BeginRafAlignedInput();
+}
+
+void WebViewFrameWidget::EndRafAlignedInput() {
+  web_view_->EndRafAlignedInput();
+}
+
+void WebViewFrameWidget::RecordStartOfFrameMetrics() {
+  web_view_->RecordStartOfFrameMetrics();
 }
 
 void WebViewFrameWidget::RecordEndOfFrameMetrics(
@@ -68,10 +86,6 @@ void WebViewFrameWidget::UpdateLifecycle(LifecycleUpdate requested_update,
 void WebViewFrameWidget::PaintContent(cc::PaintCanvas* canvas,
                                       const WebRect& view_port) {
   web_view_->PaintContent(canvas, view_port);
-}
-
-void WebViewFrameWidget::LayoutAndPaintAsync(base::OnceClosure callback) {
-  web_view_->LayoutAndPaintAsync(std::move(callback));
 }
 
 void WebViewFrameWidget::CompositeAndReadbackAsync(
@@ -107,6 +121,16 @@ void WebViewFrameWidget::RecordWheelAndTouchScrollingCount(
   web_view_->RecordWheelAndTouchScrollingCount(has_scrolled_by_wheel,
                                                has_scrolled_by_touch);
 }
+void WebViewFrameWidget::SendOverscrollEventFromImplSide(
+    const gfx::Vector2dF& overscroll_delta,
+    cc::ElementId scroll_latched_element_id) {
+  web_view_->SendOverscrollEventFromImplSide(overscroll_delta,
+                                             scroll_latched_element_id);
+}
+void WebViewFrameWidget::SendScrollEndEventFromImplSide(
+    cc::ElementId scroll_latched_element_id) {
+  web_view_->SendScrollEndEventFromImplSide(scroll_latched_element_id);
+}
 
 void WebViewFrameWidget::MouseCaptureLost() {
   web_view_->MouseCaptureLost();
@@ -125,10 +149,6 @@ bool WebViewFrameWidget::IsAcceleratedCompositingActive() const {
   return web_view_->IsAcceleratedCompositingActive();
 }
 
-void WebViewFrameWidget::WillCloseLayerTreeView() {
-  web_view_->WillCloseLayerTreeView();
-}
-
 WebURL WebViewFrameWidget::GetURLForDebugTrace() {
   return web_view_->GetURLForDebugTrace();
 }
@@ -142,9 +162,8 @@ bool WebViewFrameWidget::ScrollFocusedEditableElementIntoView() {
   return web_view_->ScrollFocusedEditableElementIntoView();
 }
 
-void WebViewFrameWidget::Initialize() {}
-
-void WebViewFrameWidget::SetLayerTreeView(WebLayerTreeView*) {
+void WebViewFrameWidget::SetLayerTreeView(WebLayerTreeView*,
+                                          cc::AnimationHost*) {
   // The WebViewImpl already has its LayerTreeView, the WebWidgetClient
   // thus does not initialize and set another one here.
   NOTREACHED();
@@ -172,7 +191,7 @@ WebLayerTreeView* WebViewFrameWidget::GetLayerTreeView() const {
   return web_view_->LayerTreeView();
 }
 
-CompositorAnimationHost* WebViewFrameWidget::AnimationHost() const {
+cc::AnimationHost* WebViewFrameWidget::AnimationHost() const {
   return web_view_->AnimationHost();
 }
 

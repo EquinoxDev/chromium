@@ -4,6 +4,7 @@
 
 #include "media/gpu/test/vaapi_dmabuf_video_frame_mapper.h"
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "build/build_config.h"
@@ -90,7 +91,7 @@ VaapiDmaBufVideoFrameMapper::VaapiDmaBufVideoFrameMapper()
 VaapiDmaBufVideoFrameMapper::~VaapiDmaBufVideoFrameMapper() {}
 
 scoped_refptr<VideoFrame> VaapiDmaBufVideoFrameMapper::Map(
-    scoped_refptr<VideoFrame> video_frame) const {
+    scoped_refptr<const VideoFrame> video_frame) const {
   DCHECK(vaapi_wrapper_);
   DCHECK(vaapi_picture_factory_);
   if (!video_frame->HasDmaBufs()) {

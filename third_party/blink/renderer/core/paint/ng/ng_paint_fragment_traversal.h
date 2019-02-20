@@ -11,7 +11,6 @@
 
 namespace blink {
 
-class LayoutObject;
 class NGPaintFragment;
 
 // Used for return value of traversing fragment tree.
@@ -147,17 +146,8 @@ class CORE_EXPORT NGPaintFragmentTraversal {
   // Returns inclusive ancestors.
   static AncestorRange InclusiveAncestorsOf(const NGPaintFragment&);
 
-  // Returns descendants without paint layer in preorder.
-  static Vector<NGPaintFragmentWithContainerOffset> DescendantsOf(
-      const NGPaintFragment&);
-
   // Returns inline descendants in preorder.
-  static Vector<NGPaintFragmentWithContainerOffset> InlineDescendantsOf(
-      const NGPaintFragment&);
-
-  static Vector<NGPaintFragmentWithContainerOffset> SelfFragmentsOf(
-      const NGPaintFragment&,
-      const LayoutObject* target);
+  static Vector<NGPaintFragment*> InlineDescendantsOf(const NGPaintFragment&);
 
   // Returns the line box paint fragment of |line|. |line| itself must be the
   // paint fragment of a line box.

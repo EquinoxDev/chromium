@@ -21,7 +21,6 @@ import org.chromium.chrome.browser.media.router.MediaRouteManager;
 import org.chromium.chrome.browser.media.router.MediaRouteProvider;
 import org.chromium.chrome.browser.media.router.MediaSink;
 import org.chromium.chrome.browser.media.router.MediaSource;
-import org.chromium.chrome.browser.media.router.cast.CastMediaSource;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -149,8 +148,8 @@ public class CafMediaRouteProvider extends CafBaseMediaRouteProvider {
     }
 
     @Override
-    public void onSessionStarted(CastSession session, String sessionId) {
-        super.onSessionStarted(session, sessionId);
+    protected void handleSessionStart(CastSession session, String sessionId) {
+        super.handleSessionStart(session, sessionId);
 
         for (ClientRecord clientRecord : mClientIdToRecords.values()) {
             // Should be exactly one instance of MediaRoute/ClientRecord at this moment.

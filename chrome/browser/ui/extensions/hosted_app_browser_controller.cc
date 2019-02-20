@@ -26,7 +26,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
 #include "extensions/browser/extension_registry.h"
@@ -34,6 +33,7 @@
 #include "extensions/browser/management_policy.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
@@ -112,6 +112,7 @@ bool IsSameScope(const GURL& app_url,
              profile, page_url, extensions::LAUNCH_CONTAINER_WINDOW);
 }
 
+// TODO(loyso): Erase this histogram. crbug.com/918089.
 const char kPwaWindowEngagementTypeHistogram[] =
     "Webapp.Engagement.EngagementType";
 
@@ -181,7 +182,6 @@ bool HostedAppBrowserController::IsForExperimentalHostedAppBrowser() const {
 }
 
 bool HostedAppBrowserController::ShouldShowToolbar() const {
-  // The extension can be null if this is invoked after uninstall.
   const Extension* extension = GetExtension();
   if (!extension)
     return false;
@@ -331,6 +331,10 @@ std::string HostedAppBrowserController::GetAppShortName() const {
   return GetExtension()->short_name();
 }
 
+std::string HostedAppBrowserController::GetExtensionId() const {
+  return extension_id_;
+}
+
 base::string16 HostedAppBrowserController::GetFormattedUrlOrigin() const {
   return FormatUrlOrigin(AppLaunchInfo::GetLaunchWebURL(GetExtension()));
 }
@@ -343,9 +347,13 @@ bool HostedAppBrowserController::CanUninstall() const {
 
 void HostedAppBrowserController::Uninstall(UninstallReason reason,
                                            UninstallSource source) {
-  uninstall_dialog_.reset(ExtensionUninstallDialog::Create(
-      browser_->profile(), browser_->window()->GetNativeWindow(), this));
+  uninstall_dialog_ = ExtensionUninstallDialog::Create(
+      browser_->profile(), browser_->window()->GetNativeWindow(), this);
   uninstall_dialog_->ConfirmUninstall(GetExtension(), reason, source);
+}
+
+bool HostedAppBrowserController::IsInstalled() const {
+  return GetExtension();
 }
 
 void HostedAppBrowserController::OnEngagementEvent(

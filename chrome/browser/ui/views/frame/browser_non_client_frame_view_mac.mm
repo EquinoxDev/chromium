@@ -4,8 +4,10 @@
 
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view_mac.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/numerics/safe_conversions.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -19,6 +21,7 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 #include "chrome/browser/ui/views/frame/hosted_app_button_container.h"
+#include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -31,6 +34,7 @@ namespace {
 
 constexpr int kHostedAppMenuMargin = 7;
 constexpr int kFramePaddingLeft = 75;
+constexpr double kTitlePaddingWidthFraction = 0.1;
 
 FullscreenToolbarStyle GetUserPreferredToolbarStyle(
     const PrefService* pref_service) {
@@ -68,16 +72,13 @@ BrowserNonClientFrameViewMac::BrowserNonClientFrameViewMac(
             ->hosted_app_controller()
             ->ShouldShowHostedAppButtonContainer()) {
       set_hosted_app_button_container(new HostedAppButtonContainer(
-          frame, browser_view, GetFrameForegroundColor(kActive),
-          GetFrameForegroundColor(kInactive), kHostedAppMenuMargin));
+          frame, browser_view, GetCaptionColor(kActive),
+          GetCaptionColor(kInactive), kHostedAppMenuMargin));
       AddChildView(hosted_app_button_container());
     }
 
     DCHECK(browser_view->ShouldShowWindowTitle());
     window_title_ = new views::Label(browser_view->GetWindowTitle());
-    // view::Label's readability algorithm conflicts with the one used by
-    // |GetFrameForegroundColor|.
-    window_title_->SetAutoColorReadabilityEnabled(false);
     AddChildView(window_title_);
   }
 }
@@ -126,6 +127,8 @@ gfx::Rect BrowserNonClientFrameViewMac::GetBoundsForTabStrip(
 int BrowserNonClientFrameViewMac::GetTopInset(bool restored) const {
   if (hosted_app_button_container()) {
     DCHECK(browser_view()->IsBrowserTypeHostedApp());
+    if (ShouldHideTopUIForFullscreen())
+      return 0;
     return hosted_app_button_container()->GetPreferredSize().height() +
            kHostedAppMenuMargin * 2;
   }
@@ -209,11 +212,6 @@ bool BrowserNonClientFrameViewMac::ShouldHideTopUIForFullscreen() const {
 void BrowserNonClientFrameViewMac::UpdateThrobber(bool running) {
 }
 
-SkColor BrowserNonClientFrameViewMac::GetFrameForegroundColor(
-    ActiveState active_state) const {
-  return color_utils::GetThemedAssetColor(GetFrameColor(active_state));
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserNonClientFrameViewMac, views::NonClientFrameView implementation:
 
@@ -240,8 +238,7 @@ int BrowserNonClientFrameViewMac::NonClientHitTest(const gfx::Point& point) {
 }
 
 void BrowserNonClientFrameViewMac::GetWindowMask(const gfx::Size& size,
-                                                 gfx::Path* window_mask) {
-}
+                                                 SkPath* window_mask) {}
 
 void BrowserNonClientFrameViewMac::UpdateWindowIcon() {
 }
@@ -256,17 +253,25 @@ void BrowserNonClientFrameViewMac::UpdateWindowTitle() {
 void BrowserNonClientFrameViewMac::SizeConstraintsChanged() {
 }
 
+void BrowserNonClientFrameViewMac::UpdateMinimumSize() {
+  GetWidget()->OnSizeConstraintsChanged();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserNonClientFrameViewMac, views::View implementation:
 
 gfx::Size BrowserNonClientFrameViewMac::GetMinimumSize() const {
-  gfx::Size size = browser_view()->GetMinimumSize();
-  constexpr gfx::Size kMinTabbedWindowSize(400, 272);
-  constexpr gfx::Size kMinPopupWindowSize(100, 122);
-  size.SetToMax(browser_view()->browser()->is_type_tabbed()
-                    ? kMinTabbedWindowSize
-                    : kMinPopupWindowSize);
-  return size;
+  gfx::Size client_size = frame()->client_view()->GetMinimumSize();
+  if (browser_view()->browser()->is_type_tabbed())
+    client_size.SetToMax(browser_view()->tabstrip()->GetMinimumSize());
+
+  // macOS apps generally don't allow their windows to get shorter than a
+  // certain height, which empirically seems to be related to their *minimum*
+  // width rather than their current width. This 4:3 ratio was chosen
+  // empirically because it looks decent for both tabbed and untabbed browsers.
+  client_size.SetToMax(gfx::Size(0, (client_size.width() * 3) / 4));
+
+  return client_size;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -285,7 +290,7 @@ void BrowserNonClientFrameViewMac::OnPaint(gfx::Canvas* canvas) {
 
   if (window_title_) {
     window_title_->SetBackgroundColor(frame_color);
-    window_title_->SetEnabledColor(GetFrameForegroundColor(kUseCurrent));
+    window_title_->SetEnabledColor(GetCaptionColor(kUseCurrent));
   }
 
   auto* theme_service =
@@ -302,8 +307,12 @@ void BrowserNonClientFrameViewMac::Layout() {
   if (hosted_app_button_container()) {
     trailing_x = hosted_app_button_container()->LayoutInContainer(
         leading_x, trailing_x, 0, available_height);
+
+    const int title_padding = base::checked_cast<int>(
+        std::round(width() * kTitlePaddingWidthFraction));
     window_title_->SetBoundsRect(GetCenteredTitleBounds(
-        width(), available_height, leading_x, trailing_x,
+        width(), available_height, leading_x + title_padding,
+        trailing_x - title_padding,
         window_title_->CalculatePreferredSize().width()));
   }
 }

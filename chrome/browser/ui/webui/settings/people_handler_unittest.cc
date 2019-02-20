@@ -16,7 +16,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/scoped_account_consistency.h"
 #include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -33,8 +32,6 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/prefs/pref_service.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
-#include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 #include "components/unified_consent/scoped_unified_consent.h"
 #include "content/public/browser/web_contents.h"
@@ -45,8 +42,9 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_web_ui.h"
 #include "content/public/test/web_contents_tester.h"
-#include "google_apis/gaia/oauth2_token_service_delegate.h"
+#include "services/identity/public/cpp/accounts_mutator.h"
 #include "services/identity/public/cpp/identity_manager.h"
+#include "services/identity/public/cpp/identity_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
@@ -733,6 +731,8 @@ TEST_F(PeopleHandlerTest, SetNewCustomPassphrase) {
   base::ListValue list_args;
   list_args.AppendString(kTestCallbackId);
   list_args.AppendString(args);
+  ON_CALL(*mock_pss_->GetUserSettingsMock(), IsEncryptEverythingAllowed())
+      .WillByDefault(Return(true));
   ON_CALL(*mock_pss_->GetUserSettingsMock(),
           IsPassphraseRequiredForDecryption())
       .WillByDefault(Return(false));
@@ -874,19 +874,22 @@ TEST_F(PeopleHandlerTest, ShowSigninOnAuthError) {
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
 
   SetupInitializedProfileSyncService();
-  DCHECK_EQ(
-      identity_test_env()->identity_manager()->GetPrimaryAccountInfo().email,
-      kTestUser);
-  const std::string& account_id = identity_test_env()
-                                      ->identity_manager()
-                                      ->GetPrimaryAccountInfo()
-                                      .account_id;
-  ProfileOAuth2TokenService* token_service =
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile());
-  token_service->UpdateCredentials(account_id, "refresh_token");
-  // TODO(https://crbug.com/836212): Do not use the delegate directly, because
-  // it is internal API.
-  token_service->GetDelegate()->UpdateAuthError(account_id, error_);
+
+  auto* identity_manager = identity_test_env()->identity_manager();
+  CoreAccountInfo primary_account_info =
+      identity_manager->GetPrimaryAccountInfo();
+  DCHECK_EQ(primary_account_info.email, kTestUser);
+
+  auto* accounts_mutator = identity_manager->GetAccountsMutator();
+  DCHECK(accounts_mutator);
+
+  accounts_mutator->AddOrUpdateAccount(
+      primary_account_info.gaia, primary_account_info.email, "refresh_token",
+      primary_account_info.is_under_advanced_protection,
+      signin_metrics::SourceForRefreshTokenOperation::kUnknown);
+
+  identity::UpdatePersistentErrorOfRefreshTokenForAccount(
+      identity_manager, primary_account_info.account_id, error_);
 
   ON_CALL(*mock_pss_, GetDisableReasons())
       .WillByDefault(Return(syncer::SyncService::DISABLE_REASON_NONE));
@@ -1067,11 +1070,6 @@ TEST_F(PeopleHandlerTest, ShowSetupEncryptAllDisallowed) {
 }
 
 TEST_F(PeopleHandlerTest, TurnOnEncryptAllDisallowed) {
-  std::string args = GetConfiguration(
-      NULL, SYNC_ALL_DATA, GetAllTypes(), std::string(), ENCRYPT_ALL_DATA);
-  base::ListValue list_args;
-  list_args.AppendString(kTestCallbackId);
-  list_args.AppendString(args);
   ON_CALL(*mock_pss_->GetUserSettingsMock(),
           IsPassphraseRequiredForDecryption())
       .WillByDefault(Return(false));
@@ -1080,8 +1078,20 @@ TEST_F(PeopleHandlerTest, TurnOnEncryptAllDisallowed) {
   SetupInitializedProfileSyncService();
   ON_CALL(*mock_pss_->GetUserSettingsMock(), IsEncryptEverythingAllowed())
       .WillByDefault(Return(false));
+
+  base::DictionaryValue dict;
+  dict.SetBoolean("setNewPassphrase", true);
+  std::string args = GetConfiguration(&dict, SYNC_ALL_DATA, GetAllTypes(),
+                                      "password", ENCRYPT_ALL_DATA);
+  base::ListValue list_args;
+  list_args.AppendString(kTestCallbackId);
+  list_args.AppendString(args);
+
   EXPECT_CALL(*mock_pss_->GetUserSettingsMock(), EnableEncryptEverything())
       .Times(0);
+  EXPECT_CALL(*mock_pss_->GetUserSettingsMock(), SetEncryptionPassphrase(_))
+      .Times(0);
+
   handler_->HandleSetEncryption(&list_args);
 
   ExpectPageStatusResponse(PeopleHandler::kConfigurePageStatus);
@@ -1120,28 +1130,30 @@ TEST_P(PeopleHandlerDiceUnifiedConsentTest, StoredAccountsList) {
   identity_test_env->SetPrimaryAccount(account_1.email);
 
   PeopleHandler handler(profile.get());
-  std::unique_ptr<base::ListValue> accounts_list =
-      handler.GetStoredAccountsList();
+  base::Value accounts = handler.GetStoredAccountsList();
+
+  ASSERT_TRUE(accounts.is_list());
+  const base::Value::ListStorage& accounts_list = accounts.GetList();
 
   if (dice_enabled) {
-    EXPECT_EQ(2u, accounts_list->GetSize());
-    EXPECT_EQ("a@gmail.com",
-              accounts_list->GetList()[0].FindKey("email")->GetString());
-    EXPECT_EQ("b@gmail.com",
-              accounts_list->GetList()[1].FindKey("email")->GetString());
+    ASSERT_EQ(2u, accounts_list.size());
+    ASSERT_TRUE(accounts_list[0].FindKey("email"));
+    ASSERT_TRUE(accounts_list[1].FindKey("email"));
+    EXPECT_EQ("a@gmail.com", accounts_list[0].FindKey("email")->GetString());
+    EXPECT_EQ("b@gmail.com", accounts_list[1].FindKey("email")->GetString());
   } else if (unified_consent_enabled) {
-    EXPECT_EQ(1u, accounts_list->GetSize());
-    EXPECT_EQ("a@gmail.com",
-              accounts_list->GetList()[0].FindKey("email")->GetString());
+    ASSERT_EQ(1u, accounts_list.size());
+    ASSERT_TRUE(accounts_list[0].FindKey("email"));
+    EXPECT_EQ("a@gmail.com", accounts_list[0].FindKey("email")->GetString());
   } else {
-    EXPECT_EQ(0u, accounts_list->GetSize());
+    EXPECT_EQ(0u, accounts_list.size());
   }
 }
 
-INSTANTIATE_TEST_CASE_P(Test,
-                        PeopleHandlerDiceUnifiedConsentTest,
-                        ::testing::Combine(::testing::Bool(),
-                                           ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(Test,
+                         PeopleHandlerDiceUnifiedConsentTest,
+                         ::testing::Combine(::testing::Bool(),
+                                            ::testing::Bool()));
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 }  // namespace settings

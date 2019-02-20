@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -21,11 +22,11 @@
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/form_data_predictions.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/ssl_status.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/frame_navigate_params.h"
+#include "content/public/test/mock_navigation_handle.h"
 #include "content/public/test/test_renderer_host.h"
 #include "mojo/public/cpp/bindings/associated_binding_set.h"
 #include "net/base/net_errors.h"
@@ -207,7 +208,7 @@ class FakeAutofillAgent : public mojom::AutofillAgent {
 
   void SetFocusRequiresScroll(bool require) override {}
 
-  void SetQueryPasswordSuggestion(bool query) override{};
+  void SetQueryPasswordSuggestion(bool query) override {}
 
   void GetElementFormAndFieldData(
       const std::vector<std::string>& selectors,
@@ -303,10 +304,10 @@ class ContentAutofillDriverTest : public content::RenderViewHostTestHarness {
   }
 
   void Navigate(bool same_document) {
-    std::unique_ptr<content::NavigationHandle> navigation_handle =
-        content::NavigationHandle::CreateNavigationHandleForTesting(
-            GURL(), main_rfh(), /*committed=*/true, net::OK, same_document);
-    driver_->DidNavigateMainFrame(navigation_handle.get());
+    content::MockNavigationHandle navigation_handle(GURL(), main_rfh());
+    navigation_handle.set_has_committed(true);
+    navigation_handle.set_is_same_document(same_document);
+    driver_->DidNavigateMainFrame(&navigation_handle);
   }
 
  protected:

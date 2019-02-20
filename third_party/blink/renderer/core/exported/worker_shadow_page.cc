@@ -5,10 +5,11 @@
 #include "third_party/blink/renderer/core/exported/worker_shadow_page.h"
 
 #include "services/network/public/mojom/referrer_policy.mojom-shared.h"
+#include "third_party/blink/public/mojom/frame/document_interface_broker.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/core/exported/web_view_impl.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
-#include "third_party/blink/renderer/platform/loader/fetch/substitute_data.h"
+#include "third_party/blink/renderer/platform/shared_buffer.h"
 
 namespace blink {
 
@@ -18,23 +19,29 @@ constexpr char kDoNotTrackHeader[] = "DNT";
 
 }  // namespace
 
+mojo::ScopedMessagePipeHandle CreateStubDocumentInterfaceBrokerHandle() {
+  mojom::blink::DocumentInterfaceBrokerPtrInfo info;
+  return mojo::MakeRequest(&info).PassMessagePipe();
+}
+
 WorkerShadowPage::WorkerShadowPage(
     Client* client,
     scoped_refptr<network::SharedURLLoaderFactory> loader_factory,
     PrivacyPreferences preferences)
     : client_(client),
       web_view_(WebViewImpl::Create(nullptr,
-                                    nullptr,
                                     /*is_hidden=*/false,
                                     /*compositing_enabled=*/false,
                                     nullptr)),
-      main_frame_(
-          WebLocalFrameImpl::CreateMainFrame(web_view_,
-                                             this,
-                                             nullptr /* interface_registry */,
-                                             nullptr /* opener */,
-                                             g_empty_atom,
-                                             WebSandboxFlags::kNone)),
+      main_frame_(WebLocalFrameImpl::CreateMainFrame(
+          web_view_,
+          this,
+          nullptr /* interface_registry */,
+          CreateStubDocumentInterfaceBrokerHandle(),
+          nullptr /* opener */,
+          g_empty_atom,
+          WebSandboxFlags::kNone,
+          FeaturePolicy::FeatureState())),
       loader_factory_(std::move(loader_factory)),
       preferences_(std::move(preferences)) {
   DCHECK(IsMainThread());

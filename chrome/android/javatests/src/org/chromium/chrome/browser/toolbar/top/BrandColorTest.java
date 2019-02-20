@@ -18,6 +18,7 @@ import org.junit.runner.RunWith;
 import org.chromium.base.ObserverList.RewindableIterator;
 import org.chromium.base.SysUtils;
 import org.chromium.base.ThreadUtils;
+import org.chromium.base.task.PostTask;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.Restriction;
@@ -34,6 +35,7 @@ import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.DisableInTabbedMode;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.test.InterstitialPageDelegateAndroid;
 import org.chromium.content_public.browser.test.util.Criteria;
 import org.chromium.content_public.browser.test.util.CriteriaHelper;
@@ -152,7 +154,7 @@ public class BrandColorTest {
         ThreadUtils.runOnUiThreadBlocking(new Runnable() {
             @Override
             public void run() {
-                mActivityTestRule.getActivity().getToolbarManager().updatePrimaryColor(
+                mActivityTestRule.getActivity().getToolbarManager().onThemeColorChanged(
                         mDefaultColor, false);
                 // Since the color should change instantly, there is no need to use the criteria
                 // helper.
@@ -171,7 +173,7 @@ public class BrandColorTest {
     @Feature({"Omnibox"})
     public void testBrandColorWithLoadStarted() throws InterruptedException {
         startMainActivityWithURL(getUrlWithBrandColor(BRAND_COLOR_1));
-        ThreadUtils.postOnUiThread(new Runnable() {
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, new Runnable() {
             @Override
             public void run() {
                 Tab tab = mActivityTestRule.getActivity().getActivityTab();

@@ -143,6 +143,9 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool khr_robust_buffer_access_behavior = false;
     bool webgl_multi_draw = false;
     bool webgl_multi_draw_instanced = false;
+    bool nv_internalformat_sample_query = false;
+    bool amd_framebuffer_multisample_advanced = false;
+    bool ext_float_blend = false;
   };
 
   FeatureInfo();

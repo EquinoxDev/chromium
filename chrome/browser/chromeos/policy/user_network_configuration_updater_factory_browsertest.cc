@@ -4,6 +4,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop_current.h"
 #include "base/run_loop.h"
@@ -33,7 +34,7 @@
 #include "chromeos/network/onc/onc_certificate_importer.h"
 #include "chromeos/network/onc/onc_certificate_importer_impl.h"
 #include "chromeos/network/onc/onc_test_utils.h"
-#include "chromeos/policy_certificate_provider.h"
+#include "chromeos/network/policy_certificate_provider.h"
 #include "chromeos/test/chromeos_test_utils.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -121,10 +122,7 @@ class NetworkCertLoaderTestObserver
   }
 
   // chromeos::NetworkCertLoader::Observer
-  void OnCertificatesLoaded(
-      const net::ScopedCERTCertificateList& all_certs) override {
-    run_loop_.Quit();
-  }
+  void OnCertificatesLoaded() override { run_loop_.Quit(); }
 
   void Wait() { run_loop_.Run(); }
 
@@ -335,10 +333,11 @@ bool IsCertInNSSDatabase(Profile* profile,
   return cert_found;
 }
 
-bool IsCertInCertificateList(const net::X509Certificate* cert,
-                             const net::ScopedCERTCertificateList& cert_list) {
-  for (const auto& cert_list_element : cert_list) {
-    if (net::x509_util::IsSameCertificate(cert_list_element.get(), cert))
+bool IsCertInCertificateList(
+    const net::X509Certificate* cert,
+    const chromeos::NetworkCertLoader::NetworkCertList& network_cert_list) {
+  for (const auto& network_cert : network_cert_list) {
+    if (net::x509_util::IsSameCertificate(network_cert.cert(), cert))
       return true;
   }
   return false;
@@ -407,9 +406,9 @@ IN_PROC_BROWSER_TEST_F(PolicyProvidedTrustAnchorsRegularUserTest,
   ASSERT_TRUE(chromeos::NetworkCertLoader::IsInitialized());
   chromeos::NetworkCertLoader::Get()->SetUserNSSDB(test_nss_cert_db_.get());
 
-  EXPECT_FALSE(
-      IsCertInCertificateList(user_policy_certs_helper_.root_cert().get(),
-                              chromeos::NetworkCertLoader::Get()->all_certs()));
+  EXPECT_FALSE(IsCertInCertificateList(
+      user_policy_certs_helper_.root_cert().get(),
+      chromeos::NetworkCertLoader::Get()->authority_certs()));
   NetworkCertLoaderTestObserver network_cert_loader_observer(
       chromeos::NetworkCertLoader::Get());
   user_policy_certs_helper_.SetRootCertONCUserPolicy(browser()->profile());
@@ -418,9 +417,9 @@ IN_PROC_BROWSER_TEST_F(PolicyProvidedTrustAnchorsRegularUserTest,
   // Check that |NetworkCertLoader| is aware of the authority certificate.
   // (Web Trust does not matter for the NetworkCertLoader, but we currently only
   // set a policy with a certificate requesting Web Trust here).
-  EXPECT_TRUE(
-      IsCertInCertificateList(user_policy_certs_helper_.root_cert().get(),
-                              chromeos::NetworkCertLoader::Get()->all_certs()));
+  EXPECT_TRUE(IsCertInCertificateList(
+      user_policy_certs_helper_.root_cert().get(),
+      chromeos::NetworkCertLoader::Get()->authority_certs()));
 }
 
 // Base class for testing policy-provided trust roots with device-local

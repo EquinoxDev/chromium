@@ -16,7 +16,7 @@
 #include "net/third_party/quic/platform/api/quic_map_util.h"
 #include "net/third_party/quic/platform/api/quic_text_utils.h"
 #include "net/third_party/quic/tools/quic_simple_server_session.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 
 using spdy::SpdyHeaderBlock;
 
@@ -291,7 +291,7 @@ void QuicSimpleServerStream::SendIncompleteResponse(
   QUIC_DLOG(INFO) << "Stream " << id()
                   << " writing body (fin = false) with size: " << body.size();
   if (!body.empty()) {
-    WriteOrBufferBody(body, /*fin=*/false, nullptr);
+    WriteOrBufferBody(body, /*fin=*/false);
   }
 }
 
@@ -321,7 +321,7 @@ void QuicSimpleServerStream::SendHeadersAndBodyAndTrailers(
   QUIC_DLOG(INFO) << "Stream " << id() << " writing body (fin = " << send_fin
                   << ") with size: " << body.size();
   if (!body.empty() || send_fin) {
-    WriteOrBufferBody(body, send_fin, nullptr);
+    WriteOrBufferBody(body, send_fin);
   }
   if (send_fin) {
     // Nothing else to send.

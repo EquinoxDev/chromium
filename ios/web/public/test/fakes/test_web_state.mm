@@ -279,20 +279,6 @@ void TestWebState::OnVisibleSecurityStateChanged() {
   }
 }
 
-void TestWebState::ShowTransientContentView(CRWContentView* content_view) {
-  if (content_view) {
-    transient_content_view_ = content_view;
-  }
-}
-
-void TestWebState::ClearTransientContentView() {
-  transient_content_view_ = nil;
-}
-
-CRWContentView* TestWebState::GetTransientContentView() {
-  return transient_content_view_;
-}
-
 bool TestWebState::ShouldAllowRequest(
     NSURLRequest* request,
     const WebStatePolicyDecider::RequestInfo& request_info) {
@@ -387,8 +373,13 @@ void TestWebState::SetHasOpener(bool has_opener) {
   has_opener_ = has_opener;
 }
 
-void TestWebState::TakeSnapshot(CGRect rect, SnapshotCallback callback) {
+void TestWebState::TakeSnapshot(const gfx::RectF& rect,
+                                SnapshotCallback callback) {
   std::move(callback).Run(gfx::Image([[UIImage alloc] init]));
 }
+
+void TestWebState::LoadData(NSData* data,
+                            NSString* mime_type,
+                            const GURL& url) {}
 
 }  // namespace web

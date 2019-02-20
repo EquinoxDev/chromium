@@ -50,7 +50,7 @@ class WorkerGlobalScope;
 
 class ScheduledAction final : public GarbageCollectedFinalized<ScheduledAction>,
                               public NameClient {
-  WTF_MAKE_NONCOPYABLE(ScheduledAction);
+  DISALLOW_COPY_AND_ASSIGN(ScheduledAction);
 
  public:
   static ScheduledAction* Create(ScriptState*,
@@ -72,10 +72,11 @@ class ScheduledAction final : public GarbageCollectedFinalized<ScheduledAction>,
 
   void Dispose();
 
-  void Trace(blink::Visitor*);
-  const char* NameInHeapSnapshot() const override { return "ScheduledAction"; }
-
   void Execute(ExecutionContext*);
+
+  void Trace(blink::Visitor*);
+
+  const char* NameInHeapSnapshot() const override { return "ScheduledAction"; }
 
  private:
   void Execute(LocalFrame*);

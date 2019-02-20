@@ -56,8 +56,8 @@
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
 #include "chrome/browser/media/webrtc/webrtc_log_uploader.h"
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
-#include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/metrics/chrome_metrics_services_manager_client.h"
+#include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/browser/metrics/thread_watcher.h"
 #include "chrome/browser/net/chrome_net_log_helper.h"
 #include "chrome/browser/net/system_network_context_manager.h"
@@ -307,10 +307,8 @@ void BrowserProcessImpl::Init() {
 #if !defined(OS_ANDROID)
   // This preference must be kept in sync with external values; update them
   // whenever the preference or its controlling policy changes.
-  pref_change_registrar_.Add(
-      metrics::prefs::kMetricsReportingEnabled,
-      base::Bind(&BrowserProcessImpl::ApplyMetricsReportingPolicy,
-                 base::Unretained(this)));
+  pref_change_registrar_.Add(metrics::prefs::kMetricsReportingEnabled,
+                             base::Bind(&ApplyMetricsReportingPolicy));
 #endif
 
   int max_per_proxy = local_state_->GetInteger(prefs::kMaxConnectionsPerProxy);
@@ -1245,7 +1243,7 @@ void BrowserProcessImpl::CreateIntranetRedirectDetector() {
 void BrowserProcessImpl::CreateNotificationPlatformBridge() {
 #if BUILDFLAG(ENABLE_NATIVE_NOTIFICATIONS)
   DCHECK(!notification_bridge_);
-  notification_bridge_.reset(NotificationPlatformBridge::Create());
+  notification_bridge_ = NotificationPlatformBridge::Create();
   created_notification_bridge_ = true;
 #endif
 }
@@ -1255,7 +1253,7 @@ void BrowserProcessImpl::CreateNotificationUIManager() {
 // All notification traffic is routed through NotificationPlatformBridge.
 #if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
   DCHECK(!notification_ui_manager_);
-  notification_ui_manager_.reset(NotificationUIManager::Create());
+  notification_ui_manager_ = NotificationUIManager::Create();
   created_notification_ui_manager_ = !!notification_ui_manager_;
 #endif
 }
@@ -1271,7 +1269,7 @@ void BrowserProcessImpl::CreateBackgroundModeManager() {
 
 void BrowserProcessImpl::CreateStatusTray() {
   DCHECK(!status_tray_);
-  status_tray_.reset(StatusTray::Create());
+  status_tray_ = StatusTray::Create();
 }
 
 void BrowserProcessImpl::CreatePrintPreviewDialogController() {
@@ -1402,16 +1400,6 @@ void BrowserProcessImpl::ApplyAllowCrossOriginAuthPromptPolicy() {
   ResourceDispatcherHost::Get()->SetAllowCrossOriginAuthPrompt(value);
 }
 
-#if !defined(OS_ANDROID)
-void BrowserProcessImpl::ApplyMetricsReportingPolicy() {
-  GoogleUpdateSettings::CollectStatsConsentTaskRunner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(
-          base::IgnoreResult(&GoogleUpdateSettings::SetCollectStatsConsent),
-          ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled()));
-}
-#endif
-
 void BrowserProcessImpl::CacheDefaultWebClientState() {
 #if defined(OS_CHROMEOS)
   cached_default_web_client_state_ = shell_integration::IS_DEFAULT;
@@ -1470,7 +1458,8 @@ void BrowserProcessImpl::Unpin() {
 
 #if defined(OS_MACOSX)
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(ChromeBrowserMainPartsMac::DidEndMainMessageLoop));
+      FROM_HERE,
+      base::BindOnce(ChromeBrowserMainPartsMac::DidEndMainMessageLoop));
 #endif
 
 #if !defined(OS_ANDROID)

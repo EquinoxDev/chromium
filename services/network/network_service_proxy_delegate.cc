@@ -165,6 +165,16 @@ void NetworkServiceProxyDelegate::OnResolveProxy(
 void NetworkServiceProxyDelegate::OnFallback(const net::ProxyServer& bad_proxy,
                                              int net_error) {}
 
+void NetworkServiceProxyDelegate::OnBeforeHttp1TunnelRequest(
+    const net::ProxyServer& proxy_server,
+    net::HttpRequestHeaders* extra_headers) {}
+
+net::Error NetworkServiceProxyDelegate::OnHttp1TunnelHeadersReceived(
+    const net::ProxyServer& proxy_server,
+    const net::HttpResponseHeaders& response_headers) {
+  return net::OK;
+}
+
 void NetworkServiceProxyDelegate::OnCustomProxyConfigUpdated(
     mojom::CustomProxyConfigPtr proxy_config) {
   DCHECK(proxy_config->rules.empty() ||
@@ -245,7 +255,9 @@ bool NetworkServiceProxyDelegate::EligibleForProxy(
     const GURL& url,
     const std::string& method) const {
   return proxy_info.is_direct() && proxy_info.proxy_list().size() == 1 &&
-         MayProxyURL(url) && net::HttpUtil::IsMethodIdempotent(method);
+         MayProxyURL(url) &&
+         (proxy_config_->allow_non_idempotent_methods ||
+          net::HttpUtil::IsMethodIdempotent(method));
 }
 
 net::ProxyConfig::ProxyRules NetworkServiceProxyDelegate::GetProxyRulesForURL(

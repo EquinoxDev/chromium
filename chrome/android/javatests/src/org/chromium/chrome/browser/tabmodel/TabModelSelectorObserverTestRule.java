@@ -13,8 +13,6 @@ import org.chromium.base.CommandLine;
 import org.chromium.base.ThreadUtils;
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabSelectionType;
 import org.chromium.chrome.browser.test.ChromeBrowserTestRule;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.WindowAndroid;
@@ -83,8 +81,8 @@ public class TabModelSelectorObserverTestRule extends ChromeBrowserTestRule {
         };
 
         TabModelOrderController orderController = new TabModelOrderController(mSelector);
-        TabContentManager tabContentManager =
-                new TabContentManager(InstrumentationRegistry.getTargetContext(), null, false);
+        TabContentManager tabContentManager = new TabContentManager(
+                InstrumentationRegistry.getTargetContext(), null, null, false);
         TabPersistencePolicy persistencePolicy = new TabbedModeTabPersistencePolicy(0, false);
         TabPersistentStore tabPersistentStore =
                 new TabPersistentStore(persistencePolicy, mSelector, null, null);

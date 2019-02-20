@@ -123,6 +123,7 @@ static bool RequiresEvenSizeAllocation(VideoPixelFormat format) {
     case PIXEL_FORMAT_YUV444P12:
     case PIXEL_FORMAT_I420A:
     case PIXEL_FORMAT_UYVY:
+    case PIXEL_FORMAT_P016LE:
       return true;
     case PIXEL_FORMAT_UNKNOWN:
       break;
@@ -211,7 +212,7 @@ bool VideoFrame::IsValidConfig(VideoPixelFormat format,
     return true;
 
   // Make sure new formats are properly accounted for in the method.
-  static_assert(PIXEL_FORMAT_MAX == 28,
+  static_assert(PIXEL_FORMAT_MAX == 29,
                 "Added pixel format, please review IsValidConfig()");
 
   if (format == PIXEL_FORMAT_UNKNOWN) {
@@ -751,6 +752,7 @@ int VideoFrame::BytesPerElement(VideoPixelFormat format, size_t plane) {
     case PIXEL_FORMAT_YUV420P12:
     case PIXEL_FORMAT_YUV422P12:
     case PIXEL_FORMAT_YUV444P12:
+    case PIXEL_FORMAT_P016LE:
       return 2;
     case PIXEL_FORMAT_NV12:
     case PIXEL_FORMAT_NV21:
@@ -775,6 +777,22 @@ int VideoFrame::BytesPerElement(VideoPixelFormat format, size_t plane) {
 }
 
 // static
+std::vector<int32_t> VideoFrame::ComputeStrides(VideoPixelFormat format,
+                                                const gfx::Size& coded_size) {
+  std::vector<int32_t> strides;
+  const size_t num_planes = NumPlanes(format);
+  if (num_planes == 1) {
+    strides.push_back(RowBytes(0, format, coded_size.width()));
+  } else {
+    for (size_t plane = 0; plane < num_planes; ++plane) {
+      strides.push_back(base::bits::Align(
+          RowBytes(plane, format, coded_size.width()), kFrameAddressAlignment));
+    }
+  }
+  return strides;
+}
+
+// static
 size_t VideoFrame::Rows(size_t plane, VideoPixelFormat format, int height) {
   DCHECK(IsValidPlane(plane, format));
   const int sample_height = SampleSize(format, plane).height();
@@ -790,15 +808,14 @@ size_t VideoFrame::Columns(size_t plane, VideoPixelFormat format, int width) {
 
 // static
 void VideoFrame::HashFrameForTesting(base::MD5Context* context,
-                                     const scoped_refptr<VideoFrame>& frame) {
+                                     const VideoFrame& frame) {
   DCHECK(context);
-  for (size_t plane = 0; plane < NumPlanes(frame->format()); ++plane) {
-    for (int row = 0; row < frame->rows(plane); ++row) {
-      base::MD5Update(
-          context,
-          base::StringPiece(reinterpret_cast<char*>(frame->data(plane) +
-                                                    frame->stride(plane) * row),
-                            frame->row_bytes(plane)));
+  for (size_t plane = 0; plane < NumPlanes(frame.format()); ++plane) {
+    for (int row = 0; row < frame.rows(plane); ++row) {
+      base::MD5Update(context, base::StringPiece(reinterpret_cast<const char*>(
+                                                     frame.data(plane) +
+                                                     frame.stride(plane) * row),
+                                                 frame.row_bytes(plane)));
     }
   }
 }
@@ -967,7 +984,7 @@ gpu::SyncToken VideoFrame::UpdateReleaseSyncToken(SyncTokenClient* client) {
 }
 
 std::string VideoFrame::AsHumanReadableString() {
-  if (metadata()->IsTrue(media::VideoFrameMetadata::END_OF_STREAM))
+  if (metadata()->IsTrue(VideoFrameMetadata::END_OF_STREAM))
     return "end of stream";
 
   std::ostringstream s;
@@ -978,7 +995,7 @@ std::string VideoFrame::AsHumanReadableString() {
 }
 
 size_t VideoFrame::BitDepth() const {
-  return ::media::BitDepth(format());
+  return media::BitDepth(format());
 }
 
 // static
@@ -1186,6 +1203,7 @@ gfx::Size VideoFrame::SampleSize(VideoPixelFormat format, size_t plane) {
         case PIXEL_FORMAT_YUV420P9:
         case PIXEL_FORMAT_YUV420P10:
         case PIXEL_FORMAT_YUV420P12:
+        case PIXEL_FORMAT_P016LE:
           return gfx::Size(2, 2);
 
         case PIXEL_FORMAT_UNKNOWN:
@@ -1243,22 +1261,6 @@ void VideoFrame::AllocateMemory(bool zero_initialize_memory) {
     data_[plane] = data + offset;
     offset += plane_size[plane];
   }
-}
-
-// static
-std::vector<int32_t> VideoFrame::ComputeStrides(VideoPixelFormat format,
-                                                const gfx::Size& coded_size) {
-  std::vector<int32_t> strides;
-  const size_t num_planes = NumPlanes(format);
-  if (num_planes == 1) {
-    strides.push_back(RowBytes(0, format, coded_size.width()));
-  } else {
-    for (size_t plane = 0; plane < num_planes; ++plane) {
-      strides.push_back(base::bits::Align(
-          RowBytes(plane, format, coded_size.width()), kFrameAddressAlignment));
-    }
-  }
-  return strides;
 }
 
 std::vector<size_t> VideoFrame::CalculatePlaneSize() const {

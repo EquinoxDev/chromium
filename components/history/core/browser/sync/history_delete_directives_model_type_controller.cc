@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "components/sync/driver/sync_client.h"
 #include "components/sync/driver/sync_service.h"
+#include "components/sync/driver/sync_user_settings.h"
 #include "components/sync/model/model_type_store_service.h"
 
 namespace browser_sync {
@@ -17,10 +18,11 @@ HistoryDeleteDirectivesModelTypeController::
     HistoryDeleteDirectivesModelTypeController(
         const base::RepeatingClosure& dump_stack,
         syncer::SyncService* sync_service,
+        syncer::ModelTypeStoreService* model_type_store_service,
         syncer::SyncClient* sync_client)
     : SyncableServiceBasedModelTypeController(
           syncer::HISTORY_DELETE_DIRECTIVES,
-          sync_client->GetModelTypeStoreService()->GetStoreFactory(),
+          model_type_store_service->GetStoreFactory(),
           base::BindOnce(&syncer::SyncClient::GetSyncableServiceForType,
                          base::Unretained(sync_client),
                          syncer::HISTORY_DELETE_DIRECTIVES),
@@ -32,7 +34,7 @@ HistoryDeleteDirectivesModelTypeController::
 
 bool HistoryDeleteDirectivesModelTypeController::ReadyForStart() const {
   DCHECK(CalledOnValidThread());
-  return !sync_service_->IsEncryptEverythingEnabled();
+  return !sync_service_->GetUserSettings()->IsEncryptEverythingEnabled();
 }
 
 void HistoryDeleteDirectivesModelTypeController::LoadModels(

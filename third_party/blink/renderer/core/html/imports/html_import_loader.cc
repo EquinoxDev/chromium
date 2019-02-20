@@ -61,11 +61,8 @@ void HTMLImportLoader::Dispose() {
   ClearResource();
 }
 
-void HTMLImportLoader::ResponseReceived(
-    Resource* resource,
-    const ResourceResponse& response,
-    std::unique_ptr<WebDataConsumerHandle> handle) {
-  DCHECK(!handle);
+void HTMLImportLoader::ResponseReceived(Resource* resource,
+                                        const ResourceResponse& response) {
   // Resource may already have been loaded with the import loader
   // being added as a client later & now being notified. Fail early.
   if (resource->LoadFailedOrCanceled() || response.HttpStatusCode() >= 400 ||
@@ -201,7 +198,7 @@ V0CustomElementSyncMicrotaskQueue* HTMLImportLoader::MicrotaskQueue() const {
   return microtask_queue_;
 }
 
-void HTMLImportLoader::Trace(blink::Visitor* visitor) {
+void HTMLImportLoader::Trace(Visitor* visitor) {
   visitor->Trace(controller_);
   visitor->Trace(imports_);
   visitor->Trace(document_);

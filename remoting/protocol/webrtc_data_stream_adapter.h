@@ -11,8 +11,8 @@
 #include "base/callback.h"
 #include "base/macros.h"
 #include "remoting/protocol/message_pipe.h"
-#include "third_party/webrtc/api/peerconnectioninterface.h"
-#include "third_party/webrtc/rtc_base/refcount.h"
+#include "third_party/webrtc/api/peer_connection_interface.h"
+#include "third_party/webrtc/rtc_base/ref_count.h"
 
 namespace remoting {
 namespace protocol {
@@ -30,7 +30,7 @@ class WebrtcDataStreamAdapter : public MessagePipe,
   // MessagePipe interface.
   void Start(EventHandler* event_handler) override;
   void Send(google::protobuf::MessageLite* message,
-            const base::Closure& done) override;
+            base::OnceClosure done) override;
 
  private:
   enum class State { CONNECTING, OPEN, CLOSED };

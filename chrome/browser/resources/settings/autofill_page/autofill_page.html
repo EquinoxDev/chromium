@@ -17,7 +17,9 @@
   <template>
     <style include="settings-shared">
       cr-link-row {
-        --cr-link-row-icon-width: 40px;
+        --cr-icon-button-margin-start: 20px;
+      }
+      cr-link-row:not([hidden]) + cr-link-row {
         border-top: var(--settings-separator-line);
       }
     </style>

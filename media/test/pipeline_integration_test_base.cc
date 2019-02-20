@@ -12,6 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/media_tracks.h"
@@ -22,11 +23,15 @@
 #include "media/renderers/audio_renderer_impl.h"
 #include "media/renderers/renderer_impl.h"
 #include "media/test/fake_encrypted_media.h"
-#include "media/test/mock_media_source.h"
+#include "media/test/test_media_source.h"
 #include "third_party/libaom/av1_buildflags.h"
 
 #if BUILDFLAG(ENABLE_AV1_DECODER)
 #include "media/filters/aom_video_decoder.h"
+#endif
+
+#if BUILDFLAG(ENABLE_DAV1D_DECODER)
+#include "media/filters/dav1d_video_decoder.h"
 #endif
 
 #if BUILDFLAG(ENABLE_FFMPEG)
@@ -68,7 +73,12 @@ static std::vector<std::unique_ptr<VideoDecoder>> CreateVideoDecodersForTest(
   video_decoders.push_back(std::make_unique<OffloadingVpxVideoDecoder>());
 #endif
 
-#if BUILDFLAG(ENABLE_AV1_DECODER)
+#if BUILDFLAG(ENABLE_DAV1D_DECODER)
+  if (base::FeatureList::IsEnabled(kDav1dVideoDecoder))
+    video_decoders.push_back(std::make_unique<Dav1dVideoDecoder>(media_log));
+  else
+    video_decoders.push_back(std::make_unique<AomVideoDecoder>(media_log));
+#elif BUILDFLAG(ENABLE_AV1_DECODER)
   video_decoders.push_back(std::make_unique<AomVideoDecoder>(media_log));
 #endif
 
@@ -125,6 +135,9 @@ PipelineIntegrationTestBase::PipelineIntegrationTestBase()
       webaudio_attached_(false),
       mono_output_(false),
       fuzzing_(false),
+#if defined(ADDRESS_SANITIZER) || defined(UNDEFINED_SANITIZER)
+      disable_run_timeout_(base::TimeDelta()),
+#endif
       pipeline_(
           new PipelineImpl(scoped_task_environment_.GetMainThreadTaskRunner(),
                            scoped_task_environment_.GetMainThreadTaskRunner(),
@@ -536,7 +549,7 @@ void PipelineIntegrationTestBase::OnVideoFramePaint(
     return;
   last_frame_ = frame;
   DVLOG(3) << __func__ << " pts=" << frame->timestamp().InSecondsF();
-  VideoFrame::HashFrameForTesting(&md5_context_, frame);
+  VideoFrame::HashFrameForTesting(&md5_context_, *frame.get());
 }
 
 void PipelineIntegrationTestBase::CheckDuration() {
@@ -577,26 +590,28 @@ base::TimeDelta PipelineIntegrationTestBase::GetAudioTime() {
 }
 
 PipelineStatus PipelineIntegrationTestBase::StartPipelineWithMediaSource(
-    MockMediaSource* source) {
+    TestMediaSource* source) {
   return StartPipelineWithMediaSource(source, kNormal, nullptr);
 }
 
 PipelineStatus PipelineIntegrationTestBase::StartPipelineWithEncryptedMedia(
-    MockMediaSource* source,
+    TestMediaSource* source,
     FakeEncryptedMedia* encrypted_media) {
   return StartPipelineWithMediaSource(source, kNormal, encrypted_media);
 }
 
 PipelineStatus PipelineIntegrationTestBase::StartPipelineWithMediaSource(
-    MockMediaSource* source,
+    TestMediaSource* source,
     uint8_t test_type,
     FakeEncryptedMedia* encrypted_media) {
   ParseTestTypeFlags(test_type);
 
-  if (fuzzing_)
+  if (fuzzing_) {
     EXPECT_CALL(*source, InitSegmentReceivedMock(_)).Times(AnyNumber());
-  else if (!(test_type & kExpectDemuxerFailure))
+    EXPECT_CALL(*source, OnParseWarningMock(_)).Times(AnyNumber());
+  } else if (!(test_type & kExpectDemuxerFailure)) {
     EXPECT_CALL(*source, InitSegmentReceivedMock(_)).Times(AtLeast(1));
+  }
 
   EXPECT_CALL(*this, OnMetadata(_))
       .Times(AtMost(1))
@@ -679,11 +694,6 @@ void PipelineIntegrationTestBase::RunUntilQuitOrEndedOrError(
 
   on_ended_closure_ = run_loop->QuitWhenIdleClosure();
   RunUntilQuitOrError(run_loop);
-}
-
-base::TimeTicks DummyTickClock::NowTicks() const {
-  now_ += base::TimeDelta::FromSeconds(60);
-  return now_;
 }
 
 }  // namespace media

@@ -330,6 +330,7 @@ void LoadURLInContents(WebContents* target_contents,
   load_url_params.input_start = params->input_start;
   load_url_params.was_activated = params->was_activated;
   load_url_params.href_translate = params->href_translate;
+  load_url_params.reload_type = params->reload_type;
 
   // |frame_tree_node_id| is kNoFrameTreeNodeId for main frame navigations.
   if (params->frame_tree_node_id ==
@@ -727,7 +728,7 @@ bool IsHostAllowedInIncognito(const GURL& url) {
     // retrieve the login scope token without touching any profiles. This
     // option is only available on Windows for use with Google Credential
     // Provider for Windows.
-    return signin::GetSigninReasonForPromoURL(url) ==
+    return signin::GetSigninReasonForEmbeddedPromoURL(url) ==
            signin_metrics::Reason::REASON_FETCH_LST_ONLY;
 #else
     return false;

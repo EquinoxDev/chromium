@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_html.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_script.h"
 #include "third_party/blink/renderer/core/trustedtypes/trusted_script_url.h"
@@ -27,12 +28,17 @@ String GetStringFromTrustedType(
     const Document* doc,
     ExceptionState& exception_state) {
   DCHECK(string_or_trusted_type.IsString() ||
-         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+         origin_trials::TrustedDOMTypesEnabled(doc));
   DCHECK(!string_or_trusted_type.IsNull());
 
   if (string_or_trusted_type.IsString() && doc && doc->RequireTrustedTypes()) {
     exception_state.ThrowTypeError(
         "This document requires a Trusted Type assignment.");
+
+    // Test case docs (Document::CreateForTest) might not have a window.
+    if (doc->ExecutingWindow())
+      doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
+
     return g_empty_string;
   }
 
@@ -65,11 +71,65 @@ String GetStringFromTrustedTypeWithoutCheck(
   return g_empty_string;
 }
 
+String GetStringFromSpecificTrustedType(
+    const StringOrTrustedHTMLOrTrustedScriptOrTrustedScriptURLOrTrustedURL&
+        string_or_trusted_type,
+    SpecificTrustedType specific_trusted_type,
+    const Document* doc,
+    ExceptionState& exception_state) {
+  switch (specific_trusted_type) {
+    case SpecificTrustedType::kTrustedHTML: {
+      StringOrTrustedHTML string_or_trusted_html =
+          string_or_trusted_type.IsTrustedHTML()
+              ? StringOrTrustedHTML::FromTrustedHTML(
+                    string_or_trusted_type.GetAsTrustedHTML())
+              : StringOrTrustedHTML::FromString(
+                    GetStringFromTrustedTypeWithoutCheck(
+                        string_or_trusted_type));
+      return GetStringFromTrustedHTML(string_or_trusted_html, doc,
+                                      exception_state);
+    }
+    case SpecificTrustedType::kTrustedScript: {
+      StringOrTrustedScript string_or_trusted_script =
+          string_or_trusted_type.IsTrustedScript()
+              ? StringOrTrustedScript::FromTrustedScript(
+                    string_or_trusted_type.GetAsTrustedScript())
+              : StringOrTrustedScript::FromString(
+                    GetStringFromTrustedTypeWithoutCheck(
+                        string_or_trusted_type));
+      return GetStringFromTrustedScript(string_or_trusted_script, doc,
+                                        exception_state);
+    }
+    case SpecificTrustedType::kTrustedScriptURL: {
+      StringOrTrustedScriptURL string_or_trusted_script_url =
+          string_or_trusted_type.IsTrustedScriptURL()
+              ? StringOrTrustedScriptURL::FromTrustedScriptURL(
+                    string_or_trusted_type.GetAsTrustedScriptURL())
+              : StringOrTrustedScriptURL::FromString(
+                    GetStringFromTrustedTypeWithoutCheck(
+                        string_or_trusted_type));
+      return GetStringFromTrustedScriptURL(string_or_trusted_script_url, doc,
+                                           exception_state);
+    }
+    case SpecificTrustedType::kTrustedURL: {
+      USVStringOrTrustedURL string_or_trusted_url =
+          string_or_trusted_type.IsTrustedURL()
+              ? USVStringOrTrustedURL::FromTrustedURL(
+                    string_or_trusted_type.GetAsTrustedURL())
+              : USVStringOrTrustedURL::FromUSVString(
+                    GetStringFromTrustedTypeWithoutCheck(
+                        string_or_trusted_type));
+      return GetStringFromTrustedURL(string_or_trusted_url, doc,
+                                     exception_state);
+    }
+  }
+}
+
 String GetStringFromTrustedHTML(StringOrTrustedHTML string_or_trusted_html,
                                 const Document* doc,
                                 ExceptionState& exception_state) {
   DCHECK(string_or_trusted_html.IsString() ||
-         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+         origin_trials::TrustedDOMTypesEnabled(doc));
   DCHECK(!string_or_trusted_html.IsNull());
 
   bool require_trusted_type = doc && doc->RequireTrustedTypes();
@@ -86,6 +146,7 @@ String GetStringFromTrustedHTML(StringOrTrustedHTML string_or_trusted_html,
   if (!default_policy) {
     exception_state.ThrowTypeError(
         "This document requires `TrustedHTML` assignment.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -96,6 +157,7 @@ String GetStringFromTrustedHTML(StringOrTrustedHTML string_or_trusted_html,
     exception_state.ThrowTypeError(
         "This document requires `TrustedHTML` assignment and 'default' policy "
         "failed to execute.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -107,7 +169,7 @@ String GetStringFromTrustedScript(
     const Document* doc,
     ExceptionState& exception_state) {
   DCHECK(string_or_trusted_script.IsString() ||
-         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+         origin_trials::TrustedDOMTypesEnabled(doc));
 
   // To remain compatible with legacy behaviour, HTMLElement uses extended IDL
   // attributes to allow for nullable union of (DOMString or TrustedScript).
@@ -138,6 +200,7 @@ String GetStringFromTrustedScript(
   if (!default_policy) {
     exception_state.ThrowTypeError(
         "This document requires `TrustedScript` assignment.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -154,6 +217,7 @@ String GetStringFromTrustedScript(
         "This document requires `TrustedScript` assignment and 'default' "
         "policy "
         "failed to execute.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -165,10 +229,12 @@ String GetStringFromTrustedScriptURL(
     const Document* doc,
     ExceptionState& exception_state) {
   DCHECK(string_or_trusted_script_url.IsString() ||
-         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+         origin_trials::TrustedDOMTypesEnabled(doc));
   DCHECK(!string_or_trusted_script_url.IsNull());
 
-  bool require_trusted_type = doc && doc->RequireTrustedTypes();
+  bool require_trusted_type = doc &&
+                              origin_trials::TrustedDOMTypesEnabled(doc) &&
+                              doc->RequireTrustedTypes();
   if (!require_trusted_type && string_or_trusted_script_url.IsString()) {
     return string_or_trusted_script_url.GetAsString();
   }
@@ -182,6 +248,7 @@ String GetStringFromTrustedScriptURL(
   if (!default_policy) {
     exception_state.ThrowTypeError(
         "This document requires `TrustedScriptURL` assignment.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -195,6 +262,7 @@ String GetStringFromTrustedScriptURL(
         "This document requires `TrustedScriptURL` assignment and 'default' "
         "policy "
         "failed to execute.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -205,7 +273,7 @@ String GetStringFromTrustedURL(USVStringOrTrustedURL string_or_trusted_url,
                                const Document* doc,
                                ExceptionState& exception_state) {
   DCHECK(string_or_trusted_url.IsUSVString() ||
-         RuntimeEnabledFeatures::TrustedDOMTypesEnabled());
+         origin_trials::TrustedDOMTypesEnabled(doc));
   DCHECK(!string_or_trusted_url.IsNull());
 
   bool require_trusted_type = doc && doc->RequireTrustedTypes();
@@ -222,6 +290,7 @@ String GetStringFromTrustedURL(USVStringOrTrustedURL string_or_trusted_url,
   if (!default_policy) {
     exception_state.ThrowTypeError(
         "This document requires `TrustedURL` assignment.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 
@@ -233,6 +302,7 @@ String GetStringFromTrustedURL(USVStringOrTrustedURL string_or_trusted_url,
     exception_state.ThrowTypeError(
         "This document requires `TrustedURL` assignment and 'default' policy "
         "failed to execute.");
+    doc->ExecutingWindow()->trustedTypes()->CountTrustedTypeAssignmentError();
     return g_empty_string;
   }
 

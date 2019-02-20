@@ -19,6 +19,7 @@
 <translation id="1591562245178063882">Denne måneden</translation>
 <translation id="1637811476055996098">Velg filer</translation>
 <translation id="1650423536718072820">sitat</translation>
+<translation id="1727886345390570319">skjul menyen for teksting for hørselshemmede</translation>
 <translation id="1729654308190250600">Skriv inn en ikke-tom e-postadresse.</translation>
 <translation id="1758486001363313524">Andre</translation>
 <translation id="1806710327868736751">varseldialog</translation>
@@ -41,6 +42,7 @@
 <translation id="2291999235780842123">avmerkingsboks</translation>
 <translation id="2311842470354187719">sideskift</translation>
 <translation id="2335594187091864976">dato- og klokkeslettvelger</translation>
+<translation id="245932805758469625">antall sekunder med video som gjenstår</translation>
 <translation id="248395913932153421">Dag</translation>
 <translation id="2507943997699731163">Vennligst fyll ut dette feltet.</translation>
 <translation id="2508569020611168319">faneliste</translation>
@@ -71,11 +73,9 @@
 <translation id="3450233048674729344">Verdien må være mindre enn eller lik <ph name="MAXIMUM" />.</translation>
 <translation id="3486220673238053218">definisjon</translation>
 <translation id="3557673793733683882">overskrift <ph name="HEADING_LEVEL" /></translation>
-<translation id="3639613635497528239">antall sekunder som gjenstår av filmen</translation>
 <translation id="3706100364254443312">bryter</translation>
 <translation id="3732799496749320381">mm</translation>
 <translation id="3757388668994797779"><ph name="QUANTITY" /> GB</translation>
-<translation id="3785482301506746191">videotidslinje</translation>
 <translation id="3808586225841795776">term</translation>
 <translation id="3822383571486410024">Du må forlenge denne teksten til <ph name="MIN_CHARACTERS" /> tegn eller mer (for øyeblikket bruker du <ph name="CURRENT_LENGTH" /> tegn).</translation>
 <translation id="383465348367842624">En del etterfulgt av «<ph name="ATSIGN" />» kan ikke inneholde symbolet «<ph name="INVALIDCHARACTER" />».</translation>
@@ -96,6 +96,7 @@
 <translation id="4413860115965805769">menyknapp</translation>
 <translation id="4446524499724042288">ordlistereferanse</translation>
 <translation id="4522570452068850558">Detaljer</translation>
+<translation id="4542388879936266156">tid som gjenstår: <ph name="REMAINING_TIME" /></translation>
 <translation id="4597532268155981612">skjema</translation>
 <translation id="4661075872484491155">tree</translation>
 <translation id="4664250907885839816">En del etterfulgt av «<ph name="ATSIGN" />» kan ikke inneholde symbolet «<ph name="INVALIDCHARACTER" />».</translation>
@@ -111,6 +112,7 @@
 <translation id="4992066212339426712">Slå på lyden</translation>
 <translation id="49969490063480558">Skriv inn en del etterfulgt av «<ph name="ATSIGN" />». «<ph name="INVALIDADDRESS" />» er ufullstendig.</translation>
 <translation id="5034860022980953847">fremdriftsindikator</translation>
+<translation id="5090250355906949916">videotidslinje</translation>
 <translation id="5093189678851173835">epigraf</translation>
 <translation id="5117590920725113268">Se neste måned</translation>
 <translation id="512758898067543763">radoverskrift</translation>
@@ -120,7 +122,6 @@
 <translation id="5307600278924710095">Skriv inn en del etterfulgt av «<ph name="ATSIGN" />». «<ph name="INVALIDADDRESS" />» er ufullstendig.</translation>
 <translation id="5406322316791861025">figur</translation>
 <translation id="5453733299334684579">treelement</translation>
-<translation id="5457113250005438886">Ugyldig</translation>
 <translation id="5466621249238537318">Velg én eller flere filer.</translation>
 <translation id="5468998798572797635">avslutt fullskjerm</translation>
 <translation id="5516424706154626233">datovelger</translation>
@@ -148,10 +149,10 @@
 <translation id="6213469881011901533">ordliste</translation>
 <translation id="6398862346408813489">Se panelet for valg av måned</translation>
 <translation id="6404546809543547843">lydtidslinje</translation>
+<translation id="6443871981718447451">vis menyen for teksting for hørselshemmede</translation>
 <translation id="6453774872122745852">omtale</translation>
 <translation id="648732519525291180">klokkeslettvelger</translation>
 <translation id="6550675742724504774">Alternativer</translation>
-<translation id="6572309429103589720">Grammatikkfeil</translation>
 <translation id="658823671542763450">gå til fullskjermmodus</translation>
 <translation id="663493177488814956">feed</translation>
 <translation id="6637586476836377253">logg</translation>
@@ -164,7 +165,6 @@
 <translation id="6820355525329141109">Kunne ikke laste inn programtillegget.</translation>
 <translation id="6820615603175220800">bibliografireferanse</translation>
 <translation id="6843725295806269523">kutt lyd</translation>
-<translation id="6853785296079745596">skjul teksting</translation>
 <translation id="6885760532393684712">katalog</translation>
 <translation id="689129560213475294">kolofon</translation>
 <translation id="6934078000481955284">blokksitat</translation>
@@ -173,7 +173,6 @@
 <translation id="6989848892321993519">Øk lengden på denne teksten med minst <ph name="MIN_CHARACTERS" /> tegn (du bruker for øyeblikket 1 tegn).</translation>
 <translation id="709897737746224366">Sørg for samsvar med det forespurte formatet.</translation>
 <translation id="7139483182332611405">forord</translation>
-<translation id="7223624360433298498">brukt tid</translation>
 <translation id="7263440858009898357">Velg en artikkel i listen.</translation>
 <translation id="727747134524199931">kolonneoverskrift</translation>
 <translation id="7353453495576941748">anerkjennelse</translation>
@@ -188,7 +187,6 @@
 <translation id="7661956066982048809">grafikkdokument</translation>
 <translation id="7673697353781729403">Timer</translation>
 <translation id="7681220483256441252">stikkordregister</translation>
-<translation id="7720026100085573005">tid som gjenstår</translation>
 <translation id="7740050170769002709">HTML-innhold</translation>
 <translation id="7750228210027921155">Bilde i bilde</translation>
 <translation id="7789962463072032349">stans midlertidig</translation>
@@ -201,9 +199,9 @@
 <translation id="8105797009065549151">kommentarreferanse</translation>
 <translation id="8117451130807776954">Denne uken</translation>
 <translation id="8199524924445686405">åååå</translation>
-<translation id="8261464734335370856">Stavefeil</translation>
 <translation id="8284326494547611709">Teksting</translation>
 <translation id="835897206747267392">Ugyldig verdi</translation>
+<translation id="8403857369060869934">medgått tid: <ph name="ELAPSED_TIME" /></translation>
 <translation id="8415319359811155763">del</translation>
 <translation id="8433900881053900389">verktøyrad</translation>
 <translation id="8444882422881193423"><ph name="NUMBER_OF_FILES" /> filer</translation>
@@ -228,7 +226,6 @@
 <translation id="8987927404178983737">Måned</translation>
 <translation id="901493112792887934">gjeldende tid i sekunder</translation>
 <translation id="9048119486235211610">navigasjon</translation>
-<translation id="9050748414552849310">vis teksting</translation>
 <translation id="9062295712474918030">dokument</translation>
 <translation id="9093215626363556771">avslutt bilde-i-bilde</translation>
 <translation id="9108370397979208512">math</translation>

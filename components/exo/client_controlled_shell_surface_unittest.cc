@@ -8,7 +8,6 @@
 #include "ash/frame/header_view.h"
 #include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/frame/wide_frame_view.h"
-#include "ash/public/cpp/ash_features.h"
 #include "ash/public/cpp/caption_buttons/caption_button_model.h"
 #include "ash/public/cpp/caption_buttons/frame_caption_button_container_view.h"
 #include "ash/public/cpp/window_properties.h"
@@ -17,7 +16,7 @@
 #include "ash/shell_test_api.h"
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/wm/drag_window_resizer.h"
-#include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_window_drag_delegate.h"
@@ -27,9 +26,9 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
 #include "ash/wm/workspace_controller_test_api.h"
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/scoped_feature_list.h"
 #include "cc/paint/display_item_list.h"
 #include "components/exo/buffer.h"
 #include "components/exo/display.h"
@@ -1090,8 +1089,6 @@ TEST_F(ClientControlledShellSurfaceTest, ClientIniatedResize) {
 // Test the functionalities of dragging a window from top in tablet mode.
 TEST_F(ClientControlledShellSurfaceTest, DragWindowFromTopInTabletMode) {
   UpdateDisplay("800x600");
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(ash::features::kDragAppsInTabletMode);
   ash::Shell* shell = ash::Shell::Get();
   shell->tablet_mode_controller()->EnableTabletModeWindowManager(true);
   std::unique_ptr<Surface> surface(new Surface());
@@ -1121,7 +1118,7 @@ TEST_F(ClientControlledShellSurfaceTest, DragWindowFromTopInTabletMode) {
 
   // FLING the window not inisde preview area with large enough y veloicty
   // (larger than kFlingToOverviewThreshold) will drop the window into overview.
-  EXPECT_FALSE(shell->window_selector_controller()->IsSelecting());
+  EXPECT_FALSE(shell->overview_controller()->IsSelecting());
   end = gfx::Point(400, 210);
   const base::TimeDelta duration =
       event_generator->CalculateScrollDurationForFlingVelocity(
@@ -1129,16 +1126,16 @@ TEST_F(ClientControlledShellSurfaceTest, DragWindowFromTopInTabletMode) {
           ash::TabletModeWindowDragDelegate::kFlingToOverviewThreshold + 10.f,
           200);
   event_generator->GestureScrollSequence(start, end, duration, 200);
-  EXPECT_TRUE(shell->window_selector_controller()->IsSelecting());
-  EXPECT_TRUE(shell->window_selector_controller()
-                  ->window_selector()
-                  ->IsWindowInOverview(window));
+  ASSERT_TRUE(shell->overview_controller()->IsSelecting());
+  EXPECT_TRUE(
+      shell->overview_controller()->overview_session()->IsWindowInOverview(
+          window));
 
   // Drag the window long enough (pass one fourth of the screen vertical
   // height) to snap the window to splitscreen.
   end = gfx::Point(0, 210);
-  shell->window_selector_controller()->ToggleOverview();
-  EXPECT_FALSE(shell->window_selector_controller()->IsSelecting());
+  shell->overview_controller()->ToggleOverview();
+  EXPECT_FALSE(shell->overview_controller()->IsSelecting());
   EXPECT_TRUE(ash::wm::GetWindowState(window)->IsMaximized());
   event_generator->GestureScrollSequence(
       start, end, base::TimeDelta::FromMilliseconds(100), 20);
@@ -1840,9 +1837,11 @@ TEST_F(ClientControlledShellSurfaceTest, SetPipWindowBoundsAnimates) {
   ui::ScopedAnimationDurationScaleMode animation_scale_mode(
       ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
+  EXPECT_EQ(gfx::Rect(8, 8, 256, 256), window->layer()->GetTargetBounds());
+  EXPECT_EQ(gfx::Rect(8, 8, 256, 256), window->layer()->bounds());
   window->SetBounds(gfx::Rect(10, 10, 256, 256));
   EXPECT_EQ(gfx::Rect(10, 10, 256, 256), window->layer()->GetTargetBounds());
-  EXPECT_EQ(gfx::Rect(0, 0, 256, 256), window->layer()->bounds());
+  EXPECT_EQ(gfx::Rect(8, 8, 256, 256), window->layer()->bounds());
 }
 
 TEST_F(ClientControlledShellSurfaceTest, PipWindowDragDoesNotAnimate) {
@@ -1860,13 +1859,15 @@ TEST_F(ClientControlledShellSurfaceTest, PipWindowDragDoesNotAnimate) {
   shell_surface->GetWidget()->Show();
 
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
+  EXPECT_EQ(gfx::Rect(8, 8, 256, 256), window->layer()->GetTargetBounds());
+  EXPECT_EQ(gfx::Rect(8, 8, 256, 256), window->layer()->bounds());
   ui::ScopedAnimationDurationScaleMode animation_scale_mode(
       ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
   std::unique_ptr<ash::WindowResizer> resizer(ash::CreateWindowResizer(
       window, gfx::Point(), HTCAPTION, ::wm::WINDOW_MOVE_SOURCE_MOUSE));
   resizer->Drag(gfx::Point(10, 10), 0);
-  EXPECT_EQ(gfx::Rect(10, 10, 256, 256), window->layer()->GetTargetBounds());
-  EXPECT_EQ(gfx::Rect(10, 10, 256, 256), window->layer()->bounds());
+  EXPECT_EQ(gfx::Rect(18, 18, 256, 256), window->layer()->GetTargetBounds());
+  EXPECT_EQ(gfx::Rect(18, 18, 256, 256), window->layer()->bounds());
   resizer->CompleteDrag();
 }
 

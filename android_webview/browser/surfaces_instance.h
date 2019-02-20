@@ -15,6 +15,7 @@
 #include "components/viz/common/surfaces/surface_id.h"
 #include "components/viz/service/display/display_client.h"
 #include "services/viz/public/interfaces/compositing/compositor_frame_sink.mojom.h"
+#include "ui/gfx/color_space.h"
 
 namespace gfx {
 class Rect;
@@ -22,17 +23,18 @@ class Size;
 class Transform;
 }
 
+namespace gpu {
+class SharedContextState;
+}
+
 namespace viz {
 class BeginFrameSource;
 class CompositorFrameSinkSupport;
 class Display;
 class FrameSinkManagerImpl;
-class ParentLocalSurfaceIdAllocator;
 }  // namespace viz
 
 namespace android_webview {
-
-class ParentOutputSurface;
 
 class SurfacesInstance : public base::RefCounted<SurfacesInstance>,
                          public viz::DisplayClient,
@@ -48,7 +50,8 @@ class SurfacesInstance : public base::RefCounted<SurfacesInstance>,
                    const gfx::Transform& transform,
                    const gfx::Size& frame_size,
                    const viz::SurfaceId& child_id,
-                   float device_scale_factor);
+                   float device_scale_factor,
+                   const gfx::ColorSpace& color_space);
 
   void AddChildId(const viz::SurfaceId& child_id);
   void RemoveChildId(const viz::SurfaceId& child_id);
@@ -100,10 +103,9 @@ class SurfacesInstance : public base::RefCounted<SurfacesInstance>,
   std::vector<viz::SurfaceId> child_ids_;
   viz::FrameTokenGenerator next_frame_token_;
 
-  // This is owned by |display_|.
-  ParentOutputSurface* output_surface_;
-
   gfx::Size surface_size_;
+
+  scoped_refptr<gpu::SharedContextState> shared_context_state_;
 
   DISALLOW_COPY_AND_ASSIGN(SurfacesInstance);
 };

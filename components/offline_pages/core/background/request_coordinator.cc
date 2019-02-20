@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
@@ -341,10 +342,11 @@ int64_t RequestCoordinator::SavePageLater(
 
   // Put the request on the request queue.
   queue_->AddRequest(
-      request, base::BindOnce(&RequestCoordinator::AddRequestResultCallback,
-                              weak_ptr_factory_.GetWeakPtr(),
-                              std::move(save_page_later_callback),
-                              save_page_later_params.availability));
+      request, save_page_later_params.add_options,
+      base::BindOnce(&RequestCoordinator::AddRequestResultCallback,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     std::move(save_page_later_callback),
+                     save_page_later_params.availability));
 
   // Record the network quality when this request is made.
 
@@ -495,6 +497,17 @@ void RequestCoordinator::RemoveRequests(const std::vector<int64_t>& request_ids,
       "OfflinePages.Background.EffectiveConnectionType.RemoveRequests",
       network_quality_tracker_->GetEffectiveConnectionType(),
       net::EFFECTIVE_CONNECTION_TYPE_LAST);
+}
+
+void RequestCoordinator::RemoveRequestsIf(
+    const base::RepeatingCallback<bool(const SavePageRequest&)>&
+        remove_predicate,
+    RemoveRequestsCallback callback) {
+  queue_->RemoveRequestsIf(
+      std::move(remove_predicate),
+      base::BindOnce(&RequestCoordinator::HandleRemovedRequestsAndCallback,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
+                     RequestNotifier::BackgroundSavePageResult::USER_CANCELED));
 }
 
 void RequestCoordinator::PauseRequests(

@@ -20,7 +20,8 @@ class PixelExpectations(GpuTestExpectations):
     # disable GPU compositing (--disable-gpu-compositing).
     self.Skip('Pixel_OffscreenCanvasUnaccelerated2D', ['android'])
     self.Skip('Pixel_OffscreenCanvasUnaccelerated2DWorker', ['android'])
-    self.Skip('Pixel_OffscreenCanvasUnaccelerated2DGPUCompositing', ['android'])
+    self.Skip('Pixel_OffscreenCanvasUnaccelerated2DGPUCompositing',
+              ['android'])
     self.Skip('Pixel_OffscreenCanvasUnaccelerated2DGPUCompositingWorker',
               ['android'])
     self.Skip('Pixel_OffscreenCanvasWebGLSoftwareCompositing', ['android'])
@@ -58,16 +59,6 @@ class PixelExpectations(GpuTestExpectations):
     # TODO(kbr): flakily timing out on this configuration.
     self.Flaky('*', ['linux', 'intel', 'debug'], bug=648369)
 
-    # TODO(sunnyps): re-enable after rebaselining
-    # self.Flaky('Pixel_Video_MP4', ['android', 'nvidia'], bug=716564)
-    # self.Flaky('Pixel_Video_MP4', ['linux', 'nvidia'], bug=819635)
-
-    # TODO(sunnyps): temporarily disabling for rebaselining.
-    self.Fail('Pixel_Video_MP4', bug=869677)
-    self.Fail('Pixel_Video_VP9', bug=869677)
-    self.Fail('Pixel_DirectComposition_Video_MP4', bug=869677)
-    self.Fail('Pixel_DirectComposition_Video_VP9', bug=869677)
-
     # Flaky for unknown reasons only on macOS. Not planning to investigate
     # further.
     self.Flaky('Pixel_ScissorTestWithPreserveDrawingBuffer', ['mac'],
@@ -82,12 +73,6 @@ class PixelExpectations(GpuTestExpectations):
     self.Skip('Pixel_WebGL2_ClearBufferfv_Result_Displayed',
         ['android', ('qualcomm', 'Adreno (TM) 330')], bug=773293)
 
-    # Failing on Mac Intel HighSierra
-    # TODO(sunnyps): re-enable after rebaselining.
-    # self.Fail('Pixel_Video_MP4',
-    #     ['highsierra', ('intel', 0xa2e)], bug=774809)
-    # self.Fail('Pixel_Video_VP9',
-    #     ['highsierra', ('intel', 0xa2e)], bug=774809)
     self.Fail('Pixel_WebGLGreenTriangle_NonChromiumImage_NoAA_NoAlpha',
         ['highsierra', 'mojave', ('intel', 0xa2e)], bug=774809)
     self.Flaky('Pixel_OffscreenCanvasTransferBeforeStyleResize',
@@ -116,10 +101,6 @@ class PixelExpectations(GpuTestExpectations):
     self.Fail('Pixel_WebGLSadCanvas', ['mac'], bug=872423)
     self.Fail('Pixel_WebGLSadCanvas', ['android'], bug=575305)
 
-    # Flaky on Android: crbug.com/860548
-    # TODO(sunnyps): re-enable after rebaselining.
-    # self.Flaky('Pixel_Video_VP9', ['android'], bug=860548)
-
     self.Fail('Pixel_CanvasLowLatencyWebGL', ['android', 'nvidia'], bug=868596)
     self.Fail('Pixel_OffscreenCanvasWebGLPaintAfterResize',
               ['android', 'nvidia'], bug=868596)
@@ -132,13 +113,19 @@ class PixelExpectations(GpuTestExpectations):
     self.Fail('Pixel_BackgroundImage',
         ['android', ('qualcomm', 'Adreno (TM) 430')], bug=883500)
 
-    # Fails on android-marshmallow-arm64-rel
-    self.Fail('Pixel_Video_MP4_FourColors_Aspect_4x3', ['android'], bug=911898)
-    self.Fail('Pixel_Video_MP4_FourColors_Rot_90', ['android'], bug=911898)
-    self.Fail('Pixel_Video_MP4_FourColors_Rot_180', ['android'], bug=911898)
-    self.Fail('Pixel_Video_MP4_FourColors_Rot_270', ['android'], bug=911898)
+    # Flakes on Nexus 5X.
+    self.Flaky('Pixel_BackgroundImage',
+        ['android', ('qualcomm', 'Adreno (TM) 418')], bug=883500)
+
+    # We do not have software H.264 decoding on Android, so it can't survive a
+    # context loss which results in hardware decoder loss.
+    self.Skip('Pixel_Video_Context_Loss_MP4', ['android'], bug=580386)
 
     # Fails on Mac Pro FYI Release (AMD)
+    self.Fail('Pixel_Video_MP4',
+        ['mac', ('amd', 0x679e)], bug=925744)
+    self.Fail('Pixel_Video_Context_Loss_MP4',
+        ['mac', ('amd', 0x679e)], bug=925744)
     self.Fail('Pixel_Video_MP4_FourColors_Aspect_4x3',
         ['mac', ('amd', 0x679e)], bug=911413)
     self.Fail('Pixel_Video_MP4_FourColors_Rot_90',
@@ -147,3 +134,21 @@ class PixelExpectations(GpuTestExpectations):
         ['mac', ('amd', 0x679e)], bug=911413)
     self.Fail('Pixel_Video_MP4_FourColors_Rot_270',
         ['mac', ('amd', 0x679e)], bug=911413)
+
+    # Fails on multiple Android devices.
+    self.Fail('Pixel_CSS3DBlueBox', ['android'], bug=927107)
+
+    # Fail on Nexus 5, 5X, 6, 6P, 9 and Shield TV.
+    self.Fail('Pixel_Video_MP4', ['android'], bug=925744)
+    self.Fail('Pixel_Video_MP4_FourColors_Aspect_4x3', ['android'], bug=925744)
+    self.Fail('Pixel_Video_MP4_FourColors_Rot_180', ['android'], bug=925744)
+    self.Fail('Pixel_Video_MP4_FourColors_Rot_270', ['android'], bug=925744)
+    self.Fail('Pixel_Video_MP4_FourColors_Rot_90', ['android'], bug=925744)
+    self.Fail('Pixel_Video_VP9', ['android'], bug=925744)
+    self.Fail('Pixel_Video_Context_Loss_VP9', ['android'], bug=925744)
+
+    # Skip on platforms where DXVA vs D3D11 decoder doesn't matter.
+    self.Skip('Pixel_Video_MP4_DXVA', ['linux', 'android', 'mac', 'chromeos'],
+              bug=927901)
+    self.Skip('Pixel_Video_VP9_DXVA', ['linux', 'android', 'mac', 'chromeos'],
+              bug=927901)

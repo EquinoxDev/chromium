@@ -5,6 +5,7 @@
 <translation id="1047726139967079566">Dodaj stronę do zakładek...</translation>
 <translation id="1049743911850919806">Incognito</translation>
 <translation id="1063454504051558093">Użyj innego hasła…</translation>
+<translation id="1066060668811609597">Zarządzanie synchronizacją</translation>
 <translation id="1076421457278169141">Kod został zeskanowany</translation>
 <translation id="1084365883616172403">Wpis na Facebooku dodany.</translation>
 <translation id="1104948393051856124">Zaakceptuj i kontynuuj</translation>
@@ -19,9 +20,9 @@
 <translation id="1209206284964581585">Na razie ukryj</translation>
 <translation id="1219674500290482172">Nie można połączyć się z internetem.</translation>
 <translation id="122699739164161391">Zamknij wszystkie karty</translation>
+<translation id="1231733316453485619">Włączyć synchronizację?</translation>
 <translation id="1254117744268754948">Wybierz folder</translation>
 <translation id="1265739287306757398">Instrukcje</translation>
-<translation id="127138278192656016">Używaj synchronizacji i wszystkich usług</translation>
 <translation id="1272079795634619415">Zatrzymaj</translation>
 <translation id="1323735185997015385">Usuń</translation>
 <translation id="132683371494960526">Kliknij dwukrotnie, by zmienić folder nadrzędny.</translation>
@@ -46,6 +47,7 @@
 <translation id="1605658421715042784">Kopiuj obraz</translation>
 <translation id="1612730193129642006">Pokaż układ kart</translation>
 <translation id="1644574205037202324">Historia</translation>
+<translation id="1650222530560417226">Kliknij przycisk „Uruchom rejestrowanie dziennika”, by rejestrować przyszłe dzienniki i błędy konsoli JavaScript ze wszystkich kart. Dzienniki będą gromadzone (i przechowywane tylko w pamięci) do czasu zamknięcia tej strony lub kliknięcia „Zatrzymaj rejestrowanie dziennika”.</translation>
 <translation id="1657011748321897393">Nie udało się udostępnić, bo nie masz połączenia z siecią.</translation>
 <translation id="165877110639533037">Brak otwartych kart</translation>
 <translation id="168715261339224929">Aby korzystać ze swoich zakładek na wszystkich urządzeniach, włącz synchronizację.</translation>
@@ -54,13 +56,13 @@
 <translation id="1700629756560807968">Wybrane: <ph name="NUMBER_OF_SELECTED_BOOKMARKS" /></translation>
 <translation id="1740468249224277719">Kliknij dwukrotnie, by zainstalować.</translation>
 <translation id="1746815479209538200">Aby przeglądać strony internetowe, dodaj nową kartę.</translation>
-<translation id="17513872634828108">Otwarte karty</translation>
 <translation id="1752547299766512813">Zapisuj hasła</translation>
 <translation id="1753905327828125965">Najczęstsze</translation>
 <translation id="1809939268435598390">Usuń folder</translation>
 <translation id="1813414402673211292">Wyczyść historię przeglądania</translation>
 <translation id="1820259098641718022">Dodano do listy Do przeczytania</translation>
 <translation id="1821253160463689938">Twoje ustawienia będą zapisywane w plikach cookie, nawet jeśli nie odwiedzisz tych stron</translation>
+<translation id="1828824471510190776">Zaproponuj hasło...</translation>
 <translation id="1876721852596493031">Wysyłaj dane na temat użytkowania</translation>
 <translation id="1886928167269928266">Od początku</translation>
 <translation id="1911619930368729126">Prześlij na Dysk Google</translation>
@@ -72,10 +74,12 @@
 <translation id="2068952045031577364">Ostatni tydzień</translation>
 <translation id="2079545284768500474">Cofnij</translation>
 <translation id="209018056901015185">Wersja na komputer</translation>
+<translation id="2096012225669085171">Synchronizacja i personalizacja na urządzeniach</translation>
 <translation id="2103075008456228677">Otwórz history.google.com</translation>
 <translation id="2116625576999540962">Przeniesione elementy: <ph name="NUMBER_OF_SELECTED_BOOKMARKS" /></translation>
 <translation id="213900355088104901">Aby przeglądać prywatnie, otwórz kartę incognito</translation>
 <translation id="2149973817440762519">Edytuj zakładkę</translation>
+<translation id="2198757192731523470">Google może korzystać z Twojej historii, by personalizować wyniki wyszukiwania, reklamy i działanie innych usług.</translation>
 <translation id="2207590065820824892">Nieprzeczytane artykuły na liście Do przeczytania: <ph name="UNREAD_COUNT" />.</translation>
 <translation id="2230173723195178503">Wczytano stronę internetową</translation>
 <translation id="2239626343334228536">Czyszczę dane przeglądania…</translation>
@@ -148,6 +152,7 @@
 <translation id="3329904751041170572">Nie można połączyć się z serwerem.</translation>
 <translation id="3335947283844343239">Otwórz ponownie zamkniętą kartę</translation>
 <translation id="3393920035788932672">Pop-upy akceptowane</translation>
+<translation id="3424059454230285158">W każdej chwili możesz <ph name="BEGIN_LINK" />zmienić te ustawienia<ph name="END_LINK" /></translation>
 <translation id="3445288400492335833"><ph name="MINUTES" /> min</translation>
 <translation id="3448016392200048164">Widok dzielony</translation>
 <translation id="345565170154308620">Zarządzaj hasłami…</translation>
@@ -238,13 +243,11 @@ Aby zmienić to ustawienie, <ph name="BEGIN_LINK" />zresetuj synchronizację<ph 
 <translation id="4854345657858711387">Ustaw kod dostępu</translation>
 <translation id="4860895144060829044">Zadzwoń</translation>
 <translation id="4881695831933465202">Otwórz</translation>
-<translation id="4882831918239250449">Zarządzaj personalizacją wyszukiwarki, reklam i innych funkcji na podstawie historii przeglądania</translation>
 <translation id="4895709476292058519">Zmień konto</translation>
 <translation id="4904877109095351937">Oznacz jako przeczytane</translation>
 <translation id="4930268273022498155">Usuń istniejące dane. Aby je pobrać, przełącz się z powrotem na konto <ph name="USER_EMAIL1" />.</translation>
 <translation id="4941089862236492464">Niestety, wystąpił problem z udostępnieniem tej rzeczy.</translation>
 <translation id="4979397965658815378">Zaloguj się na konto Google, by korzystać z zakładek, haseł, historii i innych ustawień na wszystkich urządzeniach</translation>
-<translation id="5004416275253351869">Zarządzanie aktywnością w Google</translation>
 <translation id="5005498671520578047">Skopiuj hasło</translation>
 <translation id="5010803260590204777">Otwórz kartę incognito, by przeglądać strony prywatnie.</translation>
 <translation id="5011684439661633295">Witaj, <ph name="FULL_ACCOUNT_NAME" /></translation>
@@ -253,11 +256,11 @@ Aby zmienić to ustawienie, <ph name="BEGIN_LINK" />zresetuj synchronizację<ph 
 <translation id="5062321486222145940">Zainstaluj Dysk Google</translation>
 <translation id="5083464117946352670">Nie można ustalić rozmiaru pliku.</translation>
 <translation id="5094827893301452931">Tweet opublikowany.</translation>
+<translation id="5132942445612118989">Synchronizuj swoje hasła, historię i inne dane na wszystkich swoich urządzeniach</translation>
 <translation id="5181140330217080051">Pobieranie</translation>
 <translation id="5186185447130319458">Prywatna</translation>
 <translation id="5190835502935405962">Pasek zakładek</translation>
 <translation id="5197255632782567636">Internet</translation>
-<translation id="5215116848420601511">Formy płatności i adresy z Google Pay</translation>
 <translation id="5228579091201413441">Włącz synchronizację</translation>
 <translation id="5244474230056479698">Synchronizowanie z <ph name="EMAIL" /></translation>
 <translation id="5300589172476337783">Pokaż</translation>
@@ -281,7 +284,6 @@ Funkcja Handoff musi być też włączona w sekcji Ogólne w Ustawieniach, a urz
 <translation id="5728700505257787410">Niestety, wystąpił problem z zalogowaniem się na konto.</translation>
 <translation id="5737974891429562743">Dane logowania na konto są nieaktualne. Zaktualizuj je, by rozpocząć synchronizację.</translation>
 <translation id="5738887413654608789">Pozwoli Ci to odkrywać strony internetowe dotyczące rzeczy z Twojego otoczenia.</translation>
-<translation id="5771816112378578655">Trwa konfigurowanie...</translation>
 <translation id="5816228676161003208">Umożliwia szybsze wyszukiwanie głosowe.</translation>
 <translation id="5846482154967366008">Wyszukiwarka</translation>
 <translation id="5854790677617711513">Sprzed ponad 30 dni</translation>
@@ -308,6 +310,7 @@ Funkcja Handoff musi być też włączona w sekcji Ogólne w Ustawieniach, a urz
 <translation id="6042308850641462728">Więcej</translation>
 <translation id="605721222689873409">RR</translation>
 <translation id="6066301408025741299">Kliknij, by anulować.</translation>
+<translation id="6108923351542677676">Trwa konfigurowanie…</translation>
 <translation id="6122191549521593678">Online</translation>
 <translation id="6127379762771434464">Element został usunięty</translation>
 <translation id="6136914049981179737">Przed chwilą</translation>
@@ -381,6 +384,7 @@ Twoje dane zostały zaszyfrowane z użyciem hasła synchronizacji w dniu <ph n
 <translation id="7159472599653637159">Żądaj strony mobilnej</translation>
 <translation id="7167621057293532233">Typy danych</translation>
 <translation id="7189598951263744875">Udostępnij...</translation>
+<translation id="7192050974311852563">Uruchom rejestrowanie</translation>
 <translation id="7203585745079012652">Odczytuj odpowiedzi</translation>
 <translation id="722055596168483966">Dostosowywanie usług Google</translation>
 <translation id="7272437679830969316">Nie można zweryfikować Twojej tożsamości. Hasło nie zostało skopiowane.</translation>
@@ -422,6 +426,7 @@ Twoje dane zostały zaszyfrowane z użyciem hasła synchronizacji w dniu <ph n
 <translation id="7938254975914653459">FaceTime</translation>
 <translation id="7939128259257418052">Eksportuj hasła…</translation>
 <translation id="7947953824732555851">Zaakceptuj i zaloguj się</translation>
+<translation id="794799177247607889">Zatrzymaj rejestrowanie</translation>
 <translation id="7961015016161918242">Nigdy</translation>
 <translation id="7971521879845308059">Blokuj wyskakujące okienka</translation>
 <translation id="7981313251711023384">Ładuj wstępnie strony, by przyspieszyć przeglądanie i wyszukiwanie</translation>

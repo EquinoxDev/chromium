@@ -54,6 +54,8 @@
 #import "ios/chrome/browser/web/load_timing_tab_helper.h"
 #import "ios/chrome/browser/web/network_activity_indicator_tab_helper.h"
 #import "ios/chrome/browser/web/page_placeholder_tab_helper.h"
+#import "ios/chrome/browser/web/print_tab_helper.h"
+#import "ios/chrome/browser/web/sad_tab_tab_helper.h"
 #import "ios/chrome/browser/web/tab_id_tab_helper.h"
 #import "ios/public/provider/chrome/browser/chrome_browser_provider.h"
 #import "ios/web/public/web_state/web_state.h"
@@ -97,9 +99,7 @@ void AttachTabHelpers(web::WebState* web_state, bool for_prerender) {
     FontSizeTabHelper::CreateForWebState(web_state);
   }
 
-  if (base::FeatureList::IsEnabled(kCopyImage)) {
-    ImageFetchTabHelper::CreateForWebState(web_state);
-  }
+  ImageFetchTabHelper::CreateForWebState(web_state);
 
   ReadingListModel* model =
       ReadingListModelFactory::GetForBrowserState(browser_state);
@@ -145,8 +145,10 @@ void AttachTabHelpers(web::WebState* web_state, bool for_prerender) {
   // has been refactored to only create the necessary tab helpers, this
   // condition can be removed.
   if (!for_prerender) {
+    SadTabTabHelper::CreateForWebState(web_state);
     SnapshotTabHelper::CreateForWebState(web_state, tab_id);
     PagePlaceholderTabHelper::CreateForWebState(web_state);
+    PrintTabHelper::CreateForWebState(web_state);
   }
 
   // Allow the embedder to attach tab helpers.

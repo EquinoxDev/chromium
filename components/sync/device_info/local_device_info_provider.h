@@ -36,24 +36,12 @@ class LocalDeviceInfoProvider {
   // classifying client types when calculating statistics.
   virtual std::string GetSyncUserAgent() const = 0;
 
-  // Returns a GUID string used for creation of the machine tag for
-  // this local session; an empty sting if LocalDeviceInfoProvider hasn't been
-  // initialized yet.
-  virtual std::string GetLocalSyncCacheGUID() const = 0;
-
-  // Initializes the local device info.
-  virtual void Initialize(const std::string& cache_guid,
-                          const std::string& session_name) = 0;
-
   // Registers a callback to be called when local device info becomes available.
   // The callback will remain registered until the
   // returned Subscription is destroyed, which must occur before the
   // CallbackList is destroyed.
   virtual std::unique_ptr<Subscription> RegisterOnInitializedCallback(
-      const base::Closure& callback) = 0;
-
-  // Clears all cached data, returning to an uninitialized state.
-  virtual void Clear() = 0;
+      const base::RepeatingClosure& callback) = 0;
 };
 
 }  // namespace syncer

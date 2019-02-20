@@ -14,8 +14,10 @@
 
 #include "base/location.h"
 #include "base/macros.h"
+#include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
+#include "content/browser/renderer_host/dwrite_font_lookup_table_builder_win.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
@@ -57,6 +59,9 @@ class CONTENT_EXPORT DWriteFontProxyImpl
                      const base::string16& base_family_name,
                      MapCharactersCallback callback) override;
 
+  void GetUniqueNameLookupTable(
+      GetUniqueNameLookupTableCallback callback) override;
+
   void InitializeDirectWrite();
 
  private:
@@ -68,6 +73,7 @@ class CONTENT_EXPORT DWriteFontProxyImpl
   Microsoft::WRL::ComPtr<IDWriteFactory2> factory2_;
   Microsoft::WRL::ComPtr<IDWriteFontFallback> font_fallback_;
   base::string16 windows_fonts_path_;
+  base::MappedReadOnlyRegion font_unique_name_table_memory_;
 
   // Temp code to help track down crbug.com/561873
   std::vector<uint32_t> last_resort_fonts_;

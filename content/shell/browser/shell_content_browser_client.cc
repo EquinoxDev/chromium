@@ -12,12 +12,13 @@
 #include "base/command_line.h"
 #include "base/files/file.h"
 #include "base/files/file_util.h"
-#include "base/json/json_reader.h"
+#include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "content/public/browser/client_certificate_delegate.h"
+#include "content/public/browser/cors_exempt_headers.h"
 #include "content/public/browser/login_delegate.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/page_navigator.h"
@@ -40,19 +41,27 @@
 #include "content/shell/browser/shell_quota_permission_context.h"
 #include "content/shell/browser/shell_url_request_context_getter.h"
 #include "content/shell/browser/shell_web_contents_view_delegate_creator.h"
+#include "content/shell/common/power_monitor_test.mojom.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/common/web_test.mojom.h"
+#include "content/shell/common/web_test/fake_bluetooth_chooser.mojom.h"
+#include "content/shell/common/web_test/web_test_bluetooth_fake_adapter_setter.mojom.h"
 #include "content/shell/common/web_test/web_test_switches.h"
-#include "content/shell/grit/shell_resources.h"
+#include "content/test/data/mojo_web_test_helper_test.mojom.h"
+#include "device/bluetooth/public/mojom/test/fake_bluetooth.mojom.h"
 #include "media/mojo/buildflags.h"
 #include "net/ssl/client_cert_identity.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/network_service.mojom.h"
+#include "services/service_manager/public/cpp/manifest.h"
+#include "services/service_manager/public/cpp/manifest_builder.h"
+#include "services/test/echo/public/cpp/manifest.h"
 #include "services/test/echo/public/mojom/echo.mojom.h"
 #include "storage/browser/quota/quota_settings.h"
-#include "ui/base/resource/resource_bundle.h"
+#include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "ui/base/ui_base_features.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -68,6 +77,8 @@
 // TODO(https://crbug.com/784179): Remove nogncheck.
 #include "content/public/browser/context_factory.h"
 #include "content/public/browser/gpu_interface_provider_factory.h"
+#include "services/ws/public/mojom/constants.mojom.h"         // nogncheck
+#include "services/ws/test_ws/test_manifest.h"                // nogncheck
 #include "services/ws/test_ws/test_window_service_factory.h"  // nogncheck
 #include "services/ws/test_ws/test_ws.mojom.h"                // nogncheck
 #endif
@@ -146,6 +157,75 @@ int GetCrashSignalFD(const base::CommandLine& command_line) {
 }
 #endif  // defined(OS_ANDROID)
 
+const service_manager::Manifest& GetContentBrowserOverlayManifest() {
+  static base::NoDestructor<service_manager::Manifest> manifest {
+    service_manager::ManifestBuilder()
+        .ExposeCapability(
+            "renderer",
+            service_manager::Manifest::InterfaceList<
+                mojom::MojoWebTestHelper, mojom::FakeBluetoothChooser,
+                mojom::WebTestBluetoothFakeAdapterSetter,
+                bluetooth::mojom::FakeBluetooth>())
+        .RequireCapability(echo::mojom::kServiceName, "echo")
+#if defined(OS_CHROMEOS)
+        .RequireCapability(ws::mojom::kServiceName, "test")
+        .RequireCapability("test_ws", "test")
+#endif
+        .ExposeInterfaceFilterCapability_Deprecated(
+            "navigation:frame", "renderer",
+            service_manager::Manifest::InterfaceList<
+                mojom::MojoWebTestHelper>())
+        .Build()
+  };
+  return *manifest;
+}
+
+const service_manager::Manifest& GetContentGpuOverlayManifest() {
+  static base::NoDestructor<service_manager::Manifest> manifest{
+      service_manager::ManifestBuilder()
+          .ExposeCapability("browser", service_manager::Manifest::InterfaceList<
+                                           mojom::PowerMonitorTest>())
+          .Build()};
+  return *manifest;
+}
+
+const service_manager::Manifest& GetContentPackagedServicesOverlayManifest() {
+  static base::NoDestructor<service_manager::Manifest> manifest {
+    service_manager::ManifestBuilder()
+        .PackageService(echo::GetManifest())
+#if defined(OS_CHROMEOS)
+        .PackageService(test_ws::GetManifest())
+#endif
+        .Build()
+  };
+  return *manifest;
+}
+
+const service_manager::Manifest& GetContentRendererOverlayManifest() {
+  static base::NoDestructor<service_manager::Manifest> manifest{
+      service_manager::ManifestBuilder()
+          .ExposeCapability(
+              "browser",
+              service_manager::Manifest::InterfaceList<mojom::PowerMonitorTest,
+                                                       mojom::TestService>())
+          .ExposeInterfaceFilterCapability_Deprecated(
+              "navigation:frame", "browser",
+              service_manager::Manifest::InterfaceList<mojom::WebTestControl>())
+          .Build()};
+  return *manifest;
+}
+
+const service_manager::Manifest& GetContentUtilityOverlayManifest() {
+  static base::NoDestructor<service_manager::Manifest> manifest{
+      service_manager::ManifestBuilder()
+          .ExposeCapability(
+              "browser",
+              service_manager::Manifest::InterfaceList<mojom::PowerMonitorTest,
+                                                       mojom::TestService>())
+          .Build()};
+  return *manifest;
+}
+
 }  // namespace
 
 std::string GetShellUserAgent() {
@@ -154,6 +234,21 @@ std::string GetShellUserAgent() {
   if (command_line->HasSwitch(switches::kUseMobileUserAgent))
     product += " Mobile";
   return BuildUserAgentFromProduct(product);
+}
+
+blink::UserAgentMetadata GetShellUserAgentMetadata() {
+  blink::UserAgentMetadata metadata;
+
+  metadata.brand = "content_shell";
+  metadata.full_version = CONTENT_SHELL_VERSION;
+  metadata.major_version = CONTENT_SHELL_MAJOR_VERSION;
+  metadata.platform = BuildOSCpuInfo(false);
+
+  // TODO(mkwst): Split these out from BuildOSCpuInfo().
+  metadata.architecture = "";
+  metadata.model = "";
+
+  return metadata;
 }
 
 ShellContentBrowserClient* ShellContentBrowserClient::Get() {
@@ -254,25 +349,18 @@ bool ShellContentBrowserClient::ShouldTerminateOnServiceQuit(
 
 base::Optional<service_manager::Manifest>
 ShellContentBrowserClient::GetServiceManifestOverlay(base::StringPiece name) {
-  int id = -1;
   if (name == content::mojom::kBrowserServiceName)
-    id = IDR_CONTENT_SHELL_BROWSER_MANIFEST_OVERLAY;
-  else if (name == content::mojom::kPackagedServicesServiceName)
-    id = IDR_CONTENT_SHELL_PACKAGED_SERVICES_MANIFEST_OVERLAY;
-  else if (name == content::mojom::kGpuServiceName)
-    id = IDR_CONTENT_SHELL_GPU_MANIFEST_OVERLAY;
-  else if (name == content::mojom::kRendererServiceName)
-    id = IDR_CONTENT_SHELL_RENDERER_MANIFEST_OVERLAY;
-  else if (name == content::mojom::kUtilityServiceName)
-    id = IDR_CONTENT_SHELL_UTILITY_MANIFEST_OVERLAY;
-  if (id == -1)
-    return base::nullopt;
+    return GetContentBrowserOverlayManifest();
+  if (name == content::mojom::kPackagedServicesServiceName)
+    return GetContentPackagedServicesOverlayManifest();
+  if (name == content::mojom::kGpuServiceName)
+    return GetContentGpuOverlayManifest();
+  if (name == content::mojom::kRendererServiceName)
+    return GetContentRendererOverlayManifest();
+  if (name == content::mojom::kUtilityServiceName)
+    return GetContentUtilityOverlayManifest();
 
-  base::StringPiece manifest_contents =
-      ui::ResourceBundle::GetSharedInstance().GetRawDataResourceForScale(
-          id, ui::ScaleFactor::SCALE_FACTOR_NONE);
-  return service_manager::Manifest::FromValueDeprecated(
-      base::JSONReader::Read(manifest_contents));
+  return base::nullopt;
 }
 
 void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
@@ -420,6 +508,11 @@ std::string ShellContentBrowserClient::GetUserAgent() const {
   return GetShellUserAgent();
 }
 
+blink::UserAgentMetadata ShellContentBrowserClient::GetUserAgentMetadata()
+    const {
+  return GetShellUserAgentMetadata();
+}
+
 #if defined(OS_LINUX) || defined(OS_ANDROID)
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const base::CommandLine& command_line,
@@ -467,6 +560,7 @@ ShellContentBrowserClient::CreateNetworkContext(
   network::mojom::NetworkContextPtr network_context;
   network::mojom::NetworkContextParamsPtr context_params =
       network::mojom::NetworkContextParams::New();
+  UpdateCorsExemptHeader(context_params.get());
   context_params->user_agent = GetUserAgent();
   context_params->accept_language = "en-us,en";
   context_params->enable_data_url_support = true;

@@ -15,7 +15,6 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
-#include "chrome/browser/chromeos/arc/voice_interaction/arc_voice_interaction_framework_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -29,6 +28,7 @@
 #include "chrome/browser/ui/app_list/search/search_controller.h"
 #include "chrome/browser/ui/app_list/search/search_controller_factory.h"
 #include "chrome/browser/ui/app_list/search/search_resource_manager.h"
+#include "chrome/browser/ui/app_list/search/search_result_ranker/ranking_item_util.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_util.h"
 #include "chrome/browser/ui/ash/tablet_mode_client.h"
@@ -101,12 +101,15 @@ void AppListClientImpl::OpenSearchResult(const std::string& result_id,
     search_controller_->OpenResult(result, event_flags);
 
     // Send training signal to search controller.
-    if (result->result_type() == ash::SearchResultType::kInstalledApp ||
-        result->result_type() == ash::SearchResultType::kInternalApp) {
-      search_controller_->Train(
-          static_cast<app_list::AppResult*>(result)->app_id());
-    }
+    search_controller_->Train(
+        result_id,
+        app_list::RankingItemTypeFromSearchResultType(result->result_type()));
   }
+}
+
+void AppListClientImpl::LogSearchClick(const std::string& result_id,
+                                       int suggestion_index) {
+  app_launch_event_logger_.OnSuggestionChipClicked(result_id, suggestion_index);
 }
 
 void AppListClientImpl::InvokeSearchResultAction(const std::string& result_id,
@@ -171,7 +174,13 @@ void AppListClientImpl::ActivateItem(const std::string& id, int event_flags) {
   model_updater_->ActivateChromeItem(id, event_flags);
 
   // Send training signal to search controller.
-  search_controller_->Train(id);
+  const auto* item = model_updater_->FindItem(id);
+  if (item) {
+    search_controller_->Train(
+        id, app_list::RankingItemTypeFromChromeAppListItem(*item));
+  }
+
+  app_launch_event_logger_.OnGridClicked(id);
 }
 
 void AppListClientImpl::GetContextMenuModel(
@@ -242,22 +251,6 @@ void AppListClientImpl::OnPageBreakItemDeleted(const std::string& id) {
   if (!model_updater_)
     return;
   model_updater_->OnPageBreakItemDeleted(id);
-}
-
-void AppListClientImpl::StartVoiceInteractionSession() {
-  auto* service =
-      arc::ArcVoiceInteractionFrameworkService::GetForBrowserContext(
-          ChromeLauncherController::instance()->profile());
-  if (service)
-    service->StartSessionFromUserInteraction(gfx::Rect());
-}
-
-void AppListClientImpl::ToggleVoiceInteractionSession() {
-  auto* service =
-      arc::ArcVoiceInteractionFrameworkService::GetForBrowserContext(
-          ChromeLauncherController::instance()->profile());
-  if (service)
-    service->ToggleSessionFromUserInteraction();
 }
 
 void AppListClientImpl::GetNavigableContentsFactory(
@@ -340,6 +333,10 @@ void AppListClientImpl::SetUpSearchUI() {
 
 app_list::SearchController* AppListClientImpl::GetSearchControllerForTest() {
   return search_controller_.get();
+}
+
+AppListModelUpdater* AppListClientImpl::GetModelUpdaterForTest() {
+  return model_updater_;
 }
 
 void AppListClientImpl::OnTemplateURLServiceChanged() {

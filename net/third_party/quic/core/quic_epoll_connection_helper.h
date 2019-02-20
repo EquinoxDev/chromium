@@ -1,9 +1,9 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
-// The Google-specific helper for QuicConnection which uses
-// net::EpollAlarm for alarms, and used an int fd_ for writing data.
+
+// The epoll-specific helper for QuicConnection which uses
+// EpollAlarm for alarms, and used an int fd_ for writing data.
 
 #ifndef NET_THIRD_PARTY_QUIC_CORE_QUIC_EPOLL_CONNECTION_HELPER_H_
 #define NET_THIRD_PARTY_QUIC_CORE_QUIC_EPOLL_CONNECTION_HELPER_H_
@@ -18,12 +18,10 @@
 #include "net/third_party/quic/core/quic_packets.h"
 #include "net/third_party/quic/core/quic_simple_buffer_allocator.h"
 #include "net/third_party/quic/core/quic_time.h"
+#include "net/third_party/quic/platform/api/quic_epoll.h"
 #include "net/third_party/quic/platform/impl/quic_epoll_clock.h"
 
 namespace quic {}  // namespace quic
-namespace net {
-class EpollServer;
-}  // namespace net
 namespace quic {
 class QuicRandom;
 
@@ -33,7 +31,7 @@ enum class QuicAllocator { SIMPLE, BUFFER_POOL };
 
 class QuicEpollConnectionHelper : public QuicConnectionHelperInterface {
  public:
-  QuicEpollConnectionHelper(net::EpollServer* eps, QuicAllocator allocator);
+  QuicEpollConnectionHelper(QuicEpollServer* eps, QuicAllocator allocator);
   QuicEpollConnectionHelper(const QuicEpollConnectionHelper&) = delete;
   QuicEpollConnectionHelper& operator=(const QuicEpollConnectionHelper&) =
       delete;

@@ -503,10 +503,13 @@ std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
 
   // Encryption.
   if (service->IsSyncFeatureActive()) {
-    is_using_explicit_passphrase->Set(service->IsUsingSecondaryPassphrase());
-    is_passphrase_required->Set(service->IsPassphraseRequired());
+    is_using_explicit_passphrase->Set(
+        service->GetUserSettings()->IsUsingSecondaryPassphrase());
+    is_passphrase_required->Set(
+        service->GetUserSettings()->IsPassphraseRequired());
     passphrase_time->Set(
-        GetTimeStr(service->GetExplicitPassphraseTime(), "No Passphrase Time"));
+        GetTimeStr(service->GetUserSettings()->GetExplicitPassphraseTime(),
+                   "No Passphrase Time"));
   }
   if (is_status_valid) {
     is_cryptographer_ready->Set(full_status.cryptographer_ready);

@@ -34,7 +34,7 @@ class WebLayerListTest : public PaintTestConfigurations, public testing::Test {
 
   void SetUp() override {
     web_view_helper_ = std::make_unique<frame_test_helpers::WebViewHelper>();
-    web_view_helper_->Initialize(nullptr, &web_view_client_,
+    web_view_helper_->Initialize(nullptr, nullptr, &web_widget_client_,
                                  &ConfigureCompositingWebView);
     web_view_helper_->Resize(WebSize(200, 200));
 
@@ -87,7 +87,7 @@ class WebLayerListTest : public PaintTestConfigurations, public testing::Test {
   }
 
   cc::LayerTreeHost* LayerTreeHost() {
-    return web_view_client_.layer_tree_view()->layer_tree_host();
+    return web_widget_client_.layer_tree_view()->layer_tree_host();
   }
 
   Element* GetElementById(const AtomicString& id) {
@@ -105,11 +105,11 @@ class WebLayerListTest : public PaintTestConfigurations, public testing::Test {
     return GetLocalFrameView()->GetPaintArtifactCompositorForTesting();
   }
 
-  frame_test_helpers::TestWebViewClient web_view_client_;
+  frame_test_helpers::TestWebWidgetClient web_widget_client_;
   std::unique_ptr<frame_test_helpers::WebViewHelper> web_view_helper_;
 };
 
-INSTANTIATE_LAYER_LIST_TEST_CASE_P(WebLayerListTest);
+INSTANTIATE_LAYER_LIST_TEST_SUITE_P(WebLayerListTest);
 
 TEST_P(WebLayerListTest, DidScrollCallbackAfterScrollableAreaChanges) {
   InitializeWithHTML(*WebView()->MainFrameImpl()->GetFrame(),
@@ -257,13 +257,17 @@ class WebLayerListSimTest : public PaintTestConfigurations, public SimTest {
         WebWidget::LifecycleUpdateReason::kTest);
   }
 
+  cc::PropertyTrees* GetPropertyTrees() {
+    return Compositor().layer_tree_view().layer_tree_host()->property_trees();
+  }
+
  private:
   PaintArtifactCompositor* paint_artifact_compositor() {
     return MainFrame().GetFrameView()->GetPaintArtifactCompositorForTesting();
   }
 };
 
-INSTANTIATE_LAYER_LIST_TEST_CASE_P(WebLayerListSimTest);
+INSTANTIATE_LAYER_LIST_TEST_SUITE_P(WebLayerListSimTest);
 
 TEST_P(WebLayerListSimTest, LayerUpdatesDoNotInvalidateEarlierLayers) {
   // TODO(crbug.com/765003): CAP may make different layerization decisions and
@@ -378,7 +382,8 @@ TEST_P(WebLayerListSimTest, LayerUpdatesDoNotInvalidateLaterLayers) {
   EXPECT_FALSE(host->LayersThatShouldPushProperties().count(c_layer));
 }
 
-TEST_P(WebLayerListSimTest, NoopChangeDoesNotCauseFullTreeSync) {
+TEST_P(WebLayerListSimTest,
+       NoopChangeDoesNotCauseFullTreeSyncOrPropertyTreeUpdate) {
   InitializeWithHTML(R"HTML(
       <!DOCTYPE html>
       <style>
@@ -396,10 +401,15 @@ TEST_P(WebLayerListSimTest, NoopChangeDoesNotCauseFullTreeSync) {
   // Initially the host should not need to sync.
   auto* layer_tree_host = Compositor().layer_tree_view().layer_tree_host();
   EXPECT_FALSE(layer_tree_host->needs_full_tree_sync());
+  int sequence_number = GetPropertyTrees()->sequence_number;
+  EXPECT_GT(sequence_number, 0);
 
   // A no-op update should not cause the host to need a full tree sync.
   UpdateAllLifecyclePhases();
   EXPECT_FALSE(layer_tree_host->needs_full_tree_sync());
+  // It should also not cause a property tree update - the sequence number
+  // should not change.
+  EXPECT_EQ(sequence_number, GetPropertyTrees()->sequence_number);
 }
 
 // When a property tree change occurs that affects layer position, all layers

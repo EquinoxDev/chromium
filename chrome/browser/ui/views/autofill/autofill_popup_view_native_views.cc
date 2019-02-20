@@ -7,6 +7,8 @@
 #include <algorithm>
 
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
 #include "chrome/browser/ui/autofill/autofill_popup_layout_model.h"
 #include "chrome/browser/ui/autofill/popup_view_common.h"
@@ -157,10 +159,8 @@ class AutofillPopupItemView : public AutofillPopupRowView {
                                                int text_context,
                                                int text_style) const;
 
-  // Sets |font_weight| as the font weight to be used for primary information on
-  // the current item. Returns false if no custom font weight is undefined.
-  virtual bool ShouldUseCustomFontWeightForPrimaryInfo(
-      gfx::Font::Weight* font_weight) const = 0;
+  // Returns the font weight to be applied to primary info.
+  virtual gfx::Font::Weight GetPrimaryTextWeight() const = 0;
 
  private:
   void AddIcon(gfx::ImageSkia icon);
@@ -190,8 +190,7 @@ class AutofillPopupSuggestionView : public AutofillPopupItemView {
   std::unique_ptr<views::Background> CreateBackground() override;
   PopupItemLayoutType GetLayoutType() const override;
   int GetPrimaryTextStyle() override;
-  bool ShouldUseCustomFontWeightForPrimaryInfo(
-      gfx::Font::Weight* font_weight) const override;
+  gfx::Font::Weight GetPrimaryTextWeight() const override;
   views::View* CreateSubtextLabel() override;
   views::View* CreateDescriptionLabel() override;
 
@@ -217,8 +216,7 @@ class PasswordPopupSuggestionView : public AutofillPopupSuggestionView {
   views::View* CreateValueLabel() override;
   views::View* CreateSubtextLabel() override;
   views::View* CreateDescriptionLabel() override;
-  bool ShouldUseCustomFontWeightForPrimaryInfo(
-      gfx::Font::Weight* font_weight) const override;
+  gfx::Font::Weight GetPrimaryTextWeight() const override;
 
  private:
   PasswordPopupSuggestionView(AutofillPopupViewNativeViews* popup_view,
@@ -247,8 +245,7 @@ class AutofillPopupFooterView : public AutofillPopupItemView {
   void CreateContent() override;
   std::unique_ptr<views::Background> CreateBackground() override;
   int GetPrimaryTextStyle() override;
-  bool ShouldUseCustomFontWeightForPrimaryInfo(
-      gfx::Font::Weight* font_weight) const override;
+  gfx::Font::Weight GetPrimaryTextWeight() const override;
 
  private:
   AutofillPopupFooterView(AutofillPopupViewNativeViews* popup_view,
@@ -396,7 +393,7 @@ void AutofillPopupItemView::CreateContent() {
       (GetLayoutType() == PopupItemLayoutType::kLeadingIcon ||
        GetLayoutType() == PopupItemLayoutType::kTwoLinesLeadingIcon)) {
     AddIcon(icon);
-    AddSpacerWithSize(views::MenuConfig::instance().item_horizontal_padding,
+    AddSpacerWithSize(GetHorizontalMargin(),
                       /*resize=*/false, layout_manager);
   }
 
@@ -433,7 +430,7 @@ void AutofillPopupItemView::CreateContent() {
     AddChildView(description_label);
 
   if (!icon.isNull() && GetLayoutType() == PopupItemLayoutType::kTrailingIcon) {
-    AddSpacerWithSize(views::MenuConfig::instance().item_horizontal_padding,
+    AddSpacerWithSize(GetHorizontalMargin(),
                       /*resize=*/false, layout_manager);
     AddIcon(icon);
   }
@@ -458,8 +455,8 @@ views::View* AutofillPopupItemView::CreateValueLabel() {
       popup_view_->controller()->GetElidedValueAt(line_number_),
       ChromeTextContext::CONTEXT_BODY_TEXT_LARGE, GetPrimaryTextStyle());
 
-  gfx::Font::Weight font_weight;
-  if (ShouldUseCustomFontWeightForPrimaryInfo(&font_weight)) {
+  const gfx::Font::Weight font_weight = GetPrimaryTextWeight();
+  if (font_weight != text_label->font_list().GetFontWeight()) {
     text_label->SetFontList(
         text_label->font_list().DeriveWithWeight(font_weight));
   }
@@ -560,20 +557,8 @@ int AutofillPopupSuggestionView::GetPrimaryTextStyle() {
   return views::style::TextStyle::STYLE_PRIMARY;
 }
 
-bool AutofillPopupSuggestionView::ShouldUseCustomFontWeightForPrimaryInfo(
-    gfx::Font::Weight* font_weight) const {
-  switch (autofill::GetForcedFontWeight()) {
-    case ForcedFontWeight::kDefault:
-      return false;
-
-    case ForcedFontWeight::kMedium:
-      *font_weight = views::TypographyProvider::MediumWeightForUI();
-      return true;
-
-    case ForcedFontWeight::kBold:
-      *font_weight = gfx::Font::Weight::BOLD;
-      return true;
-  }
+gfx::Font::Weight AutofillPopupSuggestionView::GetPrimaryTextWeight() const {
+  return views::TypographyProvider::MediumWeightForUI();
 }
 
 AutofillPopupSuggestionView::AutofillPopupSuggestionView(
@@ -657,9 +642,8 @@ views::View* PasswordPopupSuggestionView::CreateDescriptionLabel() {
   return new ConstrainedWidthView(label, kAutofillPopupPasswordMaxWidth);
 }
 
-bool PasswordPopupSuggestionView::ShouldUseCustomFontWeightForPrimaryInfo(
-    gfx::Font::Weight* font_weight) const {
-  return false;
+gfx::Font::Weight PasswordPopupSuggestionView::GetPrimaryTextWeight() const {
+  return gfx::Font::Weight::NORMAL;
 }
 
 PasswordPopupSuggestionView::PasswordPopupSuggestionView(
@@ -715,9 +699,8 @@ int AutofillPopupFooterView::GetPrimaryTextStyle() {
   return ChromeTextStyle::STYLE_SECONDARY;
 }
 
-bool AutofillPopupFooterView::ShouldUseCustomFontWeightForPrimaryInfo(
-    gfx::Font::Weight* font_weight) const {
-  return false;
+gfx::Font::Weight AutofillPopupFooterView::GetPrimaryTextWeight() const {
+  return gfx::Font::Weight::NORMAL;
 }
 
 AutofillPopupFooterView::AutofillPopupFooterView(
@@ -1091,6 +1074,31 @@ void AutofillPopupViewNativeViews::DoUpdateBoundsAndRedrawPopup() {
   SetClipPath();
 
   SchedulePaint();
+}
+
+// static
+AutofillPopupView* AutofillPopupView::Create(
+    AutofillPopupController* controller) {
+#if defined(OS_MACOSX)
+  // It's possible for the container_view to not be in a window. In that case,
+  // cancel the popup since we can't fully set it up.
+  if (!platform_util::GetTopLevel(controller->container_view()))
+    return nullptr;
+#endif
+
+  views::Widget* observing_widget =
+      views::Widget::GetTopLevelWidgetForNativeView(
+          controller->container_view());
+
+#if !defined(OS_MACOSX)
+  // If the top level widget can't be found, cancel the popup since we can't
+  // fully set it up. On Mac Cocoa browser, |observing_widget| is null
+  // because the parent is not a views::Widget.
+  if (!observing_widget)
+    return nullptr;
+#endif
+
+  return new AutofillPopupViewNativeViews(controller, observing_widget);
 }
 
 }  // namespace autofill

@@ -14,6 +14,7 @@
 #include "chrome/browser/data_reduction_proxy/data_reduction_proxy_chrome_settings_factory.h"
 #include "chrome/browser/loader/chrome_navigation_data.h"
 #include "chrome/browser/page_load_metrics/metrics_web_contents_observer.h"
+#include "chrome/browser/previews/previews_content_util.h"
 #include "chrome/browser/previews/previews_infobar_delegate.h"
 #include "chrome/browser/previews/previews_service.h"
 #include "chrome/browser/previews/previews_service_factory.h"
@@ -25,7 +26,6 @@
 #include "components/network_time/network_time_tracker.h"
 #include "components/offline_pages/buildflags/buildflags.h"
 #include "components/offline_pages/core/offline_page_item.h"
-#include "components/previews/content/previews_content_util.h"
 #include "components/previews/content/previews_ui_service.h"
 #include "components/previews/core/previews_experiments.h"
 #include "components/previews/core/previews_features.h"
@@ -170,6 +170,7 @@ base::string16 PreviewsUITabHelper::GetStalePreviewTimestampText() {
     NOTREACHED();
     return base::string16();
   }
+  DCHECK_GE(min_staleness_in_minutes, 2);
 
   base::Time network_time;
   if (g_browser_process->network_time_tracker()->GetNetworkTime(&network_time,
@@ -206,15 +207,16 @@ base::string16 PreviewsUITabHelper::GetStalePreviewTimestampText() {
   RecordStaleness(PreviewsStalePreviewTimestamp::kTimestampShown);
 
   if (staleness_in_minutes < 60) {
+    DCHECK_GE(staleness_in_minutes, 2);
     return l10n_util::GetStringFUTF16(
         IDS_PREVIEWS_INFOBAR_TIMESTAMP_MINUTES,
-        base::IntToString16(staleness_in_minutes));
+        base::NumberToString16(staleness_in_minutes));
   } else if (staleness_in_minutes < 120) {
     return l10n_util::GetStringUTF16(IDS_PREVIEWS_INFOBAR_TIMESTAMP_ONE_HOUR);
   } else {
     return l10n_util::GetStringFUTF16(
         IDS_PREVIEWS_INFOBAR_TIMESTAMP_HOURS,
-        base::IntToString16(staleness_in_minutes / 60));
+        base::NumberToString16(staleness_in_minutes / 60));
   }
 }
 

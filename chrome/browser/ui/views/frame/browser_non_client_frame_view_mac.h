@@ -33,17 +33,17 @@ class BrowserNonClientFrameViewMac : public BrowserNonClientFrameView {
   void UpdateFullscreenTopUI(bool needs_check_tab_fullscreen) override;
   bool ShouldHideTopUIForFullscreen() const override;
   void UpdateThrobber(bool running) override;
-  SkColor GetFrameForegroundColor(ActiveState active_state) const override;
 
   // views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override;
   gfx::Rect GetWindowBoundsForClientBounds(
       const gfx::Rect& client_bounds) const override;
   int NonClientHitTest(const gfx::Point& point) override;
-  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override;
+  void GetWindowMask(const gfx::Size& size, SkPath* window_mask) override;
   void UpdateWindowIcon() override;
   void UpdateWindowTitle() override;
   void SizeConstraintsChanged() override;
+  void UpdateMinimumSize() override;
 
   // views::View:
   gfx::Size GetMinimumSize() const override;

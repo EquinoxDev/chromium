@@ -40,6 +40,7 @@ enum VideoCapturePixelFormat {
   Y16,
   ABGR,
   XBGR,
+  P016LE,
 };
 
 enum ResolutionChangePolicy {
@@ -227,7 +228,17 @@ enum VideoCaptureFrameDropReason {
   kWinMediaFoundationLockingBufferDelieveredNullptr,
   kWinMediaFoundationGetBufferByIndexReturnedNull,
   kBufferPoolMaxBufferCountExceeded,
-  kBufferPoolBufferAllocationFailed
+  kBufferPoolBufferAllocationFailed,
+  kVideoCaptureImplNotInStartedState,
+  kVideoCaptureImplFailedToWrapDataAsMediaVideoFrame,
+  kVideoTrackAdapterHasNoResolutionAdapters,
+  kResolutionAdapterFrameIsNotValid,
+  kResolutionAdapterWrappingFrameForCroppingFailed,
+  kResolutionAdapterTimestampTooCloseToPrevious,
+  kResolutionAdapterFrameRateIsHigherThanRequested,
+  kResolutionAdapterHasNoCallbacks,
+  kVideoTrackFrameDelivererNotEnabledReplacingWithBlackFrame,
+  kRendererSinkFrameDelivererIsNotStarted
 };
 
 struct VideoCaptureFormat {

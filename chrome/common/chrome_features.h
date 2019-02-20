@@ -17,19 +17,12 @@
 #include "extensions/buildflags/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
-#include "ui/base/ui_features.h"
+#include "ui/base/buildflags.h"
 
 namespace features {
 
 // All features in alphabetical order. The features should be documented
 // alongside the definition of their values in the .cc file.
-
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kAdsFeature;
-
-#if defined(OS_ANDROID)
-COMPONENT_EXPORT(CHROME_FEATURES)
-extern const base::Feature kAllowAutoplayUnmutedInWebappManifestScope;
-#endif  // defined(OS_ANDROID)
 
 #if defined(OS_MACOSX)
 COMPONENT_EXPORT(CHROME_FEATURES)
@@ -50,7 +43,7 @@ extern const base::Feature kAppNotificationStatusMessaging;
 
 #if !defined(OS_ANDROID)
 COMPONENT_EXPORT(CHROME_FEATURES)
-extern const base::Feature kAppService;
+extern const base::Feature kAppServiceAsh;
 #endif  // !defined(OS_ANDROID)
 
 COMPONENT_EXPORT(CHROME_FEATURES)
@@ -119,6 +112,8 @@ COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kContentFullscreen;
 #if defined(OS_CHROMEOS)
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kCrostini;
 COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kCrostiniAppSearch;
+COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kCrostiniAppUninstallGui;
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kPluginVm;
 COMPONENT_EXPORT(CHROME_FEATURES)
@@ -141,6 +136,9 @@ COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kDesktopPWAsWithoutExtensions;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kDesktopPWAsOmniboxInstall;
+
+COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kDisallowUnsafeHttpDownloads;
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const char kDisallowUnsafeHttpDownloadsParamName[];
@@ -153,16 +151,19 @@ extern const base::Feature kDownloadsLocationChange;
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kEnableIncognitoWindowCounter;
 
-COMPONENT_EXPORT(CHROME_FEATURES)
-extern const base::Feature kExperimentalAppBanners;
-
 #if defined(OS_CHROMEOS)
 COMPONENT_EXPORT(CHROME_FEATURES)
-extern const base::Feature kExperimentalCrostiniUI;
+extern const base::Feature kEventBasedStatusReporting;
 #endif
 
 COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kExperimentalAppBanners;
+
+COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kExternalExtensionDefaultButtonControl;
+
+COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kFocusMode;
 
 // Android expects this string from Java code, so it is always needed.
 // TODO(crbug.com/731802): Use #if BUILDFLAG(ENABLE_VR_BROWSING) instead.
@@ -183,6 +184,11 @@ COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kOculusVR;
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kOpenVR;
 #endif  // ENABLE_OPENVR
 
+#if BUILDFLAG(ENABLE_WINDOWS_MR)
+COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kWindowsMixedReality;
+#endif  // ENABLE_WINDOWS_MR
+
 #endif  // ENABLE_VR
 
 #if defined(OS_WIN)
@@ -190,6 +196,11 @@ COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kGdiTextPrinting;
 #endif
 
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kGeoLanguage;
+
+#if !defined(OS_ANDROID) && defined(GOOGLE_CHROME_BUILD)
+COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kGoogleBrandedContextMenu;
+#endif
 
 #if defined(OS_ANDROID)
 COMPONENT_EXPORT(CHROME_FEATURES)
@@ -243,9 +254,6 @@ extern const base::Feature kMacMaterialDesignDownloadShelf;
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kAcknowledgeNtpOverrideOnDeactivate;
 #endif
-
-COMPONENT_EXPORT(CHROME_FEATURES)
-extern const base::Feature kMaterialDesignIncognitoNTP;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kModalPermissionPrompts;
@@ -302,20 +310,12 @@ COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kDisablePostScriptPrinting;
 #endif
 
-#if !defined(OS_ANDROID)
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kPolicyTool;
-#endif
-
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kPredictivePrefetchingAllowedOnAllConnectionTypes;
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kPreferHtmlOverPlugins;
-#endif
-
-#if defined(OS_CHROMEOS)
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kPreloadLockScreen;
 #endif
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
@@ -326,6 +326,14 @@ COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kNupPrinting;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kPushMessagingBackgroundMode;
+
+#if defined(OS_CHROMEOS)
+COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kRemoveSupervisedUsersOnStartup;
+#endif
+
+COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kLoadBrokenImagesFromContextMenu;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kSafeSearchUrlReporting;
@@ -357,8 +365,6 @@ extern const base::Feature kSSLCommittedInterstitials;
 #if defined(OS_CHROMEOS)
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kNativeSmb;
 #endif
-
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kSingleTabMode;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kSoundContentSetting;
@@ -394,6 +400,11 @@ extern const base::Feature kTopSitesFromSiteEngagement;
 
 #if defined(OS_CHROMEOS)
 COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kUsageTimeStateNotifier;
+#endif
+
+#if defined(OS_CHROMEOS)
+COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kAdaptiveScreenBrightnessLogging;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
@@ -407,8 +418,6 @@ extern const base::Feature kUseSameCacheForMedia;
 #if defined(OS_CHROMEOS)
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kArcCupsApi;
 
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kOptInImeMenu;
-
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kQuickUnlockPin;
 
 COMPONENT_EXPORT(CHROME_FEATURES)
@@ -417,13 +426,9 @@ extern const base::Feature kQuickUnlockPinSignin;
 COMPONENT_EXPORT(CHROME_FEATURES)
 extern const base::Feature kQuickUnlockFingerprint;
 
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kEHVInputOnImeMenu;
-
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kBulkPrinters;
 
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kCrosCompUpdates;
-
-COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kCrOSComponent;
 
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kTPMFirmwareUpdate;
 
@@ -435,7 +440,12 @@ extern const base::Feature kMachineLearningService;
 
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kUsbguard;
 
+COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kUsbbouncer;
+
 COMPONENT_EXPORT(CHROME_FEATURES) extern const base::Feature kShillSandboxing;
+
+COMPONENT_EXPORT(CHROME_FEATURES)
+extern const base::Feature kSchedulerConfiguration;
 #endif  // defined(OS_CHROMEOS)
 
 COMPONENT_EXPORT(CHROME_FEATURES)

@@ -224,16 +224,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetCompositorViewportPixelSize() const;
 
-  // Whether or not the renderer's viewport size should be shrunk by the height
-  // of the URL-bar.
-  virtual bool DoBrowserControlsShrinkRendererSize() const;
-
-  // The height of the URL-bar browser controls.
-  virtual float GetTopControlsHeight() const;
-
-  // The height of the bottom bar.
-  virtual float GetBottomControlsHeight() const;
-
   // If mouse wheels can only specify the number of ticks of some static
   // multiplier constant, this method returns that constant (in DIPs). If mouse
   // wheels can specify an arbitrary delta this returns 0.
@@ -262,7 +252,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
   // Create a platform specific SyntheticGestureTarget implementation that will
   // be used to inject synthetic input events.
   virtual std::unique_ptr<SyntheticGestureTarget>
-  CreateSyntheticGestureTarget();
+  CreateSyntheticGestureTarget() = 0;
 
   // Create a BrowserAccessibilityManager for a frame in this view.
   // If |for_root_frame| is true, creates a BrowserAccessibilityManager
@@ -349,9 +339,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase
       const gfx::PointF& point,
       gfx::PointF* transformed_point,
       bool* out_query_renderer);
-
-  virtual void InjectTouchEvent(const blink::WebTouchEvent& event,
-                                const ui::LatencyInfo& latency) {}
 
   virtual void PreProcessMouseEvent(const blink::WebMouseEvent& event) {}
   virtual void PreProcessTouchEvent(const blink::WebTouchEvent& event) {}

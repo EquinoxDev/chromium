@@ -31,9 +31,9 @@ BluetoothAdvertisingEvent::BluetoothAdvertisingEvent(
     BluetoothDevice* device,
     const String& name,
     const HeapVector<StringOrUnsignedLong>& uuids,
-    short appearance,
-    int8_t txPower,
-    int8_t rssi,
+    base::Optional<short> appearance,
+    base::Optional<int8_t> txPower,
+    base::Optional<int8_t> rssi,
     BluetoothManufacturerDataMap* manufacturerData,
     BluetoothServiceDataMap* serviceData)
     : Event(event_type, Bubbles::kYes, Cancelable::kYes),
@@ -62,7 +62,7 @@ const AtomicString& BluetoothAdvertisingEvent::InterfaceName() const {
 
 BluetoothDevice* BluetoothAdvertisingEvent::device() const {
   return device_;
-};
+}
 
 const String& BluetoothAdvertisingEvent::name() const {
   return name_;

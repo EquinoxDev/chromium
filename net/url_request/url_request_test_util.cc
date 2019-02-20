@@ -131,11 +131,16 @@ void TestURLRequestContext::Init() {
     session_context.ct_policy_enforcer = ct_policy_enforcer();
     session_context.transport_security_state = transport_security_state();
     session_context.proxy_resolution_service = proxy_resolution_service();
+    session_context.proxy_delegate = proxy_delegate();
     session_context.ssl_config_service = ssl_config_service();
     session_context.http_auth_handler_factory = http_auth_handler_factory();
     session_context.http_server_properties = http_server_properties();
     session_context.net_log = net_log();
     session_context.channel_id_service = channel_id_service();
+#if BUILDFLAG(ENABLE_REPORTING)
+    session_context.network_error_logging_service =
+        network_error_logging_service();
+#endif  // BUILDFLAG(ENABLE_REPORTING)
     context_storage_.set_http_network_session(
         std::make_unique<HttpNetworkSession>(session_params, session_context));
     context_storage_.set_http_transaction_factory(std::make_unique<HttpCache>(

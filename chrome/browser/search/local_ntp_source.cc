@@ -5,6 +5,7 @@
 #include "chrome/browser/search/local_ntp_source.h"
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/files/file_util.h"
@@ -37,6 +38,9 @@
 #include "chrome/browser/search/promos/promo_service.h"
 #include "chrome/browser/search/promos/promo_service_factory.h"
 #include "chrome/browser/search/search.h"
+#include "chrome/browser/search/search_suggest/search_suggest_data.h"
+#include "chrome/browser/search/search_suggest/search_suggest_service.h"
+#include "chrome/browser/search/search_suggest/search_suggest_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_provider_logos/logo_service_factory.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -85,8 +89,6 @@ namespace {
 // Signifies a locally constructed resource, i.e. not from grit/.
 const int kLocalResource = -1;
 
-const char kAnimatedShareDoodleUrl[] =
-    "https://www.gstatic.com/logo/dev/ddljson_animated_share_button.json";
 const char kConfigDataFilename[] = "config.js";
 const char kDoodleScriptFilename[] = "doodle.js";
 const char kGoogleUrl[] = "https://www.google.com/";
@@ -97,8 +99,7 @@ const char kNtpBackgroundCollectionScriptFilename[] =
 const char kNtpBackgroundImageScriptFilename[] = "ntp-background-images.js";
 const char kOneGoogleBarScriptFilename[] = "one-google.js";
 const char kPromoScriptFilename[] = "promo.js";
-const char kSimpleShareDoodleUrl[] =
-    "https://www.gstatic.com/logo/dev/ddljson_simple_share_button.json";
+const char kSearchSuggestionsScriptFilename[] = "search-suggestions.js";
 const char kThemeCSSFilename[] = "theme.css";
 
 const struct Resource{
@@ -108,6 +109,7 @@ const struct Resource{
 } kResources[] = {
     {"animations.css", IDR_LOCAL_NTP_ANIMATIONS_CSS, "text/css"},
     {"animations.js", IDR_LOCAL_NTP_ANIMATIONS_JS, "application/javascript"},
+    {"constants.css", IDR_LOCAL_NTP_CONSTANTS_CSS, "text/css"},
     {"custom-backgrounds.css", IDR_LOCAL_NTP_CUSTOM_BACKGROUNDS_CSS,
      "text/css"},
     {"custom-backgrounds.js", IDR_LOCAL_NTP_CUSTOM_BACKGROUNDS_JS,
@@ -128,12 +130,28 @@ const struct Resource{
     {kNtpBackgroundImageScriptFilename, kLocalResource, "text/javascript"},
     {kOneGoogleBarScriptFilename, kLocalResource, "text/javascript"},
     {kPromoScriptFilename, kLocalResource, "text/javascript"},
+    {kSearchSuggestionsScriptFilename, kLocalResource, "text/javascript"},
     {kThemeCSSFilename, kLocalResource, "text/css"},
     // Image may not be a jpeg but the .jpg extension here still works for other
     // filetypes. Special handling for different extensions isn't worth the
     // added complexity.
     {chrome::kChromeSearchLocalNtpBackgroundFilename, kLocalResource,
      "image/jpg"},
+};
+
+// This enum must match the numbering for NTPSearchSuggestionsRequestStatus in
+// enums.xml. Do not reorder or remove items, and update kMaxValue when new
+// items are added.
+enum class SearchSuggestionsRequestStatus {
+  UNKNOWN_ERROR = 0,
+  SENT = 1,
+  SIGNED_OUT = 2,
+  OPTED_OUT = 3,
+  IMPRESSION_CAP = 4,
+  FROZEN = 5,
+  FATAL_ERROR = 6,
+
+  kMaxValue = FATAL_ERROR
 };
 
 // Strips any query parameters from the specified path.
@@ -154,9 +172,7 @@ std::unique_ptr<base::DictionaryValue> GetTranslatedStrings(bool is_google) {
   auto translated_strings = std::make_unique<base::DictionaryValue>();
 
   AddString(translated_strings.get(), "thumbnailRemovedNotification",
-            features::IsMDIconsEnabled()
-                ? IDS_NTP_CONFIRM_MSG_SHORTCUT_REMOVED
-                : IDS_NEW_TAB_THUMBNAIL_REMOVED_NOTIFICATION);
+            IDS_NTP_CONFIRM_MSG_SHORTCUT_REMOVED);
   AddString(translated_strings.get(), "removeThumbnailTooltip",
             IDS_NEW_TAB_REMOVE_THUMBNAIL_TOOLTIP);
   AddString(translated_strings.get(), "undoThumbnailRemove",
@@ -402,14 +418,31 @@ std::unique_ptr<base::DictionaryValue> ConvertOGBDataToDict(
 std::unique_ptr<base::DictionaryValue> ConvertPromoDataToDict(
     const base::Optional<PromoData>& promo) {
   auto result = std::make_unique<base::DictionaryValue>();
-  if (promo.has_value())
+  if (promo.has_value()) {
     result->SetString("promoHtml", promo->promo_html);
-  else
+    result->SetString("promoLogUrl", promo->promo_log_url.spec());
+  } else {
     result->SetString("promoHtml", std::string());
+  }
+  return result;
+}
+
+std::unique_ptr<base::DictionaryValue> ConvertSearchSuggestDataToDict(
+    const base::Optional<SearchSuggestData>& data) {
+  auto result = std::make_unique<base::DictionaryValue>();
+  if (data.has_value()) {
+    result->SetString("suggestionsHtml", data->suggestions_html);
+    result->SetString("suggestionsEndOfBodyScript", data->end_of_body_script);
+  } else {
+    result->SetString("suggestionsHtml", std::string());
+  }
   return result;
 }
 
 std::string ConvertLogoImageToBase64(const EncodedLogo& logo) {
+  if (!logo.encoded_image)
+    return std::string();
+
   std::string base64;
   base::Base64Encode(logo.encoded_image->data(), &base64);
   return base::StringPrintf("data:%s;base64,%s",
@@ -560,13 +593,9 @@ class LocalNtpSource::SearchConfigurationProvider
                            content::BrowserAccessibilityState::GetInstance()
                                ->IsAccessibleBrowser());
 
-    config_data.SetBoolean("isMDIconsEnabled", features::IsMDIconsEnabled());
-
     if (is_google) {
-      config_data.SetBoolean("isCustomLinksEnabled",
-                             features::IsCustomLinksEnabled());
-      config_data.SetBoolean("isCustomBackgroundsEnabled",
-                             features::IsCustomBackgroundsEnabled());
+      config_data.SetBoolean("removeFakebox", base::FeatureList::IsEnabled(
+                                                  features::kRemoveNtpFakebox));
     }
 
     // Serialize the dictionary.
@@ -717,6 +746,9 @@ LocalNtpSource::LocalNtpSource(Profile* profile)
       one_google_bar_service_observer_(this),
       promo_service_(PromoServiceFactory::GetForProfile(profile_)),
       promo_service_observer_(this),
+      search_suggest_service_(
+          SearchSuggestServiceFactory::GetForProfile(profile_)),
+      search_suggest_service_observer_(this),
       logo_service_(nullptr),
       weak_ptr_factory_(this) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -730,6 +762,11 @@ LocalNtpSource::LocalNtpSource(Profile* profile)
   // disabled.
   if (one_google_bar_service_)
     one_google_bar_service_observer_.Add(one_google_bar_service_);
+
+  // |search_suggest_service_| is null in incognito, or when the feature is
+  // disabled.
+  if (search_suggest_service_)
+    search_suggest_service_observer_.Add(search_suggest_service_);
 
   // |promo_service_| is null in incognito, or when the feature is
   // disabled.
@@ -873,6 +910,20 @@ void LocalNtpSource::StartDataRequest(
     return;
   }
 
+  if (stripped_path == kSearchSuggestionsScriptFilename) {
+    if (!search_suggest_service_) {
+      callback.Run(nullptr);
+      return;
+    }
+
+    MaybeServeSearchSuggestions(callback);
+
+    search_suggest_requests_.emplace_back(base::TimeTicks::Now());
+    search_suggest_service_->Refresh();
+
+    return;
+  }
+
   if (stripped_path == kDoodleScriptFilename) {
     if (!logo_service_) {
       callback.Run(nullptr);
@@ -954,22 +1005,10 @@ void LocalNtpSource::StartDataRequest(
                                    &force_doodle_param)) {
       base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
-      // TODO(crbug.com/896461): Add share button to ddljson_desktop0.json and
-      // ddljson_desktop1.json then update links below.
-      if (force_doodle_param == "0") {
-        command_line->AppendSwitchASCII(
-            search_provider_logos::switches::kGoogleDoodleUrl,
-            kSimpleShareDoodleUrl);
-      } else if (force_doodle_param == "1") {
-        command_line->AppendSwitchASCII(
-            search_provider_logos::switches::kGoogleDoodleUrl,
-            kAnimatedShareDoodleUrl);
-      } else {
-        command_line->AppendSwitchASCII(
-            search_provider_logos::switches::kGoogleDoodleUrl,
-            "https://www.gstatic.com/chrome/ntp/doodle_test/ddljson_desktop" +
-                force_doodle_param + ".json");
-      }
+      command_line->AppendSwitchASCII(
+          search_provider_logos::switches::kGoogleDoodleUrl,
+          "https://www.gstatic.com/chrome/ntp/doodle_test/ddljson_desktop" +
+              force_doodle_param + ".json");
     }
 
     callback.Run(base::RefCountedString::TakeString(&html));
@@ -1225,6 +1264,64 @@ void LocalNtpSource::OnPromoServiceShuttingDown() {
   promo_service_ = nullptr;
 }
 
+void LocalNtpSource::OnSearchSuggestDataUpdated() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  SearchSuggestLoader::Status result =
+      search_suggest_service_->search_suggest_status();
+  base::TimeTicks now = base::TimeTicks::Now();
+  for (const auto& request : search_suggest_requests_) {
+    base::TimeDelta delta = now - request.start_time;
+    UMA_HISTOGRAM_MEDIUM_TIMES("NewTabPage.SearchSuggestions.RequestLatency",
+                               delta);
+    SearchSuggestionsRequestStatus request_status =
+        SearchSuggestionsRequestStatus::UNKNOWN_ERROR;
+
+    if (result == SearchSuggestLoader::Status::SIGNED_OUT) {
+      request_status = SearchSuggestionsRequestStatus::SIGNED_OUT;
+    } else if (result == SearchSuggestLoader::Status::OPTED_OUT) {
+      request_status = SearchSuggestionsRequestStatus::OPTED_OUT;
+    } else if (result == SearchSuggestLoader::Status::IMPRESSION_CAP) {
+      request_status = SearchSuggestionsRequestStatus::IMPRESSION_CAP;
+    } else if (result == SearchSuggestLoader::Status::REQUESTS_FROZEN) {
+      request_status = SearchSuggestionsRequestStatus::FROZEN;
+    } else if (result == SearchSuggestLoader::Status::OK) {
+      request_status = SearchSuggestionsRequestStatus::SENT;
+      UMA_HISTOGRAM_MEDIUM_TIMES(
+          "NewTabPage.SearchSuggestions.RequestLatency.Success", delta);
+    } else if (result == SearchSuggestLoader::Status::FATAL_ERROR) {
+      request_status = SearchSuggestionsRequestStatus::FATAL_ERROR;
+      UMA_HISTOGRAM_MEDIUM_TIMES(
+          "NewTabPage.SearchSuggestions.RequestLatency.Failure", delta);
+    }
+    UMA_HISTOGRAM_ENUMERATION("NewTabPage.SearchSuggestions.RequestStatus",
+                              request_status);
+  }
+  search_suggest_requests_.clear();
+}
+
+void LocalNtpSource::OnSearchSuggestServiceShuttingDown() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  search_suggest_service_observer_.RemoveAll();
+  search_suggest_service_ = nullptr;
+}
+void LocalNtpSource::MaybeServeSearchSuggestions(
+    const content::URLDataSource::GotDataCallback& callback) {
+  base::Optional<SearchSuggestData> data =
+      search_suggest_service_->search_suggest_data();
+
+  if (data.has_value()) {
+    search_suggest_service_->SuggestionsDisplayed();
+  }
+  scoped_refptr<base::RefCountedString> result;
+  std::string js;
+  base::JSONWriter::Write(*ConvertSearchSuggestDataToDict(data), &js);
+  js = "var search_suggestions  = " + js + ";";
+  result = base::RefCountedString::TakeString(&js);
+  callback.Run(result);
+}
+
 void LocalNtpSource::ServeOneGoogleBar(
     const base::Optional<OneGoogleBarData>& data) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -1312,3 +1409,12 @@ LocalNtpSource::PromoRequest::PromoRequest(
 LocalNtpSource::PromoRequest::PromoRequest(const PromoRequest&) = default;
 
 LocalNtpSource::PromoRequest::~PromoRequest() = default;
+
+LocalNtpSource::SearchSuggestRequest::SearchSuggestRequest(
+    base::TimeTicks start_time)
+    : start_time(start_time) {}
+
+LocalNtpSource::SearchSuggestRequest::SearchSuggestRequest(
+    const SearchSuggestRequest&) = default;
+
+LocalNtpSource::SearchSuggestRequest::~SearchSuggestRequest() = default;

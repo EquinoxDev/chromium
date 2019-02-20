@@ -18,7 +18,6 @@ import android.provider.Settings;
 import android.provider.Settings.SettingNotFoundException;
 import android.support.annotation.CallSuper;
 import android.support.annotation.Nullable;
-import android.support.v7.app.AppCompatActivity;
 import android.view.Display;
 import android.view.Menu;
 import android.view.Surface;
@@ -36,6 +35,7 @@ import org.chromium.base.library_loader.LoaderErrors;
 import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeApplication;
+import org.chromium.chrome.browser.ChromeBaseAppCompatActivity;
 import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.LaunchIntentDispatcher;
 import org.chromium.chrome.browser.WarmupManager;
@@ -55,8 +55,8 @@ import java.lang.reflect.Field;
 /**
  * An activity that talks with application and activity level delegates for async initialization.
  */
-public abstract class AsyncInitializationActivity extends AppCompatActivity implements
-        ChromeActivityNativeDelegate, BrowserParts {
+public abstract class AsyncInitializationActivity
+        extends ChromeBaseAppCompatActivity implements ChromeActivityNativeDelegate, BrowserParts {
     private static final String TAG = "AsyncInitActivity";
     protected final Handler mHandler;
 
@@ -302,7 +302,7 @@ public abstract class AsyncInitializationActivity extends AppCompatActivity impl
 
         if (requiresFirstRunToBeCompleted(intent)
                 && FirstRunFlowSequencer.launch(this, intent, false /* requiresBroadcast */,
-                           shouldPreferLightweightFre(intent))) {
+                        false /* preferLightweightFre */)) {
             abortLaunch(LaunchIntentDispatcher.Action.FINISH_ACTIVITY_REMOVE_TASK);
             return;
         }
@@ -398,14 +398,6 @@ public abstract class AsyncInitializationActivity extends AppCompatActivity impl
      */
     protected boolean requiresFirstRunToBeCompleted(Intent intent) {
         return true;
-    }
-
-    /**
-     * Whether to use the Lightweight First Run Experience instead of the
-     * non-Lightweight First Run Experience.
-     */
-    protected boolean shouldPreferLightweightFre(Intent intent) {
-        return false;
     }
 
     /**
@@ -534,13 +526,8 @@ public abstract class AsyncInitializationActivity extends AppCompatActivity impl
     }
 
     @Override
-    public boolean isActivityDestroyed() {
-        return mDestroyed;
-    }
-
-    @Override
-    public boolean isActivityFinishing() {
-        return isFinishing();
+    public boolean isActivityFinishingOrDestroyed() {
+        return mDestroyed || isFinishing();
     }
 
     @Override
@@ -622,6 +609,7 @@ public abstract class AsyncInitializationActivity extends AppCompatActivity impl
                 && mWindowAndroid.onActivityResult(requestCode, resultCode, intent)) {
             return true;
         }
+        mLifecycleDispatcher.dispatchOnActivityResultWithNative(requestCode, resultCode, intent);
         super.onActivityResult(requestCode, resultCode, intent);
         return false;
     }

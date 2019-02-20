@@ -4,13 +4,13 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/browser/background_fetch/background_fetch_delegate_impl.h"
 #include "chrome/browser/browser_process.h"
@@ -32,7 +32,6 @@
 #include "components/offline_items_collection/core/offline_item.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -230,13 +229,6 @@ class BackgroundFetchBrowserTest : public InProcessBrowserTest {
             std::make_unique<OfflineContentProviderObserver>()) {}
   ~BackgroundFetchBrowserTest() override = default;
 
-  // InProcessBrowserTest overrides:
-  void SetUp() override {
-    scoped_feature_list_.InitAndEnableFeature(
-        features::kBackgroundFetchUploads);
-    InProcessBrowserTest::SetUp();
-  }
-
   void SetUpCommandLine(base::CommandLine* command_line) override {
     // Background Fetch is available as an experimental Web Platform feature.
     command_line->AppendSwitch(
@@ -362,18 +354,21 @@ class BackgroundFetchBrowserTest : public InProcessBrowserTest {
 
   // Intercepts all requests.
   std::unique_ptr<HttpResponse> HandleRequest(const HttpRequest& request) {
-    if (request.GetURL().path() != "/background_fetch/upload") {
-      // The default handlers will take care of this request.
-      return nullptr;
+    if (request.GetURL().path() == "/background_fetch/upload") {
+      DCHECK(!request.content.empty());
+      DCHECK(request_body_.empty());
+      request_body_ = request.content;
+
+      auto response = std::make_unique<BasicHttpResponse>();
+      response->set_code(net::HTTP_OK);
+      return response;
     }
 
-    DCHECK(!request.content.empty());
-    DCHECK(request_body_.empty());
-    request_body_ = request.content;
+    if (request.GetURL().query() == "clickevent")
+      std::move(click_event_closure_).Run();
 
-    auto response = std::make_unique<BasicHttpResponse>();
-    response->set_code(net::HTTP_OK);
-    return response;
+    // The default handlers will take care of this request.
+    return nullptr;
   }
 
   // Gets the ideal display size.
@@ -451,6 +446,7 @@ class BackgroundFetchBrowserTest : public InProcessBrowserTest {
  protected:
   BackgroundFetchDelegateImpl* delegate_ = nullptr;
   download::DownloadService* download_service_ = nullptr;
+  base::OnceClosure click_event_closure_;
 
   std::unique_ptr<WaitableDownloadLoggerObserver> download_observer_;
   std::unique_ptr<OfflineContentProviderObserver>
@@ -480,8 +476,6 @@ class BackgroundFetchBrowserTest : public InProcessBrowserTest {
 
   Browser* active_browser_ = nullptr;
 
-  base::test::ScopedFeatureList scoped_feature_list_;
-
   DISALLOW_COPY_AND_ASSIGN(BackgroundFetchBrowserTest);
 };
 
@@ -506,7 +500,7 @@ IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest, DownloadService_Acceptance) {
 IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
                        RecordBackgroundFetchUkmEvent) {
   // Start a Background Fetch for a single to-be-downloaded file and  test that
-  // the expected UKM data has been recorded.
+  // the expected UKM data for the BackgroundFetch UKM event has been recorded.
 
   ASSERT_NO_FATAL_FAILURE(
       RunScriptFunction("StartSingleFileDownloadWithCorrectDownloadTotal()"));
@@ -714,9 +708,6 @@ IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
   EXPECT_TRUE(
       base::StartsWith(offline_content_provider_observer_->latest_item().title,
                        "New Fetched Title!", base::CompareCase::SENSITIVE));
-
-  // Make sure the delegate cleans up after the fetch is complete.
-  EXPECT_TRUE(delegate_->job_details_map_.empty());
 }
 
 IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
@@ -738,6 +729,54 @@ IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest,
       "RunFetchTillCompletionWithUpload()", "backgroundfetchsuccess"));
 
   EXPECT_EQ(request_body_, "upload!");
+}
+
+IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest, ClickEventIsDispatched) {
+  ASSERT_NO_FATAL_FAILURE(RunScriptAndCheckResultingMessage(
+      "RunFetchTillCompletion()", "backgroundfetchsuccess"));
+  EXPECT_EQ(offline_content_provider_observer_->latest_item().state,
+            offline_items_collection::OfflineItemState::COMPLETE);
+
+  base::RunLoop().RunUntilIdle();  // Give updates a chance to propagate.
+
+  ASSERT_EQ(delegate_->job_details_map_.size(), 1u);
+  auto& job_details = delegate_->job_details_map_.begin()->second;
+  EXPECT_EQ(job_details.job_state,
+            BackgroundFetchDelegateImpl::JobDetails::State::kJobComplete);
+
+  // Simulate notification click.
+  delegate_->OpenItem(offline_items_collection::LaunchLocation::NOTIFICATION,
+                      job_details.offline_item.id);
+
+  // Job Details should be deleted at this point.
+  EXPECT_TRUE(delegate_->job_details_map_.empty());
+
+  // Wait for click event.
+  {
+    base::RunLoop run_loop;
+    click_event_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest, AbortFromUI) {
+  std::vector<OfflineItem> items;
+  // Creates a registration with more than one request.
+  ASSERT_NO_FATAL_FAILURE(
+      RunScriptAndWaitForOfflineItems("StartFetchWithMultipleFiles()", &items));
+  ASSERT_EQ(items.size(), 1u);
+
+  // Simulate an abort from the UI.
+  delegate_->CancelDownload(items[0].id);
+
+  // Wait for an abort event to be dispatched. This is safe because there are
+  // more requests to process than the scheduler will handle, and every request
+  // needs to contact the delegate. Since the abort originates from the
+  // delegate, this fetch will be aborted before the fetch completes.
+  // Pass in a no-op function since we only want to wait for a message at this
+  // point.
+  ASSERT_NO_FATAL_FAILURE(RunScriptAndCheckResultingMessage(
+      "(() => {})()", "backgroundfetchabort"));
 }
 
 IN_PROC_BROWSER_TEST_F(BackgroundFetchBrowserTest, FetchCanBePausedAndResumed) {

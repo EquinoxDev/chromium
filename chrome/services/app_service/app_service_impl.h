@@ -32,16 +32,23 @@ class AppServiceImpl : public apps::mojom::AppService {
   void RegisterSubscriber(apps::mojom::SubscriberPtr subscriber,
                           apps::mojom::ConnectOptionsPtr opts) override;
   void LoadIcon(apps::mojom::AppType app_type,
-                const std::string& app_id,
                 apps::mojom::IconKeyPtr icon_key,
                 apps::mojom::IconCompression icon_compression,
                 int32_t size_hint_in_dip,
+                bool allow_placeholder_icon,
                 LoadIconCallback callback) override;
   void Launch(apps::mojom::AppType app_type,
               const std::string& app_id,
               int32_t event_flags,
               apps::mojom::LaunchSource launch_source,
               int64_t display_id) override;
+  void SetPermission(apps::mojom::AppType app_type,
+                     const std::string& app_id,
+                     apps::mojom::PermissionPtr permission) override;
+  void Uninstall(apps::mojom::AppType app_type,
+                 const std::string& app_id) override;
+  void OpenNativeSettings(apps::mojom::AppType app_type,
+                          const std::string& app_id) override;
 
  private:
   void OnPublisherDisconnected(apps::mojom::AppType app_type);

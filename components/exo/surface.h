@@ -25,14 +25,12 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/transform.h"
 
+class SkPath;
+
 namespace base {
 namespace trace_event {
 class TracedValue;
 }
-}
-
-namespace gfx {
-class Path;
 }
 
 namespace viz {
@@ -41,7 +39,7 @@ class CompositorFrame;
 
 namespace exo {
 class Buffer;
-class LayerTreeFrameSinkHolder;
+class FrameSinkResourceManager;
 class SurfaceObserver;
 class Surface;
 
@@ -178,7 +176,7 @@ class Surface final : public ui::PropertyHandler {
   void AppendSurfaceHierarchyContentsToFrame(
       const gfx::Point& origin,
       float device_scale_factor,
-      LayerTreeFrameSinkHolder* frame_sink_holder,
+      FrameSinkResourceManager* resource_manager,
       viz::CompositorFrame* frame);
 
   // Returns true if surface is in synchronized mode.
@@ -194,7 +192,7 @@ class Surface final : public ui::PropertyHandler {
   bool HitTest(const gfx::Point& point) const;
 
   // Sets |mask| to the path that delineates the hit test region of the surface.
-  void GetHitTestMask(gfx::Path* mask) const;
+  void GetHitTestMask(SkPath* mask) const;
 
   // Set the surface delegate.
   void SetSurfaceDelegate(SurfaceDelegate* delegate);
@@ -290,7 +288,7 @@ class Surface final : public ui::PropertyHandler {
   // contents of the attached buffer (or id 0, if no buffer is attached).
   // UpdateSurface must be called afterwards to ensure the release callback
   // will be called.
-  void UpdateResource(LayerTreeFrameSinkHolder* frame_sink_holder);
+  void UpdateResource(FrameSinkResourceManager* resource_manager);
 
   // Updates buffer_transform_ to match the current buffer parameters.
   void UpdateBufferTransform(bool y_invert);

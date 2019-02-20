@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/login/screens/network_screen.h"
 
+#include "base/bind.h"
 #include "base/location.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_setup_controller.h"
 #include "chrome/browser/chromeos/login/helper.h"
@@ -41,7 +42,8 @@ NetworkScreen::NetworkScreen(BaseScreenDelegate* base_screen_delegate,
                              NetworkScreenView* view)
     : BaseScreen(base_screen_delegate, OobeScreen::SCREEN_OOBE_NETWORK),
       view_(view),
-      network_state_helper_(std::make_unique<login::NetworkStateHelper>()) {
+      network_state_helper_(std::make_unique<login::NetworkStateHelper>()),
+      weak_ptr_factory_(this) {
   if (view_)
     view_->Bind(this);
 }
@@ -63,6 +65,16 @@ void NetworkScreen::OnViewDestroyed(NetworkScreenView* view) {
 }
 
 void NetworkScreen::Show() {
+  if (DemoSetupController::IsOobeDemoSetupFlowInProgress()) {
+    // Check if preinstalled resources are available. If so, we can allow
+    // offline Demo Mode during Demo Mode network selection.
+    DemoSetupController* demo_setup_controller =
+        WizardController::default_controller()->demo_setup_controller();
+    demo_setup_controller->TryMountPreinstalledDemoResources(
+        base::BindOnce(&NetworkScreen::OnHasPreinstalledDemoResources,
+                       weak_ptr_factory_.GetWeakPtr()));
+  }
+
   Refresh();
   if (view_)
     view_->Show();
@@ -203,6 +215,12 @@ void NetworkScreen::OnContinueButtonClicked() {
     continue_pressed_ = true;
     WaitForConnection(network_id_);
   }
+}
+
+void NetworkScreen::OnHasPreinstalledDemoResources(
+    bool has_preinstalled_demo_resources) {
+  if (view_)
+    view_->SetOfflineDemoModeEnabled(has_preinstalled_demo_resources);
 }
 
 void NetworkScreen::OnOfflineDemoModeSetupSelected() {

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/task/post_task.h"
@@ -36,6 +37,7 @@
 #include "ios/web_view/internal/autofill/web_view_personal_data_manager_factory.h"
 #include "ios/web_view/internal/passwords/web_view_password_store_factory.h"
 #include "ios/web_view/internal/pref_names.h"
+#import "ios/web_view/internal/sync/web_view_device_info_sync_service_factory.h"
 #import "ios/web_view/internal/sync/web_view_model_type_store_service_factory.h"
 #import "ios/web_view/internal/sync/web_view_profile_invalidation_provider_factory.h"
 #include "ios/web_view/internal/web_view_browser_state.h"
@@ -103,6 +105,11 @@ syncer::ModelTypeStoreService* WebViewSyncClient::GetModelTypeStoreService() {
       browser_state_);
 }
 
+syncer::DeviceInfoSyncService* WebViewSyncClient::GetDeviceInfoSyncService() {
+  return WebViewDeviceInfoSyncServiceFactory::GetForBrowserState(
+      browser_state_);
+}
+
 bookmarks::BookmarkModel* WebViewSyncClient::GetBookmarkModel() {
   return nullptr;
 }
@@ -117,10 +124,6 @@ history::HistoryService* WebViewSyncClient::GetHistoryService() {
 
 sync_sessions::SessionSyncService* WebViewSyncClient::GetSessionSyncService() {
   return nullptr;
-}
-
-bool WebViewSyncClient::HasPasswordStore() {
-  return true;
 }
 
 autofill::PersonalDataManager* WebViewSyncClient::GetPersonalDataManager() {
@@ -149,7 +152,7 @@ WebViewSyncClient::CreateDataTypeControllers(
   return type_vector;
 }
 
-BookmarkUndoService* WebViewSyncClient::GetBookmarkUndoServiceIfExists() {
+BookmarkUndoService* WebViewSyncClient::GetBookmarkUndoService() {
   return nullptr;
 }
 

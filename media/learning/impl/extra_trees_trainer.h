@@ -10,8 +10,11 @@
 
 #include "base/component_export.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "media/learning/common/learning_task.h"
+#include "media/learning/impl/one_hot.h"
 #include "media/learning/impl/random_number_generator.h"
+#include "media/learning/impl/random_tree_trainer.h"
 #include "media/learning/impl/training_algorithm.h"
 
 namespace media {
@@ -26,15 +29,29 @@ namespace learning {
 //
 // These will automatically convert nominal values to one-hot vectors.
 class COMPONENT_EXPORT(LEARNING_IMPL) ExtraTreesTrainer
-    : public HasRandomNumberGenerator {
+    : public TrainingAlgorithm,
+      public HasRandomNumberGenerator,
+      public base::SupportsWeakPtr<ExtraTreesTrainer> {
  public:
   ExtraTreesTrainer();
-  ~ExtraTreesTrainer();
+  ~ExtraTreesTrainer() override;
 
-  std::unique_ptr<Model> Train(const LearningTask& task,
-                               const TrainingData& training_data);
+  // TrainingAlgorithm
+  void Train(const LearningTask& task,
+             const TrainingData& training_data,
+             TrainedModelCB model_cb) override;
 
  private:
+  void OnRandomTreeModel(TrainedModelCB model_cb, std::unique_ptr<Model> model);
+
+  std::unique_ptr<TrainingAlgorithm> tree_trainer_;
+
+  // In-flight training.
+  LearningTask task_;
+  std::vector<std::unique_ptr<Model>> trees_;
+  std::unique_ptr<OneHotConverter> converter_;
+  TrainingData converted_training_data_;
+
   DISALLOW_COPY_AND_ASSIGN(ExtraTreesTrainer);
 };
 

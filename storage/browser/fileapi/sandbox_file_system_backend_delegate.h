@@ -56,6 +56,7 @@ class FileSystemOperationContext;
 class FileSystemURL;
 class FileSystemUsageCache;
 class ObfuscatedFileUtil;
+class ObfuscatedFileUtilMemoryDelegate;
 class QuotaReservationManager;
 class SandboxQuotaObserver;
 
@@ -137,6 +138,9 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) SandboxFileSystemBackendDelegate
       storage::QuotaManagerProxy* proxy,
       const GURL& origin_url,
       FileSystemType type) override;
+  void PerformStorageCleanupOnFileTaskRunner(FileSystemContext* context,
+                                             storage::QuotaManagerProxy* proxy,
+                                             FileSystemType type) override;
   void GetOriginsForTypeOnFileTaskRunner(FileSystemType type,
                                          std::set<GURL>* origins) override;
   void GetOriginsForHostOnFileTaskRunner(FileSystemType type,
@@ -203,6 +207,8 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) SandboxFileSystemBackendDelegate
 
   FileSystemFileUtil* sync_file_util();
 
+  base::WeakPtr<ObfuscatedFileUtilMemoryDelegate> memory_file_util_delegate();
+
  private:
   friend class QuotaBackendImpl;
   friend class SandboxQuotaObserver;
@@ -248,7 +254,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) SandboxFileSystemBackendDelegate
   FileSystemOptions file_system_options_;
 
   bool is_filesystem_opened_;
-  base::ThreadChecker io_thread_checker_;
+  THREAD_CHECKER(io_thread_checker_);
 
   // Accessed only on the file thread.
   std::set<GURL> visited_origins_;

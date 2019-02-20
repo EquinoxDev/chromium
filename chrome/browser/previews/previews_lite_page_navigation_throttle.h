@@ -50,17 +50,20 @@ class PreviewsLitePageNavigationThrottle : public content::NavigationThrottle {
 
   // Reasons that a navigation is not eligible for this preview. This enum must
   // remain synchronized with the enum |PreviewsServerLitePageIneligibleReason|
-  // in metrics/histograms/enums.xml.
+  // in tools/metrics/histograms/enums.xml.
   enum class IneligibleReason {
     kNonHttpsScheme = 0,
-    kHttpPost = 1,
+    kHttpPost_DEPRECATED = 1,
     kSubframeNavigation = 2,
     kServerUnavailable = 3,
     kInfoBarNotSeen = 4,
     kNetworkNotSlow = 5,
     kLoadOriginalReload = 6,
     kCookiesBlocked = 7,
-    kMaxValue = kCookiesBlocked,
+    kECTUnknown = 8,
+    kExceededMaxNavigationRestarts = 9,
+    kPreviewsState = 10,
+    kMaxValue = kPreviewsState,
   };
 
   // The response type from the previews server. This enum must

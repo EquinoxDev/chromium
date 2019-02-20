@@ -190,14 +190,10 @@ void FrameTreeNode::ResetForNavigation() {
   // frame.
   UpdateFramePolicyHeaders(blink::WebSandboxFlags::kNone, {});
 
-  // TODO(crbug.com/736415): Clear this bit unconditionally for all frames.
-  if (IsMainFrame()) {
-    // This frame has had its user activation bits cleared in the renderer
-    // before arriving here. We just need to clear them here and in the other
-    // renderer processes that may have a reference to this frame.
-    UpdateUserActivationState(
-        blink::UserActivationUpdateType::kClearActivation);
-  }
+  // This frame has had its user activation bits cleared in the renderer
+  // before arriving here. We just need to clear them here and in the other
+  // renderer processes that may have a reference to this frame.
+  UpdateUserActivationState(blink::UserActivationUpdateType::kClearActivation);
 }
 
 void FrameTreeNode::SetOpener(FrameTreeNode* opener) {
@@ -550,8 +546,12 @@ void FrameTreeNode::BeforeUnloadCanceled() {
 }
 
 bool FrameTreeNode::NotifyUserActivation() {
-  for (FrameTreeNode* node = this; node; node = node->parent())
+  for (FrameTreeNode* node = this; node; node = node->parent()) {
+    if (!node->user_activation_state_.HasBeenActive() &&
+        node->current_frame_host())
+      node->current_frame_host()->DidReceiveFirstUserActivation();
     node->user_activation_state_.Activate();
+  }
   replication_state_.has_received_user_gesture = true;
 
   // TODO(mustaq): The following block relaxes UAv2 a bit to make it slightly
@@ -582,9 +582,6 @@ bool FrameTreeNode::ConsumeTransientUserActivation() {
 }
 
 bool FrameTreeNode::ClearUserActivation() {
-  // Only received for a new main frame.
-  // TODO(crbug.com/736415): Clear this bit unconditionally for all frames.
-  DCHECK(IsMainFrame());
   for (FrameTreeNode* node : frame_tree()->SubtreeNodes(this))
     node->user_activation_state_.Clear();
   return true;
@@ -660,6 +657,14 @@ void FrameTreeNode::PruneChildFrameNavigationEntries(
     } else {
       child->PruneChildFrameNavigationEntries(entry);
     }
+  }
+}
+
+void FrameTreeNode::SetOpenerFeaturePolicyState(
+    const blink::FeaturePolicy::FeatureState& feature_state) {
+  DCHECK(IsMainFrame());
+  if (base::FeatureList::IsEnabled(features::kFeaturePolicyForSandbox)) {
+    replication_state_.opener_feature_state = feature_state;
   }
 }
 

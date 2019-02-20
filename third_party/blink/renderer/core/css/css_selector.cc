@@ -281,6 +281,7 @@ PseudoId CSSSelector::GetPseudoId(PseudoType type) {
     case kPseudoFullScreenAncestor:
     case kPseudoFullscreen:
     case kPseudoSpatialNavigationFocus:
+    case kPseudoSpatialNavigationInterest:
     case kPseudoIsHtml:
     case kPseudoListBox:
     case kPseudoHostHasAppearance:
@@ -314,6 +315,8 @@ const static NameToPseudoStruct kPseudoTypeWithoutArgumentsMap[] = {
      CSSSelector::kPseudoHostHasAppearance},
     {"-internal-spatial-navigation-focus",
      CSSSelector::kPseudoSpatialNavigationFocus},
+    {"-internal-spatial-navigation-interest",
+     CSSSelector::kPseudoSpatialNavigationInterest},
     {"-internal-video-persistent", CSSSelector::kPseudoVideoPersistent},
     {"-internal-video-persistent-ancestor",
      CSSSelector::kPseudoVideoPersistentAncestor},
@@ -565,6 +568,7 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
     case kPseudoIsHtml:
     case kPseudoListBox:
     case kPseudoSpatialNavigationFocus:
+    case kPseudoSpatialNavigationInterest:
     case kPseudoVideoPersistent:
     case kPseudoVideoPersistentAncestor:
       if (mode != kUASheetMode) {
@@ -938,6 +942,7 @@ static bool ValidateSubSelector(const CSSSelector* selector) {
     case CSSSelector::kPseudoHostContext:
     case CSSSelector::kPseudoNot:
     case CSSSelector::kPseudoSpatialNavigationFocus:
+    case CSSSelector::kPseudoSpatialNavigationInterest:
     case CSSSelector::kPseudoIsHtml:
     case CSSSelector::kPseudoListBox:
     case CSSSelector::kPseudoHostHasAppearance:
@@ -1044,6 +1049,25 @@ bool CSSSelector::IsTreeAbidingPseudoElement() const {
           GetPseudoType() == kPseudoPlaceholder);
 }
 
+bool CSSSelector::IsAllowedAfterPart() const {
+  if (Match() != CSSSelector::kPseudoElement) {
+    return false;
+  }
+  // Everything that makes sense should work following ::part. This whitelist
+  // restricts it to what has been tested.
+  switch (GetPseudoType()) {
+    case kPseudoBefore:
+    case kPseudoAfter:
+    case kPseudoPlaceholder:
+    case kPseudoFirstLine:
+    case kPseudoFirstLetter:
+    case kPseudoSelection:
+      return true;
+    default:
+      return false;
+  }
+}
+
 template <typename Functor>
 static bool ForAnyInTagHistory(const Functor& functor,
                                const CSSSelector& selector) {
@@ -1086,6 +1110,13 @@ bool CSSSelector::HasDeepCombinatorOrShadowPseudo() const {
                selector.GetPseudoType() == CSSSelector::kPseudoShadow;
       },
       *this);
+}
+
+bool CSSSelector::FollowsPart() const {
+  const CSSSelector* previous = TagHistory();
+  if (!previous)
+    return false;
+  return previous->GetPseudoType() == kPseudoPart;
 }
 
 bool CSSSelector::NeedsUpdatedDistribution() const {

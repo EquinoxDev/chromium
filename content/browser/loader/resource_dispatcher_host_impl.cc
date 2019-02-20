@@ -40,6 +40,7 @@
 #include "content/browser/browsing_data/clear_site_data_throttle.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/navigation_request_info.h"
+#include "content/browser/isolation_context.h"
 #include "content/browser/loader/cross_site_document_resource_handler.h"
 #include "content/browser/loader/detachable_resource_handler.h"
 #include "content/browser/loader/intercepting_resource_handler.h"
@@ -463,23 +464,23 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(
     network::ResourceResponse* response,
     std::string* payload) {
   payload->clear();
-  ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
   const std::string& mime_type = response->head.mime_type;
 
   GURL origin;
   if (!delegate_ || !delegate_->ShouldInterceptResourceAsStream(
                         request, mime_type, &origin, payload)) {
-    return std::unique_ptr<ResourceHandler>();
+    return nullptr;
   }
 
+  ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
   StreamContext* stream_context =
       GetStreamContextForResourceContext(info->GetContext());
 
-  std::unique_ptr<StreamResourceHandler> handler(new StreamResourceHandler(
-      request, stream_context->registry(), origin, false));
+  auto handler = std::make_unique<StreamResourceHandler>(
+      request, stream_context->registry(), origin, false);
 
   info->set_is_stream(true);
-  std::unique_ptr<StreamInfo> stream_info(new StreamInfo);
+  auto stream_info = std::make_unique<StreamInfo>();
   stream_info->handle = handler->stream()->CreateHandle();
   stream_info->original_url = request->url();
   stream_info->mime_type = mime_type;
@@ -488,7 +489,8 @@ ResourceDispatcherHostImpl::MaybeInterceptAsStream(
   // ResourceDispatcherHostDelegate.
   if (response->head.headers.get()) {
     stream_info->response_headers =
-        new net::HttpResponseHeaders(response->head.headers->raw_headers());
+        base::MakeRefCounted<net::HttpResponseHeaders>(
+            response->head.headers->raw_headers());
   }
   delegate_->OnStreamCreated(request, std::move(stream_info));
   return std::move(handler);
@@ -871,18 +873,10 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
   new_request->SetReferrer(network::ComputeReferrer(request_data.referrer));
   new_request->set_referrer_policy(request_data.referrer_policy);
 
-  new_request->SetExtraRequestHeaders(headers);
-  // X-Requested-With and X-Client-Data header must be set here to avoid
-  // breaking CORS checks. They are non-empty when the values are given by the
-  // UA code, therefore they should be ignored by CORS checks.
-  if (!request_data.requested_with_header.empty()) {
-    new_request->SetExtraRequestHeaderByName(
-        "X-Requested-With", request_data.requested_with_header, true);
-  }
-  if (!request_data.client_data_header.empty()) {
-    new_request->SetExtraRequestHeaderByName(
-        "X-Client-Data", request_data.client_data_header, true);
-  }
+  // Internal headers must be set here to avoid being blocked by CORS checks.
+  net::HttpRequestHeaders merged_headers = headers;
+  merged_headers.MergeFrom(request_data.cors_exempt_headers);
+  new_request->SetExtraRequestHeaders(merged_headers);
 
   std::unique_ptr<network::ScopedThrottlingToken> throttling_token =
       network::ScopedThrottlingToken::MaybeCreate(
@@ -923,15 +917,11 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
     report_raw_headers = false;
   }
 
-  // Do not report raw headers if the request's site needs to be isolated
-  // from the current process.
-  if (report_raw_headers) {
-    bool is_isolated =
-        SiteIsolationPolicy::UseDedicatedProcessesForAllSites() ||
-        policy->IsIsolatedOrigin(url::Origin::Create(request_data.url));
-    if (is_isolated &&
-        !policy->CanAccessDataForOrigin(child_id, request_data.url))
-      report_raw_headers = false;
+  // Do not report raw headers if the current process isn't permitted to access
+  // data for the request's site.
+  if (report_raw_headers &&
+      !policy->CanAccessDataForOrigin(child_id, request_data.url)) {
+    report_raw_headers = false;
   }
 
   if (DoNotPromptForLogin(static_cast<ResourceType>(request_data.resource_type),
@@ -977,10 +967,9 @@ void ResourceDispatcherHostImpl::ContinuePendingBeginRequest(
       static_cast<ui::PageTransition>(request_data.transition_type),
       false,  // is download
       false,  // is stream
-      false,  // allow_download,
-      request_data.has_user_gesture, request_data.enable_load_timing,
-      request_data.enable_upload_progress, do_not_prompt_for_login,
-      request_data.keepalive,
+      ResourceInterceptPolicy::kAllowNone, request_data.has_user_gesture,
+      request_data.enable_load_timing, request_data.enable_upload_progress,
+      do_not_prompt_for_login, request_data.keepalive,
       Referrer::NetReferrerPolicyToBlinkReferrerPolicy(
           request_data.referrer_policy),
       request_data.is_prerendering, resource_context, report_raw_headers,
@@ -1138,11 +1127,8 @@ ResourceDispatcherHostImpl::AddStandardHandlers(
 
   if (!IsResourceTypeFrame(resource_type)) {
     // Add a handler to block cross-site documents from the renderer process.
-    bool is_nocors_plugin_request =
-        resource_type == RESOURCE_TYPE_PLUGIN_RESOURCE &&
-        fetch_request_mode == network::mojom::FetchRequestMode::kNoCors;
     handler.reset(new CrossSiteDocumentResourceHandler(
-        std::move(handler), request, is_nocors_plugin_request));
+        std::move(handler), request, fetch_request_mode));
   }
 
   // Insert a buffered event handler to sniff the mime type.
@@ -1166,13 +1152,13 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
     int child_id,
     int render_view_route_id,
     int render_frame_route_id,
+    int frame_tree_node_id,
     PreviewsState previews_state,
     bool download,
     ResourceContext* context) {
   return new ResourceRequestInfoImpl(
       ResourceRequesterInfo::CreateForDownloadOrPageSave(child_id),
-      render_view_route_id,
-      -1,                                  // frame_tree_node_id
+      render_view_route_id, frame_tree_node_id,
       ChildProcessHost::kInvalidUniqueID,  // plugin_child_id
       MakeRequestID(), render_frame_route_id,
       false,  // is_main_frame
@@ -1180,12 +1166,13 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       RESOURCE_TYPE_SUB_RESOURCE, ui::PAGE_TRANSITION_LINK,
       download,  // is_download
       false,     // is_stream
-      download,  // allow_download
-      false,     // has_user_gesture
-      false,     // enable_load_timing
-      false,     // enable_upload_progress
-      false,     // do_not_prompt_for_login
-      false,     // keepalive
+      download ? ResourceInterceptPolicy::kAllowAll
+               : ResourceInterceptPolicy::kAllowNone,
+      false,  // has_user_gesture
+      false,  // enable_load_timing
+      false,  // enable_upload_progress
+      false,  // do_not_prompt_for_login
+      false,  // keepalive
       network::mojom::ReferrerPolicy::kDefault,
       false,  // is_prerendering
       context,
@@ -1523,7 +1510,7 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       resource_type, info.common_params.transition,
       false,  // is download
       false,  // is stream
-      IsNavigationDownloadAllowed(info.common_params.download_policy),
+      GetResourceInterceptPolicy(info.common_params.download_policy),
       info.common_params.has_user_gesture,
       true,   // enable_load_timing
       false,  // enable_upload_progress
@@ -1749,6 +1736,7 @@ void ResourceDispatcherHostImpl::InitializeURLRequest(
     int render_process_host_id,
     int render_view_routing_id,
     int render_frame_routing_id,
+    int frame_tree_node_id,
     PreviewsState previews_state,
     ResourceContext* context) {
   DCHECK(io_thread_task_runner_->BelongsToCurrentThread());
@@ -1758,7 +1746,7 @@ void ResourceDispatcherHostImpl::InitializeURLRequest(
 
   ResourceRequestInfoImpl* info = CreateRequestInfo(
       render_process_host_id, render_view_routing_id, render_frame_routing_id,
-      previews_state, is_download, context);
+      frame_tree_node_id, previews_state, is_download, context);
   // Request takes ownership.
   info->AssociateWithRequest(request);
 }
@@ -1891,7 +1879,7 @@ void ResourceDispatcherHostImpl::UpdateLoadStateOnUI(
 
   std::unique_ptr<LoadInfoMap> info_map =
       PickMoreInterestingLoadInfos(std::move(infos));
-  for (const auto& load_info: *info_map) {
+  for (const auto& load_info : *info_map) {
     loader_delegate->LoadStateChanged(
         load_info.first, load_info.second.host, load_info.second.load_state,
         load_info.second.upload_position, load_info.second.upload_size);

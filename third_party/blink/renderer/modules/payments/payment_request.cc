@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/inspector/console_types.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/modules/event_target_modules_names.h"
 #include "third_party/blink/renderer/modules/payments/address_errors.h"
 #include "third_party/blink/renderer/modules/payments/android_pay_method_data.h"
@@ -86,6 +87,9 @@ using ::payments::mojom::blink::PaymentShippingOptionPtr;
 using ::payments::mojom::blink::PaymentShippingType;
 using ::payments::mojom::blink::PaymentValidationErrors;
 using ::payments::mojom::blink::PaymentValidationErrorsPtr;
+
+const char kCanMakePaymentDebugName[] = "canMakePayment";
+const char kHasEnrolledInstrumentDebugName[] = "hasEnrolledInstrument";
 
 }  // namespace
 
@@ -187,8 +191,6 @@ struct TypeConverter<AddressErrorsPtr, blink::AddressErrors*> {
     output->dependent_locality = input->hasDependentLocality()
                                      ? input->dependentLocality()
                                      : g_empty_string;
-    output->language_code =
-        input->hasLanguageCode() ? input->languageCode() : g_empty_string;
     output->organization =
         input->hasOrganization() ? input->organization() : g_empty_string;
     output->phone = input->hasPhone() ? input->phone() : g_empty_string;
@@ -197,8 +199,6 @@ struct TypeConverter<AddressErrorsPtr, blink::AddressErrors*> {
     output->recipient =
         input->hasRecipient() ? input->recipient() : g_empty_string;
     output->region = input->hasRegion() ? input->region() : g_empty_string;
-    output->region_code =
-        input->hasRegionCode() ? input->regionCode() : g_empty_string;
     output->sorting_code =
         input->hasSortingCode() ? input->sortingCode() : g_empty_string;
     return output;
@@ -492,7 +492,8 @@ void SetBasicCardMethodData(const ScriptValue& input,
                                       output->supported_types, exception_state);
 }
 
-void StringifyAndParseMethodSpecificData(const String& supported_method,
+void StringifyAndParseMethodSpecificData(ExecutionContext& execution_context,
+                                         const String& supported_method,
                                          const ScriptValue& input,
                                          PaymentMethodDataPtr& output,
                                          ExceptionState& exception_state) {
@@ -525,10 +526,14 @@ void StringifyAndParseMethodSpecificData(const String& supported_method,
     if (exception_state.HadException())
       exception_state.ClearException();
   }
+
   if (supported_method == "basic-card") {
     SetBasicCardMethodData(input, output, exception_state);
-    if (exception_state.HadException())
+    if (exception_state.HadException()) {
+      UseCounter::Count(&execution_context,
+                        WebFeature::kInvalidBasicCardMethodData);
       exception_state.ClearException();
+    }
   }
 }
 
@@ -608,7 +613,7 @@ void ValidateAndConvertPaymentDetailsModifiers(
 
     if (modifier->hasData() && !modifier->data().IsEmpty()) {
       StringifyAndParseMethodSpecificData(
-          modifier->supportedMethod(), modifier->data(),
+          execution_context, modifier->supportedMethod(), modifier->data(),
           output.back()->method_data, exception_state);
     } else {
       output.back()->method_data->stringified_data = "";
@@ -744,8 +749,8 @@ void ValidateAndConvertPaymentMethodData(
     if (payment_method_data->hasData() &&
         !payment_method_data->data().IsEmpty()) {
       StringifyAndParseMethodSpecificData(
-          payment_method_data->supportedMethod(), payment_method_data->data(),
-          output.back(), exception_state);
+          execution_context, payment_method_data->supportedMethod(),
+          payment_method_data->data(), output.back(), exception_state);
     } else {
       output.back()->stringified_data = "";
     }
@@ -768,12 +773,15 @@ bool AllowedToUsePaymentRequest(const ExecutionContext* execution_context) {
 }
 
 void WarnIgnoringQueryQuotaForCanMakePayment(
-    ExecutionContext& execution_context) {
-  execution_context.AddConsoleMessage(ConsoleMessage::Create(
-      kJSMessageSource, kWarningMessageLevel,
-      "Quota reached for PaymentRequest.canMakePayment(). This would normally "
+    ExecutionContext& execution_context,
+    const char* method_name) {
+  const String& error = String::Format(
+      "Quota reached for PaymentRequest.%s(). This would normally "
       "reject the promise, but allowing continued usage on localhost and "
-      "file:// scheme origins."));
+      "file:// scheme origins.",
+      method_name);
+  execution_context.AddConsoleMessage(
+      ConsoleMessage::Create(kJSMessageSource, kWarningMessageLevel, error));
 }
 
 }  // namespace
@@ -801,17 +809,17 @@ PaymentRequest* PaymentRequest::Create(
 PaymentRequest::~PaymentRequest() = default;
 
 ScriptPromise PaymentRequest::show(ScriptState* script_state) {
+  if (!script_state->ContextIsValid() || !LocalDOMWindow::From(script_state) ||
+      !LocalDOMWindow::From(script_state)->GetFrame()) {
+    return ScriptPromise::RejectWithDOMException(
+        script_state, DOMException::Create(DOMExceptionCode::kAbortError,
+                                           "Cannot show the payment request"));
+  }
+
   if (!payment_provider_.is_bound() || accept_resolver_) {
     return ScriptPromise::RejectWithDOMException(
         script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
                                            "Already called show() once"));
-  }
-
-  if (!script_state->ContextIsValid() || !LocalDOMWindow::From(script_state) ||
-      !LocalDOMWindow::From(script_state)->GetFrame()) {
-    return ScriptPromise::RejectWithDOMException(
-        script_state, DOMException::Create(DOMExceptionCode::kInvalidStateError,
-                                           "Cannot show the payment request"));
   }
 
   // TODO(crbug.com/825270): Reject with SecurityError DOMException if triggered
@@ -865,12 +873,6 @@ ScriptPromise PaymentRequest::abort(ScriptState* script_state) {
 }
 
 ScriptPromise PaymentRequest::canMakePayment(ScriptState* script_state) {
-  if (!RuntimeEnabledFeatures::PaymentRequestHasEnrolledInstrumentEnabled()) {
-    // Fallback to backward-compatible definition of canMakePayment, which is
-    // now implemented as hasEnrolledInstrument.
-    return hasEnrolledInstrument(script_state);
-  }
-
   if (!payment_provider_.is_bound() || GetPendingAcceptPromiseResolver() ||
       can_make_payment_resolver_ || !script_state->ContextIsValid()) {
     return ScriptPromise::RejectWithDOMException(
@@ -878,7 +880,9 @@ ScriptPromise PaymentRequest::canMakePayment(ScriptState* script_state) {
                                            "Cannot query payment request"));
   }
 
-  payment_provider_->CanMakePayment();
+  bool legacy_mode =
+      !RuntimeEnabledFeatures::PaymentRequestHasEnrolledInstrumentEnabled();
+  payment_provider_->CanMakePayment(legacy_mode);
 
   can_make_payment_resolver_ = ScriptPromiseResolver::Create(script_state);
   return can_make_payment_resolver_->Promise();
@@ -892,7 +896,14 @@ ScriptPromise PaymentRequest::hasEnrolledInstrument(ScriptState* script_state) {
                                            "Cannot query payment request"));
   }
 
-  payment_provider_->HasEnrolledInstrument();
+  bool per_method_quota =
+      origin_trials::PerMethodCanMakePaymentQuotaEnabled(GetExecutionContext());
+  if (per_method_quota) {
+    UseCounter::Count(GetExecutionContext(),
+                      WebFeature::kPerMethodCanMakePaymentQuota);
+  }
+
+  payment_provider_->HasEnrolledInstrument(per_method_quota);
 
   has_enrolled_instrument_resolver_ =
       ScriptPromiseResolver::Create(script_state);
@@ -1038,7 +1049,6 @@ ScriptPromise PaymentRequest::Complete(ScriptState* script_state,
 }
 
 void PaymentRequest::OnUpdatePaymentDetails(
-    const AtomicString& event_type,
     const ScriptValue& details_script_value) {
   if (!GetPendingAcceptPromiseResolver() || !payment_provider_)
     return;
@@ -1057,13 +1067,6 @@ void PaymentRequest::OnUpdatePaymentDetails(
     return;
   }
 
-  if (!details->hasTotal()) {
-    resolver->Reject(
-        DOMException::Create(DOMExceptionCode::kSyntaxError, "Total required"));
-    ClearResolversAndCloseMojoConnection();
-    return;
-  }
-
   PaymentDetailsPtr validated_details =
       payments::mojom::blink::PaymentDetails::New();
   ValidateAndConvertPaymentDetailsUpdate(
@@ -1073,22 +1076,6 @@ void PaymentRequest::OnUpdatePaymentDetails(
     resolver->Reject(exception_state.GetException());
     ClearResolversAndCloseMojoConnection();
     return;
-  }
-
-  // TODO(https://crbug.com/902291): We should make shippingOptions optional.
-  if (options_->requestShipping() && !details->hasShippingOptions()) {
-    if (event_type == event_type_names::kShippingaddresschange) {
-      UseCounter::Count(
-          GetExecutionContext(),
-          WebFeature::kUpdateWithoutShippingOptionOnShippingAddressChange);
-      validated_details->shipping_options = Vector<PaymentShippingOptionPtr>();
-    }
-    if (event_type == event_type_names::kShippingoptionchange) {
-      UseCounter::Count(
-          GetExecutionContext(),
-          WebFeature::kUpdateWithoutShippingOptionOnShippingOptionChange);
-      validated_details->shipping_options = Vector<PaymentShippingOptionPtr>();
-    }
   }
 
   if (!options_->requestShipping())
@@ -1438,15 +1425,30 @@ void PaymentRequest::OnAbort(bool aborted_successfully) {
 }
 
 void PaymentRequest::OnCanMakePayment(CanMakePaymentQueryResult result) {
+  // TODO(https://crbug.com/891371): Understand how the resolver could be null
+  // here and prevent it.
   if (!can_make_payment_resolver_)
     return;
 
   switch (result) {
+    case CanMakePaymentQueryResult::WARNING_CAN_MAKE_PAYMENT:
+      WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext(),
+                                              kCanMakePaymentDebugName);
+      FALLTHROUGH;
     case CanMakePaymentQueryResult::CAN_MAKE_PAYMENT:
       can_make_payment_resolver_->Resolve(true);
       break;
+    case CanMakePaymentQueryResult::WARNING_CANNOT_MAKE_PAYMENT:
+      WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext(),
+                                              kCanMakePaymentDebugName);
+      FALLTHROUGH;
     case CanMakePaymentQueryResult::CANNOT_MAKE_PAYMENT:
       can_make_payment_resolver_->Resolve(false);
+      break;
+    case CanMakePaymentQueryResult::QUERY_QUOTA_EXCEEDED:
+      can_make_payment_resolver_->Reject(DOMException::Create(
+          DOMExceptionCode::kNotAllowedError,
+          "Not allowed to check whether can make payment"));
       break;
   }
 
@@ -1462,13 +1464,15 @@ void PaymentRequest::OnHasEnrolledInstrument(
 
   switch (result) {
     case HasEnrolledInstrumentQueryResult::WARNING_HAS_ENROLLED_INSTRUMENT:
-      WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext());
+      WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext(),
+                                              kHasEnrolledInstrumentDebugName);
       FALLTHROUGH;
     case HasEnrolledInstrumentQueryResult::HAS_ENROLLED_INSTRUMENT:
       has_enrolled_instrument_resolver_->Resolve(true);
       break;
     case HasEnrolledInstrumentQueryResult::WARNING_HAS_NO_ENROLLED_INSTRUMENT:
-      WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext());
+      WarnIgnoringQueryQuotaForCanMakePayment(*GetExecutionContext(),
+                                              kHasEnrolledInstrumentDebugName);
       FALLTHROUGH;
     case HasEnrolledInstrumentQueryResult::HAS_NO_ENROLLED_INSTRUMENT:
       has_enrolled_instrument_resolver_->Resolve(false);
@@ -1476,7 +1480,7 @@ void PaymentRequest::OnHasEnrolledInstrument(
     case HasEnrolledInstrumentQueryResult::QUERY_QUOTA_EXCEEDED:
       has_enrolled_instrument_resolver_->Reject(DOMException::Create(
           DOMExceptionCode::kNotAllowedError,
-          "Not allowed to check whether can make payment"));
+          "Exceeded query quota for hasEnrolledInstrument"));
       break;
   }
 

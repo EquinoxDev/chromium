@@ -14,7 +14,6 @@ import android.support.annotation.Nullable;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.FrameLayout;
 import android.widget.ScrollView;
 
 import com.google.android.libraries.feed.api.scope.FeedProcessScope;
@@ -25,6 +24,7 @@ import com.google.android.libraries.feed.api.stream.Stream;
 import com.google.android.libraries.feed.host.action.ActionApi;
 import com.google.android.libraries.feed.host.stream.CardConfiguration;
 import com.google.android.libraries.feed.host.stream.SnackbarApi;
+import com.google.android.libraries.feed.host.stream.SnackbarCallbackApi;
 import com.google.android.libraries.feed.host.stream.StreamConfiguration;
 
 import org.chromium.base.ApiCompatibilityUtils;
@@ -32,10 +32,12 @@ import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
 import org.chromium.chrome.browser.feed.action.FeedActionHandler;
+import org.chromium.chrome.browser.gesturenav.HistoryNavigationLayout;
 import org.chromium.chrome.browser.native_page.ContextMenuManager;
 import org.chromium.chrome.browser.native_page.NativePageHost;
 import org.chromium.chrome.browser.ntp.NewTabPage;
 import org.chromium.chrome.browser.ntp.NewTabPageLayout;
+import org.chromium.chrome.browser.ntp.NewTabPageUma;
 import org.chromium.chrome.browser.ntp.SnapScrollHelper;
 import org.chromium.chrome.browser.ntp.snippets.SectionHeaderView;
 import org.chromium.chrome.browser.offlinepages.OfflinePageBridge;
@@ -63,7 +65,7 @@ public class FeedNewTabPage extends NewTabPage {
     private final int mWideMargin;
 
     private UiConfig mUiConfig;
-    private FrameLayout mRootView;
+    private HistoryNavigationLayout mRootView;
     private ContextMenuManager mContextMenuManager;
 
     // Used when Feed is enabled.
@@ -90,6 +92,12 @@ public class FeedNewTabPage extends NewTabPage {
             mManager.showSnackbar(Snackbar.make(message,
                     new SnackbarManager.SnackbarController() {}, Snackbar.TYPE_ACTION,
                     Snackbar.UMA_FEED_NTP_STREAM));
+        }
+
+        @Override
+        public void show(String message, String action, SnackbarCallbackApi callback) {
+            // TODO(https://crbug.com/924742): Set action text and correctly invoke callback.
+            show(message);
         }
     }
 
@@ -124,8 +132,7 @@ public class FeedNewTabPage extends NewTabPage {
         public BasicCardConfiguration(Resources resources, UiConfig uiConfig) {
             mResources = resources;
             mUiConfig = uiConfig;
-            mCornerRadius = mResources.getDimensionPixelSize(
-                    R.dimen.content_suggestions_card_modern_corner_radius);
+            mCornerRadius = mResources.getDimensionPixelSize(R.dimen.default_card_corner_radius);
             mCardMargin = mResources.getDimensionPixelSize(
                     R.dimen.content_suggestions_card_modern_margin);
             mCardWideMargin =
@@ -183,9 +190,14 @@ public class FeedNewTabPage extends NewTabPage {
     /**
      * Provides the additional capabilities needed for the {@link FeedNewTabPage} container view.
      */
-    private class RootView extends FrameLayout {
-        public RootView(Context context) {
+    private class RootView extends HistoryNavigationLayout {
+        /**
+         * @param context The context of the application.
+         * @param constructedTimeNs The timestamp at which the new tab page's construction started.
+         */
+        public RootView(Context context, long constructedTimeNs) {
             super(context);
+            NewTabPageUma.trackTimeToFirstDraw(this, constructedTimeNs);
         }
 
         @Override
@@ -201,6 +213,12 @@ public class FeedNewTabPage extends NewTabPage {
 
             return !(mTab != null && DeviceFormFactor.isWindowOnTablet(mTab.getWindowAndroid()))
                     && (mFakeboxDelegate != null && mFakeboxDelegate.isUrlBarFocused());
+        }
+
+        @Override
+        public boolean wasLastSideSwipeGestureConsumed() {
+            // TODO(jinsukkim): Get the correct info from mStream.
+            return true;
         }
     }
 
@@ -238,14 +256,14 @@ public class FeedNewTabPage extends NewTabPage {
         mNewTabPageLayout.initialize(mNewTabPageManager, mTab, mTileGroupDelegate,
                 mSearchProviderHasLogo,
                 TemplateUrlService.getInstance().isDefaultSearchEngineGoogle(), mMediator,
-                mContextMenuManager, mUiConfig, mConstructedTimeNs);
+                mContextMenuManager, mUiConfig);
     }
 
     @Override
     protected void initializeMainView(Context context) {
         int topPadding = context.getResources().getDimensionPixelOffset(R.dimen.tab_strip_height);
 
-        mRootView = new RootView(context);
+        mRootView = new RootView(context, mConstructedTimeNs);
         mRootView.setPadding(0, topPadding, 0, 0);
         mUiConfig = new UiConfig(mRootView);
     }
@@ -346,7 +364,7 @@ public class FeedNewTabPage extends NewTabPage {
                 mSectionHeaderView, mUiConfig, mDefaultMargin, mWideMargin);
 
         View view = mStream.getView();
-        view.setBackgroundColor(Color.WHITE);
+        view.setBackgroundResource(R.color.modern_primary_color);
         mRootView.addView(view);
 
         UiUtils.removeViewFromParent(mNewTabPageLayout);

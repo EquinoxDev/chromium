@@ -26,6 +26,15 @@
 
 namespace {
 
+#if defined(OS_MACOSX)
+constexpr char kDefaultMonospacedTypeface[] = "Menlo";
+#elif defined(OS_WIN)
+constexpr char kDefaultMonospacedTypeface[] = "Consolas";
+#else
+constexpr char kDefaultMonospacedTypeface[] = "DejaVu Sans Mono";
+#endif
+constexpr char kUnspecifiedTypeface[] = "";
+
 // If the default foreground color from the native theme isn't black, the rest
 // of the Harmony spec isn't going to work. Also skip Harmony if a Windows
 // High Contrast theme is enabled. One of the four standard High Contrast themes
@@ -109,6 +118,7 @@ int ChromeTypographyProvider::GetPlatformFontHeight(int font_context) {
     case views::style::CONTEXT_DIALOG_TITLE:
       return windows_10 || !direct_write_enabled ? 20 : 21;
     case CONTEXT_BODY_TEXT_LARGE:
+    case CONTEXT_TAB_HOVER_CARD_TITLE:
     case views::style::CONTEXT_MESSAGE_BOX_BODY_TEXT:
       return direct_write_enabled ? 18 : 17;
     case CONTEXT_BODY_TEXT_SMALL:
@@ -128,6 +138,7 @@ const gfx::FontList& ChromeTypographyProvider::GetFont(int context,
   constexpr int kBodyTextLargeSize = 13;
   constexpr int kDefaultSize = 12;
 
+  std::string typeface = kUnspecifiedTypeface;
   int size_delta = kDefaultSize - gfx::PlatformFont::kDefaultBaseFontSize;
   gfx::Font::Weight font_weight = gfx::Font::Weight::NORMAL;
 
@@ -149,6 +160,7 @@ const gfx::FontList& ChromeTypographyProvider::GetFont(int context,
           kTouchableLabelSize - gfx::PlatformFont::kDefaultBaseFontSize;
       break;
     case CONTEXT_BODY_TEXT_LARGE:
+    case CONTEXT_TAB_HOVER_CARD_TITLE:
     case views::style::CONTEXT_MESSAGE_BOX_BODY_TEXT:
       size_delta = kBodyTextLargeSize - gfx::PlatformFont::kDefaultBaseFontSize;
       break;
@@ -157,6 +169,11 @@ const gfx::FontList& ChromeTypographyProvider::GetFont(int context,
       break;
     default:
       break;
+  }
+
+  if (context == CONTEXT_TAB_HOVER_CARD_TITLE) {
+    DCHECK_EQ(views::style::STYLE_PRIMARY, style);
+    font_weight = gfx::Font::Weight::SEMIBOLD;
   }
 
   // Use a bold style for emphasized text in body contexts, and ignore |style|
@@ -174,8 +191,14 @@ const gfx::FontList& ChromeTypographyProvider::GetFont(int context,
     }
   }
 
-  return ui::ResourceBundle::GetSharedInstance().GetFontListWithDelta(
-      size_delta, gfx::Font::NORMAL, font_weight);
+  if (style == STYLE_PRIMARY_MONOSPACED ||
+      style == STYLE_SECONDARY_MONOSPACED) {
+    typeface = kDefaultMonospacedTypeface;
+  }
+
+  return ui::ResourceBundle::GetSharedInstance()
+      .GetFontListWithTypefaceAndDelta(typeface, size_delta, gfx::Font::NORMAL,
+                                       font_weight);
 }
 
 SkColor ChromeTypographyProvider::GetColor(const views::View& view,
@@ -196,20 +219,20 @@ SkColor ChromeTypographyProvider::GetColor(const views::View& view,
         return native_theme->SystemDarkModeEnabled() ? gfx::kGoogleGrey900
                                                      : SK_ColorWHITE;
       case views::style::STYLE_DISABLED:
-        return native_theme->SystemDarkModeEnabled()
-                   ? gfx::kGoogleGrey600
-                   : SkColorSetRGB(0x9e, 0x9e, 0x9e);
+        return gfx::kGoogleGrey600;
       default:
-        return native_theme->SystemDarkModeEnabled()
-                   ? gfx::kGoogleBlue300
-                   : SkColorSetRGB(0x75, 0x75, 0x75);
+        return native_theme->SystemDarkModeEnabled() ? gfx::kGoogleBlue300
+                                                     : gfx::kGoogleBlue600;
     }
   }
 
   // Use the secondary style instead of primary for message box body text.
-  if (context == views::style::CONTEXT_MESSAGE_BOX_BODY_TEXT &&
-      style == views::style::STYLE_PRIMARY) {
-    style = STYLE_SECONDARY;
+  if (context == views::style::CONTEXT_MESSAGE_BOX_BODY_TEXT) {
+    if (style == views::style::STYLE_PRIMARY) {
+      style = STYLE_SECONDARY;
+    } else if (style == STYLE_PRIMARY_MONOSPACED) {
+      style = STYLE_SECONDARY_MONOSPACED;
+    }
   }
 
   switch (style) {
@@ -222,15 +245,17 @@ SkColor ChromeTypographyProvider::GetColor(const views::View& view,
     case views::style::STYLE_LINK:
       return gfx::kGoogleBlue700;
     case STYLE_SECONDARY:
+    case STYLE_SECONDARY_MONOSPACED:
     case STYLE_EMPHASIZED_SECONDARY:
     case STYLE_HINT:
-      return native_theme->SystemDarkModeEnabled()
-                 ? SkColorSetA(SK_ColorWHITE, 0x99)
-                 : gfx::kGoogleGrey700;
+      return native_theme->SystemDarkModeEnabled() ? gfx::kGoogleGrey500
+                                                   : gfx::kGoogleGrey700;
     case STYLE_RED:
-      return gfx::kGoogleRed700;
+      return native_theme->SystemDarkModeEnabled() ? gfx::kGoogleRed300
+                                                   : gfx::kGoogleRed700;
     case STYLE_GREEN:
-      return gfx::kGoogleGreen700;
+      return native_theme->SystemDarkModeEnabled() ? gfx::kGoogleGreen300
+                                                   : gfx::kGoogleGreen700;
   }
 
   // Use default primary color for everything else.
@@ -303,6 +328,7 @@ int ChromeTypographyProvider::GetLineHeight(int context, int style) const {
     case views::style::CONTEXT_DIALOG_TITLE:
       return title_height;
     case CONTEXT_BODY_TEXT_LARGE:
+    case CONTEXT_TAB_HOVER_CARD_TITLE:
     case views::style::CONTEXT_MESSAGE_BOX_BODY_TEXT:
     case views::style::CONTEXT_TABLE_ROW:
       return body_large_height;

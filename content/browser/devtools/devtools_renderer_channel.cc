@@ -4,6 +4,8 @@
 
 #include "content/browser/devtools/devtools_renderer_channel.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_session.h"
 #include "content/browser/devtools/protocol/devtools_domain_handler.h"
@@ -55,16 +57,16 @@ void DevToolsRendererChannel::CleanupConnection() {
   agent_ptr_ = nullptr;
 }
 
+void DevToolsRendererChannel::ForceDetachWorkerSessions() {
+  for (WorkerDevToolsAgentHost* host : child_workers_)
+    host->ForceDetachAllSessions();
+}
+
 void DevToolsRendererChannel::SetRendererInternal(
     blink::mojom::DevToolsAgent* agent,
     int process_id,
     RenderFrameHostImpl* frame_host) {
   ReportChildWorkersCallback();
-  // Child workers will eventually disconnect, but timing depends on the
-  // renderer process. To ensure consistent view over protocol, disconnect them
-  // right now.
-  for (WorkerDevToolsAgentHost* host : child_workers_)
-    host->ForceDetachAllSessions();
   process_id_ = process_id;
   frame_host_ = frame_host;
   if (agent && !report_attachers_.empty()) {

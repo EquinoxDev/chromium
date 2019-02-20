@@ -4,8 +4,10 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/macros.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/extensions/extension_apitest.h"
@@ -166,9 +168,9 @@ IN_PROC_BROWSER_TEST_P(ExtensionActiveTabTest, ActiveTab) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(ExtensionActiveTabTest,
-                        ExtensionActiveTabTest,
-                        testing::Bool());
+INSTANTIATE_TEST_SUITE_P(ExtensionActiveTabTest,
+                         ExtensionActiveTabTest,
+                         testing::Bool());
 
 // Tests the behavior of activeTab and its relation to an extension's ability to
 // xhr file urls and inject scripts in file frames.

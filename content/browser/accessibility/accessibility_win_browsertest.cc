@@ -10,6 +10,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/process/process_handle.h"
 #include "base/strings/pattern.h"
@@ -149,8 +150,8 @@ base::string16 AccessibilityWinBrowserTest::PrintAXTree() const {
       AccessibilityTreeFormatter::Create());
   DCHECK(formatter);
   formatter->set_show_ids(true);
-  formatter->SetFilters({AccessibilityTreeFormatter::Filter(
-      L"*", AccessibilityTreeFormatter::Filter::ALLOW)});
+  formatter->SetPropertyFilters({AccessibilityTreeFormatter::PropertyFilter(
+      L"*", AccessibilityTreeFormatter::PropertyFilter::ALLOW)});
 
   base::string16 str;
   formatter->FormatAccessibilityTree(
@@ -310,8 +311,8 @@ void AccessibilityWinBrowserTest::SetUpInputFieldHelper(
   AccessibilityNotificationWaiter waiter(
       shell()->web_contents(), ui::kAXModeComplete,
       ax::mojom::Event::kTextSelectionChanged);
-  std::wstring caret_offset = base::UTF16ToWide(
-      base::IntToString16(static_cast<int>(kContentsLength - 1)));
+  std::wstring caret_offset =
+      base::UTF16ToWide(base::NumberToString16(kContentsLength - 1));
   ExecuteScript(
       std::wstring(L"let textField = document.querySelector('input,textarea');"
                    L"textField.focus();"
@@ -368,8 +369,8 @@ void AccessibilityWinBrowserTest::SetUpTextareaField(
   AccessibilityNotificationWaiter waiter(
       shell()->web_contents(), ui::kAXModeComplete,
       ax::mojom::Event::kTextSelectionChanged);
-  std::wstring caret_offset = base::UTF16ToWide(
-      base::IntToString16(static_cast<int>(kContentsLength - 1)));
+  std::wstring caret_offset =
+      base::UTF16ToWide(base::NumberToString16(kContentsLength - 1));
   ExecuteScript(
       std::wstring(L"var textField = document.querySelector('textarea');"
                    L"textField.focus();"
@@ -915,10 +916,8 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   document_checker.CheckAccessible(GetRendererAccessible());
 
   // Set focus to the radio group.
-  std::unique_ptr<AccessibilityNotificationWaiter> waiter(
-      new AccessibilityNotificationWaiter(shell()->web_contents(),
-                                          ui::kAXModeComplete,
-                                          ax::mojom::Event::kFocus));
+  auto waiter = std::make_unique<AccessibilityNotificationWaiter>(
+      shell()->web_contents(), ui::kAXModeComplete, ax::mojom::Event::kFocus);
   ExecuteScript(L"document.body.children[0].focus()");
   waiter->WaitForNotification();
 
@@ -959,12 +958,11 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   document_checker.CheckAccessible(GetRendererAccessible());
 
   // Check the checkbox.
-  std::unique_ptr<AccessibilityNotificationWaiter> waiter(
-      new AccessibilityNotificationWaiter(
-          shell()->web_contents(), ui::kAXModeComplete,
-          ax::mojom::Event::kCheckedStateChanged));
+  AccessibilityNotificationWaiter waiter(
+      shell()->web_contents(), ui::kAXModeComplete,
+      ax::mojom::Event::kCheckedStateChanged);
   ExecuteScript(L"document.body.children[0].checked=true");
-  waiter->WaitForNotification();
+  waiter.WaitForNotification();
 
   // Check that the accessibility tree of the browser has been updated.
   checkbox_checker.SetExpectedState(
@@ -986,12 +984,11 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   document_checker.CheckAccessible(GetRendererAccessible());
 
   // Change the children of the document body.
-  std::unique_ptr<AccessibilityNotificationWaiter> waiter(
-      new AccessibilityNotificationWaiter(shell()->web_contents(),
-                                          ui::kAXModeComplete,
-                                          ax::mojom::Event::kChildrenChanged));
+  AccessibilityNotificationWaiter waiter(shell()->web_contents(),
+                                         ui::kAXModeComplete,
+                                         ax::mojom::Event::kChildrenChanged);
   ExecuteScript(L"document.body.innerHTML='<b>new text</b>'");
-  waiter->WaitForNotification();
+  waiter.WaitForNotification();
 
   // Check that the accessibility tree of the browser has been updated.
   AccessibleChecker text_checker(
@@ -1012,12 +1009,11 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   document_checker.CheckAccessible(GetRendererAccessible());
 
   // Change the children of the document body.
-  std::unique_ptr<AccessibilityNotificationWaiter> waiter(
-      new AccessibilityNotificationWaiter(shell()->web_contents(),
-                                          ui::kAXModeComplete,
-                                          ax::mojom::Event::kChildrenChanged));
+  AccessibilityNotificationWaiter waiter(shell()->web_contents(),
+                                         ui::kAXModeComplete,
+                                         ax::mojom::Event::kChildrenChanged);
   ExecuteScript(L"document.body.children[0].style.visibility='visible'");
-  waiter->WaitForNotification();
+  waiter.WaitForNotification();
 
   // Check that the accessibility tree of the browser has been updated.
   AccessibleChecker static_text_checker(L"text", ROLE_SYSTEM_STATICTEXT,
@@ -1093,12 +1089,11 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   document_checker.CheckAccessible(GetRendererAccessible());
 
   // Set the value of the text control
-  std::unique_ptr<AccessibilityNotificationWaiter> waiter(
-      new AccessibilityNotificationWaiter(shell()->web_contents(),
-                                          ui::kAXModeComplete,
-                                          ax::mojom::Event::kValueChanged));
+  AccessibilityNotificationWaiter waiter(shell()->web_contents(),
+                                         ui::kAXModeComplete,
+                                         ax::mojom::Event::kValueChanged);
   ExecuteScript(L"document.body.children[0].value='new value'");
-  waiter->WaitForNotification();
+  waiter.WaitForNotification();
 
   // Check that the accessibility tree of the browser has been updated.
   text_field_checker.SetExpectedValue(L"new value");
@@ -1836,6 +1831,72 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   EXPECT_EQ(kScrollToY_2, y);
 }
 
+IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
+                       TestPutAccValueInInputField) {
+  Microsoft::WRL::ComPtr<IAccessibleText> input_text;
+  SetUpInputField(&input_text);
+
+  Microsoft::WRL::ComPtr<IAccessible2> input;
+  ASSERT_HRESULT_SUCCEEDED(input_text.CopyTo(IID_PPV_ARGS(&input)));
+
+  base::win::ScopedVariant childid_self(CHILDID_SELF);
+  base::win::ScopedBstr new_value(L"New value");
+  AccessibilityNotificationWaiter waiter(shell()->web_contents(),
+                                         ui::kAXModeComplete,
+                                         ax::mojom::Event::kValueChanged);
+  EXPECT_HRESULT_SUCCEEDED(input->put_accValue(childid_self, new_value));
+  waiter.WaitForNotification();
+
+  base::win::ScopedBstr value;
+  EXPECT_HRESULT_SUCCEEDED(input->get_accValue(childid_self, value.Receive()));
+  ASSERT_NE(nullptr, static_cast<BSTR>(value));
+  EXPECT_STREQ(static_cast<BSTR>(new_value), static_cast<BSTR>(value));
+}
+
+IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestPutAccValueInTextarea) {
+  Microsoft::WRL::ComPtr<IAccessibleText> textarea_text;
+  SetUpTextareaField(&textarea_text);
+
+  Microsoft::WRL::ComPtr<IAccessible2> textarea;
+  ASSERT_HRESULT_SUCCEEDED(textarea_text.CopyTo(IID_PPV_ARGS(&textarea)));
+
+  base::win::ScopedVariant childid_self(CHILDID_SELF);
+  base::win::ScopedBstr new_value(L"New value");
+  AccessibilityNotificationWaiter waiter(shell()->web_contents(),
+                                         ui::kAXModeComplete,
+                                         ax::mojom::Event::kValueChanged);
+  EXPECT_HRESULT_SUCCEEDED(textarea->put_accValue(childid_self, new_value));
+  waiter.WaitForNotification();
+
+  base::win::ScopedBstr value;
+  EXPECT_HRESULT_SUCCEEDED(
+      textarea->get_accValue(childid_self, value.Receive()));
+  ASSERT_NE(nullptr, static_cast<BSTR>(value));
+  EXPECT_STREQ(static_cast<BSTR>(new_value), static_cast<BSTR>(value));
+}
+
+IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestPutAccValueInEditable) {
+  Microsoft::WRL::ComPtr<IAccessibleText> paragraph_text;
+  SetUpSampleParagraphInScrollableEditable(&paragraph_text);
+
+  Microsoft::WRL::ComPtr<IAccessible2> paragraph;
+  ASSERT_HRESULT_SUCCEEDED(paragraph_text.CopyTo(IID_PPV_ARGS(&paragraph)));
+
+  base::win::ScopedVariant childid_self(CHILDID_SELF);
+  base::win::ScopedBstr new_value(L"New value");
+  AccessibilityNotificationWaiter waiter(shell()->web_contents(),
+                                         ui::kAXModeComplete,
+                                         ax::mojom::Event::kValueChanged);
+  EXPECT_HRESULT_SUCCEEDED(paragraph->put_accValue(childid_self, new_value));
+  waiter.WaitForNotification();
+
+  base::win::ScopedBstr value;
+  EXPECT_HRESULT_SUCCEEDED(
+      paragraph->get_accValue(childid_self, value.Receive()));
+  ASSERT_NE(nullptr, static_cast<BSTR>(value));
+  EXPECT_STREQ(static_cast<BSTR>(new_value), static_cast<BSTR>(value));
+}
+
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestSetCaretOffset) {
   Microsoft::WRL::ComPtr<IAccessibleText> input_text;
   SetUpInputField(&input_text);
@@ -1920,6 +1981,69 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestSetSelection) {
   EXPECT_EQ(kContentsLength, end_offset);
 }
 
+IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
+                       DISABLED_TestSetSelectionRanges) {
+  Microsoft::WRL::ComPtr<IAccessibleText> input_text;
+  SetUpInputField(&input_text);
+  Microsoft::WRL::ComPtr<IAccessible2_4> ax_input;
+  ASSERT_HRESULT_SUCCEEDED(input_text.CopyTo(IID_PPV_ARGS(&ax_input)));
+
+  LONG n_ranges = 1;
+  IA2Range* ranges =
+      reinterpret_cast<IA2Range*>(CoTaskMemAlloc(sizeof(IA2Range)));
+  ranges[0].anchor = ax_input.Get();
+  ranges[0].anchorOffset = -1;
+  ranges[0].active = ax_input.Get();
+  ranges[0].activeOffset = kContentsLength;
+  EXPECT_HRESULT_FAILED(ax_input->setSelectionRanges(n_ranges, ranges));
+  ranges[0].anchorOffset = 0;
+  ranges[0].activeOffset = kContentsLength + 1;
+  EXPECT_HRESULT_FAILED(ax_input->setSelectionRanges(n_ranges, ranges));
+
+  ranges[0].activeOffset = kContentsLength;
+  AccessibilityNotificationWaiter waiter(
+      shell()->web_contents(), ui::kAXModeComplete,
+      ax::mojom::Event::kTextSelectionChanged);
+  EXPECT_HRESULT_SUCCEEDED(ax_input->setSelectionRanges(n_ranges, ranges));
+  waiter.WaitForNotification();
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+  n_ranges = 0;
+
+  HRESULT hr = ax_input->get_selectionRanges(&ranges, &n_ranges);
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1, n_ranges);
+  ASSERT_NE(nullptr, ranges);
+  EXPECT_EQ(ax_input.Get(), ranges[0].anchor);
+  EXPECT_EQ(0, ranges[0].anchorOffset);
+  EXPECT_EQ(ax_input.Get(), ranges[0].active);
+  EXPECT_EQ(kContentsLength, ranges[0].activeOffset);
+
+  n_ranges = 1;
+  ranges =
+      reinterpret_cast<IA2Range*>(CoTaskMemRealloc(ranges, sizeof(IA2Range)));
+  ranges[0].anchor = ax_input.Get();
+  ranges[0].anchorOffset = kContentsLength;
+  ranges[0].active = ax_input.Get();
+  ranges[0].activeOffset = 1;
+  EXPECT_HRESULT_SUCCEEDED(ax_input->setSelectionRanges(n_ranges, ranges));
+  waiter.WaitForNotification();
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+  n_ranges = 0;
+
+  hr = ax_input->get_selectionRanges(&ranges, &n_ranges);
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1, n_ranges);
+  ASSERT_NE(nullptr, ranges);
+  EXPECT_EQ(ax_input.Get(), ranges[0].anchor);
+  EXPECT_EQ(kContentsLength, ranges[0].anchorOffset);
+  EXPECT_EQ(ax_input.Get(), ranges[0].active);
+  EXPECT_EQ(1, ranges[0].activeOffset);
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+}
+
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestMultiLineSetSelection) {
   Microsoft::WRL::ComPtr<IAccessibleText> textarea_text;
   SetUpTextareaField(&textarea_text);
@@ -1961,6 +2085,69 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestMultiLineSetSelection) {
 }
 
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
+                       DISABLED_TestMultiLineSetSelectionRanges) {
+  Microsoft::WRL::ComPtr<IAccessibleText> textarea_text;
+  SetUpTextareaField(&textarea_text);
+  Microsoft::WRL::ComPtr<IAccessible2_4> ax_textarea;
+  ASSERT_HRESULT_SUCCEEDED(textarea_text.CopyTo(IID_PPV_ARGS(&ax_textarea)));
+
+  LONG n_ranges = 1;
+  IA2Range* ranges =
+      reinterpret_cast<IA2Range*>(CoTaskMemAlloc(sizeof(IA2Range)));
+  ranges[0].anchor = ax_textarea.Get();
+  ranges[0].anchorOffset = -1;
+  ranges[0].active = ax_textarea.Get();
+  ranges[0].activeOffset = kContentsLength;
+  EXPECT_HRESULT_FAILED(ax_textarea->setSelectionRanges(n_ranges, ranges));
+  ranges[0].anchorOffset = 0;
+  ranges[0].activeOffset = kContentsLength + 1;
+  EXPECT_HRESULT_FAILED(ax_textarea->setSelectionRanges(n_ranges, ranges));
+
+  ranges[0].activeOffset = kContentsLength;
+  AccessibilityNotificationWaiter waiter(
+      shell()->web_contents(), ui::kAXModeComplete,
+      ax::mojom::Event::kTextSelectionChanged);
+  EXPECT_HRESULT_SUCCEEDED(ax_textarea->setSelectionRanges(n_ranges, ranges));
+  waiter.WaitForNotification();
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+  n_ranges = 0;
+
+  HRESULT hr = ax_textarea->get_selectionRanges(&ranges, &n_ranges);
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1, n_ranges);
+  ASSERT_NE(nullptr, ranges);
+  EXPECT_EQ(ax_textarea.Get(), ranges[0].anchor);
+  EXPECT_EQ(0, ranges[0].anchorOffset);
+  EXPECT_EQ(ax_textarea.Get(), ranges[0].active);
+  EXPECT_EQ(kContentsLength, ranges[0].activeOffset);
+
+  n_ranges = 1;
+  ranges =
+      reinterpret_cast<IA2Range*>(CoTaskMemRealloc(ranges, sizeof(IA2Range)));
+  ranges[0].anchor = ax_textarea.Get();
+  ranges[0].anchorOffset = kContentsLength - 1;
+  ranges[0].active = ax_textarea.Get();
+  ranges[0].activeOffset = 0;
+  EXPECT_HRESULT_SUCCEEDED(ax_textarea->setSelectionRanges(n_ranges, ranges));
+  waiter.WaitForNotification();
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+  n_ranges = 0;
+
+  hr = ax_textarea->get_selectionRanges(&ranges, &n_ranges);
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1, n_ranges);
+  ASSERT_NE(nullptr, ranges);
+  EXPECT_EQ(ax_textarea.Get(), ranges[0].anchor);
+  EXPECT_EQ(kContentsLength - 1, ranges[0].anchorOffset);
+  EXPECT_EQ(ax_textarea.Get(), ranges[0].active);
+  EXPECT_EQ(0, ranges[0].activeOffset);
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+}
+
+IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
                        TestStaticTextSetSelection) {
   Microsoft::WRL::ComPtr<IAccessibleText> paragraph_text;
   SetUpSampleParagraph(&paragraph_text);
@@ -1996,6 +2183,73 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
   // Start and end offsets are always swapped to be in ascending order.
   EXPECT_EQ(0, start_offset);
   EXPECT_EQ(n_characters - 1, end_offset);
+}
+
+IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
+                       DISABLED_TestStaticTextSetSelectionRanges) {
+  Microsoft::WRL::ComPtr<IAccessibleText> paragraph_text;
+  SetUpSampleParagraph(&paragraph_text);
+  Microsoft::WRL::ComPtr<IAccessible2_4> ax_paragraph;
+  ASSERT_HRESULT_SUCCEEDED(paragraph_text.CopyTo(IID_PPV_ARGS(&ax_paragraph)));
+
+  LONG child_count = 0;
+  ASSERT_HRESULT_SUCCEEDED(ax_paragraph->get_accChildCount(&child_count));
+  ASSERT_LT(0, child_count);
+
+  LONG n_ranges = 1;
+  IA2Range* ranges =
+      reinterpret_cast<IA2Range*>(CoTaskMemAlloc(sizeof(IA2Range)));
+  ranges[0].anchor = ax_paragraph.Get();
+  ranges[0].anchorOffset = -1;
+  ranges[0].active = ax_paragraph.Get();
+  ranges[0].activeOffset = child_count;
+  EXPECT_HRESULT_FAILED(ax_paragraph->setSelectionRanges(n_ranges, ranges));
+  ranges[0].anchorOffset = 0;
+  ranges[0].activeOffset = child_count + 1;
+  EXPECT_HRESULT_FAILED(ax_paragraph->setSelectionRanges(n_ranges, ranges));
+
+  ranges[0].activeOffset = child_count;
+  AccessibilityNotificationWaiter waiter(
+      shell()->web_contents(), ui::kAXModeComplete,
+      ax::mojom::Event::kDocumentSelectionChanged);
+  EXPECT_HRESULT_SUCCEEDED(ax_paragraph->setSelectionRanges(n_ranges, ranges));
+  waiter.WaitForNotification();
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+  n_ranges = 0;
+
+  HRESULT hr = ax_paragraph->get_selectionRanges(&ranges, &n_ranges);
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1, n_ranges);
+  ASSERT_NE(nullptr, ranges);
+  EXPECT_EQ(ax_paragraph.Get(), ranges[0].anchor);
+  EXPECT_EQ(0, ranges[0].anchorOffset);
+  EXPECT_EQ(ax_paragraph.Get(), ranges[0].active);
+  EXPECT_EQ(child_count, ranges[0].activeOffset);
+
+  n_ranges = 1;
+  ranges =
+      reinterpret_cast<IA2Range*>(CoTaskMemRealloc(ranges, sizeof(IA2Range)));
+  ranges[0].anchor = ax_paragraph.Get();
+  ranges[0].anchorOffset = child_count - 1;
+  ranges[0].active = ax_paragraph.Get();
+  ranges[0].activeOffset = 0;
+  EXPECT_HRESULT_SUCCEEDED(ax_paragraph->setSelectionRanges(n_ranges, ranges));
+  waiter.WaitForNotification();
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
+  n_ranges = 0;
+
+  hr = ax_paragraph->get_selectionRanges(&ranges, &n_ranges);
+  EXPECT_EQ(S_OK, hr);
+  EXPECT_EQ(1, n_ranges);
+  ASSERT_NE(nullptr, ranges);
+  EXPECT_EQ(ax_paragraph.Get(), ranges[0].anchor);
+  EXPECT_EQ(kContentsLength - 1, ranges[0].anchorOffset);
+  EXPECT_EQ(ax_paragraph.Get(), ranges[0].active);
+  EXPECT_EQ(0, ranges[0].activeOffset);
+  CoTaskMemFree(ranges);
+  ranges = nullptr;
 }
 
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
@@ -2681,7 +2935,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestAccNavigateInTables) {
   EXPECT_HRESULT_SUCCEEDED(cell1->role(&role));
   EXPECT_EQ(ROLE_SYSTEM_CELL, role);
   EXPECT_HRESULT_SUCCEEDED(cell1->get_accName(childid_self, name.Receive()));
-  // EXPECT_STREQ(L"AD", name);
+  EXPECT_STREQ(L"AD", static_cast<BSTR>(name));
   EXPECT_HRESULT_SUCCEEDED(cell1.CopyTo(accessible_cell.GetAddressOf()));
   EXPECT_HRESULT_SUCCEEDED(accessible_cell->get_rowIndex(&row_index));
   EXPECT_HRESULT_SUCCEEDED(accessible_cell->get_columnIndex(&column_index));
@@ -2707,7 +2961,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestAccNavigateInTables) {
   EXPECT_HRESULT_SUCCEEDED(cell2->role(&role));
   EXPECT_EQ(ROLE_SYSTEM_CELL, role);
   EXPECT_HRESULT_SUCCEEDED(cell2->get_accName(childid_self, name.Receive()));
-  // EXPECT_STREQ(L"BC", name);
+  EXPECT_STREQ(L"BC", static_cast<BSTR>(name));
   EXPECT_HRESULT_SUCCEEDED(cell2.CopyTo(accessible_cell.GetAddressOf()));
   EXPECT_HRESULT_SUCCEEDED(accessible_cell->get_rowIndex(&row_index));
   EXPECT_HRESULT_SUCCEEDED(accessible_cell->get_columnIndex(&column_index));
@@ -2727,7 +2981,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest, TestAccNavigateInTables) {
   EXPECT_HRESULT_SUCCEEDED(cell3->role(&role));
   EXPECT_EQ(ROLE_SYSTEM_CELL, role);
   EXPECT_HRESULT_SUCCEEDED(cell3->get_accName(childid_self, name.Receive()));
-  // EXPECT_STREQ(L"EF", name);
+  EXPECT_STREQ(L"EF", static_cast<BSTR>(name));
   EXPECT_HRESULT_SUCCEEDED(cell3.CopyTo(accessible_cell.GetAddressOf()));
   EXPECT_HRESULT_SUCCEEDED(accessible_cell->get_rowIndex(&row_index));
   EXPECT_HRESULT_SUCCEEDED(accessible_cell->get_columnIndex(&column_index));

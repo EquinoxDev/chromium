@@ -11,7 +11,7 @@
 #import "ios/chrome/browser/tabs/tab_model_observer.h"
 #import "ios/chrome/browser/ui/authentication/re_signin_infobar_delegate.h"
 #import "ios/chrome/browser/ui/infobars/infobar_container_consumer.h"
-#import "ios/chrome/browser/ui/settings/sync_utils/sync_util.h"
+#import "ios/chrome/browser/ui/settings/sync/utils/sync_util.h"
 #include "ios/chrome/browser/upgrade/upgrade_center.h"
 #import "ios/chrome/browser/web/tab_id_tab_helper.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
@@ -97,9 +97,9 @@
 
   infobars::InfoBarManager* infoBarManager =
       InfoBarManagerImpl::FromWebState(webState);
+  NSString* tabID = TabIdTabHelper::FromWebState(webState)->tab_id();
   [[UpgradeCenter sharedInstance] addInfoBarToManager:infoBarManager
-                                             forTabId:[tab tabId]];
-
+                                             forTabId:tabID];
   if (!ReSignInInfoBarDelegate::Create(
           self.browserState, tab,
           self.signinPresenter /* id<SigninPresenter> */)) {
@@ -143,11 +143,11 @@
   WebStateList* webStateList = self.tabModel.webStateList;
   for (int index = 0; index < webStateList->count(); ++index) {
     web::WebState* webState = webStateList->GetWebStateAt(index);
-    NSString* tabId = TabIdTabHelper::FromWebState(webState)->tab_id();
+    NSString* tabID = TabIdTabHelper::FromWebState(webState)->tab_id();
     infobars::InfoBarManager* infoBarManager =
         InfoBarManagerImpl::FromWebState(webState);
     DCHECK(infoBarManager);
-    [center addInfoBarToManager:infoBarManager forTabId:tabId];
+    [center addInfoBarToManager:infoBarManager forTabId:tabID];
   }
 }
 

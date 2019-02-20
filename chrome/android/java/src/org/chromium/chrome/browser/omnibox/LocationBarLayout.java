@@ -31,6 +31,7 @@ import org.chromium.base.ObserverList;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.ActivityTabProvider;
 import org.chromium.chrome.browser.ChromeFeatureList;
 import org.chromium.chrome.browser.ChromeSwitches;
 import org.chromium.chrome.browser.WindowDelegate;
@@ -247,12 +248,14 @@ public class LocationBarLayout extends FrameLayout
     }
 
     @Override
-    public void initializeControls(WindowDelegate windowDelegate, WindowAndroid windowAndroid) {
+    public void initializeControls(WindowDelegate windowDelegate, WindowAndroid windowAndroid,
+            ActivityTabProvider provider) {
         mWindowDelegate = windowDelegate;
         mWindowAndroid = windowAndroid;
 
         mUrlCoordinator.setWindowDelegate(windowDelegate);
         mAutocompleteCoordinator.setWindowAndroid(windowAndroid);
+        mAutocompleteCoordinator.setActivityTabProvider(provider);
     }
 
     /**
@@ -356,6 +359,11 @@ public class LocationBarLayout extends FrameLayout
     }
 
     @Override
+    public void clearOmniboxFocus() {
+        setUrlBarFocus(false);
+    }
+
+    @Override
     public void selectAll() {
         mUrlCoordinator.selectAll();
     }
@@ -399,8 +407,17 @@ public class LocationBarLayout extends FrameLayout
             // be recalculated.
             if (didFocusUrlFromFakebox() && !inProgress && mUrlHasFocus
                     && AccessibilityUtil.isAccessibilityEnabled()) {
+                String existingText = mUrlCoordinator.getTextWithoutAutocomplete();
                 mUrlBar.clearFocus();
                 mUrlBar.requestFocus();
+                // Existing text (e.g. if the user pasted via the fakebox) from the fake box
+                // should be restored after toggling the focus.
+                if (!TextUtils.isEmpty(existingText)) {
+                    mUrlCoordinator.setUrlBarData(UrlBarData.forNonUrlText(existingText),
+                            UrlBar.ScrollType.NO_SCROLL,
+                            UrlBarCoordinator.SelectionState.SELECT_END);
+                    mAutocompleteCoordinator.onTextChangedForAutocomplete();
+                }
             }
 
             for (UrlFocusChangeListener listener : mUrlFocusChangeListeners) {
@@ -416,7 +433,6 @@ public class LocationBarLayout extends FrameLayout
     public void onUrlFocusChange(boolean hasFocus) {
         mUrlHasFocus = hasFocus;
         updateButtonVisibility();
-        updateNavigationButton();
         updateShouldAnimateIconChanges();
 
         if (hasFocus) {
@@ -490,7 +506,6 @@ public class LocationBarLayout extends FrameLayout
     @Override
     public void onUrlTextChanged() {
         updateButtonVisibility();
-        updateNavigationButton();
     }
 
     @Override
@@ -568,14 +583,6 @@ public class LocationBarLayout extends FrameLayout
     }
 
     /**
-     * Updates the navigation button based on the URL string.
-     */
-    protected void updateNavigationButton() {
-        mStatusViewCoordinator.setNavigationButtonType(
-                StatusViewCoordinator.NavigationButtonType.EMPTY);
-    }
-
-    /**
      * Updates the security icon displayed in the LocationBar.
      */
     @Override
@@ -598,6 +605,13 @@ public class LocationBarLayout extends FrameLayout
             urlContainerMarginEnd += childLayoutParams.width
                     + MarginLayoutParamsCompat.getMarginStart(childLayoutParams)
                     + MarginLayoutParamsCompat.getMarginEnd(childLayoutParams);
+        }
+        if (mUrlActionContainer != null && mUrlActionContainer.getVisibility() == View.VISIBLE) {
+            ViewGroup.MarginLayoutParams urlActionContainerLayoutParams =
+                    (ViewGroup.MarginLayoutParams) mUrlActionContainer.getLayoutParams();
+            urlContainerMarginEnd +=
+                    MarginLayoutParamsCompat.getMarginStart(urlActionContainerLayoutParams)
+                    + MarginLayoutParamsCompat.getMarginEnd(urlActionContainerLayoutParams);
         }
         return urlContainerMarginEnd;
     }
@@ -687,14 +701,12 @@ public class LocationBarLayout extends FrameLayout
     }
 
     @Override
-    public void onSuggestionsHidden() {
-        updateNavigationButton();
-    }
-
-    @Override
     public void hideKeyboard() {
         getWindowAndroid().getKeyboardDelegate().hideKeyboard(mUrlBar);
     }
+
+    @Override
+    public void onSuggestionsHidden() {}
 
     @Override
     public void onSuggestionsChanged(String autocompleteText) {
@@ -708,9 +720,6 @@ public class LocationBarLayout extends FrameLayout
         if (mUrlFocusedWithoutAnimations && mUrlHasFocus) {
             handleUrlFocusAnimation(mUrlHasFocus);
         }
-
-        // Update the navigation button to show the default suggestion's icon.
-        updateNavigationButton();
 
         if (mNativeInitialized
                 && !CommandLine.getInstance().hasSwitch(ChromeSwitches.DISABLE_INSTANT)
@@ -943,7 +952,6 @@ public class LocationBarLayout extends FrameLayout
     @Override
     public void updateLoadingState(boolean updateUrl) {
         if (updateUrl) setUrlToPageUrl();
-        updateNavigationButton();
         mStatusViewCoordinator.updateStatusIcon();
     }
 

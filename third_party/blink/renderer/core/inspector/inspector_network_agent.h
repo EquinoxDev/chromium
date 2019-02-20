@@ -94,13 +94,24 @@ class CORE_EXPORT InspectorNetworkAgent final
   void DidChangeResourcePriority(DocumentLoader*,
                                  unsigned long identifier,
                                  ResourceLoadPriority);
+  void PrepareRequest(ExecutionContext*,
+                      DocumentLoader*,
+                      ResourceRequest&,
+                      const FetchInitiatorInfo&,
+                      ResourceType);
   void WillSendRequest(ExecutionContext*,
                        unsigned long identifier,
                        DocumentLoader*,
-                       ResourceRequest&,
+                       const ResourceRequest&,
                        const ResourceResponse& redirect_response,
                        const FetchInitiatorInfo&,
                        ResourceType);
+  void WillSendNavigationRequest(ExecutionContext*,
+                                 unsigned long identifier,
+                                 DocumentLoader*,
+                                 const KURL&,
+                                 const AtomicString& http_method,
+                                 EncodedFormData* http_body);
   void MarkResourceAsCached(DocumentLoader*, unsigned long identifier);
   void DidReceiveResourceResponse(unsigned long identifier,
                                   DocumentLoader*,
@@ -109,7 +120,7 @@ class CORE_EXPORT InspectorNetworkAgent final
   void DidReceiveData(unsigned long identifier,
                       DocumentLoader*,
                       const char* data,
-                      size_t data_length);
+                      uint64_t data_length);
   void DidReceiveBlob(unsigned long identifier,
                       DocumentLoader*,
                       scoped_refptr<BlobDataHandle>);

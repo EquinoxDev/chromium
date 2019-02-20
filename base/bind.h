@@ -29,7 +29,7 @@
 //
 //   // The first argument is bound at callback creation; the remaining
 //   // two must be passed when calling Run() on the callback object.
-//   base::OnceCallback<void(int, long)> cb = base::BindOnce(
+//   base::OnceCallback<long(int, long)> cb = base::BindOnce(
 //       [](short x, int y, long z) { return x * y * z; }, 42);
 //
 // When binding to a method, the receiver object must also be specified at
@@ -450,7 +450,7 @@ static inline internal::PassedWrapper<T> Passed(T* scoper) {
 //   cb->Run(1);  // Prints "1".
 //
 //   // Prints "1" on |ml|.
-//   ml->PostTask(FROM_HERE, Bind(IgnoreResult(&DoSomething), 1);
+//   ml->PostTask(FROM_HERE, BindOnce(IgnoreResult(&DoSomething), 1);
 template <typename T>
 static inline internal::IgnoreResultHelper<T> IgnoreResult(T data) {
   return internal::IgnoreResultHelper<T>(std::move(data));

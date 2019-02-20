@@ -12,9 +12,9 @@ namespace mojo {
 
 // static
 bool StructTraits<media_session::mojom::MediaImageDataView,
-                  media_session::MediaMetadata::MediaImage>::
+                  media_session::MediaImage>::
     Read(media_session::mojom::MediaImageDataView data,
-         media_session::MediaMetadata::MediaImage* out) {
+         media_session::MediaImage* out) {
   if (!data.ReadSrc(&out->src))
     return false;
   if (!data.ReadType(&out->type))
@@ -32,11 +32,14 @@ bool StructTraits<media_session::mojom::MediaMetadataDataView,
          media_session::MediaMetadata* out) {
   if (!data.ReadTitle(&out->title))
     return false;
+
   if (!data.ReadArtist(&out->artist))
     return false;
+
   if (!data.ReadAlbum(&out->album))
     return false;
-  if (!data.ReadArtwork(&out->artwork))
+
+  if (!data.ReadSourceTitle(&out->source_title))
     return false;
 
   return true;

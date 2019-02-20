@@ -63,6 +63,7 @@ class MockPipelineClient : public Pipeline::Client {
   MOCK_METHOD0(OnVideoAverageKeyframeDistanceUpdate, void());
   MOCK_METHOD1(OnAudioDecoderChange, void(const std::string&));
   MOCK_METHOD1(OnVideoDecoderChange, void(const std::string&));
+  MOCK_METHOD1(OnRemotePlayStateChange, void(MediaStatus::State state));
 };
 
 class MockPipeline : public Pipeline {
@@ -125,6 +126,18 @@ class MockPipeline : public Pipeline {
               const PipelineStatusCB& seek_cb) override;
 
   DISALLOW_COPY_AND_ASSIGN(MockPipeline);
+};
+
+class MockMediaResource : public MediaResource {
+ public:
+  MockMediaResource();
+  ~MockMediaResource() override;
+
+  // MediaResource implementation.
+  MOCK_CONST_METHOD0(GetType, MediaResource::Type());
+  MOCK_METHOD0(GetAllStreams, std::vector<DemuxerStream*>());
+  MOCK_METHOD1(GetFirstStream, DemuxerStream*(DemuxerStream::Type type));
+  MOCK_CONST_METHOD0(GetMediaUrlParams, MediaUrlParams());
 };
 
 class MockDemuxer : public Demuxer {
@@ -251,6 +264,7 @@ class MockRendererClient : public RendererClient {
   MOCK_METHOD1(OnVideoNaturalSizeChange, void(const gfx::Size&));
   MOCK_METHOD1(OnVideoOpacityChange, void(bool));
   MOCK_METHOD1(OnDurationChange, void(base::TimeDelta));
+  MOCK_METHOD1(OnRemotePlayStateChange, void(MediaStatus::State state));
 };
 
 class MockVideoRenderer : public VideoRenderer {

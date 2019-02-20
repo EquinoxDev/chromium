@@ -53,7 +53,7 @@ class CORE_EXPORT ScriptedAnimationController
   explicit ScriptedAnimationController(Document*);
   virtual ~ScriptedAnimationController() = default;
 
-  void Trace(blink::Visitor*);
+  void Trace(Visitor*);
   const char* NameInHeapSnapshot() const override {
     return "ScriptedAnimationController";
   }
@@ -78,7 +78,7 @@ class CORE_EXPORT ScriptedAnimationController
       HeapVector<Member<MediaQueryListListener>>&);
 
   // Invokes callbacks, dispatches events, etc. The order is defined by HTML:
-  // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model
+  // https://html.spec.whatwg.org/C/#event-loop-processing-model
   void ServiceScriptedAnimations(base::TimeTicks monotonic_time_now);
 
   void Pause();

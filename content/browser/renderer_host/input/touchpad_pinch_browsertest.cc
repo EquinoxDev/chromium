@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -12,6 +13,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/hit_test_region_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 
@@ -77,7 +79,8 @@ class TouchpadPinchBrowserTest : public ContentBrowserTest,
   void LoadURL() {
     const GURL data_url(kTouchpadPinchDataURL);
     NavigateToURL(shell(), data_url);
-    SynchronizeThreads();
+    HitTestRegionObserver observer(GetRenderWidgetHost()->GetFrameSinkId());
+    observer.WaitForHitTestData();
   }
 
   RenderWidgetHostImpl* GetRenderWidgetHost() {
@@ -87,7 +90,7 @@ class TouchpadPinchBrowserTest : public ContentBrowserTest,
                                           ->GetRenderWidgetHost());
   }
 
-  void SynchronizeThreads() {
+  void WaitForJavascriptExecution() {
     MainThreadFrameObserver observer(GetRenderWidgetHost());
     observer.Wait();
   }
@@ -100,7 +103,7 @@ class TouchpadPinchBrowserTest : public ContentBrowserTest,
   DISALLOW_COPY_AND_ASSIGN(TouchpadPinchBrowserTest);
 };
 
-INSTANTIATE_TEST_CASE_P(, TouchpadPinchBrowserTest, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(, TouchpadPinchBrowserTest, testing::Bool());
 
 // Performing a touchpad pinch gesture should change the page scale.
 IN_PROC_BROWSER_TEST_P(TouchpadPinchBrowserTest,
@@ -124,7 +127,7 @@ IN_PROC_BROWSER_TEST_P(TouchpadPinchBrowserTest, WheelListenerAllowingPinch) {
   LoadURL();
   ASSERT_TRUE(
       content::ExecuteScript(shell()->web_contents(), "setListener(false);"));
-  SynchronizeThreads();
+  WaitForJavascriptExecution();
 
   content::TestPageScaleObserver scale_observer(shell()->web_contents());
 
@@ -168,7 +171,7 @@ void TouchpadPinchBrowserTest::EnsureNoScaleChangeWhenCanceled(
 
   ASSERT_TRUE(
       content::ExecuteScript(shell()->web_contents(), "setListener(true);"));
-  SynchronizeThreads();
+  WaitForJavascriptExecution();
 
   std::move(send_events).Run(shell()->web_contents(), pinch_position);
 
@@ -187,7 +190,7 @@ void TouchpadPinchBrowserTest::EnsureNoScaleChangeWhenCanceled(
   ASSERT_TRUE(content::ExecuteScript(shell()->web_contents(),
                                      "reset(); "
                                      "setListener(false);"));
-  SynchronizeThreads();
+  WaitForJavascriptExecution();
 
   content::TestPageScaleObserver scale_observer(shell()->web_contents());
   SimulateGesturePinchSequence(shell()->web_contents(), pinch_position, 2.0,

@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
+#include "chrome/browser/ui/ash/launcher/chrome_launcher_controller_util.h"
 #include "chrome/browser/ui/ash/launcher/launcher_controller_helper.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
@@ -75,7 +76,7 @@ struct ComparePinInfo {
 
 }  // namespace
 
-const char kPinnedAppsPrefAppIDPath[] = "id";
+const char kPinnedAppsPrefAppIDKey[] = "id";
 
 void RegisterChromeLauncherUserPrefs(PrefRegistrySimple* registry) {
   registry->RegisterListPref(prefs::kPolicyPinnedLauncherApps);
@@ -106,14 +107,17 @@ std::vector<std::string> GetAppsPinnedByPolicy(
       arc_app_list_pref ? arc_app_list_pref->GetAppIds()
                         : std::vector<std::string>());
 
-  std::string app_id;
-  for (size_t i = 0; i < policy_apps->GetSize(); ++i) {
-    const base::DictionaryValue* dictionary = nullptr;
-    if (!policy_apps->GetDictionary(i, &dictionary) ||
-        !dictionary->GetString(kPinnedAppsPrefAppIDPath, &app_id)) {
+  for (const auto& policy_apps_entry : policy_apps->GetList()) {
+    const base::Value* app_id_value =
+        policy_apps_entry.is_dict()
+            ? policy_apps_entry.FindKeyOfType(kPinnedAppsPrefAppIDKey,
+                                              base::Value::Type::STRING)
+            : nullptr;
+    if (!app_id_value) {
       LOG(ERROR) << "Cannot extract policy app info from prefs.";
       continue;
     }
+    const std::string app_id = app_id_value->GetString();
 
     if (chromeos::DemoSession::Get() &&
         chromeos::DemoSession::Get()->ShouldIgnorePinPolicy(app_id)) {
@@ -271,6 +275,10 @@ std::vector<ash::ShelfID> GetPinnedAppsFromSync(
       continue;
     }
 
+    // Prevent old app camera pinning.
+    if (IsCameraApp(sync_peer.first))
+      continue;
+
     pin_infos.emplace_back(
         PinInfo(sync_peer.first, sync_peer.second->item_pin_ordinal));
   }
@@ -345,6 +353,8 @@ void SetPinPosition(Profile* profile,
                     const ash::ShelfID& shelf_id_before,
                     const std::vector<ash::ShelfID>& shelf_ids_after) {
   DCHECK(profile);
+  // Camera apps are mapped to the internal app.
+  DCHECK(!IsCameraApp(shelf_id.app_id));
 
   const std::string& app_id = shelf_id.app_id;
   if (!shelf_id.launch_id.empty()) {

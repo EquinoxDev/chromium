@@ -7,6 +7,7 @@
 #include <array>
 #include <string>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
@@ -18,7 +19,6 @@
 #import "ios/web/navigation/wk_based_navigation_manager_impl.h"
 #import "ios/web/navigation/wk_navigation_util.h"
 #include "ios/web/public/features.h"
-#include "ios/web/public/load_committed_details.h"
 #include "ios/web/public/navigation_item.h"
 #include "ios/web/public/test/fakes/test_browser_state.h"
 #import "ios/web/public/test/fakes/test_navigation_manager.h"
@@ -84,11 +84,11 @@ class MockNavigationManagerDelegate : public NavigationManagerDelegate {
   MOCK_METHOD2(OnGoToIndexSameDocumentNavigation,
                void(NavigationInitiationType type, bool has_user_gesture));
   MOCK_METHOD0(WillChangeUserAgentType, void());
-  MOCK_METHOD0(LoadCurrentItem, void());
+  MOCK_METHOD1(LoadCurrentItem, void(NavigationInitiationType type));
   MOCK_METHOD0(LoadIfNecessary, void());
   MOCK_METHOD0(Reload, void());
   MOCK_METHOD1(OnNavigationItemsPruned, void(size_t));
-  MOCK_METHOD1(OnNavigationItemCommitted, void(const LoadCommittedDetails&));
+  MOCK_METHOD1(OnNavigationItemCommitted, void(NavigationItem* item));
   MOCK_METHOD0(RemoveWebView, void());
   MOCK_METHOD4(GoToBackForwardListItem,
                void(WKBackForwardListItem*,
@@ -1767,7 +1767,8 @@ TEST_P(NavigationManagerTest, ReloadWithUserAgentType) {
   EXPECT_CALL(navigation_manager_delegate(), WillChangeUserAgentType());
   EXPECT_CALL(navigation_manager_delegate(), RecordPageStateInNavigationItem());
   EXPECT_CALL(navigation_manager_delegate(), ClearTransientContent());
-  EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem());
+  EXPECT_CALL(navigation_manager_delegate(),
+              LoadCurrentItem(NavigationInitiationType::BROWSER_INITIATED));
 
   navigation_manager()->ReloadWithUserAgentType(UserAgentType::DESKTOP);
 
@@ -1797,7 +1798,8 @@ TEST_P(NavigationManagerTest, ReloadWithUserAgentTypeOnIntenalUrl) {
       ->GetPendingItemInCurrentOrRestoredSession()
       ->SetVirtualURL(virtual_url);
   [mock_wk_list_ setCurrentURL:base::SysUTF8ToNSString(url.spec())];
-  navigation_manager()->CommitPendingItem();
+  navigation_manager()->OnRendererInitiatedNavigationStarted(
+      GURL("http://www.1.com/virtual"));
 
   navigation_manager()->ReloadWithUserAgentType(UserAgentType::DESKTOP);
 
@@ -2010,7 +2012,8 @@ TEST_P(NavigationManagerTest, Restore) {
     [mock_wk_list_ setCurrentURL:@"http://www.url.com/1"
                     backListURLs:@[ @"http://www.url.com/0" ]
                  forwardListURLs:@[ @"http://www.url.com/2" ]];
-    navigation_manager()->CommitPendingItem();
+    navigation_manager()->OnRendererInitiatedNavigationStarted(
+        GURL("http://www.url.com/2"));
   }
 
   ASSERT_TRUE(WaitUntilConditionOrTimeout(kWaitForPageLoadTimeout, ^{
@@ -2237,7 +2240,9 @@ TEST_P(NavigationManagerTest, LoadURLWithParamsWithExtraHeadersAndPostData) {
   EXPECT_CALL(navigation_manager_delegate(), RecordPageStateInNavigationItem())
       .Times(1);
   EXPECT_CALL(navigation_manager_delegate(), ClearTransientContent()).Times(1);
-  EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem()).Times(1);
+  EXPECT_CALL(navigation_manager_delegate(),
+              LoadCurrentItem(NavigationInitiationType::BROWSER_INITIATED))
+      .Times(1);
 
   navigation_manager()->LoadURLWithParams(params);
 
@@ -2268,7 +2273,9 @@ TEST_P(NavigationManagerTest, LoadURLWithParamsSavesStateOnCurrentItem) {
   EXPECT_CALL(navigation_manager_delegate(), RecordPageStateInNavigationItem())
       .Times(1);
   EXPECT_CALL(navigation_manager_delegate(), ClearTransientContent()).Times(1);
-  EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem()).Times(1);
+  EXPECT_CALL(navigation_manager_delegate(),
+              LoadCurrentItem(NavigationInitiationType::BROWSER_INITIATED))
+      .Times(1);
 
   navigation_manager()->LoadURLWithParams(params);
 
@@ -2351,7 +2358,8 @@ TEST_P(NavigationManagerTest, GoToIndexDifferentDocument) {
                     NavigationInitiationType::BROWSER_INITIATED,
                     /*has_user_gesture=*/true))
         .Times(0);
-    EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem());
+    EXPECT_CALL(navigation_manager_delegate(),
+                LoadCurrentItem(NavigationInitiationType::BROWSER_INITIATED));
   }
 
   navigation_manager()->GoToIndex(0);
@@ -2425,7 +2433,8 @@ TEST_P(NavigationManagerTest,
                   NavigationInitiationType::BROWSER_INITIATED,
                   /*has_user_gesture=*/true))
       .Times(0);
-  EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem());
+  EXPECT_CALL(navigation_manager_delegate(),
+              LoadCurrentItem(NavigationInitiationType::BROWSER_INITIATED));
 
   navigation_manager()->GoToIndex(0);
   EXPECT_TRUE(navigation_manager()->GetItemAtIndex(0)->GetTransitionType() &
@@ -2471,7 +2480,8 @@ TEST_P(NavigationManagerTest, GoToIndexSameDocument) {
                 OnGoToIndexSameDocumentNavigation(
                     NavigationInitiationType::BROWSER_INITIATED,
                     /*has_user_gesture=*/true));
-    EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem()).Times(0);
+    EXPECT_CALL(navigation_manager_delegate(), LoadCurrentItem(testing::_))
+        .Times(0);
   }
 
   navigation_manager()->GoToIndex(0);
@@ -2587,7 +2597,7 @@ TEST_P(NavigationManagerTest, UpdateCurrentItemForReplaceState) {
             last_committed_item->GetReferrer().url);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ProgrammaticNavigationManagerTest,
     NavigationManagerTest,
     ::testing::Values(

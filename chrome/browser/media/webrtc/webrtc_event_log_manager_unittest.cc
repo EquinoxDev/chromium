@@ -60,9 +60,9 @@
 namespace webrtc_event_logging {
 
 #if defined(OS_WIN)
-#define IntToStringType base::IntToString16
+#define NumberToStringType base::NumberToString16
 #else
-#define IntToStringType base::IntToString
+#define NumberToStringType base::NumberToString
 #endif
 
 using ::testing::_;
@@ -1827,8 +1827,8 @@ TEST_F(WebRtcEventLogManagerTest, LocalLogFilenameMatchesExpectedFormat) {
   base::FilePath expected_path = local_logs_base_path;
   expected_path = local_logs_base_path.InsertBeforeExtension(
       FILE_PATH_LITERAL("_") + date + FILE_PATH_LITERAL("_") + time +
-      FILE_PATH_LITERAL("_") + IntToStringType(rph_->GetID()) +
-      FILE_PATH_LITERAL("_") + IntToStringType(kLid));
+      FILE_PATH_LITERAL("_") + NumberToStringType(rph_->GetID()) +
+      FILE_PATH_LITERAL("_") + NumberToStringType(kLid));
   expected_path = expected_path.AddExtension(local_log_extension_);
 
   EXPECT_EQ(file_path, expected_path);
@@ -1874,8 +1874,8 @@ TEST_F(WebRtcEventLogManagerTest,
   base::FilePath expected_path_1 = local_logs_base_path;
   expected_path_1 = local_logs_base_path.InsertBeforeExtension(
       FILE_PATH_LITERAL("_") + date + FILE_PATH_LITERAL("_") + time +
-      FILE_PATH_LITERAL("_") + IntToStringType(rph_->GetID()) +
-      FILE_PATH_LITERAL("_") + IntToStringType(kLid));
+      FILE_PATH_LITERAL("_") + NumberToStringType(rph_->GetID()) +
+      FILE_PATH_LITERAL("_") + NumberToStringType(kLid));
   expected_path_1 = expected_path_1.AddExtension(local_log_extension_);
 
   ASSERT_EQ(file_path_1, expected_path_1);
@@ -3366,9 +3366,9 @@ TEST_F(WebRtcEventLogManagerTest,
   EXPECT_EQ(written_web_app_id, expected_web_app_id);
 }
 
-INSTANTIATE_TEST_CASE_P(UploadCompleteResult,
-                        WebRtcEventLogManagerTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(UploadCompleteResult,
+                         WebRtcEventLogManagerTest,
+                         ::testing::Bool());
 
 TEST_F(WebRtcEventLogManagerTestCacheClearing,
        ClearCacheForBrowserContextRemovesPendingFilesInRange) {
@@ -3708,9 +3708,9 @@ TEST_P(WebRtcEventLogManagerTestWithRemoteLoggingDisabled,
   EXPECT_EQ(OnWebRtcEventLogWrite(key, "log"), std::make_pair(false, false));
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        WebRtcEventLogManagerTestWithRemoteLoggingDisabled,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(,
+                         WebRtcEventLogManagerTestWithRemoteLoggingDisabled,
+                         ::testing::Bool());
 
 // This test is redundant; it is provided for completeness; see following tests.
 TEST_F(WebRtcEventLogManagerTestPolicy, StartsEnabledAllowsRemoteLogging) {
@@ -4199,7 +4199,7 @@ TEST_P(WebRtcEventLogManagerTestForNetworkConnectivity,
   WaitForPendingTasks(&run_loop);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     UploadSupportingConnectionTypes,
     WebRtcEventLogManagerTestForNetworkConnectivity,
     ::testing::Combine(

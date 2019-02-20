@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/webgpu_decoder.h"
 
+#include "base/logging.h"
 #include "base/macros.h"
 #include "gpu/command_buffer/common/webgpu_cmd_format.h"
 #include "gpu/command_buffer/common/webgpu_cmd_ids.h"
@@ -67,7 +68,7 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
   void RestoreFramebufferBindings() const override { NOTREACHED(); }
   void RestoreRenderbufferBindings() override { NOTREACHED(); }
   void RestoreProgramBindings() const override { NOTREACHED(); }
-  void RestoreTextureState(unsigned service_id) const override { NOTREACHED(); }
+  void RestoreTextureState(unsigned service_id) override { NOTREACHED(); }
   void RestoreTextureUnitBindings(unsigned unit) const override {
     NOTREACHED();
   }
@@ -139,7 +140,6 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
     NOTREACHED();
   }
   gles2::ContextGroup* GetContextGroup() override {
-    NOTREACHED();
     return nullptr;
   }
   gles2::ErrorState* GetErrorState() override {
@@ -199,6 +199,10 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
   gles2::Outputter* outputter() const override {
     NOTIMPLEMENTED();
     return nullptr;
+  }
+  int GetRasterDecoderId() const override {
+    NOTREACHED();
+    return -1;
   }
 
  private:

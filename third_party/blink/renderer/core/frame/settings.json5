@@ -138,7 +138,11 @@
       name: "shouldClearDocumentBackground",
       initial: true,
     },
-
+    {
+      name: "HighlightAds",
+      initial: false,
+      invalidate: "HighlightAds"
+    },
     {
       name: "textAreasAreResizable",
       initial: false,
@@ -221,7 +225,7 @@
     },
 
     {
-      name: "mediaPlaybackGestureWhitelistScope",
+      name: "webAppScope",
       type: "String",
     },
 
@@ -266,17 +270,6 @@
 
     {
       name: "shouldRespectImageOrientation",
-      initial: false,
-    },
-
-    // Limited use by features which behave differently depending on the input
-    // devices available.  For example, the pointer and hover media queries.
-    // Note that we need to be careful when basing behavior or UI on this -
-    // just because a device is present doesn't mean the user cares about it
-    // or uses it (i.e. Chromebook Pixel users generally don't want to give up
-    // screen real estate just because they happen to have a touchscreen).
-    {
-      name: "deviceSupportsTouch",
       initial: false,
     },
 
@@ -843,13 +836,6 @@
       type: "PassiveListenerDefault",
     },
 
-    // Some platforms have media subsystems which are too buggy to allow preloading
-    // of content by default. See http://crbug.com/612909 for details.
-    {
-      name: "forcePreloadNoneForMediaElements",
-      initial: false,
-    },
-
     {
       name: "hideScrollbars",
       initial: false,
@@ -904,24 +890,24 @@
       name: "highContrastMode",
       initial: "HighContrastMode::kOff",
       type: "HighContrastMode",
+      invalidate: "Paint",
     },
     {
       name: "highContrastGrayscale",
       initial: false,
+      invalidate: "Paint",
     },
     {
       name: "highContrastContrast",
       initial: 0,
       type: "double",
+      invalidate: "Paint",
     },
     {
       name: "highContrastImagePolicy",
       initial: "HighContrastImagePolicy::kFilterAll",
       type: "HighContrastImagePolicy",
-    },
-    {
-      name: "mediaDownloadInProductHelpEnabled",
-      initial: false,
+      invalidate: "Paint",
     },
     {
       name: "navigatorPlatformOverride",
@@ -1007,6 +993,23 @@
       name: "lazyImageLoadingDistanceThresholdPx4G",
       initial: 800,
       type: "int",
+    },
+
+    // Preferred color scheme from the OS/application passed to the renderer for
+    // evaluating the prefers-color-scheme media query.
+    {
+      name: "preferredColorScheme",
+      initial: "WebColorScheme::kNoPreference",
+      invalidate: "MediaQuery",
+      type: "WebColorScheme",
+    },
+
+    // Preferred motion-reduction setting from the OS/application passed to the
+    // renderer for evaluating the prefers-reduced-motion media query.
+    {
+      name: "prefersReducedMotion",
+      initial: false,
+      invalidate: "MediaQuery",
     },
   ],
 }

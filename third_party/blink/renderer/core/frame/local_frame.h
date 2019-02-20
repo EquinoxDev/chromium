@@ -34,6 +34,7 @@
 #include "base/macros.h"
 #include "mojo/public/cpp/bindings/strong_binding_set.h"
 #include "third_party/blink/public/mojom/ad_tagging/ad_frame.mojom-blink.h"
+#include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
 #include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom-blink.h"
 #include "third_party/blink/public/mojom/loader/previews_resource_loading_hints.mojom-blink.h"
 #include "third_party/blink/public/platform/reporting.mojom-blink.h"
@@ -106,6 +107,12 @@ class WebComputedAXTree;
 class WebContentSettingsClient;
 class WebPluginContainerImpl;
 class WebURLLoaderFactory;
+
+namespace mojom {
+namespace blink {
+class DocumentInterfaceBroker;
+}  // namespace blink
+}  // namespace mojom
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<LocalFrame>;
 
@@ -296,6 +303,7 @@ class CORE_EXPORT LocalFrame final : public Frame,
   bool CanNavigate(const Frame&, const KURL& destination_url = KURL());
 
   service_manager::InterfaceProvider& GetInterfaceProvider();
+  mojom::blink::DocumentInterfaceBroker& GetDocumentInterfaceBroker();
   InterfaceRegistry* GetInterfaceRegistry() { return interface_registry_; }
 
   // Returns an AssociatedInterfaceProvider the frame can use to request
@@ -349,7 +357,9 @@ class CORE_EXPORT LocalFrame final : public Frame,
   // viewport intersection and occlusion/obscuration available that accounts for
   // remote ancestor frames and their respective scroll positions, clips, etc.
   void SetViewportIntersectionFromParent(const IntRect&, bool);
-  IntRect RemoteViewportIntersection() { return remote_viewport_intersection_; }
+  IntRect RemoteViewportIntersection() const {
+    return remote_viewport_intersection_;
+  }
   bool MayBeOccludedOrObscuredByRemoteAncestor() const {
     return occluded_or_obscured_by_ancestor_;
   }
@@ -386,6 +396,9 @@ class CORE_EXPORT LocalFrame final : public Frame,
   bool IsAdRoot() const;
   void SetIsAdSubframe(blink::mojom::AdFrameType ad_frame_type);
 
+  // Updates the frame color overlay to match the highlight ad setting.
+  void UpdateAdHighlight();
+
   // Binds |request| and prevents resource loading until either the frame is
   // navigated or the request pipe is closed.
   void PauseSubresourceLoading(
@@ -413,15 +426,15 @@ class CORE_EXPORT LocalFrame final : public Frame,
   // Overlays a color on top of this LocalFrameView if it is associated with
   // a subframe. Should not have multiple consumers.
   void SetSubframeColorOverlay(SkColor color);
-
-  // Called from LocalFrameView when updating document life cycle.
-  void UpdateFrameColorOverlay();
   void PaintFrameColorOverlay();
+
   // For CompositeAfterPaint.
   void PaintFrameColorOverlay(GraphicsContext&);
 
   // To be called from OomInterventionImpl.
   void ForciblyPurgeV8Memory();
+
+  void SetLifecycleState(mojom::FrameLifecycleState state);
 
  private:
   friend class FrameNavigationDisabler;
@@ -467,6 +480,9 @@ class CORE_EXPORT LocalFrame final : public Frame,
   bool ConsumeTransientUserActivation(UserActivationUpdateSource update_source);
 
   void SetFrameColorOverlay(SkColor color);
+
+  void PauseContext();
+  void UnpauseContext();
 
   std::unique_ptr<FrameScheduler> frame_scheduler_;
 
@@ -553,6 +569,9 @@ class CORE_EXPORT LocalFrame final : public Frame,
   const bool is_save_data_enabled_;
 
   std::unique_ptr<FrameOverlay> frame_color_overlay_;
+
+  mojom::FrameLifecycleState lifecycle_state_ =
+      mojom::FrameLifecycleState::kRunning;
 };
 
 inline FrameLoader& LocalFrame::Loader() const {

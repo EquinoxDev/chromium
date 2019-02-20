@@ -30,6 +30,7 @@
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/site_isolation_policy.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/network_service_util.h"
 #include "content/public/common/previews_state.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_loader_throttle.h"
@@ -152,6 +153,7 @@ IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, SniffHTMLWithNoContentType) {
   CheckTitleTest(
       net::URLRequestMockHTTPJob::GetMockUrl("content-sniffer-test0.html"),
       "Content Sniffer Test 0");
+  EXPECT_EQ("text/html", shell()->web_contents()->GetContentsMimeType());
 }
 
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, RespectNoSniffDirective) {
@@ -161,16 +163,18 @@ IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, RespectNoSniffDirective) {
 
   CheckTitleTest(net::URLRequestMockHTTPJob::GetMockUrl("nosniff-test.html"),
                  "mock.http/nosniff-test.html");
+  EXPECT_EQ("text/plain", shell()->web_contents()->GetContentsMimeType());
 }
 
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, DoNotSniffHTMLFromTextPlain) {
-  // Covered by URLLoaderTest.DoNotSniffHTMLFromTextPlain.
+  // Covered by URLLoaderTest.SniffTextPlainDoesNotResultInHTML.
   if (base::FeatureList::IsEnabled(network::features::kNetworkService))
     return;
 
   CheckTitleTest(
       net::URLRequestMockHTTPJob::GetMockUrl("content-sniffer-test1.html"),
       "mock.http/content-sniffer-test1.html");
+  EXPECT_EQ("text/plain", shell()->web_contents()->GetContentsMimeType());
 }
 
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, DoNotSniffHTMLFromImageGIF) {
@@ -181,6 +185,7 @@ IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, DoNotSniffHTMLFromImageGIF) {
   CheckTitleTest(
       net::URLRequestMockHTTPJob::GetMockUrl("content-sniffer-test2.html"),
       "mock.http/content-sniffer-test2.html");
+  EXPECT_EQ("image/gif", shell()->web_contents()->GetContentsMimeType());
 }
 
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, SniffNoContentTypeNoData) {
@@ -311,7 +316,7 @@ std::unique_ptr<net::test_server::HttpResponse> CancelOnRequest(
 IN_PROC_BROWSER_TEST_F(LoaderBrowserTest, SyncXMLHttpRequest_Cancelled) {
   // If network service is running in-process, we can't simulate a crash.
   if (base::FeatureList::IsEnabled(network::features::kNetworkService) &&
-      IsNetworkServiceRunningInProcess()) {
+      IsInProcessNetworkService()) {
     return;
   }
 

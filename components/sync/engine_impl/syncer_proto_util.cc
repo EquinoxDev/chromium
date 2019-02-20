@@ -7,8 +7,10 @@
 #include <map>
 
 #include "base/format_macros.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
+#include "components/sync/base/model_type.h"
 #include "components/sync/base/time.h"
 #include "components/sync/engine_impl/net/server_connection_manager.h"
 #include "components/sync/engine_impl/syncer.h"
@@ -41,6 +43,24 @@ namespace {
 
 // Time to backoff syncing after receiving a throttled response.
 const int kSyncDelayAfterThrottled = 2 * 60 * 60;  // 2 hours
+
+const char kGetUpdatesTokenHistogramPrefix[] =
+    "Sync.ReceivedDataTypeGetUpdatesResponseWithToken.";
+
+enum class GetUpdatesToken {
+  kNew = 0,
+  kSame = 1,
+  kDifferent = 2,
+  kMaxValue = kDifferent,
+};
+
+void RecordGetUpdatesToken(syncer::ModelType model_type,
+                           GetUpdatesToken token) {
+  std::string type_string = ModelTypeToHistogramSuffix(model_type);
+  std::string full_histogram_name =
+      kGetUpdatesTokenHistogramPrefix + type_string;
+  base::UmaHistogramEnumeration(full_histogram_name, token);
+}
 
 void LogResponseProfilingData(const ClientToServerResponse& response) {
   if (response.has_profiling_data()) {
@@ -337,13 +357,62 @@ bool SyncerProtoUtil::PostAndProcessHeaders(ServerConnectionManager* scm,
                             msg.message_contents(),
                             ClientToServerMessage::Contents_MAX + 1);
 
+  std::map<int, std::string> progress_marker_token_per_data_type;
+
+  if (msg.has_get_updates()) {
+    UMA_HISTOGRAM_ENUMERATION("Sync.PostedGetUpdatesOrigin",
+                              msg.get_updates().get_updates_origin(),
+                              sync_pb::SyncEnums::GetUpdatesOrigin_ARRAYSIZE);
+
+    for (const sync_pb::DataTypeProgressMarker& progress_marker :
+         msg.get_updates().from_progress_marker()) {
+      progress_marker_token_per_data_type[progress_marker.data_type_id()] =
+          progress_marker.token();
+      UMA_HISTOGRAM_ENUMERATION(
+          "Sync.PostedDataTypeGetUpdatesRequest",
+          ModelTypeToHistogramInt(GetModelTypeFromSpecificsFieldNumber(
+              progress_marker.data_type_id())),
+          static_cast<int>(MODEL_TYPE_COUNT));
+    }
+  }
+
+  const base::Time start_time = base::Time::Now();
+
   // Fills in params.buffer_out and params.response.
   if (!scm->PostBufferWithCachedAuth(&params)) {
     LOG(WARNING) << "Error posting from syncer:" << params.response;
     return false;
   }
 
-  return response->ParseFromString(params.buffer_out);
+  if (!response->ParseFromString(params.buffer_out)) {
+    DLOG(WARNING) << "Error parsing response from sync server";
+    return false;
+  }
+
+  UMA_HISTOGRAM_MEDIUM_TIMES("Sync.PostedClientToServerMessageLatency",
+                             base::Time::Now() - start_time);
+
+  if (response->error_code() != sync_pb::SyncEnums::SUCCESS) {
+    base::UmaHistogramSparse("Sync.PostedClientToServerMessageError",
+                             response->error_code());
+  }
+
+  for (const sync_pb::DataTypeProgressMarker& progress_marker :
+       response->get_updates().new_progress_marker()) {
+    ModelType type =
+        GetModelTypeFromSpecificsFieldNumber(progress_marker.data_type_id());
+    const std::string& old_token =
+        progress_marker_token_per_data_type[progress_marker.data_type_id()];
+    if (old_token.empty()) {
+      RecordGetUpdatesToken(type, GetUpdatesToken::kNew);
+    } else if (old_token == progress_marker.token()) {
+      RecordGetUpdatesToken(type, GetUpdatesToken::kSame);
+    } else {
+      RecordGetUpdatesToken(type, GetUpdatesToken::kDifferent);
+    }
+  }
+
+  return true;
 }
 
 base::TimeDelta SyncerProtoUtil::GetThrottleDelay(
@@ -361,15 +430,10 @@ base::TimeDelta SyncerProtoUtil::GetThrottleDelay(
 }
 
 // static
-SyncerError SyncerProtoUtil::PostClientToServerMessage(
-    ClientToServerMessage* msg,
-    ClientToServerResponse* response,
-    SyncCycle* cycle,
-    ModelTypeSet* partial_failure_data_types) {
-  DCHECK(response);
-  DCHECK(!msg->get_updates().has_from_timestamp());   // Deprecated.
-
-  // Add must-have fields.
+void SyncerProtoUtil::AddRequiredFieldsToClientToServerMessage(
+    const SyncCycle* cycle,
+    sync_pb::ClientToServerMessage* msg) {
+  DCHECK(msg);
   SetProtocolVersion(msg);
   AddRequestBirthday(cycle->context()->directory(), msg);
   DCHECK(msg->has_store_birthday() || !IsBirthdayRequired(*msg));
@@ -377,12 +441,26 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
   msg->set_api_key(google_apis::GetAPIKey());
   msg->mutable_client_status()->CopyFrom(cycle->context()->client_status());
   msg->set_invalidator_client_id(cycle->context()->invalidator_client_id());
+}
 
-  syncable::Directory* dir = cycle->context()->directory();
+// static
+SyncerError SyncerProtoUtil::PostClientToServerMessage(
+    const ClientToServerMessage& msg,
+    ClientToServerResponse* response,
+    SyncCycle* cycle,
+    ModelTypeSet* partial_failure_data_types) {
+  DCHECK(response);
+  DCHECK(msg.has_protocol_version());
+  DCHECK(msg.has_store_birthday() || !IsBirthdayRequired(msg));
+  DCHECK(msg.has_bag_of_chips());
+  DCHECK(msg.has_api_key());
+  DCHECK(msg.has_client_status());
+  DCHECK(msg.has_invalidator_client_id());
+  DCHECK(!msg.get_updates().has_from_timestamp());  // Deprecated.
 
-  LogClientToServerMessage(*msg);
-  if (!PostAndProcessHeaders(cycle->context()->connection_manager(), cycle,
-                             *msg, response)) {
+  LogClientToServerMessage(msg);
+  if (!PostAndProcessHeaders(cycle->context()->connection_manager(), cycle, msg,
+                             response)) {
     // There was an error establishing communication with the server.
     // We can not proceed beyond this point.
     const HttpResponse::ServerConnectionCode server_status =
@@ -397,6 +475,7 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
   }
   LogClientToServerResponse(*response);
 
+  syncable::Directory* dir = cycle->context()->directory();
   // Persist a bag of chips if it has been sent by the server.
   PersistBagOfChips(dir, *response);
 

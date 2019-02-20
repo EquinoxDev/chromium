@@ -129,9 +129,11 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
 
             // Some types of DownloadHistoryItemWrappers delete their own files when #remove()
             // is called. Determine which files are not deleted by the #remove() call.
+            // TODO(qinmin): handle the case wrappedItem.getFilePath() returns a content Uri.
             for (int i = 0; i < items.size(); i++) {
                 DownloadHistoryItemWrapper wrappedItem  = items.get(i);
-                if (!wrappedItem.removePermanently()) filesToDelete.add(wrappedItem.getFile());
+                if (!wrappedItem.removePermanently())
+                    filesToDelete.add(new File(wrappedItem.getFilePath()));
             }
 
             // Delete the files associated with the download items (if necessary) using a single
@@ -245,7 +247,9 @@ public class DownloadManagerUi implements OnMenuItemClickListener, SearchDelegat
 
         mToolbar.setInfoMenuItem(mInfoMenuId);
 
-        if (isLocationEnabled) ToolbarUtils.setupTrackerForDownloadSettingsIPH(mToolbar);
+        if (isLocationEnabled) {
+            ToolbarUtils.setupTrackerForDownloadSettingsIPH(mToolbar, Profile.getLastUsedProfile());
+        }
 
         mSelectableListLayout.configureWideDisplayStyle();
         mHistoryAdapter.initialize(mBackendProvider, mSelectableListLayout.getUiConfig());

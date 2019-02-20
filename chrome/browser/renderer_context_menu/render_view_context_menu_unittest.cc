@@ -40,6 +40,7 @@
 #include "services/network/test/test_shared_url_loader_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/web/web_context_menu_data.h"
+#include "ui/base/clipboard/clipboard.h"
 #include "url/gurl.h"
 
 using extensions::Extension;
@@ -566,9 +567,24 @@ TEST_F(RenderViewContextMenuPrefsTest, DataSaverLoadImage) {
       web_contents()->GetMainFrame(), params);
   AppendImageItems(menu.get());
 
-  ASSERT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_LOAD_ORIGINAL_IMAGE));
+  ASSERT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_LOAD_IMAGE));
 
   DestroyDataReductionProxySettings();
+}
+
+// Check that if image is broken "Load image" menu item is present.
+TEST_F(RenderViewContextMenuPrefsTest, LoadBrokenImage) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kLoadBrokenImagesFromContextMenu);
+  content::ContextMenuParams params = CreateParams(MenuItem::IMAGE);
+  params.unfiltered_link_url = params.link_url;
+  params.has_image_contents = false;
+  auto menu = std::make_unique<TestRenderViewContextMenu>(
+      web_contents()->GetMainFrame(), params);
+  AppendImageItems(menu.get());
+
+  ASSERT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_LOAD_IMAGE));
 }
 
 // Verify that the suggested file name is propagated to web contents when save a
@@ -607,6 +623,7 @@ TEST_F(RenderViewContextMenuPrefsTest, ShowAllPasswords) {
       web_contents())
       ->RenderFrameCreated(web_contents()->GetMainFrame());
 
+  NavigateAndCommit(GURL("http://www.foo.com/"));
   content::ContextMenuParams params = CreateParams(MenuItem::EDITABLE);
   params.input_field_type = blink::WebContextMenuData::kInputFieldTypePassword;
   auto menu = std::make_unique<TestRenderViewContextMenu>(
@@ -619,19 +636,79 @@ TEST_F(RenderViewContextMenuPrefsTest, ShowAllPasswords) {
 // Verify that "Show all passwords" is displayed on a password field in
 // Incognito.
 TEST_F(RenderViewContextMenuPrefsTest, ShowAllPasswordsIncognito) {
-  profile()->ForceIncognito(true);
+  std::unique_ptr<content::WebContents> incognito_web_contents(
+      content::WebContentsTester::CreateTestWebContents(
+          profile()->GetOffTheRecordProfile(), nullptr));
+
   // Set up password manager stuff.
   ChromePasswordManagerClient::CreateForWebContentsWithAutofillClient(
-      web_contents(), nullptr);
+      incognito_web_contents.get(), nullptr);
   password_manager::ContentPasswordManagerDriverFactory::FromWebContents(
-      web_contents())
-      ->RenderFrameCreated(web_contents()->GetMainFrame());
+      incognito_web_contents.get())
+      ->RenderFrameCreated(incognito_web_contents->GetMainFrame());
 
+  content::WebContentsTester::For(incognito_web_contents.get())
+      ->NavigateAndCommit(GURL("http://www.foo.com/"));
   content::ContextMenuParams params = CreateParams(MenuItem::EDITABLE);
   params.input_field_type = blink::WebContextMenuData::kInputFieldTypePassword;
   auto menu = std::make_unique<TestRenderViewContextMenu>(
-      web_contents()->GetMainFrame(), params);
+      incognito_web_contents->GetMainFrame(), params);
   menu->Init();
 
   EXPECT_TRUE(menu->IsItemPresent(IDC_CONTENT_CONTEXT_SHOWALLSAVEDPASSWORDS));
+}
+
+// Test FormatUrlForClipboard behavior
+// -------------------------------------------
+
+struct FormatUrlForClipboardTestData {
+  const char* const input;
+  const char* const output;
+  const char* const name;
+};
+
+class FormatUrlForClipboardTest
+    : public testing::TestWithParam<FormatUrlForClipboardTestData> {
+ public:
+  static base::string16 FormatUrl(const GURL& url) {
+    return RenderViewContextMenu::FormatURLForClipboard(url);
+  }
+};
+
+const FormatUrlForClipboardTestData kFormatUrlForClipboardTestData[]{
+    {"http://www.foo.com/", "http://www.foo.com/", "HttpNoEscapes"},
+    {"http://www.foo.com/%61%62%63", "http://www.foo.com/abc",
+     "HttpSafeUnescapes"},
+    {"https://www.foo.com/abc%20def", "https://www.foo.com/abc%20def",
+     "HttpsEscapedSpecialCharacters"},
+    {"https://www.foo.com/%CE%B1%CE%B2%CE%B3",
+     "https://www.foo.com/%CE%B1%CE%B2%CE%B3", "HttpsEscapedUnicodeCharacters"},
+    {"file:///etc/%CE%B1%CE%B2%CE%B3", "file:///etc/%CE%B1%CE%B2%CE%B3",
+     "FileEscapedUnicodeCharacters"},
+    {"file://stuff.host.co/my%2Bshare/foo.txt",
+     "file://stuff.host.co/my%2Bshare/foo.txt", "FileEscapedSpecialCharacters"},
+    {"file://stuff.host.co/my%2Dshare/foo.txt",
+     "file://stuff.host.co/my-share/foo.txt", "FileSafeUnescapes"},
+    {"mailto:me@foo.com", "me@foo.com", "MailToNoEscapes"},
+    {"mailto:me@foo.com,you@bar.com?subject=Hello%20world",
+     "me@foo.com,you@bar.com", "MailToWithQuery"},
+    {"mailto:me@%66%6F%6F.com", "me@foo.com", "MailToSafeEscapes"},
+    {"mailto:me%2Bsorting-tag@foo.com", "me+sorting-tag@foo.com",
+     "MailToEscapedSpecialCharacters"},
+    {"mailto:%CE%B1%CE%B2%CE%B3@foo.gr", "αβγ@foo.gr",
+     "MailToEscapedUnicodeCharacters"},
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    FormatUrlForClipboardTest,
+    testing::ValuesIn(kFormatUrlForClipboardTestData),
+    [](const testing::TestParamInfo<FormatUrlForClipboardTestData>&
+           param_info) { return param_info.param.name; });
+
+TEST_P(FormatUrlForClipboardTest, FormatUrlForClipboard) {
+  auto param = GetParam();
+  GURL url(param.input);
+  const base::string16 result = FormatUrl(url);
+  DCHECK_EQ(base::UTF8ToUTF16(param.output), result);
 }

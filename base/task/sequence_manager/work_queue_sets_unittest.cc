@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include "base/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/sequence_manager/work_queue.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -17,9 +18,20 @@ class TimeDomain;
 
 namespace internal {
 
+namespace {
+
+class MockObserver : public WorkQueueSets::Observer {
+  MOCK_METHOD1(WorkQueueSetBecameEmpty, void(size_t set_index));
+  MOCK_METHOD1(WorkQueueSetBecameNonEmpty, void(size_t set_index));
+};
+
+}  // namespace
+
 class WorkQueueSetsTest : public testing::Test {
  public:
-  void SetUp() override { work_queue_sets_.reset(new WorkQueueSets("test")); }
+  void SetUp() override {
+    work_queue_sets_.reset(new WorkQueueSets("test", &mock_observer_));
+  }
 
   void TearDown() override {
     for (std::unique_ptr<WorkQueue>& work_queue : work_queues_) {
@@ -52,6 +64,7 @@ class WorkQueueSetsTest : public testing::Test {
     return fake_task;
   }
 
+  MockObserver mock_observer_;
   std::vector<std::unique_ptr<WorkQueue>> work_queues_;
   std::unique_ptr<WorkQueueSets> work_queue_sets_;
 };

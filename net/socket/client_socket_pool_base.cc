@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
 #include "base/location.h"
@@ -19,10 +20,8 @@
 #include "base/time/time.h"
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/process_memory_dump.h"
-#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
-#include "net/base/trace_constants.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_event_type.h"
 #include "net/log/net_log_source.h"
@@ -38,104 +37,6 @@ namespace {
 bool g_connect_backup_jobs_enabled = true;
 
 }  // namespace
-
-ConnectJob::ConnectJob(const std::string& group_name,
-                       base::TimeDelta timeout_duration,
-                       RequestPriority priority,
-                       const SocketTag& socket_tag,
-                       ClientSocketPool::RespectLimits respect_limits,
-                       Delegate* delegate,
-                       const NetLogWithSource& net_log)
-    : group_name_(group_name),
-      timeout_duration_(timeout_duration),
-      priority_(priority),
-      socket_tag_(socket_tag),
-      respect_limits_(respect_limits),
-      delegate_(delegate),
-      net_log_(net_log),
-      idle_(true) {
-  DCHECK(!group_name.empty());
-  DCHECK(delegate);
-  net_log.BeginEvent(NetLogEventType::SOCKET_POOL_CONNECT_JOB,
-                     NetLog::StringCallback("group_name", &group_name_));
-}
-
-ConnectJob::~ConnectJob() {
-  net_log().EndEvent(NetLogEventType::SOCKET_POOL_CONNECT_JOB);
-}
-
-std::unique_ptr<StreamSocket> ConnectJob::PassSocket() {
-  return std::move(socket_);
-}
-
-void ConnectJob::ChangePriority(RequestPriority priority) {
-  // Priority of a job that ignores limits should not be changed because it
-  // should always be MAXIMUM_PRIORITY.
-  DCHECK_EQ(ClientSocketPool::RespectLimits::ENABLED, respect_limits());
-  set_priority(priority);
-  ChangePriorityInternal(priority);
-}
-
-int ConnectJob::Connect() {
-  if (!timeout_duration_.is_zero())
-    timer_.Start(FROM_HERE, timeout_duration_, this, &ConnectJob::OnTimeout);
-
-  idle_ = false;
-
-  LogConnectStart();
-
-  int rv = ConnectInternal();
-
-  if (rv != ERR_IO_PENDING) {
-    LogConnectCompletion(rv);
-    delegate_ = NULL;
-  }
-
-  return rv;
-}
-
-void ConnectJob::SetSocket(std::unique_ptr<StreamSocket> socket) {
-  if (socket) {
-    net_log().AddEvent(NetLogEventType::CONNECT_JOB_SET_SOCKET,
-                       socket->NetLog().source().ToEventParametersCallback());
-  }
-  socket_ = std::move(socket);
-}
-
-void ConnectJob::NotifyDelegateOfCompletion(int rv) {
-  TRACE_EVENT0(NetTracingCategory(), "ConnectJob::NotifyDelegateOfCompletion");
-  // The delegate will own |this|.
-  Delegate* delegate = delegate_;
-  delegate_ = NULL;
-
-  LogConnectCompletion(rv);
-  delegate->OnConnectJobComplete(rv, this);
-}
-
-void ConnectJob::ResetTimer(base::TimeDelta remaining_time) {
-  timer_.Stop();
-  timer_.Start(FROM_HERE, remaining_time, this, &ConnectJob::OnTimeout);
-}
-
-void ConnectJob::LogConnectStart() {
-  connect_timing_.connect_start = base::TimeTicks::Now();
-  net_log().BeginEvent(NetLogEventType::SOCKET_POOL_CONNECT_JOB_CONNECT);
-}
-
-void ConnectJob::LogConnectCompletion(int net_error) {
-  connect_timing_.connect_end = base::TimeTicks::Now();
-  net_log().EndEventWithNetErrorCode(
-      NetLogEventType::SOCKET_POOL_CONNECT_JOB_CONNECT, net_error);
-}
-
-void ConnectJob::OnTimeout() {
-  // Make sure the socket is NULL before calling into |delegate|.
-  SetSocket(std::unique_ptr<StreamSocket>());
-
-  net_log_.AddEvent(NetLogEventType::SOCKET_POOL_CONNECT_JOB_TIMED_OUT);
-
-  NotifyDelegateOfCompletion(ERR_TIMED_OUT);
-}
 
 namespace internal {
 
@@ -171,8 +72,7 @@ void ClientSocketPoolBaseHelper::Request::AssignJob(ConnectJob* job) {
   // change the job's priority but only if the job respects limits. If the job
   // ignores limits, then the priority should not be changed because it should
   // always be MAXIMUM_PRIORITY.
-  if (job_->priority() != priority_ &&
-      job_->respect_limits() == ClientSocketPool::RespectLimits::ENABLED)
+  if (job_->priority() != priority_ && job_->respect_limits())
     job_->ChangePriority(priority_);
 }
 
@@ -325,7 +225,7 @@ int ClientSocketPoolBaseHelper::RequestSocket(
     if (group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
-          base::Bind(
+          base::BindOnce(
               &ClientSocketPoolBaseHelper::TryToCloseSocketsInLayeredPools,
               weak_factory_.GetWeakPtr()));
     }
@@ -1229,8 +1129,8 @@ void ClientSocketPoolBaseHelper::InvokeUserCallbackLater(
     handle->socket()->ApplySocketTag(socket_tag);
   }
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&ClientSocketPoolBaseHelper::InvokeUserCallback,
-                            weak_factory_.GetWeakPtr(), handle));
+      FROM_HERE, base::BindOnce(&ClientSocketPoolBaseHelper::InvokeUserCallback,
+                                weak_factory_.GetWeakPtr(), handle));
 }
 
 void ClientSocketPoolBaseHelper::InvokeUserCallback(
@@ -1360,6 +1260,20 @@ void ClientSocketPoolBaseHelper::Group::OnBackupJobTimerFired(
     return;
   }
 
+  // If the old job has already established a connection, don't start a backup
+  // job. Backup jobs are only for issues establishing the initial TCP
+  // connection - the timeout they used is tuned for that, and tests expect that
+  // behavior.
+  //
+  // TODO(https://crbug.com/929814): Replace both this and the
+  // LOAD_STATE_RESOLVING_HOST check with a callback. Use the
+  // LOAD_STATE_RESOLVING_HOST callback to start the timer (And invoke the
+  // OnHostResolved callback of any pending requests), and the
+  // HasEstablishedConnection() callback to stop the timer. That should result
+  // in a more robust, testable API.
+  if ((*jobs_.begin())->HasEstablishedConnection())
+    return;
+
   // If our old job is waiting on DNS, or if we can't create any sockets
   // right now due to limits, just reset the timer.
   if (pool->ReachedMaxSocketsLimit() ||
@@ -1425,9 +1339,9 @@ void ClientSocketPoolBaseHelper::Group::SanityCheck() const {
         DCHECK_NE(job, job2);
       }
       // The request's priority matches the job's priority, unless the job has
-      // RespectLimits::DISABLED, in which case the job should have
+      // respect limits disabled, in which case the job should have
       // MAXIMUM_PRIORITY.
-      if (job->respect_limits() == ClientSocketPool::RespectLimits::ENABLED) {
+      if (job->respect_limits()) {
         DCHECK_EQ(pointer.value()->priority(), job->priority());
       } else {
         DCHECK_EQ(MAXIMUM_PRIORITY, job->priority());

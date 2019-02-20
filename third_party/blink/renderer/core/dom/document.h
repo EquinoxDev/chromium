@@ -62,9 +62,10 @@
 #include "third_party/blink/renderer/core/frame/hosts_using_features.h"
 #include "third_party/blink/renderer/core/html/custom/v0_custom_element.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
-#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
+#include "third_party/blink/renderer/platform/graphics/color_scheme.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cancellable_task.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/timer.h"
@@ -274,6 +275,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // ExecutionContext overrides:
   bool IsDocument() const final { return true; }
   bool ShouldInstallV8Extensions() const final;
+  ContentSecurityPolicy* GetContentSecurityPolicyForWorld() override;
 
   bool CanContainRangeEndPoint() const override { return true; }
 
@@ -285,18 +287,18 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // DOM methods & attributes for Document
 
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecopy, kBeforecopy);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecut, kBeforecut);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(beforepaste, kBeforepaste);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(freeze, kFreeze);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(pointerlockchange, kPointerlockchange);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(pointerlockerror, kPointerlockerror);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange, kReadystatechange);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(resume, kResume);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(search, kSearch);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecopy, kBeforecopy)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(beforecut, kBeforecut)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(beforepaste, kBeforepaste)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(freeze, kFreeze)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(pointerlockchange, kPointerlockchange)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(pointerlockerror, kPointerlockerror)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(readystatechange, kReadystatechange)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(resume, kResume)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(search, kSearch)
   DEFINE_ATTRIBUTE_EVENT_LISTENER(securitypolicyviolation,
-                                  kSecuritypolicyviolation);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(visibilitychange, kVisibilitychange);
+                                  kSecuritypolicyviolation)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(visibilitychange, kVisibilitychange)
 
   ViewportData& GetViewportData() const { return *viewport_data_; }
 
@@ -513,14 +515,16 @@ class CORE_EXPORT Document : public ContainerNode,
   void UpdateStyleAndLayout();
   void LayoutUpdated();
   enum RunPostLayoutTasks {
-    kRunPostLayoutTasksAsyhnchronously,
+    kRunPostLayoutTasksAsynchronously,
     kRunPostLayoutTasksSynchronously,
   };
   void UpdateStyleAndLayoutIgnorePendingStylesheets(
-      RunPostLayoutTasks = kRunPostLayoutTasksAsyhnchronously);
+      RunPostLayoutTasks = kRunPostLayoutTasksAsynchronously);
+  // Same as UpdateStyleAndLayoutIgnorePendingStyleSheets()
+  // but allows style & layout tree calculation for invisible nodes.
+  void UpdateStyleAndLayoutIgnorePendingStylesheetsConsideringInvisibleNodes(
+      RunPostLayoutTasks = kRunPostLayoutTasksAsynchronously);
   void UpdateStyleAndLayoutIgnorePendingStylesheetsForNode(Node*);
-  scoped_refptr<ComputedStyle> StyleForElementIgnoringPendingStylesheets(
-      Element*);
   scoped_refptr<ComputedStyle> StyleForPage(int page_index);
 
   // Ensures that location-based data will be valid for a given node.
@@ -548,6 +552,8 @@ class CORE_EXPORT Document : public ContainerNode,
                                   int& margin_left);
 
   ResourceFetcher* Fetcher() const override { return fetcher_.Get(); }
+
+  using ExecutionContext::NotifyContextDestroyed;
 
   void Initialize();
   virtual void Shutdown();
@@ -587,13 +593,12 @@ class CORE_EXPORT Document : public ContainerNode,
 
   // This is the DOM API document.open() implementation.
   // document.open() opens a new window when called with three arguments.
-  Document* open(LocalDOMWindow* entered_window,
+  Document* open(v8::Isolate*,
                  const AtomicString& type,
                  const AtomicString& replace,
                  ExceptionState&);
-  DOMWindow* open(LocalDOMWindow* current_window,
-                  LocalDOMWindow* entered_window,
-                  const USVStringOrTrustedURL& stringOrUrl,
+  DOMWindow* open(v8::Isolate*,
+                  const USVStringOrTrustedURL& string_or_url,
                   const AtomicString& name,
                   const AtomicString& features,
                   ExceptionState&);
@@ -603,7 +608,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void close();
 
   // Corresponds to "9. Abort the active document of browsingContext."
-  // https://html.spec.whatwg.org/#navigate
+  // https://html.spec.whatwg.org/C/#navigate
   void Abort();
 
   void CheckCompleted();
@@ -651,13 +656,14 @@ class CORE_EXPORT Document : public ContainerNode,
   void writeln(const String& text,
                Document* entered_document = nullptr,
                ExceptionState& = ASSERT_NO_EXCEPTION);
-  void write(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
-  void writeln(LocalDOMWindow*, const Vector<String>& text, ExceptionState&);
+  void write(v8::Isolate*, const Vector<String>& text, ExceptionState&);
+  void writeln(v8::Isolate*, const Vector<String>& text, ExceptionState&);
 
   // TrustedHTML variants of the above.
   // TODO(mkwst): Write a spec for this.
-  void write(LocalDOMWindow*, TrustedHTML*, ExceptionState&);
-  void writeln(LocalDOMWindow*, TrustedHTML*, ExceptionState&);
+  void write(v8::Isolate*, TrustedHTML*, ExceptionState&);
+  void writeln(v8::Isolate*, TrustedHTML*, ExceptionState&);
+  bool IsTrustedTypesEnabledForDoc() const;
 
   bool WellFormed() const { return well_formed_; }
 
@@ -673,7 +679,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // comments surrounding their declaration.
 
   // Document base URL.
-  // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+  // https://html.spec.whatwg.org/C/#document-base-url
   const KURL& BaseURL() const final;
   void SetBaseURLOverride(const KURL&);
   const KURL& BaseURLOverride() const { return base_url_override_; }
@@ -682,7 +688,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void ProcessBaseElement();
 
   // Fallback base URL.
-  // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#fallback-base-url
+  // https://html.spec.whatwg.org/C/#fallback-base-url
   KURL FallbackBaseURL() const;
 
   // Creates URL based on passed relative url and this documents base URL.
@@ -735,13 +741,13 @@ class CORE_EXPORT Document : public ContainerNode,
   bool InNoQuirksMode() const { return compatibility_mode_ == kNoQuirksMode; }
   bool InLineHeightQuirksMode() const { return !InNoQuirksMode(); }
 
-  // https://html.spec.whatwg.org/multipage/dom.html#documentreadystate
+  // https://html.spec.whatwg.org/C/#documentreadystate
   enum DocumentReadyState { kLoading, kInteractive, kComplete };
 
   void SetReadyState(DocumentReadyState);
   bool IsLoadCompleted() const;
 
-  bool IsFreezingInProgress() const { return is_freezing_in_progress_; };
+  bool IsFreezingInProgress() const { return is_freezing_in_progress_; }
 
   enum ParsingState { kParsing, kInDOMContentLoaded, kFinishedParsing };
   void SetParsingState(ParsingState);
@@ -784,7 +790,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Element* HoverElement() const { return hover_element_.Get(); }
 
-  void RemoveFocusedElementOfSubtree(Node*, bool among_children_only = false);
+  void RemoveFocusedElementOfSubtree(Node&, bool among_children_only = false);
   void HoveredElementDetached(Element&);
   void ActiveChainNodeDetached(Element&);
 
@@ -856,10 +862,13 @@ class CORE_EXPORT Document : public ContainerNode,
     kAnimationEndListener = 1 << 6,
     kAnimationStartListener = 1 << 7,
     kAnimationIterationListener = 1 << 8,
-    kTransitionEndListener = 1 << 9,
-    kScrollListener = 1 << 10,
-    kLoadListenerAtCapturePhaseOrAtStyleElement = 1 << 11
-    // 4 bits remaining
+    kTransitionRunListener = 1 << 9,
+    kTransitionStartListener = 1 << 10,
+    kTransitionEndListener = 1 << 11,
+    kTransitionCancelListener = 1 << 12,
+    kScrollListener = 1 << 13,
+    kLoadListenerAtCapturePhaseOrAtStyleElement = 1 << 14
+    // 1 bit remaining
   };
 
   bool HasListenerType(ListenerType listener_type) const {
@@ -919,6 +928,10 @@ class CORE_EXPORT Document : public ContainerNode,
   }
   String lastModified() const;
 
+  Element* FindInPageRoot() const { return find_in_page_root_.Get(); }
+
+  void SetFindInPageRoot(Element* find_in_page_root);
+
   // The cookieURL is used to query the cookie database for this document's
   // cookies. For example, if the cookie URL is http://example.com, we'll
   // use the non-Secure cookies for example.com when computing
@@ -954,7 +967,7 @@ class CORE_EXPORT Document : public ContainerNode,
   static bool HasValidNamespaceForAttributes(const QualifiedName&);
 
   // "body element" as defined by HTML5
-  // (https://html.spec.whatwg.org/multipage/dom.html#the-body-element-2).
+  // (https://html.spec.whatwg.org/C/#the-body-element-2).
   // That is, the first body or frameset child of the document element.
   HTMLElement* body() const;
 
@@ -1237,11 +1250,6 @@ class CORE_EXPORT Document : public ContainerNode,
   // Return a Locale for the default locale if the argument is null or empty.
   Locale& GetCachedLocale(const AtomicString& locale = g_null_atom);
 
-  // For CompositeAfterPaint. This is called internally from Initialize(), but
-  // for the local frame root, the frame widget may be not set at the time,
-  // so this is also called from WebLocalFrameImpl::SetFrameWidget().
-  void AttachCompositorAnimationTimeline();
-
   AnimationClock& GetAnimationClock();
   DocumentTimeline& Timeline() const { return *timeline_; }
   PendingAnimations& GetPendingAnimations() { return *pending_animations_; }
@@ -1292,7 +1300,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void UpdateActiveStyle();
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
   AtomicString ConvertLocalName(const AtomicString&);
 
@@ -1442,6 +1450,14 @@ class CORE_EXPORT Document : public ContainerNode,
 #else
   bool IsSlotAssignmentRecalcForbidden() { return false; }
 #endif
+
+  unsigned& FlatTreeTraversalForbiddenRecursionDepth() {
+    return flat_tree_traversal_forbidden_recursion_depth_;
+  }
+  bool IsFlatTreeTraversalForbidden() {
+    return flat_tree_traversal_forbidden_recursion_depth_ > 0;
+  }
+
   unsigned& SlotAssignmentRecalcDepth() {
     return slot_assignment_recalc_depth_;
   }
@@ -1467,7 +1483,7 @@ class CORE_EXPORT Document : public ContainerNode,
   // TODO(binji): See http://crbug.com/798572. This implementation shares the
   // same agent cluster ID for any one document. The proper implementation of
   // this function must follow the rules described here:
-  // https://html.spec.whatwg.org/multipage/webappapis.html#integration-with-the-javascript-agent-cluster-formalism.
+  // https://html.spec.whatwg.org/C/#integration-with-the-javascript-agent-cluster-formalism.
   //
   // Even with this simple implementation, we can prevent sharing
   // SharedArrayBuffers and WebAssembly modules with workers that happen to be
@@ -1492,6 +1508,26 @@ class CORE_EXPORT Document : public ContainerNode,
   }
 
   void IncrementNumberOfCanvases();
+
+  void ProcessJavaScriptUrl(const KURL&, ContentSecurityPolicyDisposition);
+  void CancelPendingJavaScriptUrl();
+
+  // Functions to keep count of display locks in this document.
+  void AddActivationBlockingDisplayLock();
+  void RemoveActivationBlockingDisplayLock();
+  int ActivationBlockingDisplayLockCount() const;
+
+  void AddLockedDisplayLock();
+  void RemoveLockedDisplayLock();
+  int LockedDisplayLockCount() const;
+
+  // Returns whether the document is inside the scope specified in the Web App
+  // Manifest. If the document doesn't run in a context of a Web App or has no
+  // associated Web App Manifest, it will return false.
+  bool IsInWebAppScope() const;
+
+  ColorScheme GetColorScheme() const { return color_scheme_; }
+  void SetColorScheme(ColorScheme);
 
  protected:
   void DidUpdateSecurityOrigin() final;
@@ -1548,6 +1584,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void UpdateStyleInvalidationIfNeeded();
   void UpdateStyle();
   void NotifyLayoutTreeOfSubtreeChanges();
+  bool ChildrenCanHaveStyle() const final;
 
   // ImplicitClose() actually does the work of closing the input stream.
   void ImplicitClose();
@@ -1578,6 +1615,7 @@ class CORE_EXPORT Document : public ContainerNode,
   void UpdateBaseURL();
 
   void ExecuteScriptsWaitingForResources();
+  void ExecuteJavaScriptUrl(const KURL&, ContentSecurityPolicyDisposition);
 
   void LoadEventDelayTimerFired(TimerBase*);
   void PluginLoadingTimerFired(TimerBase*);
@@ -1635,7 +1673,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   void SetFreezingInProgress(bool is_freezing_in_progress) {
     is_freezing_in_progress_ = is_freezing_in_progress;
-  };
+  }
 
   DocumentLifecycle lifecycle_;
 
@@ -1660,6 +1698,11 @@ class CORE_EXPORT Document : public ContainerNode,
   Member<ContextFeatures> context_features_;
 
   bool well_formed_;
+
+  // When doing find-in-page and we need to calculate style & layout tree for
+  // invisible nodes, this variable will be set with the invisible root for
+  // the currently processed block in find-in-page.
+  WeakMember<Element> find_in_page_root_;
 
   // Document URLs.
   KURL url_;  // Document.URL: The URL from which this document was retrieved.
@@ -1687,6 +1730,7 @@ class CORE_EXPORT Document : public ContainerNode,
   bool compatibility_mode_locked_;
 
   TaskHandle execute_scripts_waiting_for_resources_task_handle_;
+  TaskHandle javascript_url_task_handle_;
 
   bool has_autofocused_;
   WebFocusType last_focus_type_;
@@ -1721,6 +1765,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   TextLinkColors text_link_colors_;
   const Member<VisitedLinkState> visited_link_state_;
+  ColorScheme color_scheme_ = ColorScheme::kLight;
 
   bool visually_ordered_;
 
@@ -1899,6 +1944,7 @@ class CORE_EXPORT Document : public ContainerNode,
   unsigned slot_assignment_recalc_forbidden_recursion_depth_;
 #endif
   unsigned slot_assignment_recalc_depth_ = 0;
+  unsigned flat_tree_traversal_forbidden_recursion_depth_;
 
   bool needs_to_record_ukm_outlive_time_;
 
@@ -1920,6 +1966,11 @@ class CORE_EXPORT Document : public ContainerNode,
   // The number of canvas elements on the document
   int num_canvases_ = 0;
 
+  // Number of activation blocking display locks currently in this document.
+  int activation_blocking_display_lock_count_ = 0;
+  // Number of locked display locks in the document.
+  int locked_display_lock_count_ = 0;
+
   // A list of all the navigation_initiator bindings owned by this document.
   // Used to report CSP violations that result from CSP blocking
   // navigation requests that were initiated by this document.
@@ -1939,6 +1990,10 @@ class CORE_EXPORT Document : public ContainerNode,
   mutable BitVector potentially_violated_features_;
 
   AtomicString override_last_modified_;
+
+  // Map from isolated world IDs to their ContentSecurityPolicy instances.
+  Member<HeapHashMap<int, Member<ContentSecurityPolicy>>>
+      isolated_world_csp_map_;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT Supplement<Document>;

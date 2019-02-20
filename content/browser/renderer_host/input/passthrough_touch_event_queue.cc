@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/input/passthrough_touch_event_queue.h"
 
+#include <string>
 #include <utility>
 
 #include "base/auto_reset.h"
@@ -41,6 +42,13 @@ bool HasPointChanged(const WebTouchPoint& point_1,
 
 }  // namespace
 
+// static
+const base::FeatureParam<std::string>
+    PassthroughTouchEventQueue::kSkipBrowserTouchFilterType{
+        &features::kSkipBrowserTouchFilter,
+        features::kSkipBrowserTouchFilterTypeParamName,
+        features::kSkipBrowserTouchFilterTypeParamValueDiscrete};
+
 PassthroughTouchEventQueue::TouchEventWithLatencyInfoAndAckState::
     TouchEventWithLatencyInfoAndAckState(const TouchEventWithLatencyInfo& event)
     : TouchEventWithLatencyInfo(event),
@@ -59,7 +67,9 @@ PassthroughTouchEventQueue::PassthroughTouchEventQueue(
       maybe_has_handler_for_current_sequence_(false),
       drop_remaining_touches_in_sequence_(false),
       send_touch_events_async_(false),
-      processing_acks_(false) {
+      processing_acks_(false),
+      skip_touch_filter_(config.skip_touch_filter),
+      events_to_always_forward_(config.events_to_always_forward) {
   if (config.touch_ack_timeout_supported) {
     timeout_handler_.reset(
         new TouchTimeoutHandler(this, config.desktop_touch_ack_timeout_delay,
@@ -294,6 +304,37 @@ void PassthroughTouchEventQueue::SendTouchEventImmediately(
 
 PassthroughTouchEventQueue::PreFilterResult
 PassthroughTouchEventQueue::FilterBeforeForwarding(const WebTouchEvent& event) {
+  PreFilterResult result = FilterBeforeForwardingImpl(event);
+  if (result == PreFilterResult::kFilteredTimeout)
+    return PreFilterResult::kFilteredTimeout;
+
+  // Override non-timeout filter results based on the Finch trial that bypasses
+  // the filter. We do this here so that the event still has the opportunity to
+  // update any internal state that's necessary to handle future events
+  // (i.e. future touch moves might be dropped, even if this touch start isn't
+  // due to a filter override).
+  if (skip_touch_filter_) {
+    if (events_to_always_forward_ ==
+        features::kSkipBrowserTouchFilterTypeParamValueAll) {
+      return PreFilterResult::kUnfiltered;
+    } else if (events_to_always_forward_ ==
+                   features::kSkipBrowserTouchFilterTypeParamValueDiscrete &&
+               event.GetType() != WebInputEvent::kTouchMove) {
+      return PreFilterResult::kUnfiltered;
+    }
+  }
+
+  return result;
+}
+
+PassthroughTouchEventQueue::PreFilterResult
+PassthroughTouchEventQueue::FilterBeforeForwardingImpl(
+    const WebTouchEvent& event) {
+  // Unconditionally apply the timeout filter to avoid exacerbating
+  // any responsiveness problems on the page.
+  if (timeout_handler_ && timeout_handler_->FilterEvent(event))
+    return PreFilterResult::kFilteredTimeout;
+
   if (event.GetType() == WebInputEvent::kTouchScrollStarted)
     return PreFilterResult::kUnfiltered;
 
@@ -310,9 +351,6 @@ PassthroughTouchEventQueue::FilterBeforeForwarding(const WebTouchEvent& event) {
       return PreFilterResult::kFilteredNoPageHandlers;
     }
   }
-
-  if (timeout_handler_ && timeout_handler_->FilterEvent(event))
-    return PreFilterResult::kFilteredTimeout;
 
   if (drop_remaining_touches_in_sequence_ &&
       event.GetType() != WebInputEvent::kTouchCancel)
@@ -392,11 +430,6 @@ size_t PassthroughTouchEventQueue::SizeForTesting() const {
 
 bool PassthroughTouchEventQueue::IsTimeoutRunningForTesting() const {
   return timeout_handler_ && timeout_handler_->IsTimeoutTimerRunning();
-}
-
-const TouchEventWithLatencyInfo&
-PassthroughTouchEventQueue::GetLatestEventForTesting() const {
-  return *outstanding_touches_.rbegin();
 }
 
 }  // namespace content

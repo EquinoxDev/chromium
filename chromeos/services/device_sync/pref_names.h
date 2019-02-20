@@ -18,9 +18,14 @@ extern const char kCryptAuthDeviceSyncUnlockKeys[];
 extern const char kCryptAuthEnrollmentIsRecoveringFromFailure[];
 extern const char kCryptAuthEnrollmentLastEnrollmentTimeSeconds[];
 extern const char kCryptAuthEnrollmentReason[];
+extern const char kCryptAuthEnrollmentSchedulerClientDirective[];
+extern const char kCryptAuthEnrollmentSchedulerLastEnrollmentAttemptTime[];
+extern const char kCryptAuthEnrollmentSchedulerLastSuccessfulEnrollmentTime[];
+extern const char kCryptAuthEnrollmentSchedulerNumConsecutiveFailures[];
 extern const char kCryptAuthEnrollmentUserPublicKey[];
 extern const char kCryptAuthEnrollmentUserPrivateKey[];
 extern const char kCryptAuthGCMRegistrationId[];
+extern const char kCryptAuthKeyRegistry[];
 
 }  // namespace prefs
 

@@ -318,6 +318,8 @@ void StyleEngine::AdoptedStyleSheetsWillChange(
     EnsureStyleSheetCollectionFor(tree_scope);
     if (tree_scope != document_)
       active_tree_scopes_.insert(&tree_scope);
+  } else if (!StyleSheetCollectionFor(tree_scope)) {
+    return;
   }
   SetNeedsActiveStyleUpdate(tree_scope);
 }
@@ -669,9 +671,9 @@ void StyleEngine::MarkTreeScopeDirty(TreeScope& scope) {
     return;
   }
 
-  TreeScopeStyleSheetCollection* collection = StyleSheetCollectionFor(scope);
-  DCHECK(collection);
-  collection->MarkSheetListDirty();
+  TreeScopeStyleSheetCollection& collection =
+      EnsureStyleSheetCollectionFor(scope);
+  collection.MarkSheetListDirty();
   dirty_tree_scopes_.insert(&scope);
   GetDocument().ScheduleLayoutTreeUpdateIfNeeded();
 }
@@ -1525,7 +1527,7 @@ bool StyleEngine::MediaQueryAffectedByDeviceChange() {
 
 bool StyleEngine::UpdateRemUnits(const ComputedStyle* old_root_style,
                                  const ComputedStyle* new_root_style) {
-  if (!UsesRemUnits())
+  if (!new_root_style || !UsesRemUnits())
     return false;
   if (!old_root_style ||
       old_root_style->FontSize() != new_root_style->FontSize()) {
@@ -1688,12 +1690,13 @@ scoped_refptr<StyleInitialData> StyleEngine::MaybeCreateAndGetInitialData() {
   return initial_data_;
 }
 
-void StyleEngine::RecalcStyle(StyleRecalcChange change) {
+void StyleEngine::RecalcStyle(const StyleRecalcChange change) {
   DCHECK(GetDocument().documentElement());
-  DCHECK(GetDocument().ChildNeedsStyleRecalc() || change == kForce);
+  DCHECK(GetDocument().ChildNeedsStyleRecalc() || change.RecalcDescendants());
 
   Element& root_element = style_recalc_root_.RootElement();
-  if (change == kForce || &root_element == GetDocument().documentElement()) {
+  if (change.RecalcChildren() ||
+      &root_element == GetDocument().documentElement()) {
     GetDocument().documentElement()->RecalcStyle(change);
   } else {
     Element* parent = root_element.ParentOrShadowHostElement();
@@ -1749,7 +1752,6 @@ void StyleEngine::UpdateStyleRecalcRoot(ContainerNode* ancestor,
     // LazyReattachIfAttached() from HTMLSlotElement::DetachLayoutTree(). We
     // probably want to get rid of LazyReattachIfAttached() altogether and call
     // DetachLayoutTree on assigned nodes instead.
-    DCHECK_EQ(dirty_node->GetStyleChangeType(), kNeedsReattachStyleChange);
     return;
   }
   style_recalc_root_.Update(ancestor, dirty_node);

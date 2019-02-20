@@ -151,6 +151,11 @@ Background = function() {
   FindHandler.init();
 
   Notifications.onStartup();
+
+  chrome.accessibilityPrivate.onAnnounceForAccessibility.addListener(
+      (announceText) => {
+        cvox.ChromeVox.tts.speak(announceText.join(' '), cvox.QueueMode.FLUSH);
+      });
 };
 
 Background.prototype = {
@@ -386,18 +391,16 @@ Background.prototype = {
       cvox.ChromeVox.tts.speak(
           Msgs.getMsg(evt.type, [text]), cvox.QueueMode.QUEUE);
     } else if (evt.type == 'copy' || evt.type == 'cut') {
-      window.setTimeout(function() {
-        this.preventPasteOutput_ = true;
-        var textarea = document.createElement('textarea');
-        document.body.appendChild(textarea);
-        textarea.focus();
-        document.execCommand('paste');
-        var clipboardContent = textarea.value;
-        textarea.remove();
-        cvox.ChromeVox.tts.speak(
-            Msgs.getMsg(evt.type, [clipboardContent]), cvox.QueueMode.FLUSH);
-        ChromeVoxState.instance.pageSel_ = null;
-      }.bind(this), 20);
+      this.preventPasteOutput_ = true;
+      var textarea = document.createElement('textarea');
+      document.body.appendChild(textarea);
+      textarea.focus();
+      document.execCommand('paste');
+      var clipboardContent = textarea.value;
+      textarea.remove();
+      cvox.ChromeVox.tts.speak(
+          Msgs.getMsg(evt.type, [clipboardContent]), cvox.QueueMode.FLUSH);
+      ChromeVoxState.instance.pageSel_ = null;
     }
   },
 

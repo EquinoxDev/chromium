@@ -14,17 +14,19 @@
 #include "base/observer_list.h"
 #include "base/values.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/signin/core/browser/gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/signin_client.h"
 #include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_internals_util.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 #include "services/identity/public/cpp/identity_manager.h"
 
 namespace identity {
 class IdentityManager;
+struct AccountsInCookieJarInfo;
 }
 
 class AccountTrackerService;
+class GaiaCookieManagerService;
 class PrefRegistrySimple;
 class ProfileOAuth2TokenService;
 class SigninClient;
@@ -37,9 +39,7 @@ using TimedSigninStatusValue = std::pair<std::string, std::string>;
 // to propagate to about:signin-internals via SigninInternalsUI.
 class AboutSigninInternals
     : public KeyedService,
-      public OAuth2TokenService::Observer,
       public OAuth2TokenService::DiagnosticsObserver,
-      public GaiaCookieManagerService::Observer,
       SigninErrorController::Observer,
       identity::IdentityManager::Observer,
       identity::IdentityManager::DiagnosticsObserver {
@@ -97,10 +97,9 @@ class AboutSigninInternals
   //  }
   std::unique_ptr<base::DictionaryValue> GetSigninStatus();
 
-  // GaiaCookieManagerService::Observer implementations.
-  void OnGaiaAccountsInCookieUpdated(
-      const std::vector<gaia::ListedAccount>& gaia_accounts,
-      const std::vector<gaia::ListedAccount>& signed_out_accounts,
+  // identity::IdentityManager::Observer implementations.
+  void OnAccountsInCookieUpdated(
+      const identity::AccountsInCookieJarInfo& accounts_in_cookie_jar_info,
       const GoogleServiceAuthError& error) override;
 
  private:
@@ -212,16 +211,15 @@ class AboutSigninInternals
   void OnRefreshTokenRevokedFromSource(const std::string& account_id,
                                        const std::string& source) override;
 
-  // OAuth2TokenServiceDelegate::Observer implementations.
-  void OnRefreshTokensLoaded() override;
-  void OnEndBatchChanges() override;
-
   // IdentityManager::Observer implementations.
+  void OnRefreshTokensLoaded() override;
+  void OnEndBatchOfRefreshTokenStateChanges() override;
   void OnPrimaryAccountSigninFailed(
       const GoogleServiceAuthError& error) override;
-  void OnPrimaryAccountSet(const AccountInfo& primary_account_info) override;
+  void OnPrimaryAccountSet(
+      const CoreAccountInfo& primary_account_info) override;
   void OnPrimaryAccountCleared(
-      const AccountInfo& primary_account_info) override;
+      const CoreAccountInfo& primary_account_info) override;
 
   void NotifyTimedSigninFieldValueChanged(
       const signin_internals_util::TimedSigninStatusField& field,

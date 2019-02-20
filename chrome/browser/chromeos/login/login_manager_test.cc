@@ -96,11 +96,11 @@ void LoginManagerTest::SetUp() {
   ASSERT_TRUE(gaia_https_forwarder_.Initialize(
       kGAIAHost, embedded_test_server()->base_url()));
 
-  MixinBasedBrowserTest::SetUp();
+  MixinBasedInProcessBrowserTest::SetUp();
 }
 
 void LoginManagerTest::TearDownOnMainThread() {
-  MixinBasedBrowserTest::TearDownOnMainThread();
+  MixinBasedInProcessBrowserTest::TearDownOnMainThread();
 
   EXPECT_TRUE(embedded_test_server()->ShutdownAndWaitUntilComplete());
 }
@@ -116,9 +116,8 @@ void LoginManagerTest::SetUpCommandLine(base::CommandLine* command_line) {
   command_line->AppendSwitchASCII(::switches::kGoogleApisUrl, gaia_url.spec());
 
   fake_gaia_.Initialize();
-  fake_gaia_.set_issue_oauth_code_cookie(true);
 
-  MixinBasedBrowserTest::SetUpCommandLine(command_line);
+  MixinBasedInProcessBrowserTest::SetUpCommandLine(command_line);
 }
 
 void LoginManagerTest::SetUpOnMainThread() {
@@ -154,7 +153,7 @@ void LoginManagerTest::SetUpOnMainThread() {
       should_launch_browser_);
   session_manager_test_api.SetShouldObtainTokenHandleInTests(false);
 
-  MixinBasedBrowserTest::SetUpOnMainThread();
+  MixinBasedInProcessBrowserTest::SetUpOnMainThread();
 }
 
 void LoginManagerTest::RegisterUser(const AccountId& account_id) {
@@ -162,7 +161,7 @@ void LoginManagerTest::RegisterUser(const AccountId& account_id) {
   users_pref->AppendIfNotPresent(
       std::make_unique<base::Value>(account_id.GetUserEmail()));
   if (user_manager::UserManager::IsInitialized())
-    user_manager::known_user::SetProfileEverInitialized(account_id, false);
+    user_manager::known_user::SaveKnownUser(account_id);
 }
 
 void LoginManagerTest::SetExpectedCredentials(const UserContext& user_context) {
@@ -212,15 +211,6 @@ void LoginManagerTest::AddUser(const AccountId& account_id) {
   const UserContext user_context = CreateUserContext(account_id);
   SetExpectedCredentials(user_context);
   EXPECT_TRUE(AddUserToSession(user_context));
-}
-
-// static
-std::string LoginManagerTest::GetGaiaIDForUserID(const std::string& user_id) {
-  if (user_id == LoginManagerTest::kEnterpriseUser1)
-    return LoginManagerTest::kEnterpriseUser1GaiaId;
-  if (user_id == LoginManagerTest::kEnterpriseUser2)
-    return LoginManagerTest::kEnterpriseUser2GaiaId;
-  return "gaia-id-" + user_id;
 }
 
 }  // namespace chromeos

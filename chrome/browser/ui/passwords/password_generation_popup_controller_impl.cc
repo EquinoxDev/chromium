@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -37,7 +38,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/geometry/rect_conversions.h"
-#include "ui/gfx/range/range.h"
 #include "ui/gfx/text_utils.h"
 
 #if defined(OS_ANDROID)
@@ -224,10 +224,6 @@ void PasswordGenerationPopupControllerImpl::ViewDestroyed() {
   Hide();
 }
 
-void PasswordGenerationPopupControllerImpl::OnSavedPasswordsLinkClicked() {
-  NOTREACHED();
-}
-
 void PasswordGenerationPopupControllerImpl::SetSelectionAtPoint(
     const gfx::Point& point) {
   PasswordSelected(view_->IsPointInPasswordBounds(point));
@@ -306,8 +302,4 @@ base::string16 PasswordGenerationPopupControllerImpl::SuggestedText() {
 
 const base::string16& PasswordGenerationPopupControllerImpl::HelpText() {
   return help_text_;
-}
-
-gfx::Range PasswordGenerationPopupControllerImpl::HelpTextLinkRange() {
-  return gfx::Range();
 }

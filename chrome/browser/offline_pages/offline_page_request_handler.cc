@@ -13,6 +13,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/post_task.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -549,8 +550,8 @@ OfflinePageRequestHandler::GetNetworkState() const {
 
 void OfflinePageRequestHandler::Start() {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&OfflinePageRequestHandler::StartAsync,
-                            weak_ptr_factory_.GetWeakPtr()));
+      FROM_HERE, base::BindOnce(&OfflinePageRequestHandler::StartAsync,
+                                weak_ptr_factory_.GetWeakPtr()));
 }
 
 void OfflinePageRequestHandler::StartAsync() {

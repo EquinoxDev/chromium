@@ -62,6 +62,7 @@
 #include "third_party/blink/public/common/messaging/transferable_message.h"
 #include "third_party/blink/public/mojom/choosers/file_chooser.mojom.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
+#include "third_party/blink/public/mojom/frame/lifecycle.mojom.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/public/platform/web_intrinsic_sizing_info.h"
@@ -69,7 +70,6 @@
 #include "third_party/blink/public/platform/web_scroll_types.h"
 #include "third_party/blink/public/platform/web_sudden_termination_disabler_type.h"
 #include "third_party/blink/public/web/web_frame_owner_properties.h"
-#include "third_party/blink/public/web/web_frame_serializer_cache_control_policy.h"
 #include "third_party/blink/public/web/web_fullscreen_options.h"
 #include "third_party/blink/public/web/web_media_player_action.h"
 #include "third_party/blink/public/web/web_tree_scope_type.h"
@@ -155,6 +155,8 @@ IPC_ENUM_TRAITS_MIN_MAX_VALUE(content::NavigationDownloadPolicy,
                               content::NavigationDownloadPolicy::kMaxValue)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::FeaturePolicyDisposition,
                           blink::mojom::FeaturePolicyDisposition::kMaxValue)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::mojom::FrameVisibility,
+                          blink::mojom::FrameVisibility::kMaxValue)
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebFloatSize)
   IPC_STRUCT_TRAITS_MEMBER(width)
@@ -494,6 +496,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::NavigationTiming)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CommitNavigationParams)
+  IPC_STRUCT_TRAITS_MEMBER(origin_to_commit)
   IPC_STRUCT_TRAITS_MEMBER(is_overriding_user_agent)
   IPC_STRUCT_TRAITS_MEMBER(redirects)
   IPC_STRUCT_TRAITS_MEMBER(redirect_response)
@@ -525,9 +528,9 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::ParsedFeaturePolicyDeclaration)
   IPC_STRUCT_TRAITS_MEMBER(feature)
-  IPC_STRUCT_TRAITS_MEMBER(matches_all_origins)
-  IPC_STRUCT_TRAITS_MEMBER(matches_opaque_src)
-  IPC_STRUCT_TRAITS_MEMBER(origins)
+  IPC_STRUCT_TRAITS_MEMBER(values)
+  IPC_STRUCT_TRAITS_MEMBER(fallback_value)
+  IPC_STRUCT_TRAITS_MEMBER(opaque_value)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::FrameReplicationState)
@@ -537,6 +540,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::FrameReplicationState)
   IPC_STRUCT_TRAITS_MEMBER(feature_policy_header)
   IPC_STRUCT_TRAITS_MEMBER(active_sandbox_flags)
   IPC_STRUCT_TRAITS_MEMBER(frame_policy)
+  IPC_STRUCT_TRAITS_MEMBER(opener_feature_state)
   IPC_STRUCT_TRAITS_MEMBER(accumulated_csp_headers)
   IPC_STRUCT_TRAITS_MEMBER(scope)
   IPC_STRUCT_TRAITS_MEMBER(insecure_request_policy)
@@ -565,6 +569,7 @@ IPC_STRUCT_BEGIN(FrameHostMsg_OpenURL_Params)
   IPC_STRUCT_MEMBER(blink::WebTriggeringEventInfo, triggering_event_info)
   IPC_STRUCT_MEMBER(mojo::MessagePipeHandle, blob_url_token)
   IPC_STRUCT_MEMBER(std::string, href_translate)
+  IPC_STRUCT_MEMBER(content::NavigationDownloadPolicy, download_policy)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_DownloadUrl_Params)
@@ -625,9 +630,6 @@ IPC_STRUCT_BEGIN(FrameMsg_SerializeAsMHTML_Params)
   // intended for sharing.
   IPC_STRUCT_MEMBER(bool, mhtml_binary_encoding)
 
-  IPC_STRUCT_MEMBER(blink::WebFrameSerializerCacheControlPolicy,
-                    mhtml_cache_control_policy)
-
   // Whether to remove popup overlay while serializing.
   IPC_STRUCT_MEMBER(bool, mhtml_popup_overlay_removal)
 
@@ -666,6 +668,16 @@ IPC_STRUCT_BEGIN(FrameHostMsg_CreateChildFrame_Params)
   IPC_STRUCT_MEMBER(blink::FramePolicy, frame_policy)
   IPC_STRUCT_MEMBER(content::FrameOwnerProperties, frame_owner_properties)
   IPC_STRUCT_MEMBER(blink::FrameOwnerElementType, frame_owner_element_type)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(FrameHostMsg_CreateChildFrame_Params_Reply)
+  IPC_STRUCT_MEMBER(int32_t, child_routing_id)
+  IPC_STRUCT_MEMBER(mojo::MessagePipeHandle, new_interface_provider)
+  IPC_STRUCT_MEMBER(mojo::MessagePipeHandle,
+                    document_interface_broker_content_handle)
+  IPC_STRUCT_MEMBER(mojo::MessagePipeHandle,
+                    document_interface_broker_blink_handle)
+  IPC_STRUCT_MEMBER(base::UnguessableToken, devtools_frame_token)
 IPC_STRUCT_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CSPSource)
@@ -1156,15 +1168,13 @@ IPC_MESSAGE_ROUTED4(FrameHostMsg_DidAddMessageToConsole,
 //
 // Each of these messages will have a corresponding FrameHostMsg_Detach message
 // sent when the frame is detached from the DOM.
-// Note that |new_render_frame_id|, |new_interface_provider|, and
-// |devtools_frame_token| are out parameters. Browser process defines them for
+// Note that |params_reply| is an out parameter. Browser process defines it for
 // the renderer process.
-IPC_SYNC_MESSAGE_CONTROL1_3(
-    FrameHostMsg_CreateChildFrame,
-    FrameHostMsg_CreateChildFrame_Params,
-    int32_t,                 /* new_routing_id */
-    mojo::MessagePipeHandle, /* new_interface_provider */
-    base::UnguessableToken /* devtools_frame_token */)
+// |params_reply.child_routing_id| may not be assigned MSG_ROUTING_NONE.
+IPC_SYNC_MESSAGE_CONTROL1_1(FrameHostMsg_CreateChildFrame,
+                            FrameHostMsg_CreateChildFrame_Params,
+                            // params_reply
+                            FrameHostMsg_CreateChildFrame_Params_Reply)
 
 // Sent by the renderer to the parent RenderFrameHost when a child frame is
 // detached from the DOM.
@@ -1455,7 +1465,8 @@ IPC_MESSAGE_ROUTED3(FrameHostMsg_UpdateViewportIntersection,
                     bool /* occluded or obscured */)
 
 // Informs the child that the frame has changed visibility.
-IPC_MESSAGE_ROUTED1(FrameHostMsg_VisibilityChanged, bool /* visible */)
+IPC_MESSAGE_ROUTED1(FrameHostMsg_VisibilityChanged,
+                    blink::mojom::FrameVisibility /* visibility */)
 
 // Sent by a RenderFrameProxy to the browser signaling that the renderer
 // has determined the DOM subtree it represents is inert and should no

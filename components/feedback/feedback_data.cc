@@ -27,11 +27,6 @@ namespace {
 const char kTraceFilename[] = "tracing.zip";
 const char kPerformanceCategoryTag[] = "Performance";
 
-const base::FilePath::CharType kHistogramsFilename[] =
-    FILE_PATH_LITERAL("histograms.txt");
-
-const char kHistogramsAttachmentName[] = "histograms.zip";
-
 }  // namespace
 
 FeedbackData::FeedbackData(feedback::FeedbackUploader* uploader)
@@ -39,7 +34,9 @@ FeedbackData::FeedbackData(feedback::FeedbackUploader* uploader)
       context_(nullptr),
       trace_id_(0),
       pending_op_count_(1),
-      report_sent_(false) {
+      report_sent_(false),
+      from_assistant_(false),
+      assistant_debug_info_allowed_(false) {
   CHECK(uploader_);
 }
 
@@ -75,21 +72,6 @@ void FeedbackData::SetAndCompressSystemInfo(
         base::BindOnce(&FeedbackData::CompressLogs, this),
         base::BindOnce(&FeedbackData::OnCompressComplete, this));
   }
-}
-
-void FeedbackData::SetAndCompressHistograms(
-    std::unique_ptr<std::string> histograms) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  if (!histograms)
-    return;
-  ++pending_op_count_;
-  base::PostTaskWithTraitsAndReply(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      base::BindOnce(&FeedbackData::CompressFile, this,
-                     base::FilePath(kHistogramsFilename),
-                     kHistogramsAttachmentName, std::move(histograms)),
-      base::BindOnce(&FeedbackData::OnCompressComplete, this));
 }
 
 void FeedbackData::AttachAndCompressFileData(

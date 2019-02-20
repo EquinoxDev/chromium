@@ -32,10 +32,6 @@ namespace cronet {
 
 namespace {
 
-base::Value ParseJson(base::StringPiece json) {
-  return std::move(*base::test::ParseJson(json));
-}
-
 std::string WrapJsonHeader(base::StringPiece value) {
   std::string result;
   result.reserve(value.size() + 2);
@@ -48,8 +44,8 @@ std::string WrapJsonHeader(base::StringPiece value) {
 // Returns whether two JSON-encoded headers contain the same content, ignoring
 // irrelevant encoding issues like whitespace and map element ordering.
 bool JsonHeaderEquals(base::StringPiece expected, base::StringPiece actual) {
-  return ParseJson(WrapJsonHeader(expected)) ==
-         ParseJson(WrapJsonHeader(actual));
+  return base::test::ParseJson(WrapJsonHeader(expected)) ==
+         base::test::ParseJson(WrapJsonHeader(actual));
 }
 
 }  // namespace
@@ -71,7 +67,7 @@ TEST(URLRequestContextConfigTest, TestExperimentalOptionParsing) {
   options.SetPath({"AsyncDNS", "enable"}, base::Value(true));
   options.SetPath({"NetworkErrorLogging", "enable"}, base::Value(true));
   options.SetPath({"NetworkErrorLogging", "preloaded_report_to_headers"},
-                  ParseJson(R"json(
+                  base::test::ParseJson(R"json(
                   [
                     {
                       "origin": "https://test-origin/",
@@ -119,7 +115,7 @@ TEST(URLRequestContextConfigTest, TestExperimentalOptionParsing) {
                   ]
                   )json"));
   options.SetPath({"NetworkErrorLogging", "preloaded_nel_headers"},
-                  ParseJson(R"json(
+                  base::test::ParseJson(R"json(
                   [
                     {
                       "origin": "https://test-origin/",
@@ -650,6 +646,7 @@ TEST(URLRequestContextConfigTest, SetQuicConnectionMigrationV2Options) {
       "{\"QUIC\":{\"migrate_sessions_on_network_change_v2\":true,"
       "\"migrate_sessions_early_v2\":true,"
       "\"retry_on_alternate_network_before_handshake\":true,"
+      "\"idle_session_migration_period_seconds\":15,"
       "\"max_time_on_non_default_network_seconds\":10,"
       "\"max_migrations_to_non_default_network_on_write_error\":3,"
       "\"max_migrations_to_non_default_network_on_path_degrading\":4}}",
@@ -676,6 +673,8 @@ TEST(URLRequestContextConfigTest, SetQuicConnectionMigrationV2Options) {
   EXPECT_TRUE(params->quic_migrate_sessions_on_network_change_v2);
   EXPECT_TRUE(params->quic_migrate_sessions_early_v2);
   EXPECT_TRUE(params->quic_retry_on_alternate_network_before_handshake);
+  EXPECT_EQ(base::TimeDelta::FromSeconds(15),
+            params->quic_idle_session_migration_period);
   EXPECT_EQ(base::TimeDelta::FromSeconds(10),
             params->quic_max_time_on_non_default_network);
   EXPECT_EQ(3,

@@ -3,9 +3,13 @@
 // found in the LICENSE file.
 
 #include "ash/contained_shell/contained_shell_controller.h"
+
+#include "ash/public/cpp/ash_features.h"
+#include "ash/public/cpp/ash_pref_names.h"
 #include "ash/session/session_controller.h"
 #include "ash/shell.h"
 #include "components/account_id/account_id.h"
+#include "components/prefs/pref_registry_simple.h"
 
 #include <utility>
 
@@ -15,9 +19,22 @@ ContainedShellController::ContainedShellController() = default;
 
 ContainedShellController::~ContainedShellController() = default;
 
+// static
+void ContainedShellController::RegisterProfilePrefs(
+    PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kContainedShellEnabled, false,
+                                PrefRegistry::PUBLIC);
+}
+
 void ContainedShellController::BindRequest(
     mojom::ContainedShellControllerRequest request) {
   bindings_.AddBinding(this, std::move(request));
+}
+
+bool ContainedShellController::IsEnabled() {
+  // TODO(ltenorio): Also check the ash.contained_shell.enabled pref here when
+  // it's available.
+  return base::FeatureList::IsEnabled(features::kContainedShell);
 }
 
 void ContainedShellController::LaunchContainedShell() {

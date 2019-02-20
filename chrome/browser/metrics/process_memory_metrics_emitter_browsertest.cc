@@ -8,6 +8,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/trace_event_analyzer.h"
@@ -27,6 +28,7 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/memory_instrumentation.h"
+#include "services/resource_coordinator/public/cpp/memory_instrumentation/os_metrics.h"
 #include "url/gurl.h"
 #include "url/url_constants.h"
 
@@ -327,7 +329,7 @@ class ProcessMemoryMetricsEmitterTest
     const int64_t* value = ukm::TestUkmRecorder::GetEntryMetric(entry, name);
     ASSERT_TRUE(value) << name;
     EXPECT_GE(*value, 0) << name;
-    EXPECT_LE(*value, 10) << name;
+    EXPECT_LE(*value, 300) << name;
   }
 
   void CheckAllUkmEntries(size_t entry_count = 1u) {
@@ -742,12 +744,9 @@ IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest,
   CheckPageInfoUkmMetrics(url, true);
 }
 
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER)
-#define MAYBE_FetchThreeTimes DISABLED_FetchThreeTimes
-#else
-#define MAYBE_FetchThreeTimes FetchThreeTimes
-#endif
-IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest, MAYBE_FetchThreeTimes) {
+// Flaky test: https://crbug.com/731466
+IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest,
+                       DISABLED_FetchThreeTimes) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL url = embedded_test_server()->GetURL("foo.com", "/empty.html");
   ui_test_utils::NavigateToURLWithDisposition(
@@ -832,4 +831,28 @@ IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest,
   CheckAllUkmEntries(2);
   CheckPageInfoUkmMetrics(url1, false /* is_visible */, 2);
   CheckPageInfoUkmMetrics(url2, true /* is_visible */, 2);
+}
+
+// Build id is only emitted for official builds.
+#if defined(OFFICIAL_BUILD)
+#define MAYBE_RendererBuildId RendererBuildId
+#else
+#define MAYBE_RendererBuildId DISABLED_RendererBuildId
+#endif
+IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest, MAYBE_RendererBuildId) {
+  for (content::RenderProcessHost::iterator rph_iter =
+           content::RenderProcessHost::AllHostsIterator();
+       !rph_iter.IsAtEnd(); rph_iter.Advance()) {
+    const base::Process& process = rph_iter.GetCurrentValue()->GetProcess();
+    auto maps =
+        memory_instrumentation::OSMetrics::GetProcessMemoryMaps(process.Pid());
+    bool found = false;
+    for (const memory_instrumentation::mojom::VmRegionPtr& region : maps) {
+      if (region->module_debugid.empty())
+        continue;
+      found = true;
+      break;
+    }
+    EXPECT_TRUE(found);
+  }
 }

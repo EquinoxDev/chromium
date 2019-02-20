@@ -29,6 +29,7 @@
 #include <memory>
 #include <utility>
 
+#include "third_party/blink/public/platform/web_content_security_policy_struct.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -462,6 +463,7 @@ class CORE_EXPORT ContentSecurityPolicy
   void EnforceSandboxFlags(SandboxFlags);
   void TreatAsPublicAddress();
   void RequireTrustedTypes();
+  bool IsRequireTrustedTypes() const { return require_safe_types_; }
   String EvalDisabledErrorMessage() const;
 
   // Upgrade-Insecure-Requests and Block-All-Mixed-Content are represented in

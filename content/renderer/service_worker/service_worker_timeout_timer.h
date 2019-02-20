@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/containers/queue.h"
+#include "base/location.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -62,6 +63,9 @@ class CONTENT_EXPORT ServiceWorkerTimeoutTimer {
                             const base::TickClock* tick_clock);
   ~ServiceWorkerTimeoutTimer();
 
+  // Starts the timer.
+  void Start();
+
   // StartEvent() should be called at the beginning of an event. It returns an
   // event id, which is unique among threads in the same process.
   // The event id should be passed to EndEvent() when the event has finished.
@@ -74,7 +78,8 @@ class CONTENT_EXPORT ServiceWorkerTimeoutTimer {
   int StartEventWithCustomTimeout(
       base::OnceCallback<void(int /* event_id */)> abort_callback,
       base::TimeDelta timeout);
-  void EndEvent(int event_id);
+  void CrashBecauseNoEvent(int event_id, const base::Location& from_here);
+  void EndEvent(int event_id, const base::Location& from_here);
 
   // Creates a StayAwakeToken to ensure that the idle timer won't be triggered
   // while any of these are alive.
@@ -178,6 +183,8 @@ class CONTENT_EXPORT ServiceWorkerTimeoutTimer {
 
   // |tick_clock_| outlives |this|.
   const base::TickClock* const tick_clock_;
+
+  bool in_dtor_ = false;
 
   base::WeakPtrFactory<ServiceWorkerTimeoutTimer> weak_factory_;
 };

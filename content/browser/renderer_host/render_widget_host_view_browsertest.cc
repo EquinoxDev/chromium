@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/macros.h"
@@ -155,8 +156,8 @@ class CommitBeforeSwapAckSentHelper
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     base::MessageLoopCurrent::ScopedNestableTaskAllower allow;
     frame_observer_->WaitForAnyFrameSubmission();
     return true;
@@ -827,19 +828,19 @@ static const auto kTestCompositingModes =
     testing::Values(GL_COMPOSITING, SOFTWARE_COMPOSITING);
 #endif
 
-INSTANTIATE_TEST_CASE_P(GLAndSoftwareCompositing,
-                        CompositingRenderWidgetHostViewBrowserTest,
-                        kTestCompositingModes);
-INSTANTIATE_TEST_CASE_P(GLAndSoftwareCompositing,
-                        CompositingRenderWidgetHostViewBrowserTestTabCapture,
-                        kTestCompositingModes);
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(GLAndSoftwareCompositing,
+                         CompositingRenderWidgetHostViewBrowserTest,
+                         kTestCompositingModes);
+INSTANTIATE_TEST_SUITE_P(GLAndSoftwareCompositing,
+                         CompositingRenderWidgetHostViewBrowserTestTabCapture,
+                         kTestCompositingModes);
+INSTANTIATE_TEST_SUITE_P(
     GLAndSoftwareCompositing,
     CompositingRenderWidgetHostViewBrowserTestTabCaptureHighDPI,
     kTestCompositingModes);
-INSTANTIATE_TEST_CASE_P(GLAndSoftwareCompositing,
-                        CompositingRenderWidgetHostViewBrowserTestHiDPI,
-                        kTestCompositingModes);
+INSTANTIATE_TEST_SUITE_P(GLAndSoftwareCompositing,
+                         CompositingRenderWidgetHostViewBrowserTestHiDPI,
+                         kTestCompositingModes);
 
 #endif  // !defined(OS_ANDROID)
 

@@ -162,10 +162,11 @@ cr.define('print_preview_test_utils', function() {
       certificateStatus: invalid ?
           print_preview.DestinationCertificateStatus.NO :
           print_preview.DestinationCertificateStatus.UNKNOWN,
+      account: 'foo@chromium.org',
     };
     const dest = new print_preview.Destination(
         id, print_preview.DestinationType.GOOGLE,
-        print_preview.DestinationOrigin.COOKIES, name, true /* isRecent */,
+        print_preview.DestinationOrigin.COOKIES, name,
         print_preview.DestinationConnectionStatus.ONLINE, tags);
     return dest;
   }
@@ -231,8 +232,8 @@ cr.define('print_preview_test_utils', function() {
 
   /**
    * Creates 5 local destinations, adds them to |localDestinations| and
-   * sets the capabilities in |nativeLayer|.
-   * @param {!print_preview.NativeLayerStub} nativeLayer
+   * sets the capabilities in |nativeLayer|, if it is non-null.
+   * @param {?print_preview.NativeLayerStub} nativeLayer
    * @param {!Array<!print_preview.LocalDestinationInfo>} localDestinations
    * @return {!Array<!print_preview.Destination>}
    */
@@ -247,9 +248,11 @@ cr.define('print_preview_test_utils', function() {
         .forEach((info, index) => {
           const destination = new print_preview.Destination(
               info.id, print_preview.DestinationType.LOCAL, origin, info.name,
-              false, print_preview.DestinationConnectionStatus.ONLINE);
-          nativeLayer.setLocalDestinationCapabilities(
-              print_preview_test_utils.getCddTemplate(info.id, info.name));
+              print_preview.DestinationConnectionStatus.ONLINE);
+          if (nativeLayer) {
+            nativeLayer.setLocalDestinationCapabilities(
+                print_preview_test_utils.getCddTemplate(info.id, info.name));
+          }
           localDestinations.push({printerName: info.name, deviceName: info.id});
           destinations.push(destination);
         });
@@ -305,16 +308,36 @@ cr.define('print_preview_test_utils', function() {
     });
   }
 
-  /**
-   * @param {!print_preview.UserInfo} userInfo
-   * @return {!print_preview.DestinationStore}
-   */
-  function createDestinationStore(userInfo) {
+  /** @return {!print_preview.DestinationStore} */
+  function createDestinationStore() {
     const testListenerElement = document.createElement('test-listener-element');
     document.body.appendChild(testListenerElement);
     return new print_preview.DestinationStore(
-        userInfo,
         testListenerElement.addWebUIListener.bind(testListenerElement));
+  }
+
+  /**
+   * @param {string} account The user account the destination should be
+   *     associated with.
+   * @return {!print_preview.Destination} The Google Drive destination.
+   */
+  function getGoogleDriveDestination(account) {
+    return new print_preview.Destination(
+        print_preview.Destination.GooglePromotedId.DOCS,
+        print_preview.DestinationType.GOOGLE,
+        print_preview.DestinationOrigin.COOKIES,
+        print_preview.Destination.GooglePromotedId.DOCS,
+        print_preview.DestinationConnectionStatus.ONLINE, {account: account});
+  }
+
+  /** @return {!print_preview.Destination} The Save as PDF destination. */
+  function getSaveAsPdfDestination() {
+    return new print_preview.Destination(
+        print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
+        print_preview.DestinationType.LOCAL,
+        print_preview.DestinationOrigin.LOCAL,
+        loadTimeData.getString('printToPDF'),
+        print_preview.DestinationConnectionStatus.ONLINE);
   }
 
   return {
@@ -327,9 +350,11 @@ cr.define('print_preview_test_utils', function() {
     getDefaultMediaSize: getDefaultMediaSize,
     getDefaultOrientation: getDefaultOrientation,
     getDestinations: getDestinations,
+    getGoogleDriveDestination: getGoogleDriveDestination,
     getMediaSizeCapabilityWithCustomNames:
         getMediaSizeCapabilityWithCustomNames,
     getPdfPrinter: getPdfPrinter,
+    getSaveAsPdfDestination: getSaveAsPdfDestination,
     setupTestListenerElement: setupTestListenerElement,
     triggerInputEvent: triggerInputEvent,
   };

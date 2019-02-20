@@ -51,15 +51,15 @@ class ChromePasswordManagerClient
       public content::WebContentsObserver,
       public content::WebContentsUserData<ChromePasswordManagerClient>,
       public autofill::mojom::PasswordManagerDriver,
-      public autofill::mojom::PasswordManagerClient,
+      public autofill::mojom::PasswordGenerationDriver,
       public content::RenderWidgetHost::InputEventObserver {
  public:
   ~ChromePasswordManagerClient() override;
 
   // PasswordManagerClient implementation.
-  bool IsSavingAndFillingEnabledForCurrentPage() const override;
-  bool IsFillingEnabledForCurrentPage() const override;
-  bool IsFillingFallbackEnabledForCurrentPage() const override;
+  bool IsSavingAndFillingEnabled(const GURL& url) const override;
+  bool IsFillingEnabled(const GURL& url) const override;
+  bool IsFillingFallbackEnabled(const GURL& url) const override;
   void PostHSTSQueryForHost(
       const GURL& origin,
       password_manager::HSTSCallback callback) const override;
@@ -117,14 +117,11 @@ class ChromePasswordManagerClient
   void NavigateToManagePasswordsPage(
       password_manager::ManagePasswordsReferrer referrer) override;
 
-  // autofill::mojom::PasswordManagerClient overrides.
+  // autofill::mojom::PasswordGenerationDriver overrides.
   void AutomaticGenerationStatusChanged(
       bool available,
       const base::Optional<
           autofill::password_generation::PasswordGenerationUIData>& ui_data)
-      override;
-  void ShowManualPasswordGenerationPopup(
-      const autofill::password_generation::PasswordGenerationUIData& ui_data)
       override;
   void ShowPasswordEditingPopup(const gfx::RectF& bounds,
                                 const autofill::PasswordForm& form) override;
@@ -207,6 +204,8 @@ class ChromePasswordManagerClient
   void CheckSafeBrowsingReputation(const GURL& form_action,
                                    const GURL& frame_url) override;
   void FocusedInputChanged(bool is_fillable, bool is_password_field) override;
+  void LogFirstFillingResult(uint32_t form_renderer_id,
+                             int32_t result) override;
 
   // content::WebContentsObserver overrides.
   void DidStartNavigation(
@@ -225,10 +224,9 @@ class ChromePasswordManagerClient
   // in the screens coordinate system.
   gfx::RectF GetBoundsInScreenSpace(const gfx::RectF& bounds);
 
-  // Checks if the current page fulfils the conditions for the password manager
-  // to be active on it, for example Sync credentials are not saved or auto
-  // filled.
-  bool IsPasswordManagementEnabledForCurrentPage() const;
+  // Checks if the current page specified in |url| fulfils the conditions for
+  // the password manager to be active on it.
+  bool IsPasswordManagementEnabledForCurrentPage(const GURL& url) const;
 
   // Returns true if this profile has metrics reporting and active sync
   // without custom sync passphrase.
@@ -238,7 +236,15 @@ class ChromePasswordManagerClient
   void PromptUserToEnableAutosignin() override;
   password_manager::PasswordManager* GetPasswordManager() override;
 
+  // |ui_data| is empty in case the renderer failed to start manual generation.
+  // In this case nothing should happen.
+  void ShowManualPasswordGenerationPopup(
+      base::WeakPtr<password_manager::ContentPasswordManagerDriver> driver,
+      const base::Optional<
+          autofill::password_generation::PasswordGenerationUIData>& ui_data);
+
   void ShowPasswordGenerationPopup(
+      password_manager::ContentPasswordManagerDriver* driver,
       const autofill::password_generation::PasswordGenerationUIData& ui_data,
       bool is_manually_triggered);
 
@@ -263,8 +269,8 @@ class ChromePasswordManagerClient
   // once main frame host was created.
   password_manager::ContentCredentialManager content_credential_manager_;
 
-  content::WebContentsFrameBindingSet<autofill::mojom::PasswordManagerClient>
-      password_manager_client_bindings_;
+  content::WebContentsFrameBindingSet<autofill::mojom::PasswordGenerationDriver>
+      password_generation_driver_bindings_;
   content::WebContentsFrameBindingSet<autofill::mojom::PasswordManagerDriver>
       password_manager_driver_bindings_;
 

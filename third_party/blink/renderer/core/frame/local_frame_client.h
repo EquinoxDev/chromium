@@ -34,6 +34,7 @@
 #include <memory>
 
 #include "third_party/blink/public/common/feature_policy/feature_policy.h"
+#include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/frame/navigation_initiator.mojom-blink.h"
 #include "third_party/blink/public/mojom/portal/portal.mojom-blink.h"
 #include "third_party/blink/public/platform/web_content_security_policy_struct.h"
@@ -77,6 +78,10 @@ class InterfaceProvider;
 namespace blink {
 namespace mojom {
 enum class WebFeature : int32_t;
+
+namespace blink {
+class DocumentInterfaceBroker;
+}  // namespace blink
 }  // namespace mojom
 
 class AssociatedInterfaceProvider;
@@ -164,6 +169,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
       mojom::blink::BlobURLTokenPtr,
       base::TimeTicks input_start_time,
       const String& href_translate,
+      WebContentSecurityPolicyList,
       mojom::blink::NavigationInitiatorPtr) = 0;
 
   virtual void DispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
@@ -202,13 +208,6 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   virtual void DidDisplayContentWithCertificateErrors() = 0;
   // The frame ran content with certificate errors with the given URL.
   virtual void DidRunContentWithCertificateErrors() = 0;
-
-  // The frame loaded a resource with a legacy Symantec certificate that is
-  // slated for distrust (indicated by |did_fail| being false) or has already
-  // been distrusted (indicated by |did_fail| being true). Prints a console
-  // message (possibly overridden by the embedder) to warn about the
-  // certificate.
-  virtual void ReportLegacySymantecCert(const KURL&, bool did_fail) {}
 
   // The frame loaded a resource with a legacy TLS version that will be removed
   // in the future. Prints a console message to warn about this.
@@ -254,6 +253,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
       std::unique_ptr<WebDocumentLoader::ExtraData> extra_data) = 0;
 
   virtual String UserAgent() = 0;
+  virtual blink::UserAgentMetadata UserAgentMetadata() = 0;
 
   virtual String DoNotTrackValue() = 0;
 
@@ -381,6 +381,10 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
     return nullptr;
   }
 
+  virtual mojom::blink::DocumentInterfaceBroker* GetDocumentInterfaceBroker() {
+    return nullptr;
+  }
+
   virtual AssociatedInterfaceProvider*
   GetRemoteNavigationAssociatedInterfaces() {
     return nullptr;
@@ -441,7 +445,7 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
                                          const KURL&,
                                          const String&) {
     return false;
-  };
+  }
 
   // Returns a new WebWorkerFetchContext for a dedicated worker or worklet.
   virtual scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext() {
@@ -458,6 +462,13 @@ class CORE_EXPORT LocalFrameClient : public FrameClient {
   // Returns whether we are associated with a print context who suggests to use
   // printing layout.
   virtual bool UsePrintingLayout() const { return false; }
+
+  // Called to get the FeatureState inherited from an opener if any. This works
+  // with disowned openers, i.e., even if Frame::Opener() is nullptr, there
+  // could be a non-empty feature state which is taken from the the original
+  // opener of the frame. This is similar to how sandbox flags are propagated to
+  // the opened new browsing contexts.
+  virtual const FeaturePolicy::FeatureState& GetOpenerFeatureState() const = 0;
 };
 
 }  // namespace blink

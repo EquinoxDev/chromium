@@ -25,7 +25,9 @@ class SystemWebAppManager {
   SystemWebAppManager(Profile* profile, PendingAppManager* pending_app_manager);
   virtual ~SystemWebAppManager();
 
-  static bool ShouldEnableForProfile(Profile* profile);
+  void Start();
+
+  static bool IsEnabled();
 
  protected:
   // Overridden in tests.
@@ -33,8 +35,6 @@ class SystemWebAppManager {
 
  private:
   void StartAppInstallation();
-
-  Profile* profile_;
 
   // Used to install, uninstall, and update apps. Should outlive this class.
   PendingAppManager* pending_app_manager_;

@@ -11,7 +11,6 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
-import android.support.v4.graphics.drawable.DrawableCompat;
 import android.support.v4.view.ViewCompat;
 import android.support.v7.content.res.AppCompatResources;
 import android.util.AttributeSet;
@@ -20,7 +19,6 @@ import android.view.View.OnClickListener;
 import android.widget.ImageButton;
 
 import org.chromium.base.ApiCompatibilityUtils;
-import org.chromium.base.StrictModeContext;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.NavigationPopup;
@@ -37,6 +35,7 @@ import org.chromium.chrome.browser.toolbar.TabCountProvider.TabCountObserver;
 import org.chromium.chrome.browser.util.AccessibilityUtil;
 import org.chromium.chrome.browser.util.ColorUtils;
 import org.chromium.chrome.browser.util.FeatureUtilities;
+import org.chromium.ui.UiUtils;
 import org.chromium.ui.base.DeviceFormFactor;
 
 import java.util.ArrayList;
@@ -103,10 +102,8 @@ public class ToolbarTablet extends ToolbarLayout
         mReloadButton = findViewById(R.id.refresh_button);
         // ImageView tinting doesn't work with LevelListDrawable, use Drawable tinting instead.
         // See https://crbug.com/891593 for details.
-        Drawable reloadIcon =
-                AppCompatResources.getDrawable(getContext(), R.drawable.btn_reload_stop);
-        DrawableCompat.setTintList(reloadIcon,
-                AppCompatResources.getColorStateList(getContext(), R.color.dark_mode_tint));
+        Drawable reloadIcon = UiUtils.getTintedDrawable(
+                getContext(), R.drawable.btn_reload_stop, R.color.dark_mode_tint);
         mReloadButton.setImageDrawable(reloadIcon);
         mShowTabStack = AccessibilityUtil.isAccessibilityEnabled()
                 && isAccessibilityTabSwitcherPreferenceEnabled();
@@ -347,8 +344,6 @@ public class ToolbarTablet extends ToolbarLayout
             getProgressBar().setThemeColor(color, isIncognito());
 
             ApiCompatibilityUtils.setImageTintList(
-                    getMenuButton(), incognito ? mLightModeTint : mDarkModeTint);
-            ApiCompatibilityUtils.setImageTintList(
                     mHomeButton, incognito ? mLightModeTint : mDarkModeTint);
             ApiCompatibilityUtils.setImageTintList(
                     mBackButton, incognito ? mLightModeTint : mDarkModeTint);
@@ -364,13 +359,9 @@ public class ToolbarTablet extends ToolbarLayout
             }
             mAccessibilitySwitcherButton.setUseLightDrawables(incognito);
             mLocationBar.updateVisualsForState();
-            if (mShowMenuBadge) {
-                setAppMenuUpdateBadgeDrawable(incognito);
-            }
             mUseLightColorAssets = incognito;
         }
 
-        setMenuButtonHighlightDrawable(mHighlightingMenu);
         updateNtp();
     }
 
@@ -467,7 +458,6 @@ public class ToolbarTablet extends ToolbarLayout
     @Override
     void setTabSwitcherMode(
             boolean inTabSwitcherMode, boolean showToolbar, boolean delayAnimation) {
-        if (inTabSwitcherMode) cancelAppMenuUpdateBadgeAnimation();
 
         if (mShowTabStack && inTabSwitcherMode) {
             mIsInTabSwitcherMode = true;
@@ -475,18 +465,13 @@ public class ToolbarTablet extends ToolbarLayout
             mForwardButton.setEnabled(false);
             mReloadButton.setEnabled(false);
             mLocationBar.getContainerView().setVisibility(View.INVISIBLE);
-            if (mShowMenuBadge) {
-                getMenuBadge().setVisibility(View.GONE);
-                setMenuButtonContentDescription(false);
-            }
+            setAppMenuUpdateBadgeSuppressed(true);
         } else {
             mIsInTabSwitcherMode = false;
             mLocationBar.getContainerView().setVisibility(View.VISIBLE);
-            if (mShowMenuBadge) {
-                setAppMenuUpdateBadgeToVisible(false);
-            }
+
+            setAppMenuUpdateBadgeSuppressed(false);
         }
-        setMenuButtonHighlightDrawable(mHighlightingMenu);
     }
 
     @Override
@@ -531,17 +516,6 @@ public class ToolbarTablet extends ToolbarLayout
     @Override
     boolean useLightDrawables() {
         return mUseLightColorAssets != null && mUseLightColorAssets;
-    }
-
-    @Override
-    void showAppMenuUpdateBadge() {
-        super.showAppMenuUpdateBadge();
-        if (!mIsInTabSwitcherMode) {
-            if (mUseLightColorAssets != null && mUseLightColorAssets) {
-                setAppMenuUpdateBadgeDrawable(mUseLightColorAssets);
-            }
-            setAppMenuUpdateBadgeToVisible(true);
-        }
     }
 
     @Override
@@ -686,9 +660,7 @@ public class ToolbarTablet extends ToolbarLayout
     }
 
     private boolean isAccessibilityTabSwitcherPreferenceEnabled() {
-        try (StrictModeContext unused = StrictModeContext.allowDiskReads()) {
-            return ChromePreferenceManager.getInstance().readBoolean(
-                    ChromePreferenceManager.ACCESSIBILITY_TAB_SWITCHER, true);
-        }
+        return ChromePreferenceManager.getInstance().readBoolean(
+                ChromePreferenceManager.ACCESSIBILITY_TAB_SWITCHER, true);
     }
 }

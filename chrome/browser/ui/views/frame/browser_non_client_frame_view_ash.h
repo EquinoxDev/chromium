@@ -34,7 +34,6 @@ class TabIconView;
 
 namespace ash {
 class AshFrameCaptionController;
-class DefaultFrameHeader;
 class FrameCaptionButtonContainerView;
 }  // namespace ash
 
@@ -69,14 +68,14 @@ class BrowserNonClientFrameViewAsh
   void UpdateMinimumSize() override;
   void OnTabsMaxXChanged() override;
   bool CanUserExitFullscreen() const override;
-  SkColor GetFrameForegroundColor(ActiveState active_state) const override;
+  SkColor GetCaptionColor(ActiveState active_state) const override;
 
   // views::NonClientFrameView:
   gfx::Rect GetBoundsForClientView() const override;
   gfx::Rect GetWindowBoundsForClientBounds(
       const gfx::Rect& client_bounds) const override;
   int NonClientHitTest(const gfx::Point& point) override;
-  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override;
+  void GetWindowMask(const gfx::Size& size, SkPath* window_mask) override;
   void ResetWindowControls() override;
   void UpdateWindowIcon() override;
   void UpdateWindowTitle() override;
@@ -92,8 +91,6 @@ class BrowserNonClientFrameViewAsh
   void OnThemeChanged() override;
   void ChildPreferredSizeChanged(views::View* child) override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
-  bool OnMouseDragged(const ui::MouseEvent& event) override;
-  void OnMouseReleased(const ui::MouseEvent& event) override;
   void OnGestureEvent(ui::GestureEvent* event) override;
 
   // BrowserFrameHeaderAsh::AppearanceProvider:
@@ -194,8 +191,7 @@ class BrowserNonClientFrameViewAsh
   std::unique_ptr<ash::FrameHeader> CreateFrameHeader();
 
   // Creates views and does other setup for a hosted app.
-  // TODO(estade): remove the parameter as it's unused in Mash.
-  void SetUpForHostedApp(ash::DefaultFrameHeader* header);
+  void SetUpForHostedApp();
 
   // Triggers the hosted app origin and icon animations, assumes the hosted
   // app UI elements exist.
@@ -219,10 +215,6 @@ class BrowserNonClientFrameViewAsh
 
   // Returns whether this window is currently in the overview list.
   bool IsInOverviewMode() const;
-
-  void StartWindowMove(const ui::LocatedEvent& event);
-
-  void OnWindowMoveDone(bool success);
 
   // Returns the top level aura::Window for this browser window.
   const aura::Window* GetFrameWindow() const;
@@ -252,8 +244,6 @@ class BrowserNonClientFrameViewAsh
   mojo::Binding<ash::mojom::SplitViewObserver> observer_binding_{this};
 
   ScopedObserver<aura::Window, aura::WindowObserver> window_observer_{this};
-
-  bool performing_window_move_ = false;
 
   // Maintains the current split view state.
   ash::mojom::SplitViewState split_view_state_ =

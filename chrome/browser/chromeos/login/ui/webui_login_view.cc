@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 
 #include <memory>
+#include <utility>
 
 #include "ash/public/cpp/ash_features.h"
 #include "base/bind.h"
@@ -20,8 +21,6 @@
 #include "chrome/browser/chromeos/lock_screen_apps/state_controller.h"
 #include "chrome/browser/chromeos/login/ui/login_display_host_webui.h"
 #include "chrome/browser/chromeos/login/ui/login_display_webui.h"
-#include "chrome/browser/chromeos/login/ui/preloaded_web_view.h"
-#include "chrome/browser/chromeos/login/ui/preloaded_web_view_factory.h"
 #include "chrome/browser/chromeos/login/ui/web_contents_forced_title.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
@@ -50,8 +49,8 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
-#include "content/public/common/renderer_preferences.h"
 #include "extensions/browser/view_type_utils.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "third_party/blink/public/platform/web_input_event.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
@@ -218,32 +217,21 @@ void WebUILoginView::InitializeWebView(views::WebView* web_view,
   extensions::SetViewType(web_contents, extensions::VIEW_TYPE_COMPONENT);
   extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents);
-  content::RendererPreferences* prefs = web_contents->GetMutableRendererPrefs();
+  blink::mojom::RendererPreferences* prefs =
+      web_contents->GetMutableRendererPrefs();
   renderer_preferences_util::UpdateFromSystemSettings(
       prefs, ProfileHelper::GetSigninProfile());
 }
 
 void WebUILoginView::Init() {
   Profile* signin_profile = ProfileHelper::GetSigninProfile();
-
-  if (settings_.check_for_preload) {
-    PreloadedWebView* preloaded_web_view =
-        PreloadedWebViewFactory::GetForProfile(signin_profile);
-    // webui_login_ may still be null after this call if there is no preloaded
-    // instance.
-    webui_login_ = preloaded_web_view->TryTake();
-    is_reusing_webview_ = true;
-  }
-
   if (!webui_login_) {
     webui_login_ = std::make_unique<views::WebView>(signin_profile);
     webui_login_->set_owned_by_client();
-    is_reusing_webview_ = false;
   }
 
   WebContents* web_contents = web_view()->GetWebContents();
-  if (!is_reusing_webview_)
-    InitializeWebView(web_view(), settings_.web_view_title);
+  InitializeWebView(web_view(), settings_.web_view_title);
 
   web_view()->set_allow_accelerators(true);
   AddChildView(web_view());
@@ -314,8 +302,7 @@ gfx::NativeWindow WebUILoginView::GetNativeWindow() const {
 }
 
 void WebUILoginView::LoadURL(const GURL& url) {
-  if (!is_reusing_webview_)
-    web_view()->LoadInitialURL(url);
+  web_view()->LoadInitialURL(url);
   web_view()->RequestFocus();
 }
 
@@ -509,7 +496,7 @@ void WebUILoginView::RequestMediaAccessPermission(
 bool WebUILoginView::CheckMediaAccessPermission(
     content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
-    content::MediaStreamType type) {
+    blink::MediaStreamType type) {
   return MediaCaptureDevicesDispatcher::GetInstance()
       ->CheckMediaAccessPermission(render_frame_host, security_origin, type);
 }
@@ -547,13 +534,6 @@ void WebUILoginView::OnFocusLeavingSystemTray(bool reverse) {
 }
 
 bool WebUILoginView::MoveFocusToSystemTray(bool reverse) {
-  // The focus should not move to the system tray if voice interaction OOBE is
-  // active.
-  if (LoginDisplayHost::default_host() &&
-      LoginDisplayHost::default_host()->IsVoiceInteractionOobe()) {
-    return false;
-  }
-
   LoginScreenClient::Get()->login_screen()->FocusLoginShelf(reverse);
   return true;
 }

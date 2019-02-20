@@ -8,27 +8,29 @@ cr.define('app_management', function() {
       /** @type {appManagement.mojom.PageCallbackRouter} */
       this.callbackRouter = new appManagement.mojom.PageCallbackRouter();
 
-      /** @type {PageHandlerInterface} */
+      /** @type {appManagement.mojom.PageHandlerInterface} */
       this.handler = null;
 
       const urlParams = new URLSearchParams(window.location.search);
       const useFake = urlParams.get('fakeBackend');
 
       if (useFake) {
-        this.handler = new app_management.FakePageHandler(this.callbackRouter);
+        this.handler = new app_management.FakePageHandler(
+            this.callbackRouter.createProxy());
 
         const /** @type {!Array<App>}*/ appList = [
           app_management.FakePageHandler.createApp(
-              'ahfgeienlihckogmohjhadlkjgocpleb'),
+              'ahfgeienlihckogmohjhadlkjgocpleb', {title: 'Web Store'}),
           app_management.FakePageHandler.createApp(
               'aohghmighlieiainnegkcijnfilokake',
-              {type: apps.mojom.AppType.kArc}),
+              {title: 'Docs', type: AppType.kArc}),
           app_management.FakePageHandler.createApp(
-              'blpcfgokakmgnkcojhhkbfbldkacnbeo'),
+              'blpcfgokakmgnkcojhhkbfbldkacnbeo',
+              {title: 'Youtube', type: AppType.kCrostini}),
           app_management.FakePageHandler.createApp(
-              'pjkljhegncpnkpknbcohdijeoejaedia'),
+              'pjkljhegncpnkpknbcohdijeoejaedia', {title: 'Gmail'}),
           app_management.FakePageHandler.createApp(
-              'aapocclcgogkmnckokdopfmhonfmgoek'),
+              'aapocclcgogkmnckokdopfmhonfmgoek', {title: 'Slide'}),
         ];
 
         this.handler.setApps(appList);
@@ -37,7 +39,7 @@ cr.define('app_management', function() {
         this.handler = new appManagement.mojom.PageHandlerProxy();
         const factory = appManagement.mojom.PageHandlerFactory.getProxy();
         factory.createPageHandler(
-            this.callbackRouter.createProxy(), this.handler.createRequest());
+            this.callbackRouter.createProxy(), this.handler.$.createRequest());
       }
     }
   }

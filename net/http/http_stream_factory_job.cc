@@ -30,10 +30,10 @@
 #include "net/http/http_basic_stream.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_proxy_client_socket.h"
-#include "net/http/http_proxy_client_socket_pool.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_stream_factory.h"
+#include "net/http/proxy_connect_redirect_http_stream.h"
 #include "net/http/proxy_fallback.h"
 #include "net/log/net_log.h"
 #include "net/log/net_log_capture_mode.h"
@@ -45,9 +45,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool.h"
 #include "net/socket/client_socket_pool_manager.h"
-#include "net/socket/socks_client_socket_pool.h"
 #include "net/socket/ssl_client_socket.h"
-#include "net/socket/ssl_client_socket_pool.h"
 #include "net/socket/stream_socket.h"
 #include "net/spdy/bidirectional_stream_spdy_impl.h"
 #include "net/spdy/http2_push_promise_index.h"
@@ -56,7 +54,7 @@
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_cert_request_info.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 #include "url/url_constants.h"
 
 namespace net {
@@ -586,8 +584,9 @@ void HttpStreamFactory::Job::RunLoop(int result) {
 
   if (job_type_ == PRECONNECT) {
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&HttpStreamFactory::Job::OnPreconnectsComplete,
-                              ptr_factory_.GetWeakPtr()));
+        FROM_HERE,
+        base::BindOnce(&HttpStreamFactory::Job::OnPreconnectsComplete,
+                       ptr_factory_.GetWeakPtr()));
     return;
   }
 
@@ -599,8 +598,8 @@ void HttpStreamFactory::Job::RunLoop(int result) {
     next_state_ = STATE_WAITING_USER_ACTION;
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&HttpStreamFactory::Job::OnCertificateErrorCallback,
-                   ptr_factory_.GetWeakPtr(), result, ssl_info));
+        base::BindOnce(&HttpStreamFactory::Job::OnCertificateErrorCallback,
+                       ptr_factory_.GetWeakPtr(), result, ssl_info));
     return;
   }
 
@@ -611,8 +610,9 @@ void HttpStreamFactory::Job::RunLoop(int result) {
       if (!connection_.get()) {
         base::ThreadTaskRunnerHandle::Get()->PostTask(
             FROM_HERE,
-            base::Bind(&Job::OnStreamFailedCallback, ptr_factory_.GetWeakPtr(),
-                       ERR_PROXY_AUTH_REQUESTED_WITH_NO_CONNECTION));
+            base::BindOnce(&Job::OnStreamFailedCallback,
+                           ptr_factory_.GetWeakPtr(),
+                           ERR_PROXY_AUTH_REQUESTED_WITH_NO_CONNECTION));
         return;
       }
       CHECK(connection_->socket());
@@ -623,16 +623,17 @@ void HttpStreamFactory::Job::RunLoop(int result) {
           static_cast<ProxyClientSocket*>(connection_->socket());
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
-          base::Bind(&Job::OnNeedsProxyAuthCallback, ptr_factory_.GetWeakPtr(),
-                     *proxy_socket->GetConnectResponseInfo(),
-                     base::RetainedRef(proxy_socket->GetAuthController())));
+          base::BindOnce(&Job::OnNeedsProxyAuthCallback,
+                         ptr_factory_.GetWeakPtr(),
+                         *proxy_socket->GetConnectResponseInfo(),
+                         base::RetainedRef(proxy_socket->GetAuthController())));
       return;
     }
 
     case ERR_SSL_CLIENT_AUTH_CERT_NEEDED:
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
-          base::Bind(
+          base::BindOnce(
               &Job::OnNeedsClientAuthCallback, ptr_factory_.GetWeakPtr(),
               base::RetainedRef(
                   connection_->ssl_error_response_info().cert_request_info)));
@@ -643,15 +644,19 @@ void HttpStreamFactory::Job::RunLoop(int result) {
       DCHECK(connection_->socket());
       DCHECK(establishing_tunnel_);
 
+      LoadTimingInfo load_timing_info;
+      bool have_load_timing_info = connection_->GetLoadTimingInfo(
+          connection_->is_reused(), &load_timing_info);
       ProxyClientSocket* proxy_socket =
           static_cast<ProxyClientSocket*>(connection_->socket());
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
-          base::Bind(
+          base::BindOnce(
               &Job::OnHttpsProxyTunnelResponseCallback,
               ptr_factory_.GetWeakPtr(),
               *proxy_socket->GetConnectResponseInfo(),
-              base::Passed(proxy_socket->CreateConnectResponseStream())));
+              std::make_unique<ProxyConnectRedirectHttpStream>(
+                  have_load_timing_info ? &load_timing_info : nullptr)));
       return;
     }
 
@@ -659,36 +664,37 @@ void HttpStreamFactory::Job::RunLoop(int result) {
       next_state_ = STATE_DONE;
       if (new_spdy_session_.get()) {
         base::ThreadTaskRunnerHandle::Get()->PostTask(
-            FROM_HERE, base::Bind(&Job::OnNewSpdySessionReadyCallback,
-                                  ptr_factory_.GetWeakPtr()));
+            FROM_HERE, base::BindOnce(&Job::OnNewSpdySessionReadyCallback,
+                                      ptr_factory_.GetWeakPtr()));
       } else if (is_websocket_) {
         DCHECK(websocket_stream_);
         base::ThreadTaskRunnerHandle::Get()->PostTask(
-            FROM_HERE, base::Bind(&Job::OnWebSocketHandshakeStreamReadyCallback,
-                                  ptr_factory_.GetWeakPtr()));
+            FROM_HERE,
+            base::BindOnce(&Job::OnWebSocketHandshakeStreamReadyCallback,
+                           ptr_factory_.GetWeakPtr()));
       } else if (stream_type_ == HttpStreamRequest::BIDIRECTIONAL_STREAM) {
         if (!bidirectional_stream_impl_) {
           base::ThreadTaskRunnerHandle::Get()->PostTask(
-              FROM_HERE, base::Bind(&Job::OnStreamFailedCallback,
-                                    ptr_factory_.GetWeakPtr(), ERR_FAILED));
+              FROM_HERE, base::BindOnce(&Job::OnStreamFailedCallback,
+                                        ptr_factory_.GetWeakPtr(), ERR_FAILED));
         } else {
           base::ThreadTaskRunnerHandle::Get()->PostTask(
               FROM_HERE,
-              base::Bind(&Job::OnBidirectionalStreamImplReadyCallback,
-                         ptr_factory_.GetWeakPtr()));
+              base::BindOnce(&Job::OnBidirectionalStreamImplReadyCallback,
+                             ptr_factory_.GetWeakPtr()));
         }
       } else {
         DCHECK(stream_.get());
         base::ThreadTaskRunnerHandle::Get()->PostTask(
-            FROM_HERE,
-            base::Bind(&Job::OnStreamReadyCallback, ptr_factory_.GetWeakPtr()));
+            FROM_HERE, base::BindOnce(&Job::OnStreamReadyCallback,
+                                      ptr_factory_.GetWeakPtr()));
       }
       return;
 
     default:
       base::ThreadTaskRunnerHandle::Get()->PostTask(
-          FROM_HERE, base::Bind(&Job::OnStreamFailedCallback,
-                                ptr_factory_.GetWeakPtr(), result));
+          FROM_HERE, base::BindOnce(&Job::OnStreamFailedCallback,
+                                    ptr_factory_.GetWeakPtr(), result));
       return;
   }
 }
@@ -892,7 +898,7 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
       GURL::Replacements replacements;
       replacements.SetSchemeStr(url::kHttpsScheme);
       replacements.SetHostStr(destination.host());
-      const std::string new_port = base::UintToString(destination.port());
+      const std::string new_port = base::NumberToString(destination.port());
       replacements.SetPortStr(new_port);
       replacements.ClearUsername();
       replacements.ClearPassword();
@@ -1276,7 +1282,7 @@ int HttpStreamFactory::Job::DoCreateStream() {
       !spdy_session_direct_ && proxy_info_.proxy_server().is_trusted_proxy();
 
   base::WeakPtr<SpdySession> spdy_session =
-      session_->spdy_session_pool()->CreateAvailableSessionFromSocket(
+      session_->spdy_session_pool()->CreateAvailableSessionFromSocketHandle(
           spdy_session_key_, is_trusted_proxy, std::move(connection_),
           net_log_);
 

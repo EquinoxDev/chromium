@@ -6,7 +6,7 @@ Runs multiple acquires and updates.
 
 <style>
 #container {
-  contain: content;
+  contain: style layout;
   width: 150px;
   height: 150px;
   background: lightblue;
@@ -35,10 +35,10 @@ function finishTest(status_string) {
 function runTest() {
   let container = document.createElement("div");
   Promise.all([
-    container.getDisplayLock().acquire({ timeout: Infinity }),
-    container.getDisplayLock().acquire({ timeout: Infinity }),
-    container.getDisplayLock().acquire({ timeout: Infinity }),
-    container.getDisplayLock().acquire({ timeout: Infinity })
+    container.displayLock.acquire({ timeout: Infinity }),
+    container.displayLock.acquire({ timeout: Infinity }),
+    container.displayLock.acquire({ timeout: Infinity }),
+    container.displayLock.acquire({ timeout: Infinity })
   ]).then(() => {
     let child = document.createElement("div");
     child.id = "child";
@@ -48,14 +48,14 @@ function runTest() {
     document.body.appendChild(container);
 
     Promise.all([
-      container.getDisplayLock().update(),
-      container.getDisplayLock().update(),
-      container.getDisplayLock().update(),
-      container.getDisplayLock().update()
+      container.displayLock.update(),
+      container.displayLock.update(),
+      container.displayLock.update(),
+      container.displayLock.update()
     ]).then(() => {
-      container.getDisplayLock().commit().then(
+      container.displayLock.commit().then(
         () => { finishTest("PASS"); },
-        () => { finishTest("FAIL"); });
+        (e) => { finishTest("FAIL " + e.message); });
     });
   });
 }

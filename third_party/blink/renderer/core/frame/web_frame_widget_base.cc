@@ -57,8 +57,6 @@ WebFrameWidgetBase::~WebFrameWidgetBase() = default;
 void WebFrameWidgetBase::BindLocalRoot(WebLocalFrame& local_root) {
   local_root_ = ToWebLocalFrameImpl(local_root);
   local_root_->SetFrameWidget(this);
-
-  Initialize();
 }
 
 void WebFrameWidgetBase::Close() {
@@ -284,6 +282,31 @@ WebDragOperation WebFrameWidgetBase::DragTargetDragEnterOrOver(
   drag_operation_ = static_cast<WebDragOperation>(drag_operation);
 
   return drag_operation_;
+}
+
+void WebFrameWidgetBase::SendOverscrollEventFromImplSide(
+    const gfx::Vector2dF& overscroll_delta,
+    cc::ElementId scroll_latched_element_id) {
+  if (!RuntimeEnabledFeatures::OverscrollCustomizationEnabled())
+    return;
+
+  Node* target_node = View()->FindNodeFromScrollableCompositorElementId(
+      scroll_latched_element_id);
+  if (target_node) {
+    target_node->GetDocument().EnqueueOverscrollEventForNode(
+        target_node, overscroll_delta.x(), overscroll_delta.y());
+  }
+}
+
+void WebFrameWidgetBase::SendScrollEndEventFromImplSide(
+    cc::ElementId scroll_latched_element_id) {
+  if (!RuntimeEnabledFeatures::OverscrollCustomizationEnabled())
+    return;
+
+  Node* target_node = View()->FindNodeFromScrollableCompositorElementId(
+      scroll_latched_element_id);
+  if (target_node)
+    target_node->GetDocument().EnqueueScrollEndEventForNode(target_node);
 }
 
 WebFloatPoint WebFrameWidgetBase::ViewportToRootFrame(

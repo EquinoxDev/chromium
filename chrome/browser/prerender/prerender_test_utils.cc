@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
@@ -710,10 +711,9 @@ GURL PrerenderInProcessBrowserTest::GetURLWithReplacement(
     const std::string& replacement_text) {
   base::StringPairs replacement_pair;
   replacement_pair.push_back(make_pair(replacement_variable, replacement_text));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(url_file, replacement_pair,
-                                                &replacement_path);
-  return src_server()->GetURL(MakeAbsolute(replacement_path));
+  return src_server()->GetURL(
+      MakeAbsolute(net::test_server::GetFilePathWithReplacements(
+          url_file, replacement_pair)));
 }
 
 std::vector<std::unique_ptr<TestPrerender>>
@@ -743,9 +743,8 @@ GURL PrerenderInProcessBrowserTest::ServeLoaderURL(
   base::StringPairs replacement_text;
   replacement_text.push_back(
       make_pair(replacement_variable, url_to_prerender.spec()));
-  std::string replacement_path;
-  net::test_server::GetFilePathWithReplacements(loader_path, replacement_text,
-                                                &replacement_path);
+  std::string replacement_path = net::test_server::GetFilePathWithReplacements(
+      loader_path, replacement_text);
   return src_server()->GetURL(replacement_path + loader_query);
 }
 

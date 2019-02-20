@@ -281,7 +281,7 @@ class Internals final : public ScriptWrappable {
 
   unsigned mediaKeysCount();
   unsigned mediaKeySessionCount();
-  unsigned pausableObjectCount(Document*);
+  unsigned contextLifecycleStateObserverObjectCount(Document*);
   unsigned wheelEventHandlerCount(Document*) const;
   unsigned scrollEventHandlerCount(Document*) const;
   unsigned touchStartOrMoveEventHandlerCount(Document*) const;
@@ -328,6 +328,11 @@ class Internals final : public ScriptWrappable {
   InternalSettings* settings() const;
   InternalRuntimeFlags* runtimeFlags() const;
   unsigned workerThreadCount() const;
+
+  String resolveModuleSpecifier(const String& specifier,
+                                const String& base_url_string,
+                                Document*,
+                                ExceptionState&);
 
   void SetDeviceProximity(Document*,
                           const String& event_type,
@@ -495,15 +500,7 @@ class Internals final : public ScriptWrappable {
 
   bool ignoreLayoutWithPendingStylesheets(Document*);
 
-  void setNetworkConnectionInfoOverride(bool,
-                                        const String&,
-                                        const String&,
-                                        unsigned long http_rtt_msec,
-                                        double downlink_max_mbps,
-                                        ExceptionState&);
-  void setSaveDataEnabled(bool);
-
-  void clearNetworkConnectionInfoOverride();
+  Element* interestedElement();
 
   unsigned countHitRegions(CanvasRenderingContext*);
 
@@ -600,9 +597,10 @@ class Internals final : public ScriptWrappable {
 
   void addEmbedderCustomElementName(const AtomicString& name, ExceptionState&);
 
+  LocalFrame* GetFrame() const;
+
  private:
   Document* ContextDocument() const;
-  LocalFrame* GetFrame() const;
   Vector<String> IconURLs(Document*, int icon_types_mask) const;
   DOMRectList* AnnotatedRegions(Document*, bool draggable, ExceptionState&);
   void HitTestRect(HitTestLocation&,

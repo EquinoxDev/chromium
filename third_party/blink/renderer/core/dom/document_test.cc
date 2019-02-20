@@ -32,6 +32,7 @@
 
 #include <memory>
 
+#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "services/network/public/mojom/referrer_policy.mojom-shared.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -97,7 +98,7 @@ class TestSynchronousMutationObserver
           node_to_be_removed_(node_with_index.GetNode()),
           offset_(offset) {}
 
-    void Trace(blink::Visitor* visitor) {
+    void Trace(Visitor* visitor) {
       visitor->Trace(node_);
       visitor->Trace(node_to_be_removed_);
     }
@@ -119,7 +120,7 @@ class TestSynchronousMutationObserver
           old_length_(old_length),
           new_length_(new_length) {}
 
-    void Trace(blink::Visitor* visitor) { visitor->Trace(node_); }
+    void Trace(Visitor* visitor) { visitor->Trace(node_); }
   };
 
   TestSynchronousMutationObserver(Document&);
@@ -159,7 +160,7 @@ class TestSynchronousMutationObserver
     return updated_character_data_records_;
   }
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
  private:
   // Implement |SynchronousMutationObserver| member functions.
@@ -238,7 +239,7 @@ void TestSynchronousMutationObserver::NodeWillBeRemoved(Node& node) {
   removed_nodes_.push_back(&node);
 }
 
-void TestSynchronousMutationObserver::Trace(blink::Visitor* visitor) {
+void TestSynchronousMutationObserver::Trace(Visitor* visitor) {
   visitor->Trace(children_changed_nodes_);
   visitor->Trace(merge_text_nodes_records_);
   visitor->Trace(move_tree_to_new_document_nodes_);
@@ -262,7 +263,7 @@ class TestDocumentShutdownObserver
     return context_destroyed_called_counter_;
   }
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
  private:
   // Implement |DocumentShutdownObserver| member functions.
@@ -281,7 +282,7 @@ void TestDocumentShutdownObserver::ContextDestroyed(Document*) {
   ++context_destroyed_called_counter_;
 }
 
-void TestDocumentShutdownObserver::Trace(blink::Visitor* visitor) {
+void TestDocumentShutdownObserver::Trace(Visitor* visitor) {
   DocumentShutdownObserver::Trace(visitor);
 }
 
@@ -316,7 +317,7 @@ class MockDocumentValidationMessageClient
   }
   void WillBeDestroyed() override {}
 
-  // virtual void Trace(blink::Visitor* visitor) {
+  // virtual void Trace(Visitor* visitor) {
   // ValidationMessageClient::trace(visitor); }
 };
 
@@ -978,6 +979,99 @@ TEST_F(DocumentTest, InterfaceInvalidatorDestruction) {
   EXPECT_EQ(1, obs.CountInvalidateCalled());
 }
 
+// Test fixture parameterized on whether the "IsolatedWorldCSP" feature is
+// enabled.
+class IsolatedWorldCSPTest : public DocumentTest,
+                             public testing::WithParamInterface<bool> {
+ public:
+  IsolatedWorldCSPTest() {
+    RuntimeEnabledFeatures::SetIsolatedWorldCSPEnabled(GetParam());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(IsolatedWorldCSPTest);
+};
+
+// Tests ExecutionContext::GetContentSecurityPolicyForWorld().
+TEST_P(IsolatedWorldCSPTest, CSPForWorld) {
+  using ::testing::ElementsAre;
+
+  // Set a CSP for the main world.
+  const char* kMainWorldCSP = "connect-src https://google.com;";
+  GetDocument().GetContentSecurityPolicy()->DidReceiveHeader(
+      kMainWorldCSP, kContentSecurityPolicyHeaderTypeEnforce,
+      kContentSecurityPolicyHeaderSourceHTTP);
+
+  LocalFrame* frame = GetDocument().GetFrame();
+  ScriptState* main_world_script_state = ToScriptStateForMainWorld(frame);
+  v8::Isolate* isolate = main_world_script_state->GetIsolate();
+
+  constexpr int kIsolatedWorldWithoutCSPId = 1;
+  scoped_refptr<DOMWrapperWorld> world_without_csp =
+      DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithoutCSPId);
+  ASSERT_TRUE(world_without_csp->IsIsolatedWorld());
+  ScriptState* isolated_world_without_csp_script_state =
+      ToScriptState(frame, *world_without_csp);
+
+  const char* kIsolatedWorldCSP = "script-src 'none';";
+  constexpr int kIsolatedWorldWithCSPId = 2;
+  scoped_refptr<DOMWrapperWorld> world_with_csp =
+      DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithCSPId);
+  ASSERT_TRUE(world_with_csp->IsIsolatedWorld());
+  ScriptState* isolated_world_with_csp_script_state =
+      ToScriptState(frame, *world_with_csp);
+  IsolatedWorldCSP::Get().SetContentSecurityPolicy(
+      kIsolatedWorldWithCSPId, kIsolatedWorldCSP,
+      SecurityOrigin::Create(KURL("chrome-extension://123")));
+
+  // Returns the csp headers being used for the current world.
+  auto get_csp_headers = [this]() {
+    return GetDocument().GetContentSecurityPolicyForWorld()->Headers();
+  };
+
+  {
+    SCOPED_TRACE("In main world.");
+    ScriptState::Scope scope(main_world_script_state);
+    EXPECT_THAT(get_csp_headers(),
+                ElementsAre(CSPHeaderAndType(
+                    {kMainWorldCSP, kContentSecurityPolicyHeaderTypeEnforce})));
+  }
+
+  {
+    SCOPED_TRACE("In isolated world without csp.");
+    ScriptState::Scope scope(isolated_world_without_csp_script_state);
+
+    // If we are in an isolated world with no CSP defined, we use the main world
+    // CSP.
+    EXPECT_THAT(get_csp_headers(),
+                ElementsAre(CSPHeaderAndType(
+                    {kMainWorldCSP, kContentSecurityPolicyHeaderTypeEnforce})));
+  }
+
+  {
+    bool is_isolated_world_csp_enabled = GetParam();
+    SCOPED_TRACE(base::StringPrintf(
+        "In isolated world with csp and 'IsolatedWorldCSP' %s",
+        is_isolated_world_csp_enabled ? "enabled" : "disabled"));
+    ScriptState::Scope scope(isolated_world_with_csp_script_state);
+
+    if (!is_isolated_world_csp_enabled) {
+      // With 'IsolatedWorldCSP' feature disabled, we should just bypass the
+      // main world CSP by using an empty CSP.
+      EXPECT_TRUE(get_csp_headers().IsEmpty());
+    } else {
+      // With 'IsolatedWorldCSP' feature enabled, we use the isolated world's
+      // CSP if it specified one.
+      EXPECT_THAT(
+          get_csp_headers(),
+          ElementsAre(CSPHeaderAndType(
+              {kIsolatedWorldCSP, kContentSecurityPolicyHeaderTypeEnforce})));
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(, IsolatedWorldCSPTest, testing::Values(true, false));
+
 TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
   constexpr SandboxFlags kSandboxMask = kSandboxScripts;
   GetDocument().EnforceSandboxFlags(kSandboxMask);
@@ -1000,7 +1094,8 @@ TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
   scoped_refptr<DOMWrapperWorld> world_with_csp =
       DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithCSPId);
   IsolatedWorldCSP::Get().SetContentSecurityPolicy(
-      kIsolatedWorldWithCSPId, String::FromUTF8("script-src *"));
+      kIsolatedWorldWithCSPId, String::FromUTF8("script-src *"),
+      SecurityOrigin::Create(KURL("chrome-extension://123")));
   ScriptState* isolated_world_with_csp_script_state =
       ToScriptState(frame, *world_with_csp);
   ASSERT_TRUE(world_with_csp->IsIsolatedWorld());
@@ -1179,7 +1274,7 @@ TEST_P(ParameterizedViewportFitDocumentTest, EffectiveViewportFit) {
   EXPECT_EQ(std::get<2>(GetParam()), GetViewportFit());
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     All,
     ParameterizedViewportFitDocumentTest,
     testing::Values(

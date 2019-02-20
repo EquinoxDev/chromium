@@ -31,7 +31,7 @@ class NGTextFragmentPainterTest : public PaintControllerPaintTest,
         ScopedLayoutNGForTest(true) {}
 };
 
-INSTANTIATE_PAINT_TEST_CASE_P(NGTextFragmentPainterTest);
+INSTANTIATE_PAINT_TEST_SUITE_P(NGTextFragmentPainterTest);
 
 TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
   SetBodyInnerHTML(R"HTML(
@@ -47,8 +47,7 @@ TEST_P(NGTextFragmentPainterTest, TestTextStyle) {
 
   InvalidateAll(RootPaintController());
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint();
-  IntRect interest_rect(0, 0, 640, 480);
-  Paint(&interest_rect);
+  Paint(IntRect(0, 0, 640, 480));
 
   const NGPaintFragment& root_fragment = *block_flow.PaintFragment();
   EXPECT_EQ(1u, root_fragment.Children().size());

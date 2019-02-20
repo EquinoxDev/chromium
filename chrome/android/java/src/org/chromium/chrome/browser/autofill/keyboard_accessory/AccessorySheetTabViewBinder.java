@@ -4,6 +4,7 @@
 
 package org.chromium.chrome.browser.autofill.keyboard_accessory;
 
+import android.support.annotation.LayoutRes;
 import android.support.annotation.Nullable;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
@@ -15,7 +16,7 @@ import android.widget.TextView;
 
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.autofill.keyboard_accessory.AccessorySheetTabModel.AccessorySheetDataPiece;
-import org.chromium.chrome.browser.modelutil.ListModel;
+import org.chromium.ui.modelutil.ListModel;
 
 /**
  * This stateless class provides methods to bind a {@link ListModel<AccessorySheetDataPiece>}
@@ -25,7 +26,7 @@ class AccessorySheetTabViewBinder {
     /**
      * Holds any View that represents a list entry.
      */
-    static class ElementViewHolder<T, V extends View> extends RecyclerView.ViewHolder {
+    static abstract class ElementViewHolder<T, V extends View> extends RecyclerView.ViewHolder {
         ElementViewHolder(ViewGroup parent, int layout) {
             super(LayoutInflater.from(parent.getContext()).inflate(layout, parent, false));
         }
@@ -35,7 +36,7 @@ class AccessorySheetTabViewBinder {
             bind((T) accessorySheetDataWrapper.getDataPiece(), (V) itemView);
         }
 
-        void bind(T t, V view) {}
+        protected abstract void bind(T t, V view);
     }
 
     /**
@@ -60,7 +61,11 @@ class AccessorySheetTabViewBinder {
      */
     static class TitleViewHolder extends ElementViewHolder<String, LinearLayout> {
         TitleViewHolder(ViewGroup parent) {
-            super(parent, R.layout.keyboard_accessory_sheet_tab_title);
+            this(parent, R.layout.keyboard_accessory_sheet_tab_legacy_title);
+        }
+
+        TitleViewHolder(ViewGroup parent, @LayoutRes int layout) {
+            super(parent, layout);
         }
 
         @Override

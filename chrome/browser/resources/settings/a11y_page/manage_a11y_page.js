@@ -163,17 +163,6 @@ Polymer({
       },
     },
 
-    /**
-     * Whether the docked magnifier flag is enabled.
-     * @private {boolean}
-     */
-    dockedMagnifierFeatureEnabled_: {
-      type: Boolean,
-      value: function() {
-        return loadTimeData.getBoolean('dockedMagnifierFeatureEnabled');
-      },
-    },
-
     /** @private */
     isGuest_: {
       type: Boolean,
@@ -225,12 +214,11 @@ Polymer({
   },
 
   /**
-   * @param {!CustomEvent} e
+   * @param {!CustomEvent<boolean>} e
    * @private
    */
   toggleStartupSoundEnabled_: function(e) {
-    const checked = /** @type {boolean} */ (e.detail);
-    chrome.send('setStartupSoundEnabled', [checked]);
+    chrome.send('setStartupSoundEnabled', [e.detail]);
   },
 
   /**

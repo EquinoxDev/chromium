@@ -32,14 +32,28 @@ class AccountManagerMigrator : public KeyedService {
   AccountMigrationRunner::Status GetStatus() const;
 
  private:
+  // Returns whether migrations should be run or skipped.
+  bool ShouldRunMigrations() const;
+
+  // Adds the necessary migration steps to |migration_runner_|.
+  void AddMigrationSteps();
+
   void OnMigrationRunComplete(
       const AccountMigrationRunner::MigrationResult& result);
+
+  // Runs tasks that must be completed regardless of the success / failure /
+  // no-op of migrations.
+  void RunCleanupTasks();
 
   // A non-owning pointer to |Profile|.
   Profile* const profile_;
 
   // Used for running migration steps.
   chromeos::AccountMigrationRunner migration_runner_;
+
+  // Stores if any migration steps were actually run. It is possible for the
+  // migration flow to be a no-op, in which case this will be |false|.
+  bool ran_migration_steps_ = false;
 
   base::WeakPtrFactory<AccountManagerMigrator> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(AccountManagerMigrator);

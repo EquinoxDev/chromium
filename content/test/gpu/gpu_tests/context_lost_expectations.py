@@ -42,13 +42,11 @@ class ContextLostExpectations(GpuTestExpectations):
     self.Skip('ContextLost_WebGLContextLostFromSelectElement',
               ['lion', 'debug'], bug=498149)
 
-    # Flaking on Mac.
-    self.Flaky('GpuCrash_GPUProcessCrashesExactlyOncePerVisitToAboutGpuCrash',
-              ['mac'], bug=878258)
-    self.Flaky('ContextLost_WebGLBlockedAfterJSNavigation',
-              ['mac'], bug=900948)
-    self.Flaky('ContextLost_WebGLUnblockedAfterUserInitiatedReload',
-              ['mac'], bug=900948)
+    # Too difficult to make this test work on Mac and Android for now.
+    # Disabling GLES3 support at the GL bindings level doesn't work
+    # there yet.
+    self.Skip('ContextLost_WebGL2Blocked', ['mac'], bug=923134)
+    self.Skip('ContextLost_WebGL2Blocked', ['android'], bug=923134)
 
     # 'Browser must support tab control' raised on Android
     self.Skip('GpuCrash_GPUProcessCrashesExactlyOncePerVisitToAboutGpuCrash',
@@ -57,12 +55,6 @@ class ContextLostExpectations(GpuTestExpectations):
               ['android'], bug=609629)
     self.Skip('ContextLost_WebGLContextLostInHiddenTab',
               ['android'], bug=609629)
-
-    # Timing out on Nexus 5.
-    self.Skip('ContextLost_WebGLBlockedAfterJSNavigation',
-              ['android', ('qualcomm', 'Adreno (TM) 330')], bug=911678)
-    self.Skip('ContextLost_WebGLUnblockedAfterUserInitiatedReload',
-              ['android', ('qualcomm', 'Adreno (TM) 330')], bug=911678)
 
     # Flaking on Nexus 5X
     self.Flaky('ContextLost_WebGLUnblockedAfterUserInitiatedReload',
@@ -78,8 +70,3 @@ class ContextLostExpectations(GpuTestExpectations):
               ['android', ('qualcomm', 'Adreno (TM) 420')], bug=611906)
     self.Fail('ContextLost_WebGLContextLostFromQuantity',
               ['android', ('qualcomm', 'Adreno (TM) 420')], bug=611906)
-    # The following two tests time out.
-    self.Skip('ContextLost_WebGLBlockedAfterJSNavigation',
-              ['android', ('qualcomm', 'Adreno (TM) 420')], bug=911678)
-    self.Skip('ContextLost_WebGLUnblockedAfterUserInitiatedReload',
-              ['android', ('qualcomm', 'Adreno (TM) 420')], bug=911678)

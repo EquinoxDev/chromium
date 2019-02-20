@@ -146,6 +146,10 @@ class DummyTraceWriter : public perfetto::TraceWriter {
     return perfetto::WriterID(0);
   }
 
+  uint64_t written() const override {
+    return 0u;
+  }
+
  private:
   perfetto::protos::pbzero::TracePacket trace_packet_;
   protozero::ScatteredStreamWriterNullDelegate delegate_;
@@ -166,6 +170,10 @@ class MockTraceWriter : public perfetto::TraceWriter {
 
   perfetto::WriterID writer_id() const override {
     return perfetto::WriterID(0);
+  }
+
+  uint64_t written() const override {
+    return 0u;
   }
 
  private:
@@ -216,9 +224,8 @@ class TraceEventDataSourceTest : public testing::Test {
     producer_client_ = std::make_unique<MockProducerClient>(
         scoped_task_environment_.GetMainThreadTaskRunner());
 
-    auto data_source_config = mojom::DataSourceConfig::New();
-    TraceEventDataSource::GetInstance()->StartTracing(producer_client(),
-                                                      *data_source_config);
+    TraceEventDataSource::GetInstance()->StartTracing(
+        producer_client(), perfetto::DataSourceConfig());
   }
 
   MockProducerClient* producer_client() { return producer_client_.get(); }
@@ -251,7 +258,7 @@ void HasMetadataValue(const perfetto::protos::ChromeMetadata& entry,
   EXPECT_TRUE(entry.has_json_value());
 
   std::unique_ptr<base::Value> child_dict =
-      base::JSONReader::Read(entry.json_value());
+      base::JSONReader::ReadDeprecated(entry.json_value());
   EXPECT_EQ(*child_dict, value);
 }
 
@@ -287,8 +294,8 @@ TEST_F(TraceEventDataSourceTest, MetadataSourceBasicTypes) {
 
   CreateTraceEventDataSource();
 
-  auto data_source_config = mojom::DataSourceConfig::New();
-  metadata_source->StartTracing(producer_client(), *data_source_config);
+  metadata_source->StartTracing(producer_client(),
+                                perfetto::DataSourceConfig());
 
   base::RunLoop wait_for_stop;
   metadata_source->StopTracing(wait_for_stop.QuitClosure());
@@ -595,6 +602,8 @@ TEST_F(TraceEventDataSourceTest, UpdateDurationOfCompleteEvent) {
   auto new_events = producer_client()->GetChromeTraceEvents(0);
   EXPECT_EQ(new_events.size(), 1);
 }
+
+// TODO(eseckler): Add startup tracing unittests.
 
 }  // namespace
 

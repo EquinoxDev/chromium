@@ -53,7 +53,7 @@
 
 namespace v8 {
 class Isolate;
-};
+}
 
 namespace blink {
 
@@ -62,7 +62,6 @@ class IncrementalMarkingScope;
 class IncrementalMarkingTestDriver;
 }  // namespace incremental_marking_test
 
-class GarbageCollectedMixinConstructorMarkerBase;
 class MarkingVisitor;
 class PersistentNode;
 class PersistentRegion;
@@ -261,7 +260,7 @@ class PLATFORM_EXPORT ThreadState final
   bool CheckThread() const { return thread_ == CurrentThread(); }
 
   ThreadHeap& Heap() const { return *heap_; }
-  ThreadIdentifier ThreadId() const { return thread_; }
+  base::PlatformThreadId ThreadId() const { return thread_; }
 
   // When ThreadState is detaching from non-main thread its
   // heap is expected to be empty (because it is going away).
@@ -480,29 +479,6 @@ class PLATFORM_EXPORT ThreadState final
     perform_cleanup_ = perform_cleanup;
   }
 
-  // By entering a gc-forbidden scope, conservative GCs will not
-  // be allowed while handling an out-of-line allocation request.
-  // Intended used when constructing subclasses of GC mixins, where
-  // the object being constructed cannot be safely traced & marked
-  // fully should a GC be allowed while its subclasses are being
-  // constructed.
-  void EnterGCForbiddenScopeIfNeeded(
-      GarbageCollectedMixinConstructorMarkerBase* gc_mixin_marker) {
-    DCHECK(CheckThread());
-    if (!gc_mixin_marker_) {
-      EnterMixinConstructionScope();
-      gc_mixin_marker_ = gc_mixin_marker;
-    }
-  }
-  void LeaveGCForbiddenScopeIfNeeded(
-      GarbageCollectedMixinConstructorMarkerBase* gc_mixin_marker) {
-    DCHECK(CheckThread());
-    if (gc_mixin_marker_ == gc_mixin_marker) {
-      LeaveMixinConstructionScope();
-      gc_mixin_marker_ = nullptr;
-    }
-  }
-
   void FreePersistentNode(PersistentRegion*, PersistentNode*);
 
   using PersistentClearCallback = void (*)(void*);
@@ -558,19 +534,7 @@ class PLATFORM_EXPORT ThreadState final
   MarkingVisitor* CurrentVisitor() { return current_gc_data_.visitor.get(); }
 
   // Implementation for WebRAILModeObserver
-  void OnRAILModeChanged(v8::RAILMode new_mode) override {
-    should_optimize_for_load_time_ = new_mode == v8::RAILMode::PERFORMANCE_LOAD;
-    // When switching RAIL mode to load we try to avoid incremental marking as
-    // the write barrier cost is noticeable on throughput and garbage
-    // accumulated during loading is likely to be alive during that phase. The
-    // same argument holds for unified heap garbage collections with the
-    // difference that these collections are triggered by V8 and should thus be
-    // avoided on that end.
-    if (should_optimize_for_load_time_ && IsIncrementalMarking() &&
-        !IsUnifiedGCMarkingInProgress() &&
-        GetGCState() == GCState::kIncrementalMarkingStepScheduled)
-      ScheduleIncrementalMarkingFinalize();
-  }
+  void OnRAILModeChanged(v8::RAILMode new_mode) override;
 
  private:
   // Stores whether some ThreadState is currently in incremental marking.
@@ -691,7 +655,7 @@ class PLATFORM_EXPORT ThreadState final
   static uint8_t main_thread_state_storage_[];
 
   std::unique_ptr<ThreadHeap> heap_;
-  ThreadIdentifier thread_;
+  base::PlatformThreadId thread_;
   std::unique_ptr<PersistentRegion> persistent_region_;
   std::unique_ptr<PersistentRegion> weak_persistent_region_;
   intptr_t* start_of_stack_;
@@ -706,8 +670,6 @@ class PLATFORM_EXPORT ThreadState final
 
   TimeDelta next_incremental_marking_step_duration_;
   TimeDelta previous_incremental_marking_time_left_;
-
-  GarbageCollectedMixinConstructorMarkerBase* gc_mixin_marker_;
 
   GCState gc_state_;
   GCPhase gc_phase_;

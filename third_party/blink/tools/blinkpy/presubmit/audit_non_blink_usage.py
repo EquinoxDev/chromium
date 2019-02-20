@@ -40,6 +40,7 @@ _CONFIG = [
             'base::MakeRefCounted',
             'base::Optional',
             'base::OptionalOrNullptr',
+            'base::PlatformThreadId',
             'base::RefCountedData',
             'base::RunLoop',
             'base::CreateSequencedTaskRunnerWithTraits',
@@ -56,6 +57,7 @@ _CONFIG = [
             'base::TimeTicks',
             'base::ThreadTicks',
             'base::UnguessableToken',
+            'base::UnguessableTokenHash',
             'base::UnsafeSharedMemoryRegion',
             'base::WeakPtr',
             'base::WeakPtrFactory',
@@ -68,6 +70,10 @@ _CONFIG = [
             'base::size',
             'base::span',
             'logging::GetVlogLevel',
+
+            # //base/observer_list.h.
+            'base::ObserverList',
+            'base::CheckedObserver',
 
             # //base/bind_helpers.h.
             'base::DoNothing',
@@ -107,6 +113,9 @@ _CONFIG = [
             'base::IsValueInRangeForNumericType',
             'base::IsTypeInRangeForNumericType',
             'base::IsValueNegative',
+
+            # //base/strings/char_traits.h.
+            'base::CharTraits',
 
             # //base/synchronization/waitable_event.h.
             'base::WaitableEvent',
@@ -159,6 +168,7 @@ _CONFIG = [
             # Feature list checking.
             'base::Feature.*',
             'base::FEATURE_.+',
+            "base::GetFieldTrial.*",
             'features::.+',
 
             # PartitionAlloc
@@ -173,8 +183,10 @@ _CONFIG = [
 
             # Chromium geometry types.
             'gfx::Point',
+            'gfx::Point3F',
             'gfx::Rect',
             'gfx::RectF',
+            'gfx::RRectF',
             'gfx::Size',
             'gfx::SizeF',
             'gfx::Transform',
@@ -214,6 +226,9 @@ _CONFIG = [
             'cc::EventListenerClass',
             'cc::EventListenerProperties',
 
+            # Animation
+            'cc::AnimationHost',
+
             # Scrolling
             'cc::ScrollOffsetAnimationCurve',
             'cc::ScrollStateData',
@@ -225,7 +240,6 @@ _CONFIG = [
             'url::.+',
 
             # Nested namespaces under the blink namespace
-            'background_scheduler::.+',
             'canvas_heuristic_parameters::.+',
             'compositor_target_property::.+',
             'cors::.+',
@@ -253,11 +267,12 @@ _CONFIG = [
             'style_change_extra_data::.+',
             'style_change_reason::.+',
             'svg_path_parser::.+',
-            'trace_event::.+',
             'touch_action_util::.+',
+            'trace_event::.+',
             'unicode::.+',
             'vector_math::.+',
             'web_core_test_support::.+',
+            'worker_pool::.+',
             'xpath::.+',
             '[a-z_]+_names::.+',
 
@@ -305,8 +320,17 @@ _CONFIG = [
             # STL types such as std::unique_ptr are encouraged.
             'std::.+',
 
+            # UI Keyconverter
+            'ui::DomCode',
+            'ui::DomKey',
+            'ui::KeycodeConverter',
+
             # Blink uses UKM for logging e.g. always-on leak detection (crbug/757374)
             'ukm::.+',
+
+            # Permit using crash keys inside Blink without jumping through
+            # hoops.
+            'crash_reporter::.*CrashKey.*',
         ],
         'disallowed': [
             '.+',
@@ -323,6 +347,12 @@ _CONFIG = [
         'allowed': [
             # For memory reduction histogram.
             'base::ProcessMetrics',
+        ],
+    },
+    {
+        'paths': ['third_party/blink/renderer/controller/oom_intervention_impl.cc'],
+        'allowed': [
+            'base::BindOnce',
         ],
     },
     {
@@ -442,6 +472,22 @@ _CONFIG = [
             'gpu::MailboxHolder',
             'display::Display',
         ],
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/modules/media_capabilities/',
+        ],
+        'allowed': [
+            'media::.+',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/modules/mediastream/',
+        ],
+        'allowed': [
+            'media::.+',
+        ]
     },
     {
         'paths': [

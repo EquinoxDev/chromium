@@ -9,7 +9,7 @@
 Polymer({
   is: 'site-entry',
 
-  behaviors: [SiteSettingsBehavior],
+  behaviors: [SiteSettingsBehavior, cr.ui.FocusRowBehavior],
 
   properties: {
     /**
@@ -60,10 +60,19 @@ Polymer({
         return [];
       },
     },
-  },
 
-  listeners: {
-    'focus': 'onFocus_',
+    /**
+     * An array containing the strings to display showing the individual cookies
+     * number for each origin in |siteGroup|.
+     * @type {!Array<string>}
+     * @private
+     */
+    cookiesNum_: {
+      type: Array,
+      value: function() {
+        return [];
+      }
+    }
   },
 
   /** @private {?settings.LocalDataBrowserProxy} */
@@ -150,42 +159,16 @@ Polymer({
 
     if (!this.grouped_(siteGroup)) {
       // Ensure ungrouped |siteGroup|s do not get stuck in an opened state.
-      if (this.$.collapseChild.opened) {
+      const collapseChild = this.$.originList.getIfExists();
+      if (collapseChild && collapseChild.opened) {
         this.toggleCollapsible_();
-      }
-      // Ungrouped site-entries should not show cookies.
-      if (this.cookieString_) {
-        this.cookieString_ = '';
       }
     }
     if (!siteGroup) {
       return;
     }
     this.calculateUsageInfo_(siteGroup);
-
-    if (!this.grouped_(siteGroup)) {
-      return;
-    }
-
-    const siteList = [this.displayName_];
-    this.localDataBrowserProxy_.getNumCookiesList(siteList)
-        .then(numCookiesList => {
-          assert(siteList.length == numCookiesList.length);
-
-          const numCookies = numCookiesList[0].numCookies;
-          if (siteGroup.numCookies != numCookies) {
-            this.fire('site-entry-storage-updated');
-          }
-          siteGroup.numCookies = numCookies;
-          this.notifyPath('siteGroup.numCookies');
-
-          return numCookies == 0 ?
-              Promise.resolve('') :
-              this.localDataBrowserProxy_.getNumCookiesString(numCookies);
-        })
-        .then(string => {
-          this.cookieString_ = string;
-        });
+    this.calculateNumberOfCookies_(siteGroup);
   },
 
   /**
@@ -229,15 +212,11 @@ Polymer({
   /**
    * Calculates the amount of disk storage used by the given group of origins
    * and eTLD+1. Also updates the corresponding display strings.
-   * TODO(https://crbug.com/835712): Add website storage as well.
    * @param {SiteGroup} siteGroup The eTLD+1 group of origins.
    * @private
    */
   calculateUsageInfo_: function(siteGroup) {
     const getFormattedBytesForSize = (numBytes) => {
-      if (numBytes == 0) {
-        return Promise.resolve('0 B');
-      }
       return this.browserProxy.getFormattedBytes(numBytes);
     };
 
@@ -258,6 +237,34 @@ Polymer({
   },
 
   /**
+   * Calculates the number of cookies set on the given group of origins
+   * and eTLD+1. Also updates the corresponding display strings.
+   * @param {SiteGroup} siteGroup The eTLD+1 group of origins.
+   * @private
+   */
+  calculateNumberOfCookies_: function(siteGroup) {
+    const getCookieNumString = (numCookies) => {
+      if (numCookies == 0) {
+        return Promise.resolve('');
+      }
+      return this.localDataBrowserProxy_.getNumCookiesString(numCookies);
+    };
+
+    this.cookiesNum_ = new Array(siteGroup.origins.length);
+    siteGroup.origins.forEach((originInfo, i) => {
+      if (this.grouped_(siteGroup)) {
+        getCookieNumString(originInfo.numCookies).then((string) => {
+          this.set(`cookiesNum_.${i}`, string);
+        });
+      }
+    });
+
+    getCookieNumString(siteGroup.numCookies).then(string => {
+      this.cookieString_ = string;
+    });
+  },
+
+  /**
    * Array binding for the |originUsages_| array for use in the HTML.
    * @param {!{base: !Array<string>}} change The change record for the array.
    * @param {number} index The index of the array item.
@@ -265,6 +272,17 @@ Polymer({
    * @private
    */
   originUsagesItem_: function(change, index) {
+    return change.base[index];
+  },
+
+  /**
+   * Array binding for the |cookiesNum_| array for use in the HTML.
+   * @param {!{base: !Array<string>}} change The change record for the array.
+   * @param {number} index The index of the array item.
+   * @return {string}
+   * @private
+   */
+  originCookiesItem_: function(change, index) {
     return change.base[index];
   },
 
@@ -315,7 +333,7 @@ Polymer({
    */
   toggleCollapsible_: function() {
     const collapseChild =
-        /** @type {IronCollapseElement} */ (this.$.collapseChild);
+        /** @type {IronCollapseElement} */ (this.$.originList.get());
     collapseChild.toggle();
     this.$.toggleButton.setAttribute('aria-expanded', collapseChild.opened);
     this.$.expandIcon.toggleClass('icon-expand-more');
@@ -324,58 +342,17 @@ Polymer({
   },
 
   /**
-   * Opens the overflow menu at event target.
-   * @param {!{target: !Element}} e
-   * @private
-   */
-  showOverflowMenu_: function(e) {
-    this.$.menu.get().showAt(e.target);
-  },
-
-  /** @private */
-  onCloseDialog_: function(e) {
-    e.target.closest('cr-dialog').close();
-    this.$.menu.get().close();
-  },
-
-  /**
-   * Confirms the resetting of all content settings for an origin.
-   * @param {!{target: !Element}} e
-   * @private
-   */
-  onConfirmResetSettings_: function(e) {
-    e.preventDefault();
-    this.$.confirmResetSettings.showModal();
-  },
-
-  /**
-   * Resets all permissions for all origins listed in |siteGroup.origins|.
+   * Fires a custom event when the menu button is clicked. Sends the details
+   * of the site entry item and where the menu should appear.
    * @param {!Event} e
    * @private
    */
-  onResetSettings_: function(e) {
-    const contentSettingsTypes = this.getCategoryList();
-    for (let i = 0; i < this.siteGroup.origins.length; ++i) {
-      const origin = this.siteGroup.origins[i].origin;
-      this.browserProxy.setOriginPermissions(
-          origin, contentSettingsTypes, settings.ContentSetting.DEFAULT);
-      if (contentSettingsTypes.includes(
-              settings.ContentSettingsTypes.PLUGINS)) {
-        this.browserProxy.clearFlashPref(origin);
-      }
-    }
-    this.onCloseDialog_(e);
-  },
-
-  /**
-   * Formats the |label| string with |name|, using $<num> as markers.
-   * @param {string} label
-   * @param {string} name
-   * @return {string}
-   * @private
-   */
-  getFormatString_: function(label, name) {
-    return loadTimeData.substituteString(label, name);
+  showOverflowMenu_: function(e) {
+    this.fire('open-menu', {
+      target: Polymer.dom(e).localTarget,
+      index: this.listIndex,
+      item: this.siteGroup,
+    });
   },
 
   /**
@@ -402,13 +379,5 @@ Polymer({
       return 'first';
     }
     return '';
-  },
-
-  /**
-   * Focuses the first focusable button in this site-entry.
-   * @private
-   */
-  onFocus_: function() {
-    this.button_.focus();
   },
 });

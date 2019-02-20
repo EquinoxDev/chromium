@@ -6,7 +6,7 @@ Calls update without first calling acquire, which fails.
 
 <style>
 #container {
-  contain: content;
+  contain: style layout;
   width: 150px;
   height: 150px;
   background: lightblue;
@@ -35,9 +35,9 @@ function finishTest(status_string) {
 function runTest() {
   let container = document.createElement("div");
   container.id = "container";
-  container.getDisplayLock().update().then(
+  container.displayLock.update().then(
       () => { finishTest("FAIL"); },
-      () => { finishTest("PASS"); });
+      (e) => { finishTest("PASS " + e.message); });
   document.body.appendChild(container);
 }
 

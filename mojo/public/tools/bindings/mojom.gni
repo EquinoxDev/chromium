@@ -617,6 +617,7 @@ template("mojom") {
     }
 
     generator_shared_cpp_outputs = [
+      "{{source_gen_dir}}/{{source_file_part}}-params-data.h",
       "{{source_gen_dir}}/{{source_file_part}}-shared-internal.h",
       "{{source_gen_dir}}/{{source_file_part}}-shared.cc",
       "{{source_gen_dir}}/{{source_file_part}}-shared.h",
@@ -638,6 +639,7 @@ template("mojom") {
       foreach(source, invoker.sources) {
         filelist += [ rebase_path("$source", root_build_dir) ]
         outputs += [
+          "$target_gen_dir/$source-params-data.h",
           "$target_gen_dir/$source-shared-internal.h",
           "$target_gen_dir/$source-shared.cc",
           "$target_gen_dir/$source-shared.h",
@@ -673,19 +675,16 @@ template("mojom") {
       testonly = invoker.testonly
     }
     deps = []
+    public_deps = []
     if (defined(invoker.sources)) {
       sources =
           process_file_template(invoker.sources, generator_shared_cpp_outputs)
-      deps += [ ":$generator_shared_target_name" ]
+      public_deps += [ ":$generator_shared_target_name" ]
     }
     if (require_full_cpp_deps) {
-      public_deps = [
-        "//mojo/public/cpp/bindings",
-      ]
+      public_deps += [ "//mojo/public/cpp/bindings" ]
     } else {
-      public_deps = [
-        "//mojo/public/cpp/bindings:bindings_base",
-      ]
+      public_deps += [ "//mojo/public/cpp/bindings:bindings_base" ]
     }
     foreach(d, all_deps) {
       # Resolve the name, so that a target //mojo/something becomes
@@ -752,6 +751,10 @@ template("mojom") {
         variant_dash_suffix = "-${variant}"
       }
       generator_cpp_outputs += [
+        "{{source_gen_dir}}/{{source_file_part}}${variant_dash_suffix}-forward.h",
+        "{{source_gen_dir}}/{{source_file_part}}${variant_dash_suffix}-import-headers.h",
+        "{{source_gen_dir}}/{{source_file_part}}${variant_dash_suffix}-test-utils.cc",
+        "{{source_gen_dir}}/{{source_file_part}}${variant_dash_suffix}-test-utils.h",
         "{{source_gen_dir}}/{{source_file_part}}${variant_dash_suffix}.cc",
         "{{source_gen_dir}}/{{source_file_part}}${variant_dash_suffix}.h",
       ]
@@ -826,6 +829,10 @@ template("mojom") {
         foreach(source, invoker.sources) {
           filelist += [ rebase_path("$source", root_build_dir) ]
           outputs += [
+            "$target_gen_dir/${source}${variant_dash_suffix}-forward.h",
+            "$target_gen_dir/${source}${variant_dash_suffix}-import-headers.h",
+            "$target_gen_dir/${source}${variant_dash_suffix}-test-utils.cc",
+            "$target_gen_dir/${source}${variant_dash_suffix}-test-utils.h",
             "$target_gen_dir/${source}${variant_dash_suffix}.cc",
             "$target_gen_dir/${source}${variant_dash_suffix}.h",
           ]

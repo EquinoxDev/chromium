@@ -18,12 +18,11 @@ class FakeNavigationManagerDelegate : public NavigationManagerDelegate {
   void OnGoToIndexSameDocumentNavigation(NavigationInitiationType type,
                                          bool has_user_gesture) override;
   void WillChangeUserAgentType() override;
-  void LoadCurrentItem() override;
+  void LoadCurrentItem(NavigationInitiationType type) override;
   void LoadIfNecessary() override;
   void Reload() override;
   void OnNavigationItemsPruned(size_t pruned_item_count) override;
-  void OnNavigationItemCommitted(
-      const LoadCommittedDetails& load_details) override;
+  void OnNavigationItemCommitted(NavigationItem* item) override;
   WebState* GetWebState() override;
   id<CRWWebViewNavigationProxy> GetWebViewNavigationProxy() const override;
   void GoToBackForwardListItem(WKBackForwardListItem* wk_item,

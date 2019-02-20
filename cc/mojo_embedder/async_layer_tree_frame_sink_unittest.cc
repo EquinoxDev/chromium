@@ -15,6 +15,7 @@
 #include "cc/test/fake_layer_tree_frame_sink_client.h"
 #include "components/viz/client/hit_test_data_provider_draw_quad.h"
 #include "components/viz/client/local_surface_id_provider.h"
+#include "components/viz/common/quads/render_pass_draw_quad.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/common/surfaces/surface_range.h"
@@ -76,8 +77,6 @@ TEST(AsyncLayerTreeFrameSinkTest,
   init_params.gpu_memory_buffer_manager = &test_gpu_memory_buffer_manager;
   init_params.pipes.compositor_frame_sink_info = std::move(sink_info);
   init_params.pipes.client_request = std::move(client_request);
-  init_params.local_surface_id_provider =
-      std::make_unique<viz::DefaultLocalSurfaceIdProvider>();
   init_params.enable_surface_synchronization = true;
   auto layer_tree_frame_sink = std::make_unique<AsyncLayerTreeFrameSink>(
       std::move(provider), nullptr, &init_params);
@@ -143,8 +142,6 @@ class AsyncLayerTreeFrameSinkSimpleTest : public testing::Test {
     init_params_.gpu_memory_buffer_manager = &test_gpu_memory_buffer_manager_;
     init_params_.pipes.compositor_frame_sink_info = std::move(sink_info);
     init_params_.pipes.client_request = std::move(client_request);
-    init_params_.local_surface_id_provider =
-        std::make_unique<viz::DefaultLocalSurfaceIdProvider>();
     init_params_.enable_surface_synchronization = true;
     init_params_.hit_test_data_provider =
         std::make_unique<viz::HitTestDataProviderDrawQuad>(
@@ -251,7 +248,8 @@ TEST_F(AsyncLayerTreeFrameSinkSimpleTest, HitTestRegionListDuplicate) {
                   /*visible_rect=*/rect3_0,
                   viz::SurfaceRange(base::nullopt, child_surface_id),
                   SK_ColorBLACK,
-                  /*stretch_content_to_fill_bounds=*/false);
+                  /*stretch_content_to_fill_bounds=*/false,
+                  /*ignores_input_event=*/false);
   pass_list.push_back(std::move(pass3_0));
 
   auto pass3_1 = viz::RenderPass::Create();
@@ -270,6 +268,32 @@ TEST_F(AsyncLayerTreeFrameSinkSimpleTest, HitTestRegionListDuplicate) {
                   /*visible_rect=*/rect3_1, SK_ColorBLACK,
                   /*force_anti_aliasing_off=*/false);
   pass_list.push_back(std::move(pass3_1));
+
+  auto pass3_root = viz::RenderPass::Create();
+  pass3_root->output_rect = display_rect_;
+  pass3_root->id = 5;
+  auto* shared_quad_state3_root = pass3_root->CreateAndAppendSharedQuadState();
+  gfx::Rect rect3_root(display_rect_);
+  shared_quad_state3_root->SetAll(
+      gfx::Transform(), /*quad_layer_rect=*/rect3_root,
+      /*visible_quad_layer_rect=*/rect3_root, /*clip_rect=*/rect3_root,
+      /*is_clipped=*/false, /*are_contents_opaque=*/false,
+      /*opacity=*/0.5f, SkBlendMode::kSrcOver, /*sorting_context_id=*/0);
+  auto* quad3_root_1 =
+      pass3_root->quad_list.AllocateAndConstruct<viz::RenderPassDrawQuad>();
+  quad3_root_1->SetNew(shared_quad_state3_root, /*rect=*/rect3_root,
+                       /*visible_rect=*/rect3_root, /*render_pass_id=*/3,
+                       /*mask_resource_id=*/0, gfx::RectF(), gfx::Size(),
+                       gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false,
+                       1.0f);
+  auto* quad3_root_2 =
+      pass3_root->quad_list.AllocateAndConstruct<viz::RenderPassDrawQuad>();
+  quad3_root_2->SetNew(shared_quad_state3_root, /*rect=*/rect3_root,
+                       /*visible_rect=*/rect3_root, /*render_pass_id=*/4,
+                       /*mask_resource_id=*/0, gfx::RectF(), gfx::Size(),
+                       gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false,
+                       1.0f);
+  pass_list.push_back(std::move(pass3_root));
 
   SendRenderPassList(&pass_list, /*hit_test_data_changed=*/false);
   task_runner_->RunUntilIdle();
@@ -324,7 +348,8 @@ TEST_F(AsyncLayerTreeFrameSinkSimpleTest,
                   /*visible_rect=*/rect2_0,
                   viz::SurfaceRange(base::nullopt, child_surface_id),
                   SK_ColorBLACK,
-                  /*stretch_content_to_fill_bounds=*/false);
+                  /*stretch_content_to_fill_bounds=*/false,
+                  /*ignores_input_event=*/false);
   pass_list.push_back(std::move(pass2_0));
 
   auto pass2_1 = viz::RenderPass::Create();
@@ -343,6 +368,32 @@ TEST_F(AsyncLayerTreeFrameSinkSimpleTest,
                   /*visible_rect=*/rect2_1, SK_ColorBLACK,
                   /*force_anti_aliasing_off=*/false);
   pass_list.push_back(std::move(pass2_1));
+
+  auto pass2_root = viz::RenderPass::Create();
+  pass2_root->output_rect = display_rect_;
+  pass2_root->id = 4;
+  auto* shared_quad_state2_root = pass2_root->CreateAndAppendSharedQuadState();
+  gfx::Rect rect2_root(display_rect_);
+  shared_quad_state2_root->SetAll(
+      gfx::Transform(), /*quad_layer_rect=*/rect2_root,
+      /*visible_quad_layer_rect=*/rect2_root, /*clip_rect=*/rect2_root,
+      /*is_clipped=*/false, /*are_contents_opaque=*/false,
+      /*opacity=*/0.5f, SkBlendMode::kSrcOver, /*sorting_context_id=*/0);
+  auto* quad2_root_1 =
+      pass2_root->quad_list.AllocateAndConstruct<viz::RenderPassDrawQuad>();
+  quad2_root_1->SetNew(shared_quad_state2_root, /*rect=*/rect2_root,
+                       /*visible_rect=*/rect2_root, /*render_pass_id=*/2,
+                       /*mask_resource_id=*/0, gfx::RectF(), gfx::Size(),
+                       gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false,
+                       1.0f);
+  auto* quad2_root_2 =
+      pass2_root->quad_list.AllocateAndConstruct<viz::RenderPassDrawQuad>();
+  quad2_root_2->SetNew(shared_quad_state2_root, /*rect=*/rect2_root,
+                       /*visible_rect=*/rect2_root, /*render_pass_id=*/3,
+                       /*mask_resource_id=*/0, gfx::RectF(), gfx::Size(),
+                       gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false,
+                       1.0f);
+  pass_list.push_back(std::move(pass2_root));
 
   SendRenderPassList(&pass_list, /*hit_test_data_changed=*/true);
   task_runner_->RunUntilIdle();

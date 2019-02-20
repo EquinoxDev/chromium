@@ -18,7 +18,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_bubble_type.h"
-#include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "chrome/common/buildflags.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/feature_engagement/buildflags.h"
@@ -89,10 +88,6 @@ enum class ShowTranslateBubbleResult {
   WEB_CONTENTS_NOT_ACTIVE,
   EDITABLE_FIELD_IS_ACTIVE,
 };
-
-#if !defined(OS_CHROMEOS)
-class BadgeServiceDelegate;
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserWindow interface
@@ -214,6 +209,10 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void OnTabDetached(content::WebContents* contents,
                              bool was_active) = 0;
 
+  // Called when the user restores a tab from the recently closed tabs menu.
+  // |command_id| is the menu command associated with the restored tab.
+  virtual void OnTabRestoredFromMenu(int command_id) = 0;
+
   // Called to force the zoom state to for the active tab to be recalculated.
   // |can_show_bubble| is true when a user presses the zoom up or down keyboard
   // shortcuts and will be false in other cases (e.g. switching tabs, "clicking"
@@ -239,7 +238,7 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Tries to focus the location bar.  Clears the window focus (to avoid
   // inconsistent state) if this fails.
-  virtual void SetFocusToLocationBar(bool select_all) = 0;
+  virtual void SetFocusToLocationBar() = 0;
 
   // Informs the view whether or not a load is in progress for the current tab.
   // The view can use this notification to update the reload/stop button.
@@ -317,9 +316,6 @@ class BrowserWindow : public ui::BaseWindow {
       bool disable_stay_in_chrome,
       IntentPickerResponse callback) = 0;
   virtual void SetIntentPickerViewVisibility(bool visible) = 0;
-#else   // !defined(OS_CHROMEOS)
-  // Returns the badge service delegate.
-  virtual BadgeServiceDelegate* GetBadgeServiceDelegate() const = 0;
 #endif  // defined(OS_CHROMEOS)
 
   // Shows the Bookmark bubble. |url| is the URL being bookmarked,
@@ -345,21 +341,17 @@ class BrowserWindow : public ui::BaseWindow {
   virtual ShowTranslateBubbleResult ShowTranslateBubble(
       content::WebContents* contents,
       translate::TranslateStep step,
+      const std::string& source_language,
+      const std::string& target_language,
       translate::TranslateErrors::Type error_type,
       bool is_user_gesture) = 0;
 
 #if BUILDFLAG(ENABLE_ONE_CLICK_SIGNIN)
-  // Callback type used with the ShowOneClickSigninConfirmation() method. If the
-  // user chooses to accept the sign in, the callback is called to start the
-  // sync process.
-  typedef base::Callback<void(OneClickSigninSyncStarter::StartSyncMode)>
-      StartSyncCallback;
-
   // Shows the one-click sign in confirmation UI. |email| holds the full email
   // address of the account that has signed in.
   virtual void ShowOneClickSigninConfirmation(
       const base::string16& email,
-      const StartSyncCallback& start_sync_callback) = 0;
+      base::OnceCallback<void(bool)> confirmed_callback) = 0;
 #endif
 
   // Whether or not the shelf view is visible.
@@ -461,6 +453,9 @@ class BrowserWindow : public ui::BaseWindow {
   // currently resides in.
   virtual std::string GetWorkspace() const = 0;
   virtual bool IsVisibleOnAllWorkspaces() const = 0;
+
+  // Shows the platform specific emoji picker.
+  virtual void ShowEmojiPanel() = 0;
 
  protected:
   friend class BrowserCloseManager;

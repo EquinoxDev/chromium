@@ -24,6 +24,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "base/stl_util.h"
+#include "base/timer/timer.h"
 #include "storage/browser/quota/quota_callbacks.h"
 #include "storage/browser/quota/quota_client.h"
 #include "storage/browser/quota/quota_database.h"
@@ -31,7 +32,7 @@
 #include "storage/browser/quota/quota_task.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "storage/browser/quota/storage_observer.h"
-#include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
+#include "third_party/blink/public/mojom/quota/quota_types.mojom-forward.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -201,6 +202,12 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManager
                       int quota_client_mask,
                       StatusCallback callback);
 
+  // Instructs each QuotaClient to remove possible traces of deleted
+  // data on the disk.
+  void PerformStorageCleanup(blink::mojom::StorageType type,
+                             int quota_client_mask,
+                             base::OnceClosure callback);
+
   // Called by UI and internal modules.
   void GetPersistentHostQuota(const std::string& host, QuotaCallback callback);
   void SetPersistentHostQuota(const std::string& host,
@@ -274,6 +281,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) QuotaManager
   class GetModifiedSinceHelper;
   class DumpQuotaTableHelper;
   class DumpOriginInfoTableHelper;
+  class StorageCleanupHelper;
 
   using QuotaTableEntry = QuotaDatabase::QuotaTableEntry;
   using OriginInfoTableEntry = QuotaDatabase::OriginInfoTableEntry;

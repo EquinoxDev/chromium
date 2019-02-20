@@ -53,6 +53,10 @@ std::string CompletedRequestKey(const std::string& unique_id,
   return CompletedRequestKeyPrefix(unique_id) + std::to_string(request_index);
 }
 
+std::string StorageVersionKey(const std::string& unique_id) {
+  return kStorageVersionKeyPrefix + unique_id;
+}
+
 DatabaseStatus ToDatabaseStatus(blink::ServiceWorkerStatusCode status) {
   switch (status) {
     case blink::ServiceWorkerStatusCode::kOk:
@@ -159,6 +163,34 @@ bool MojoFailureReasonFromRegistrationProto(
   LOG(ERROR) << "BackgroundFetchFailureReason from the metadata proto doesn't"
              << " match any enum value. Possible database corruption.";
   return false;
+}
+
+GURL MakeCacheUrlUnique(const GURL& url,
+                        const std::string& unique_id,
+                        size_t request_index) {
+  std::string query = url.query();
+  query += unique_id + base::NumberToString(request_index);
+
+  GURL::Replacements replacements;
+  replacements.SetQueryStr(query);
+
+  return url.ReplaceComponents(replacements);
+}
+
+GURL RemoveUniqueParamFromCacheURL(const GURL& url,
+                                   const std::string& unique_id) {
+  std::vector<std::string> split = base::SplitStringUsingSubstr(
+      url.query(), unique_id, base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+
+  GURL::Replacements replacements;
+  if (split.size() == 1u)
+    replacements.ClearQuery();
+  else if (split.size() == 2u)
+    replacements.SetQueryStr(split[0]);
+  else
+    NOTREACHED();
+
+  return url.ReplaceComponents(replacements);
 }
 
 }  // namespace background_fetch

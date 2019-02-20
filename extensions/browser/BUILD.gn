@@ -227,6 +227,8 @@ jumbo_source_set("browser_sources") {
     "guest_view/guest_view_events.h",
     "guest_view/mime_handler_view/mime_handler_stream_manager.cc",
     "guest_view/mime_handler_view/mime_handler_stream_manager.h",
+    "guest_view/mime_handler_view/mime_handler_view_attach_helper.cc",
+    "guest_view/mime_handler_view/mime_handler_view_attach_helper.h",
     "guest_view/mime_handler_view/mime_handler_view_constants.cc",
     "guest_view/mime_handler_view/mime_handler_view_constants.h",
     "guest_view/mime_handler_view/mime_handler_view_guest.cc",
@@ -323,6 +325,10 @@ jumbo_source_set("browser_sources") {
     "script_executor.h",
     "serial_extension_host_queue.cc",
     "serial_extension_host_queue.h",
+    "service_worker/worker_id.cc",
+    "service_worker/worker_id.h",
+    "service_worker/worker_id_set.cc",
+    "service_worker/worker_id_set.h",
     "service_worker_manager.cc",
     "service_worker_manager.h",
     "service_worker_task_queue.cc",
@@ -503,9 +509,12 @@ source_set("browser_tests") {
 
     deps += [
       "//chromeos",
-      "//chromeos:media_perception_proto",
-      "//chromeos:power_manager_proto",
+      "//chromeos/audio",
+      "//chromeos/dbus:media_perception_proto",
+      "//chromeos/dbus:power_manager_proto",
+      "//chromeos/dbus:test_support",
       "//chromeos/login/login_state",
+      "//chromeos/network",
     ]
   }
 }
@@ -616,6 +625,7 @@ source_set("unit_tests") {
     "requirements_checker_unittest.cc",
     "runtime_data_unittest.cc",
     "sandboxed_unpacker_unittest.cc",
+    "service_worker/worker_id_set_unittest.cc",
     "updater/extension_installer_unittest.cc",
     "updater/safe_manifest_parser_unittest.cc",
     "updater/update_data_provider_unittest.cc",
@@ -690,9 +700,11 @@ source_set("unit_tests") {
     ]
 
     deps += [
-      "//chromeos:media_perception_proto",
       "//chromeos:test_support",
+      "//chromeos/dbus:media_perception_proto",
+      "//chromeos/dbus:test_support",
       "//chromeos/login/login_state",
+      "//chromeos/network:test_support",
       "//components/feedback",
       "//extensions/shell:app_shell_lib",
     ]

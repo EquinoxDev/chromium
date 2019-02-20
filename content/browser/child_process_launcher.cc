@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/clang_coverage_buildflags.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/i18n/icu_util.h"
@@ -14,6 +15,7 @@
 #include "base/process/launch.h"
 #include "build/build_config.h"
 #include "content/public/browser/child_process_launcher_utils.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "services/service_manager/embedder/result_codes.h"
 
@@ -34,7 +36,7 @@ ChildProcessLauncher::ChildProcessLauncher(
       start_time_(base::TimeTicks::Now()),
 #if defined(ADDRESS_SANITIZER) || defined(LEAK_SANITIZER) ||  \
     defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || \
-    defined(UNDEFINED_SANITIZER) || defined(CLANG_COVERAGE)
+    defined(UNDEFINED_SANITIZER) || BUILDFLAG(CLANG_COVERAGE)
       terminate_child_on_shutdown_(false),
 #else
       terminate_child_on_shutdown_(terminate_on_shutdown),
@@ -166,14 +168,18 @@ ChildProcessLauncher::Client* ChildProcessLauncher::ReplaceClientForTest(
   return ret;
 }
 
+bool ChildProcessLauncherPriority::is_background() const {
+  return !visible && !has_media_stream && !boost_for_pending_views &&
+         !(has_foreground_service_worker &&
+           base::FeatureList::IsEnabled(
+               features::kServiceWorkerForegroundPriority));
+}
+
 bool ChildProcessLauncherPriority::operator==(
     const ChildProcessLauncherPriority& other) const {
-  // |should_boost_for_pending_views| is temporary and constant for all
-  // ChildProcessLauncherPriority throughout a session (experiment driven).
-  DCHECK_EQ(should_boost_for_pending_views,
-            other.should_boost_for_pending_views);
   return visible == other.visible &&
          has_media_stream == other.has_media_stream &&
+         has_foreground_service_worker == other.has_foreground_service_worker &&
          frame_depth == other.frame_depth &&
          intersects_viewport == other.intersects_viewport &&
          boost_for_pending_views == other.boost_for_pending_views

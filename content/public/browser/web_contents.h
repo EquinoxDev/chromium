@@ -27,12 +27,11 @@
 #include "content/public/browser/screen_orientation_delegate.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/visibility.h"
-#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/stop_find_action.h"
 #include "third_party/blink/public/common/frame/sandbox_flags.h"
-#include "third_party/blink/public/mojom/frame/find_in_page.mojom.h"
-#include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom.h"
+#include "third_party/blink/public/mojom/frame/find_in_page.mojom-forward.h"
+#include "third_party/blink/public/mojom/loader/pause_subresource_loading_handle.mojom-forward.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/accessibility/ax_tree_update.h"
@@ -45,8 +44,11 @@
 #endif
 
 namespace blink {
-struct Manifest;
+namespace mojom {
+class RendererPreferences;
 }
+struct Manifest;
+}  // namespace blink
 
 namespace base {
 class TimeTicks;
@@ -80,7 +82,6 @@ struct CustomContextMenuContext;
 struct DropData;
 struct MHTMLGenerationParams;
 struct PageImportanceSignals;
-struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
 // (usually HTML) in a rectangular area.
@@ -733,7 +734,7 @@ class WebContents : public PageNavigator,
   virtual bool WillNotifyDisconnection() = 0;
 
   // Returns the settings which get passed to the renderer.
-  virtual content::RendererPreferences* GetMutableRendererPrefs() = 0;
+  virtual blink::mojom::RendererPreferences* GetMutableRendererPrefs() = 0;
 
   // Tells the tab to close now. The tab will take care not to close until it's
   // out of nested run loops.
@@ -877,9 +878,6 @@ class WebContents : public PageNavigator,
 
   virtual int GetCurrentlyPlayingVideoCount() = 0;
 
-  // Returns a map containing the sizes of all currently playing videos.
-  using VideoSizeMap =
-      base::flat_map<WebContentsObserver::MediaPlayerId, gfx::Size>;
   virtual base::Optional<gfx::Size> GetFullscreenVideoSize() = 0;
   virtual bool IsFullscreen() = 0;
 
@@ -894,20 +892,6 @@ class WebContents : public PageNavigator,
 
   // Tells the WebContents whether the context menu is showing.
   virtual void SetShowingContextMenu(bool showing) = 0;
-
-  // Pause and unpause scheduled tasks in the page of blink. This function will
-  // suspend page loadings and all background processing like active javascript,
-  // and timers through |blink::Page::SetPaused|. If you want to resume the
-  // paused state, you have to call this function with |false| argument again.
-  // The function with |false| should be called after calling it with |true|. If
-  // not, assertion will happen.
-  //
-  // WARNING: This only pauses the activities in the particular page in the
-  // renderer process, but may indirectly block or break other pages when they
-  // wait for the common backend (e.g. storage) in the browser process.
-  // TODO(gyuyoung): https://crbug.com/822564 - Make this feature safer and fix
-  // bugs.
-  virtual void PausePageScheduledTasks(bool paused) = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

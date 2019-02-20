@@ -3,11 +3,12 @@
 <link rel="import" href="chrome://resources/cr_elements/cr_drawer/cr_drawer.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_lazy_render/cr_lazy_render.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_toolbar/cr_toolbar.html">
-<link rel="import" href="chrome://resources/cr_elements/hidden_style_css.html">
 <link rel="import" href="chrome://resources/cr_elements/cr_view_manager/cr_view_manager.html">
+<link rel="import" href="chrome://resources/cr_elements/hidden_style_css.html">
+<link rel="import" href="chrome://resources/cr_elements/shared_vars_css.html">
 <link rel="import" href="chrome://resources/html/assert.html">
 <link rel="import" href="chrome://resources/html/cr.html">
-<link rel="import" href="activity_log.html">
+<link rel="import" href="activity_log/activity_log.html">
 <link rel="import" href="detail_view.html">
 <link rel="import" href="drop_overlay.html">
 <link rel="import" href="error_page.html">
@@ -50,10 +51,6 @@
       extensions-item {
         display: inline-block;
       }
-
-      extensions-toolbar {
-        background-color: var(--md-toolbar-color);
-      }
     </style>
     <extensions-drop-overlay drag-enabled="[[inDevMode]]">
     </extensions-drop-overlay>
@@ -90,6 +87,7 @@
         <template>
           <extensions-detail-view delegate="[[delegate]]" slot="view"
               in-dev-mode="[[inDevMode]]"
+              from-activity-log="[[fromActivityLog_]]"
               show-activity-log="[[showActivityLog]]"
               incognito-available="[[incognitoAvailable_]]"
               data="[[detailViewItem_]]">

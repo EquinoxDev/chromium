@@ -36,6 +36,9 @@ public class BottomToolbarCoordinator {
     /** The tab switcher mode bottom toolbar stub that will be inflated when native is ready. */
     private final ViewStub mTabSwitcherModeStub;
 
+    /** A provider that notifies components when the theme color changes.*/
+    private final BottomToolbarThemeColorProvider mBottomToolbarThemeColorProvider;
+
     /**
      * Build the coordinator that manages the bottom toolbar.
      * @param fullscreenManager A {@link ChromeFullscreenManager} to update the bottom controls
@@ -55,6 +58,8 @@ public class BottomToolbarCoordinator {
                 tabProvider, homeButtonListener, searchAcceleratorListener, shareButtonListener);
 
         mTabSwitcherModeStub = root.findViewById(R.id.bottom_toolbar_tab_switcher_mode_stub);
+
+        mBottomToolbarThemeColorProvider = new BottomToolbarThemeColorProvider();
     }
 
     /**
@@ -84,12 +89,16 @@ public class BottomToolbarCoordinator {
             TabModelSelector tabModelSelector, OverviewModeBehavior overviewModeBehavior,
             WindowAndroid windowAndroid, TabCountProvider tabCountProvider,
             IncognitoStateProvider incognitoStateProvider) {
+        mBottomToolbarThemeColorProvider.setIncognitoStateProvider(incognitoStateProvider);
+        mBottomToolbarThemeColorProvider.setOverviewModeBehavior(overviewModeBehavior);
+
         mBrowsingModeCoordinator.initializeWithNative(resourceManager, layoutManager,
                 tabSwitcherListener, menuButtonHelper, overviewModeBehavior, windowAndroid,
-                tabCountProvider, incognitoStateProvider, tabModelSelector);
+                tabCountProvider, mBottomToolbarThemeColorProvider, tabModelSelector);
         mTabSwitcherModeCoordinator = new TabSwitcherBottomToolbarCoordinator(mTabSwitcherModeStub,
-                incognitoStateProvider, newTabClickListener, closeTabsClickListener,
-                menuButtonHelper, tabModelSelector, overviewModeBehavior, tabCountProvider);
+                incognitoStateProvider, mBottomToolbarThemeColorProvider, newTabClickListener,
+                closeTabsClickListener, menuButtonHelper, tabModelSelector, overviewModeBehavior,
+                tabCountProvider);
     }
 
     /**
@@ -123,26 +132,21 @@ public class BottomToolbarCoordinator {
     }
 
     /**
-     * @return The wrapper for the app menu button.
+     * @return The wrapper for the browsing mode toolbar's app menu button.
      */
     public MenuButton getMenuButtonWrapper() {
-        if (mBrowsingModeCoordinator.isVisible()) {
-            return mBrowsingModeCoordinator.getMenuButton();
-        }
-        if (mTabSwitcherModeCoordinator != null) {
-            return mTabSwitcherModeCoordinator.getMenuButton();
-        }
-        return null;
+        return mBrowsingModeCoordinator.getMenuButton();
     }
 
     /**
-     * Called when the accessibility enabled state changes.
-     * @param enabled Whether accessibility is enabled.
+     * Overrides tab switcher launching behavior.
+     * @param newClickListener The new {@link OnClickListener} for tab switcher button clicks.
+     * @param overviewModeBehavior The OverviewModeBehavior to be used for tab switcher states.
      */
-    public void onAccessibilityStatusChanged(boolean enabled) {
-        if (mTabSwitcherModeCoordinator != null) {
-            mTabSwitcherModeCoordinator.onAccessibilityStatusChanged(enabled);
-        }
+    public void overrideTabSwitcherBehavior(
+            OnClickListener newClickListener, OverviewModeBehavior overviewModeBehavior) {
+        mBrowsingModeCoordinator.overrideTabSwitcherBehavior(
+                newClickListener, overviewModeBehavior);
     }
 
     /**
@@ -154,5 +158,6 @@ public class BottomToolbarCoordinator {
             mTabSwitcherModeCoordinator.destroy();
             mTabSwitcherModeCoordinator = null;
         }
+        mBottomToolbarThemeColorProvider.destroy();
     }
 }

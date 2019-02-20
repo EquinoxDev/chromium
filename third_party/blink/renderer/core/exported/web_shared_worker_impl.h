@@ -41,8 +41,8 @@
 #include "third_party/blink/public/common/privacy_preferences.h"
 #include "third_party/blink/public/mojom/csp/content_security_policy.mojom-blink.h"
 #include "third_party/blink/public/mojom/net/ip_address_space.mojom-shared.h"
+#include "third_party/blink/public/mojom/worker/worker_content_settings_proxy.mojom-blink.h"
 #include "third_party/blink/public/web/web_shared_worker_client.h"
-#include "third_party/blink/public/web/worker_content_settings_proxy.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/exported/worker_shadow_page.h"
 #include "third_party/blink/renderer/core/workers/shared_worker_reporting_proxy.h"
@@ -51,11 +51,11 @@
 
 namespace base {
 class SingleThreadTaskRunner;
-};
+}
 
 namespace network {
 class SharedURLLoaderFactory;
-};
+}
 
 namespace blink {
 
@@ -109,6 +109,9 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
 
   // Callback methods for SharedWorkerReportingProxy.
   void CountFeature(WebFeature);
+  void DidFetchScript();
+  void DidFailToFetchClassicScript();
+  void DidEvaluateClassicScript(bool success);
   void DidCloseWorkerGlobalScope();
   void DidTerminateWorkerThread();
 
@@ -120,10 +123,12 @@ class CORE_EXPORT WebSharedWorkerImpl final : public WebSharedWorker,
 
   void DidReceiveScriptLoaderResponse();
   void OnScriptLoaderFinished();
-  void ContinueOnScriptLoaderFinished();
-  void StartWorkerThread(std::unique_ptr<GlobalScopeCreationParams>,
-                         const KURL& script_response_url,
-                         const String& source_code);
+  void ContinueStartWorkerContext();
+  void StartWorkerThread(
+      std::unique_ptr<GlobalScopeCreationParams>,
+      const KURL& script_response_url,
+      const String& source_code,
+      const FetchClientSettingsObjectSnapshot& outside_settings_object);
   WorkerClients* CreateWorkerClients();
 
   void ConnectTaskOnWorkerThread(MessagePortChannel);

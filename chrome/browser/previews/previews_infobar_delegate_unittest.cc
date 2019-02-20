@@ -243,18 +243,8 @@ class PreviewsInfoBarDelegateUnitTest
     field_trial_list_.reset(new base::FieldTrialList(nullptr));
     base::FieldTrialParamAssociator::GetInstance()->ClearAllParamsForTesting();
 
-    const std::string kTrialName = "TrialName";
-    const std::string kGroupName = "GroupName";
-
-    base::AssociateFieldTrialParams(kTrialName, kGroupName, variation_params);
-    base::FieldTrial* field_trial =
-        base::FieldTrialList::CreateFieldTrial(kTrialName, kGroupName);
-
-    std::unique_ptr<base::FeatureList> feature_list(new base::FeatureList);
-    feature_list->RegisterFieldTrialOverride(
-        previews::features::kStalePreviewsTimestamp.name,
-        base::FeatureList::OVERRIDE_ENABLE_FEATURE, field_trial);
-    scoped_feature_list_.InitWithFeatureList(std::move(feature_list));
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        previews::features::kStalePreviewsTimestamp, variation_params);
   }
 
   void TestStalePreviews(
@@ -442,8 +432,7 @@ TEST_F(PreviewsInfoBarDelegateUnitTest,
       PreviewsInfoBarDelegate::INFOBAR_LOAD_ORIGINAL_CLICKED, 1);
 
   std::unique_ptr<content::NavigationSimulator> simulator =
-      content::NavigationSimulator::CreateFromPendingBrowserInitiated(
-          web_contents());
+      content::NavigationSimulator::CreateFromPending(web_contents());
   simulator->Commit();
 
   EXPECT_EQ(content::ReloadType::ORIGINAL_REQUEST_URL,
@@ -576,8 +565,7 @@ TEST_F(PreviewsInfoBarDelegateUnitTest,
   EXPECT_EQ(0U, infobar_service()->infobar_count());
 
   std::unique_ptr<content::NavigationSimulator> simulator =
-      content::NavigationSimulator::CreateFromPendingBrowserInitiated(
-          web_contents());
+      content::NavigationSimulator::CreateFromPending(web_contents());
   simulator->Commit();
 
   EXPECT_EQ(content::ReloadType::ORIGINAL_REQUEST_URL,
@@ -597,7 +585,7 @@ TEST_F(PreviewsInfoBarDelegateUnitTest,
   TestStalePreviews(
       staleness_in_minutes, false /* is_reload */,
       l10n_util::GetStringFUTF16(IDS_PREVIEWS_INFOBAR_TIMESTAMP_MINUTES,
-                                 base::IntToString16(staleness_in_minutes)),
+                                 base::NumberToString16(staleness_in_minutes)),
       PreviewsUITabHelper::PreviewsStalePreviewTimestamp::kTimestampShown);
 }
 
@@ -624,21 +612,21 @@ TEST_F(PreviewsInfoBarDelegateUnitTest,
   TestStalePreviews(
       staleness_in_hours * 60, false /* is_reload */,
       l10n_util::GetStringFUTF16(IDS_PREVIEWS_INFOBAR_TIMESTAMP_HOURS,
-                                 base::IntToString16(staleness_in_hours)),
+                                 base::NumberToString16(staleness_in_hours)),
       PreviewsUITabHelper::PreviewsStalePreviewTimestamp::kTimestampShown);
 }
 
 TEST_F(PreviewsInfoBarDelegateUnitTest,
        DISABLE_ON_WINDOWS(PreviewInfobarTimestampFinchParamsUMA)) {
   std::map<std::string, std::string> variation_params;
-  variation_params["min_staleness_in_minutes"] = "1";
+  variation_params["min_staleness_in_minutes"] = "2";
   variation_params["max_staleness_in_minutes"] = "5";
   EnableStalePreviewsTimestamp(variation_params);
 
   TestStalePreviews(
-      1, false /* is_reload */,
+      2, false /* is_reload */,
       l10n_util::GetStringFUTF16(IDS_PREVIEWS_INFOBAR_TIMESTAMP_MINUTES,
-                                 base::IntToString16(1)),
+                                 base::NumberToString16(2)),
       PreviewsUITabHelper::PreviewsStalePreviewTimestamp::kTimestampShown);
 
   TestStalePreviews(6, false /* is_reload */, base::string16(),
@@ -673,7 +661,7 @@ TEST_F(PreviewsInfoBarDelegateUnitTest,
   TestStalePreviews(
       staleness_in_minutes, false /* is_reload */,
       l10n_util::GetStringFUTF16(IDS_PREVIEWS_INFOBAR_TIMESTAMP_MINUTES,
-                                 base::IntToString16(staleness_in_minutes)),
+                                 base::NumberToString16(staleness_in_minutes)),
       PreviewsUITabHelper::PreviewsStalePreviewTimestamp::kTimestampShown);
 
   staleness_in_minutes = 1;

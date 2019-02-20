@@ -12,13 +12,11 @@ namespace content {
 
 LocalMediaStreamAudioSource::LocalMediaStreamAudioSource(
     int consumer_render_frame_id,
-    const MediaStreamDevice& device,
-    bool hotword_enabled,
+    const blink::MediaStreamDevice& device,
     bool disable_local_echo,
     const ConstraintsCallback& started_callback)
-    : MediaStreamAudioSource(true /* is_local_source */,
-                             hotword_enabled,
-                             disable_local_echo),
+    : blink::MediaStreamAudioSource(true /* is_local_source */,
+                                    disable_local_echo),
       consumer_render_frame_id_(consumer_render_frame_id),
       started_callback_(started_callback) {
   DVLOG(1) << "LocalMediaStreamAudioSource::LocalMediaStreamAudioSource()";
@@ -28,7 +26,7 @@ LocalMediaStreamAudioSource::LocalMediaStreamAudioSource(
   int frames_per_buffer = device.input.frames_per_buffer();
   if (frames_per_buffer <= 0) {
     frames_per_buffer =
-        (device.input.sample_rate() * kFallbackAudioLatencyMs) / 1000;
+        (device.input.sample_rate() * blink::kFallbackAudioLatencyMs) / 1000;
   }
 
   SetFormat(media::AudioParameters(
@@ -92,7 +90,7 @@ void LocalMediaStreamAudioSource::EnsureSourceIsStopped() {
 }
 
 void LocalMediaStreamAudioSource::OnCaptureStarted() {
-  started_callback_.Run(this, MEDIA_DEVICE_OK, "");
+  started_callback_.Run(this, blink::MEDIA_DEVICE_OK, "");
 }
 
 void LocalMediaStreamAudioSource::Capture(const media::AudioBus* audio_bus,
@@ -118,7 +116,7 @@ void LocalMediaStreamAudioSource::OnCaptureMuted(bool is_muted) {
 }
 
 void LocalMediaStreamAudioSource::ChangeSourceImpl(
-    const MediaStreamDevice& new_device) {
+    const blink::MediaStreamDevice& new_device) {
   WebRtcLogMessage(
       "LocalMediaStreamAudioSource::ChangeSourceImpl(new_device = " +
       new_device.id + ")");

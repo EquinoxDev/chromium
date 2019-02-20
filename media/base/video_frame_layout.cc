@@ -57,6 +57,7 @@ size_t VideoFrameLayout::NumPlanes(VideoPixelFormat format) {
     case PIXEL_FORMAT_NV12:
     case PIXEL_FORMAT_NV21:
     case PIXEL_FORMAT_MT21:
+    case PIXEL_FORMAT_P016LE:
       return 2;
     case PIXEL_FORMAT_I420:
     case PIXEL_FORMAT_YV12:
@@ -160,7 +161,8 @@ bool VideoFrameLayout::Plane::operator!=(
 
 bool VideoFrameLayout::operator==(const VideoFrameLayout& rhs) const {
   return format_ == rhs.format_ && coded_size_ == rhs.coded_size_ &&
-         planes_ == rhs.planes_ && buffer_sizes_ == rhs.buffer_sizes_;
+         planes_ == rhs.planes_ && buffer_sizes_ == rhs.buffer_sizes_ &&
+         buffer_addr_align_ == rhs.buffer_addr_align_;
 }
 
 bool VideoFrameLayout::operator!=(const VideoFrameLayout& rhs) const {

@@ -354,6 +354,7 @@ void TreeScope::SetAdoptedStyleSheets(
       exception_state.ThrowDOMException(
           DOMExceptionCode::kNotAllowedError,
           "Can't adopt non-constructed stylesheets.");
+      return;
     }
     Document* associated_document = sheet->AssociatedDocument();
     if (associated_document && *associated_document != GetDocument()) {
@@ -618,7 +619,7 @@ void TreeScope::SetNeedsStyleRecalcForViewportUnits() {
   }
 }
 
-void TreeScope::Trace(blink::Visitor* visitor) {
+void TreeScope::Trace(Visitor* visitor) {
   visitor->Trace(root_node_);
   visitor->Trace(document_);
   visitor->Trace(parent_tree_scope_);

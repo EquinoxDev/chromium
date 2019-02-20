@@ -15,6 +15,7 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 
+import org.chromium.base.BuildInfo;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeFeatureList;
@@ -50,6 +51,7 @@ public class PrivacyPreferences extends PreferenceFragment
     private static final String PREF_SYNC_AND_SERVICES_LINK_DIVIDER =
             "sync_and_services_link_divider";
     private static final String PREF_SYNC_AND_SERVICES_LINK = "sync_and_services_link";
+    private static final String PREF_USAGE_STATS = "usage_stats_reporting";
 
     private ManagedPreferenceDelegate mManagedPreferenceDelegate;
 
@@ -70,20 +72,38 @@ public class PrivacyPreferences extends PreferenceFragment
                 (ChromeBaseCheckBoxPreference) findPreference(PREF_CAN_MAKE_PAYMENT);
         canMakePaymentPref.setOnPreferenceChangeListener(this);
 
+        ChromeBaseCheckBoxPreference networkPredictionPref =
+                (ChromeBaseCheckBoxPreference) findPreference(PREF_NETWORK_PREDICTIONS);
+        networkPredictionPref.setChecked(prefServiceBridge.getNetworkPredictionEnabled());
+        networkPredictionPref.setOnPreferenceChangeListener(this);
+        networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
+
         if (ChromeFeatureList.isEnabled(ChromeFeatureList.UNIFIED_CONSENT)) {
             // Remove preferences that were migrated to SyncAndServicesPreferences.
             preferenceScreen.removePreference(findPreference(PREF_NAVIGATION_ERROR));
             preferenceScreen.removePreference(findPreference(PREF_SEARCH_SUGGESTIONS));
             preferenceScreen.removePreference(findPreference(PREF_SAFE_BROWSING_SCOUT_REPORTING));
             preferenceScreen.removePreference(findPreference(PREF_SAFE_BROWSING));
-            preferenceScreen.removePreference(findPreference(PREF_NETWORK_PREDICTIONS));
             preferenceScreen.removePreference(findPreference(PREF_CONTEXTUAL_SEARCH));
             preferenceScreen.removePreference(findPreference(PREF_USAGE_AND_CRASH_REPORTING));
 
+            // TODO(https://crbug.com/846376): Update strings in XML after UNIFIED_CONSENT launch.
+            networkPredictionPref.setTitle(R.string.preload_pages_title);
+            networkPredictionPref.setSummary(R.string.preload_pages_summary);
+
+            // Put networkPredictionPref after canMakePaymentPref by overriding order value.
+            // However, calling setOrder doesn't change existing order if Preference has already
+            // been added to PreferenceGroup. Remove and re-add it to work around this.
+            // TODO(https://crbug.com/846376): Reorder prefs in XML after UNIFIED_CONSENT launch.
+            preferenceScreen.removePreference(networkPredictionPref);
+            networkPredictionPref.setOrder(canMakePaymentPref.getOrder());
+            preferenceScreen.addPreference(networkPredictionPref);
+
             Preference syncAndServicesLink = findPreference(PREF_SYNC_AND_SERVICES_LINK);
             NoUnderlineClickableSpan linkSpan = new NoUnderlineClickableSpan(view -> {
-                PreferencesLauncher.launchSettingsPage(
-                        getActivity(), SyncAndServicesPreferences.class);
+                PreferencesLauncher.launchSettingsPage(getActivity(),
+                        SyncAndServicesPreferences.class,
+                        SyncAndServicesPreferences.createArguments(false));
             });
             syncAndServicesLink.setSummary(
                     SpanApplier.applySpans(getString(R.string.privacy_sync_and_services_link),
@@ -94,12 +114,6 @@ public class PrivacyPreferences extends PreferenceFragment
         }
         preferenceScreen.removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK_DIVIDER));
         preferenceScreen.removePreference(findPreference(PREF_SYNC_AND_SERVICES_LINK));
-
-        ChromeBaseCheckBoxPreference networkPredictionPref =
-                (ChromeBaseCheckBoxPreference) findPreference(PREF_NETWORK_PREDICTIONS);
-        networkPredictionPref.setChecked(prefServiceBridge.getNetworkPredictionEnabled());
-        networkPredictionPref.setOnPreferenceChangeListener(this);
-        networkPredictionPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
 
         ChromeBaseCheckBoxPreference navigationErrorPref =
                 (ChromeBaseCheckBoxPreference) findPreference(PREF_NAVIGATION_ERROR);
@@ -126,6 +140,15 @@ public class PrivacyPreferences extends PreferenceFragment
         safeBrowsingPref.setOnPreferenceChangeListener(this);
         safeBrowsingPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
 
+        if (BuildInfo.isAtLeastQ()) {
+            ChromeBaseCheckBoxPreference usageStatsPref =
+                    (ChromeBaseCheckBoxPreference) findPreference(PREF_USAGE_STATS);
+            usageStatsPref.setOnPreferenceChangeListener(this);
+            usageStatsPref.setManagedPreferenceDelegate(mManagedPreferenceDelegate);
+        } else {
+            preferenceScreen.removePreference(findPreference(PREF_USAGE_STATS));
+        }
+
         updateSummaries();
     }
 
@@ -147,6 +170,9 @@ public class PrivacyPreferences extends PreferenceFragment
         } else if (PREF_CAN_MAKE_PAYMENT.equals(key)) {
             PrefServiceBridge.getInstance().setBoolean(
                     Pref.CAN_MAKE_PAYMENT_ENABLED, (boolean) newValue);
+        } else if (PREF_USAGE_STATS.equals(key)) {
+            PrefServiceBridge.getInstance().setBoolean(
+                    Pref.USAGE_STATS_ENABLED, (boolean) newValue);
         }
 
         return true;
@@ -223,6 +249,11 @@ public class PrivacyPreferences extends PreferenceFragment
             usageAndCrashPref.setSummary(
                     privacyPrefManager.isUsageAndCrashReportingPermittedByUser() ? textOn
                                                                                  : textOff);
+        }
+
+        CheckBoxPreference usageStatsPref = (CheckBoxPreference) findPreference(PREF_USAGE_STATS);
+        if (usageStatsPref != null) {
+            usageStatsPref.setChecked(prefServiceBridge.getBoolean(Pref.USAGE_STATS_ENABLED));
         }
     }
 

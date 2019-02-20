@@ -44,6 +44,8 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
   HRESULT FinalConstruct();
   void FinalRelease();
 
+  static bool IsUsageScenarioSupported(CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus);
+
  private:
   HRESULT CreateGaiaCredential();
   HRESULT DestroyCredentials();
@@ -55,6 +57,7 @@ class ATL_NO_VTABLE CGaiaCredentialProvider
   static unsigned __stdcall CheckReauthStatus(void* param);
 
   // IGaiaCredentialProvider
+  IFACEMETHODIMP GetUsageScenario(DWORD* cpus) override;
   IFACEMETHODIMP OnUserAuthenticated(IUnknown* credential,
                                      BSTR username,
                                      BSTR password,

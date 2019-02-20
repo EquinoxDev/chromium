@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_task_environment.h"
@@ -89,12 +90,12 @@ class VROrientationDeviceProviderTest : public testing::Test {
     return base::BindRepeating([](device::mojom::XRDeviceId id,
                                   mojom::VRDisplayInfoPtr,
                                   mojom::XRRuntimePtr device) { FAIL(); });
-  };
+  }
 
   base::RepeatingCallback<void(device::mojom::XRDeviceId)>
   DeviceIdCallbackFailIfCalled() {
     return base::BindRepeating([](device::mojom::XRDeviceId id) { FAIL(); });
-  };
+  }
 
   base::RepeatingCallback<void(device::mojom::XRDeviceId,
                                mojom::VRDisplayInfoPtr,
@@ -108,7 +109,7 @@ class VROrientationDeviceProviderTest : public testing::Test {
           std::move(quit_closure).Run();
         },
         loop->QuitClosure());
-  };
+  }
 
   base::RepeatingCallback<void(device::mojom::XRDeviceId)>
   DeviceIdCallbackMustBeCalled(base::RunLoop* loop) {
@@ -117,17 +118,17 @@ class VROrientationDeviceProviderTest : public testing::Test {
           std::move(quit_closure).Run();
         },
         loop->QuitClosure());
-  };
+  }
 
   base::OnceClosure ClosureFailIfCalled() {
     return base::BindOnce([]() { FAIL(); });
-  };
+  }
 
   base::OnceClosure ClosureMustBeCalled(base::RunLoop* loop) {
     return base::BindOnce(
         [](base::OnceClosure quit_closure) { std::move(quit_closure).Run(); },
         loop->QuitClosure());
-  };
+  }
 
   // Needed for MakeRequest to work.
   base::test::ScopedTaskEnvironment scoped_task_environment_;

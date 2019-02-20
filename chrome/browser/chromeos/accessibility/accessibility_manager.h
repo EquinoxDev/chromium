@@ -28,6 +28,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
+#include "services/media_session/public/mojom/audio_focus.mojom.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
 
@@ -280,7 +281,9 @@ class AccessibilityManager
   void HideSwitchAccessMenu();
 
   // Shows the Switch Access menu.
-  void ShowSwitchAccessMenu(const gfx::Rect& element_bounds);
+  void ShowSwitchAccessMenu(const gfx::Rect& element_bounds,
+                            int menu_width,
+                            int menu_height);
 
   // Starts or stops dictation (type what you speak).
   bool ToggleDictation();
@@ -467,6 +470,9 @@ class AccessibilityManager
   base::RepeatingCallback<void()> select_to_speak_state_observer_for_test_;
   base::RepeatingCallback<void(const gfx::Rect&)>
       caret_bounds_observer_for_test_;
+
+  // Used to set the audio focus enforcement type for ChromeVox.
+  media_session::mojom::AudioFocusManagerPtr audio_focus_manager_ptr_;
 
   base::WeakPtrFactory<AccessibilityManager> weak_ptr_factory_;
 

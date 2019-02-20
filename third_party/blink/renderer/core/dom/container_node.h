@@ -27,6 +27,7 @@
 
 #include "third_party/blink/public/platform/web_focus_type.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/css/style_recalc.h"
 #include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/html/collection_type.h"
 #include "third_party/blink/renderer/platform/bindings/trace_wrapper_member.h"
@@ -289,7 +290,7 @@ class CORE_EXPORT ContainerNode : public Node {
                                    Element* changed_element,
                                    Node* node_before_change,
                                    Node* node_after_change);
-  void RecalcDescendantStyles(StyleRecalcChange);
+  void RecalcDescendantStyles(const StyleRecalcChange);
   void RebuildChildrenLayoutTrees(WhitespaceAttacher&);
   void RebuildLayoutTreeForChild(Node* child, WhitespaceAttacher&);
   void RebuildNonDistributedChildren();
@@ -365,7 +366,9 @@ class CORE_EXPORT ContainerNode : public Node {
   // CDATA_SECTION_NODE, TEXT_NODE or COMMENT_NODE has changed its value.
   virtual void ChildrenChanged(const ChildrenChange&);
 
-  void Trace(blink::Visitor*) override;
+  virtual bool ChildrenCanHaveStyle() const { return true; }
+
+  void Trace(Visitor*) override;
 
  protected:
   ContainerNode(TreeScope*, ConstructionType = kCreateContainer);

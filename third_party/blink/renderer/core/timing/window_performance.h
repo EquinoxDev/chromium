@@ -34,7 +34,7 @@
 
 #include "third_party/blink/public/platform/web_layer_tree_view.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/performance_monitor.h"
 #include "third_party/blink/renderer/core/timing/memory_info.h"
 #include "third_party/blink/renderer/core/timing/performance.h"
@@ -65,11 +65,9 @@ class CORE_EXPORT WindowPerformance final : public Performance,
 
   MemoryInfo* memory() const override;
 
-  bool shouldYield() const override;
-
   void UpdateLongTaskInstrumentation() override;
 
-  bool ShouldBufferEventTiming();
+  bool ShouldBufferEntries();
 
   bool FirstInputDetected() const { return !!first_input_timing_; }
 

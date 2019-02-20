@@ -1670,23 +1670,6 @@ void BrowserAccessibilityComWin::ComputeStylesIfNeeded() {
   win_attributes_->offset_to_text_attributes.swap(attributes_map);
 }
 
-// |offset| could either be a text character or a child index in case of
-// non-text objects.
-// Currently, to be safe, we convert to text leaf equivalents and we don't use
-// tree positions.
-// TODO(nektar): Remove this function once selection fixes in Blink are
-// thoroughly tested and convert to tree positions.
-BrowserAccessibilityPosition::AXPositionInstance
-BrowserAccessibilityComWin::CreatePositionForSelectionAt(int offset) const {
-  BrowserAccessibilityPositionInstance position =
-      owner()->CreatePositionAt(offset)->AsLeafTextPosition();
-  if (position->GetAnchor() &&
-      position->GetAnchor()->GetRole() == ax::mojom::Role::kInlineTextBox) {
-    return position->CreateParentPosition();
-    }
-    return position;
-}
-
 //
 // Private methods.
 //
@@ -1816,16 +1799,6 @@ void BrowserAccessibilityComWin::UpdateStep3FireEvents(
         FireNativeEvent(IA2_EVENT_TEXT_INSERTED);
       }
     }
-
-    // Changing a static text node can affect the IA2 hypertext of its parent
-    // and, if the node is in a simple text control, the hypertext of the text
-    // control itself.
-    BrowserAccessibilityComWin* parent =
-        ToBrowserAccessibilityComWin(owner()->PlatformGetParent());
-    if (parent && (parent->owner()->HasState(ax::mojom::State::kEditable) ||
-                   owner()->IsTextOnlyObject())) {
-      parent->owner()->UpdatePlatformAttributes();
-    }
   }
 
   old_win_attributes_.reset(nullptr);
@@ -1919,9 +1892,9 @@ std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
     unsigned int blue = SkColorGetB(color);
     // Don't expose default value of pure white.
     if (alpha && (red != 255 || green != 255 || blue != 255)) {
-      base::string16 color_value = L"rgb(" + base::UintToString16(red) + L',' +
-                                   base::UintToString16(green) + L',' +
-                                   base::UintToString16(blue) + L')';
+      base::string16 color_value = L"rgb(" + base::NumberToString16(red) +
+                                   L',' + base::NumberToString16(green) + L',' +
+                                   base::NumberToString16(blue) + L')';
       SanitizeStringAttributeForIA2(color_value, &color_value);
       attributes.push_back(L"background-color:" + color_value);
     }
@@ -1933,9 +1906,9 @@ std::vector<base::string16> BrowserAccessibilityComWin::ComputeTextAttributes()
     unsigned int blue = SkColorGetB(color);
     // Don't expose default value of black.
     if (red || green || blue) {
-      base::string16 color_value = L"rgb(" + base::UintToString16(red) + L',' +
-                                   base::UintToString16(green) + L',' +
-                                   base::UintToString16(blue) + L')';
+      base::string16 color_value = L"rgb(" + base::NumberToString16(red) +
+                                   L',' + base::NumberToString16(green) + L',' +
+                                   base::NumberToString16(blue) + L')';
       SanitizeStringAttributeForIA2(color_value, &color_value);
       attributes.push_back(L"color:" + color_value);
     }
@@ -2182,9 +2155,9 @@ void BrowserAccessibilityComWin::SetIA2HypertextSelection(LONG start_offset,
   HandleSpecialTextOffset(&start_offset);
   HandleSpecialTextOffset(&end_offset);
   BrowserAccessibilityPositionInstance start_position =
-      CreatePositionForSelectionAt(static_cast<int>(start_offset));
+      owner()->CreatePositionForSelectionAt(static_cast<int>(start_offset));
   BrowserAccessibilityPositionInstance end_position =
-      CreatePositionForSelectionAt(static_cast<int>(end_offset));
+      owner()->CreatePositionForSelectionAt(static_cast<int>(end_offset));
   Manager()->SetSelection(
       AXPlatformRange(std::move(start_position), std::move(end_position)));
 }

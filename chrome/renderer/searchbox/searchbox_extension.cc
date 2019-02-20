@@ -196,6 +196,8 @@ v8::Local<v8::Object> GenerateThemeBackgroundInfo(
 
   builder.Set("usingDefaultTheme", theme_info.using_default_theme);
 
+  builder.Set("usingDarkMode", theme_info.using_dark_mode);
+
   // The theme background color is in RGBA format "rgba(R,G,B,A)" where R, G and
   // B are between 0 and 255 inclusive, and A is a double between 0 and 1
   // inclusive.
@@ -634,6 +636,14 @@ class NewTabPageBindings : public gin::Wrappable<NewTabPageBindings> {
       const std::string& attribution_line_2,
       const std::string& attributionActionUrl);
   static void SelectLocalBackgroundImage();
+  static void BlocklistSearchSuggestion(int task_version, int task_id);
+  static void BlocklistSearchSuggestionWithHash(int task_version,
+                                                int task_id,
+                                                const std::string& hash);
+  static void SearchSuggestionSelected(int task_version,
+                                       int task_id,
+                                       const std::string& hash);
+  static void OptOutOfSearchSuggestions();
 
   DISALLOW_COPY_AND_ASSIGN(NewTabPageBindings);
 };
@@ -683,7 +693,15 @@ gin::ObjectTemplateBuilder NewTabPageBindings::GetObjectTemplateBuilder(
       .SetMethod("setBackgroundURLWithAttributions",
                  &NewTabPageBindings::SetCustomBackgroundURLWithAttributions)
       .SetMethod("selectLocalBackgroundImage",
-                 &NewTabPageBindings::SelectLocalBackgroundImage);
+                 &NewTabPageBindings::SelectLocalBackgroundImage)
+      .SetMethod("blacklistSearchSuggestion",
+                 &NewTabPageBindings::BlocklistSearchSuggestion)
+      .SetMethod("blacklistSearchSuggestionWithHash",
+                 &NewTabPageBindings::BlocklistSearchSuggestionWithHash)
+      .SetMethod("searchSuggestionSelected",
+                 &NewTabPageBindings::SearchSuggestionSelected)
+      .SetMethod("optOutOfSearchSuggestions",
+                 &NewTabPageBindings::OptOutOfSearchSuggestions);
 }
 
 // static
@@ -788,10 +806,9 @@ void NewTabPageBindings::DeleteMostVisitedItem(v8::Isolate* isolate,
     return;
 
   // Treat the Most Visited item as a custom link if called from the Most
-  // Visited or edit custom link iframes, and if custom links is enabled. This
-  // will initialize custom links if they have not already been initialized.
-  if (ntp_tiles::IsCustomLinksEnabled() &&
-      HasOrigin(GURL(chrome::kChromeSearchMostVisitedUrl))) {
+  // Visited or edit custom link iframes. This will initialize custom links if
+  // they have not already been initialized.
+  if (HasOrigin(GURL(chrome::kChromeSearchMostVisitedUrl))) {
     search_box->DeleteCustomLink(*rid);
     search_box->LogEvent(NTPLoggingEventType::NTP_CUSTOMIZE_SHORTCUT_REMOVE);
   } else {
@@ -843,8 +860,6 @@ v8::Local<v8::Value> NewTabPageBindings::GetMostVisitedItemData(
 void NewTabPageBindings::UpdateCustomLink(int rid,
                                           const std::string& url,
                                           const std::string& title) {
-  if (!ntp_tiles::IsCustomLinksEnabled())
-    return;
   SearchBox* search_box = GetSearchBoxForCurrentContext();
   if (!search_box || !HasOrigin(GURL(chrome::kChromeSearchMostVisitedUrl)))
     return;
@@ -875,8 +890,6 @@ void NewTabPageBindings::UpdateCustomLink(int rid,
 
 // static
 void NewTabPageBindings::ReorderCustomLink(int rid, int new_pos) {
-  if (!ntp_tiles::IsCustomLinksEnabled())
-    return;
   SearchBox* search_box = GetSearchBoxForCurrentContext();
   if (!search_box || !HasOrigin(GURL(chrome::kChromeSearchMostVisitedUrl)))
     return;
@@ -885,8 +898,6 @@ void NewTabPageBindings::ReorderCustomLink(int rid, int new_pos) {
 
 // static
 void NewTabPageBindings::UndoCustomLinkAction() {
-  if (!ntp_tiles::IsCustomLinksEnabled())
-    return;
   SearchBox* search_box = GetSearchBoxForCurrentContext();
   if (!search_box)
     return;
@@ -896,8 +907,6 @@ void NewTabPageBindings::UndoCustomLinkAction() {
 
 // static
 void NewTabPageBindings::ResetCustomLinks() {
-  if (!ntp_tiles::IsCustomLinksEnabled())
-    return;
   SearchBox* search_box = GetSearchBoxForCurrentContext();
   if (!search_box)
     return;
@@ -1002,6 +1011,54 @@ void NewTabPageBindings::SelectLocalBackgroundImage() {
   search_box->SelectLocalBackgroundImage();
 }
 
+// static
+void NewTabPageBindings::BlocklistSearchSuggestion(const int task_version,
+                                                   const int task_id) {
+  SearchBox* search_box = GetSearchBoxForCurrentContext();
+  if (!search_box)
+    return;
+  search_box->BlocklistSearchSuggestion(task_version, task_id);
+}
+
+// static
+void NewTabPageBindings::BlocklistSearchSuggestionWithHash(
+    int task_version,
+    int task_id,
+    const std::string& hash) {
+  if (hash.length() > 4) {
+    return;
+  }
+
+  std::vector<uint8_t> data(hash.begin(), hash.end());
+  SearchBox* search_box = GetSearchBoxForCurrentContext();
+  if (!search_box)
+    return;
+  search_box->BlocklistSearchSuggestionWithHash(task_version, task_id, data);
+}
+
+// static
+void NewTabPageBindings::SearchSuggestionSelected(int task_version,
+                                                  int task_id,
+                                                  const std::string& hash) {
+  if (hash.length() > 4) {
+    return;
+  }
+
+  std::vector<uint8_t> data(hash.begin(), hash.end());
+  SearchBox* search_box = GetSearchBoxForCurrentContext();
+  if (!search_box)
+    return;
+  search_box->SearchSuggestionSelected(task_version, task_id, data);
+}
+
+// static
+void NewTabPageBindings::OptOutOfSearchSuggestions() {
+  SearchBox* search_box = GetSearchBoxForCurrentContext();
+  if (!search_box)
+    return;
+  search_box->OptOutOfSearchSuggestions();
+}
+
 }  // namespace
 
 // static
@@ -1025,7 +1082,7 @@ void SearchBoxExtension::Install(blink::WebLocalFrame* frame) {
     return;
 
   v8::Local<v8::Object> chrome =
-      content::GetOrCreateChromeObject(isolate, context->Global());
+      content::GetOrCreateChromeObject(isolate, context);
   v8::Local<v8::Object> embedded_search = v8::Object::New(isolate);
   embedded_search
       ->Set(context, gin::StringToV8(isolate, "searchBox"),

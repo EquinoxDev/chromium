@@ -24,6 +24,7 @@
 #include "media/base/encryption_scheme.h"
 #include "media/base/hdr_metadata.h"
 #include "media/base/media_log_event.h"
+#include "media/base/media_status.h"
 #include "media/base/output_device_info.h"
 #include "media/base/overlay_info.h"
 #include "media/base/pipeline_status.h"
@@ -110,21 +111,23 @@ IPC_ENUM_TRAITS_MAX_VALUE(media::HdcpVersion,
 IPC_ENUM_TRAITS_MAX_VALUE(media::MediaLogEvent::Type,
                           media::MediaLogEvent::TYPE_LAST)
 
+IPC_ENUM_TRAITS_MAX_VALUE(media::MediaStatus::State,
+                          media::MediaStatus::State::STATE_MAX)
+
 IPC_ENUM_TRAITS_MAX_VALUE(media::OutputDeviceStatus,
                           media::OUTPUT_DEVICE_STATUS_MAX)
 
 IPC_ENUM_TRAITS_MAX_VALUE(media::PipelineStatus,
-                          media::PipelineStatus::PIPELINE_STATUS_MAX);
+                          media::PipelineStatus::PIPELINE_STATUS_MAX)
 
 IPC_ENUM_TRAITS_MAX_VALUE(media::SampleFormat, media::kSampleFormatMax)
 
 IPC_ENUM_TRAITS_MAX_VALUE(media::VideoCodec, media::kVideoCodecMax)
 
-IPC_ENUM_TRAITS_MAX_VALUE(media::WaitingReason,
-                          media::WaitingReason::kMaxValue);
+IPC_ENUM_TRAITS_MAX_VALUE(media::WaitingReason, media::WaitingReason::kMaxValue)
 
 IPC_ENUM_TRAITS_MAX_VALUE(media::WatchTimeKey,
-                          media::WatchTimeKey::kWatchTimeKeyMax);
+                          media::WatchTimeKey::kWatchTimeKeyMax)
 
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(media::VideoCodecProfile,
                               media::VIDEO_CODEC_PROFILE_MIN,
@@ -135,7 +138,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(media::VideoPixelFormat, media::PIXEL_FORMAT_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(media::VideoRotation, media::VIDEO_ROTATION_MAX)
 
 IPC_ENUM_TRAITS_MAX_VALUE(media::container_names::MediaContainerName,
-                          media::container_names::CONTAINER_MAX);
+                          media::container_names::CONTAINER_MAX)
 
 #if defined(OS_ANDROID)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(media::MediaDrmKeyType,
@@ -147,19 +150,19 @@ IPC_ENUM_TRAITS_VALIDATE(
     media::VideoColorSpace::PrimaryID,
     static_cast<int>(value) ==
         static_cast<int>(
-            media::VideoColorSpace::GetPrimaryID(static_cast<int>(value))));
+            media::VideoColorSpace::GetPrimaryID(static_cast<int>(value))))
 
 IPC_ENUM_TRAITS_VALIDATE(
     media::VideoColorSpace::TransferID,
     static_cast<int>(value) ==
         static_cast<int>(
-            media::VideoColorSpace::GetTransferID(static_cast<int>(value))));
+            media::VideoColorSpace::GetTransferID(static_cast<int>(value))))
 
 IPC_ENUM_TRAITS_VALIDATE(
     media::VideoColorSpace::MatrixID,
     static_cast<int>(value) ==
         static_cast<int>(
-            media::VideoColorSpace::GetMatrixID(static_cast<int>(value))));
+            media::VideoColorSpace::GetMatrixID(static_cast<int>(value))))
 
 // Struct traits.
 
@@ -206,6 +209,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(media::OverlayInfo)
   IPC_STRUCT_TRAITS_MEMBER(routing_token)
   IPC_STRUCT_TRAITS_MEMBER(is_fullscreen)
+  IPC_STRUCT_TRAITS_MEMBER(is_persistent_video)
 IPC_STRUCT_TRAITS_END()
 
 #endif  // MEDIA_BASE_IPC_MEDIA_PARAM_TRAITS_MACROS_H_

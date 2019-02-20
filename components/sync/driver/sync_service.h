@@ -15,10 +15,9 @@
 #include "base/time/time.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/sync/base/model_type.h"
-#include "components/sync/driver/data_type_encryption_handler.h"
 #include "components/sync/driver/sync_service_observer.h"
 
-struct AccountInfo;
+struct CoreAccountInfo;
 class GoogleServiceAuthError;
 class GURL;
 
@@ -28,6 +27,7 @@ class JsController;
 class ProtocolEventObserver;
 class SyncCycleSnapshot;
 struct SyncTokenStatus;
+class SyncTypePreferenceProvider;
 class SyncUserSettings;
 class TypeDebugInfoObserver;
 struct SyncStatus;
@@ -48,7 +48,7 @@ class SyncSetupInProgressHandle {
   base::Closure on_destroy_;
 };
 
-class SyncService : public DataTypeEncryptionHandler, public KeyedService {
+class SyncService : public KeyedService {
  public:
   // The set of reasons due to which Sync can be disabled. Meant to be used as a
   // bitmask.
@@ -148,7 +148,7 @@ class SyncService : public DataTypeEncryptionHandler, public KeyedService {
   virtual bool IsLocalSyncEnabled() const = 0;
 
   // Information about the currently signed in user.
-  virtual AccountInfo GetAuthenticatedAccountInfo() const = 0;
+  virtual CoreAccountInfo GetAuthenticatedAccountInfo() const = 0;
   // Whether the currently signed in user is the "primary" browser account (see
   // IdentityManager). If this is false, then IsSyncFeatureEnabled will also be
   // false, but Sync-the-transport might still run.
@@ -302,39 +302,19 @@ class SyncService : public DataTypeEncryptionHandler, public KeyedService {
   virtual bool HasObserver(const SyncServiceObserver* observer) const = 0;
 
   //////////////////////////////////////////////////////////////////////////////
-  // ENCRYPTION
+  // PREFERENCE PROVIDERS (which provide forced data types)
   //////////////////////////////////////////////////////////////////////////////
 
-  // Returns true if OnPassphraseRequired has been called for decryption and
-  // we have an encrypted data type enabled.
-  virtual bool IsPassphraseRequiredForDecryption() const = 0;
-
-  // Returns the time the current explicit passphrase (if any), was set.
-  // If no secondary passphrase is in use, or no time is available, returns an
-  // unset base::Time.
-  virtual base::Time GetExplicitPassphraseTime() const = 0;
-
-  // Returns true if a secondary (explicit) passphrase is being used. It is not
-  // legal to call this method before the engine is initialized.
-  virtual bool IsUsingSecondaryPassphrase() const = 0;
-
-  // Turns on encryption for all data. Callers must call OnUserChoseDatatypes()
-  // after calling this to force the encryption to occur.
-  virtual void EnableEncryptEverything() = 0;
-
-  // Returns true if we are currently set to encrypt all the sync data.
-  virtual bool IsEncryptEverythingEnabled() const = 0;
-
-  // Asynchronously sets the passphrase to |passphrase| for encryption. |type|
-  // specifies whether the passphrase is a custom passphrase or the GAIA
-  // password being reused as a passphrase.
-  virtual void SetEncryptionPassphrase(const std::string& passphrase) = 0;
-
-  // Asynchronously decrypts pending keys using |passphrase|. Returns false
-  // immediately if the passphrase could not be used to decrypt a locally cached
-  // copy of encrypted keys; returns true otherwise.
-  virtual bool SetDecryptionPassphrase(const std::string& passphrase)
-      WARN_UNUSED_RESULT = 0;
+  // Adds a sync type preference provider. Each provider may only be added once.
+  virtual void AddPreferenceProvider(SyncTypePreferenceProvider* provider) = 0;
+  // Removes a sync type preference provider. May only be called for providers
+  // that have been added. Providers must not remove themselves while being
+  // called back.
+  virtual void RemovePreferenceProvider(
+      SyncTypePreferenceProvider* provider) = 0;
+  // Checks whether a given sync type preference provider has been added.
+  virtual bool HasPreferenceProvider(
+      SyncTypePreferenceProvider* provider) const = 0;
 
   //////////////////////////////////////////////////////////////////////////////
   // ACCESS TO INNER OBJECTS

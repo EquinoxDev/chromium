@@ -83,6 +83,7 @@ struct FrameVisualProperties;
 class FrameTreeNode;
 class InterstitialPage;
 class NavigationHandle;
+class NavigationHandleImpl;
 class RenderWidgetHost;
 class RenderWidgetHostView;
 class WebContents;
@@ -212,6 +213,12 @@ void SimulateMouseWheelCtrlZoomEvent(WebContents* web_contents,
                                      const gfx::Point& point,
                                      bool zoom_in,
                                      blink::WebMouseWheelEvent::Phase phase);
+
+void SimulateTouchscreenPinch(WebContents* web_contents,
+                              const gfx::PointF& anchor,
+                              float scale_change,
+                              base::OnceClosure on_complete);
+
 #endif  // !defined(OS_MACOSX)
 
 // Sends a GesturePinch Begin/Update/End sequence.
@@ -1395,7 +1402,7 @@ class TestNavigationManager : public WebContentsObserver {
   void OnNavigationStateChanged();
 
   const GURL url_;
-  NavigationHandle* handle_;
+  NavigationHandleImpl* handle_;
   bool navigation_paused_;
   NavigationState current_state_;
   NavigationState desired_state_;
@@ -1535,10 +1542,6 @@ class ContextMenuFilter : public content::BrowserMessageFilter {
 };
 
 WebContents* GetEmbedderForGuest(content::WebContents* guest);
-
-// Returns true if the network service is enabled and it's running in the
-// browser process.
-bool IsNetworkServiceRunningInProcess();
 
 // Load the given |url| with |network_context| and return the |net::Error| code.
 int LoadBasicRequest(network::mojom::NetworkContext* network_context,

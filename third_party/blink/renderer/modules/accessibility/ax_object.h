@@ -161,9 +161,9 @@ class DescriptionSource {
 
 }  // namespace blink
 
-WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::IgnoredReason);
-WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::NameSource);
-WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::DescriptionSource);
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::IgnoredReason)
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::NameSource)
+WTF_ALLOW_INIT_WITH_MEM_FUNCTIONS(blink::DescriptionSource)
 
 namespace blink {
 
@@ -528,6 +528,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual bool IsTextControl() const { return false; }
   bool IsTextObject() const;
   bool IsTree() const { return RoleValue() == ax::mojom::Role::kTree; }
+  virtual bool IsValidationMessage() const { return false; }
   virtual bool IsVirtualObject() const { return false; }
   bool IsWebArea() const {
     return RoleValue() == ax::mojom::Role::kRootWebArea;
@@ -714,7 +715,8 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   // negative values for RTL.
   virtual void TextCharacterOffsets(Vector<int>&) const;
   // The start and end character offset of each word in the object's text.
-  virtual void GetWordBoundaries(Vector<AXRange>&) const;
+  virtual void GetWordBoundaries(Vector<int>& word_starts,
+                                 Vector<int>& word_ends) const;
 
   // Properties of interactive elements.
   ax::mojom::DefaultActionVerb Action() const;
@@ -743,6 +745,7 @@ class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
   virtual String AriaAutoComplete() const { return String(); }
   virtual void AriaOwnsElements(AXObjectVector& owns) const {}
   virtual void AriaDescribedbyElements(AXObjectVector&) const {}
+  virtual AXObject* ErrorMessage() const { return nullptr; }
   virtual ax::mojom::HasPopup HasPopup() const {
     return ax::mojom::HasPopup::kFalse;
   }

@@ -53,27 +53,29 @@
 
 namespace blink {
 
-class DoubleOrPerformanceMarkOptions;
+class PerformanceMarkOptions;
 class ExceptionState;
 class MemoryInfo;
-class PerformanceNavigation;
-class PerformanceObserver;
+class PerformanceElementTiming;
+class PerformanceEventTiming;
+class PerformanceLayoutJank;
 class PerformanceMark;
 class PerformanceMeasure;
+class PerformanceNavigation;
+class PerformanceObserver;
 class PerformanceTiming;
 class ResourceResponse;
 class ResourceTimingInfo;
-class SecurityOrigin;
-class UserTiming;
 class ScriptState;
 class ScriptValue;
+class SecurityOrigin;
+class StringOrPerformanceMeasureOptions;
 class SubTaskAttribution;
+class UserTiming;
 class V8ObjectBuilder;
-class PerformanceEventTiming;
-class StringOrDoubleOrPerformanceMeasureOptions;
 
-using PerformanceEntryVector = HeapVector<Member<PerformanceEntry>>;
-using PerformanceEntryDeque = HeapDeque<Member<PerformanceEntry>>;
+using PerformanceEntryVector = HeapVector<TraceWrapperMember<PerformanceEntry>>;
+using PerformanceEntryDeque = HeapDeque<TraceWrapperMember<PerformanceEntry>>;
 
 class CORE_EXPORT Performance : public EventTargetWithInlineData {
   DEFINE_WRAPPERTYPEINFO();
@@ -87,7 +89,6 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
   virtual PerformanceTiming* timing() const;
   virtual PerformanceNavigation* navigation() const;
   virtual MemoryInfo* memory() const;
-  virtual bool shouldYield() const;
 
   virtual void UpdateLongTaskInstrumentation() {}
 
@@ -123,7 +124,7 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
   void setResourceTimingBufferSize(unsigned);
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(resourcetimingbufferfull,
-                                  kResourcetimingbufferfull);
+                                  kResourcetimingbufferfull)
 
   void AddLongTaskTiming(
       TimeTicks start_time,
@@ -148,7 +149,7 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
       const ResourceTimingInfo&,
       ExecutionContext& context_for_use_counter);
   void AddResourceTiming(const WebResourceTimingInfo&,
-                         const AtomicString& initiator_type = g_null_atom);
+                         const AtomicString& initiator_type);
 
   void NotifyNavigationTimingToObservers();
 
@@ -156,23 +157,31 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
 
   void AddFirstContentfulPaintTiming(TimeTicks start_time);
 
+  bool IsElementTimingBufferFull() const;
+  void AddElementTimingBuffer(PerformanceElementTiming&);
+  unsigned ElementTimingBufferSize() const;
+  void clearElementTimings();
+  void setElementTimingBufferMaxSize(unsigned);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(elementtimingbufferfull,
+                                  kElementtimingbufferfull)
+
   bool IsEventTimingBufferFull() const;
   void AddEventTimingBuffer(PerformanceEventTiming&);
   unsigned EventTimingBufferSize() const;
   void clearEventTimings();
   void setEventTimingBufferMaxSize(unsigned);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(eventtimingbufferfull,
-                                  kEventtimingbufferfull);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(eventtimingbufferfull, kEventtimingbufferfull)
+
+  void AddLayoutJankBuffer(PerformanceLayoutJank&);
 
   PerformanceMark* mark(ScriptState*,
                         const AtomicString& mark_name,
                         ExceptionState&);
 
-  PerformanceMark* mark(
-      ScriptState*,
-      const AtomicString& mark_name,
-      DoubleOrPerformanceMarkOptions& start_time_or_mark_options,
-      ExceptionState&);
+  PerformanceMark* mark(ScriptState*,
+                        const AtomicString& mark_name,
+                        PerformanceMarkOptions* mark_options,
+                        ExceptionState&);
 
   void clearMarks(const AtomicString& mark_name);
 
@@ -194,7 +203,8 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
     kLoadEventEnd = 8,
     kOther = 9,
     kUndefinedOrNull = 10,
-    kNumber = 11,
+    // Intentionally leaves out kNumber = 11 since number has been casted to
+    // string when users pass number into the API.
     kUnprovided = 12,
     kNavigationStart = 13,
     kRedirectStart = 14,
@@ -219,14 +229,14 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
   PerformanceMeasure* measure(
       ScriptState*,
       const AtomicString& measure_name,
-      const StringOrDoubleOrPerformanceMeasureOptions& start_or_options,
+      const StringOrPerformanceMeasureOptions& start_or_options,
       ExceptionState&);
 
   PerformanceMeasure* measure(
       ScriptState*,
       const AtomicString& measure_name,
-      const StringOrDoubleOrPerformanceMeasureOptions& start_or_options,
-      const StringOrDouble& end,
+      const StringOrPerformanceMeasureOptions& start_or_options,
+      const String& end,
       ExceptionState&);
 
   void clearMeasures(const AtomicString& measure_name);
@@ -239,6 +249,11 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
 
   bool HasObserverFor(PerformanceEntry::EntryType) const;
 
+  // TODO(npm): is the AtomicString parameter here actually needed?
+  static bool PassesTimingAllowCheck(const ResourceResponse&,
+                                     const SecurityOrigin&,
+                                     ExecutionContext*);
+
   static bool AllowsTimingRedirect(const Vector<ResourceResponse>&,
                                    const ResourceResponse&,
                                    const SecurityOrigin&,
@@ -249,18 +264,13 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
   void Trace(blink::Visitor*) override;
 
  private:
-  static bool PassesTimingAllowCheck(const ResourceResponse&,
-                                     const SecurityOrigin&,
-                                     const AtomicString&,
-                                     ExecutionContext*);
-
   void AddPaintTiming(PerformancePaintTiming::PaintType, TimeTicks start_time);
 
   PerformanceMeasure* MeasureInternal(
       ScriptState*,
       const AtomicString& measure_name,
-      const StringOrDoubleOrPerformanceMeasureOptions& start,
-      const StringOrDouble& end,
+      const StringOrPerformanceMeasureOptions& start,
+      base::Optional<String> end,
       ExceptionState&);
 
   PerformanceMeasure* MeasureWithDetail(ScriptState*,
@@ -302,8 +312,11 @@ class CORE_EXPORT Performance : public EventTargetWithInlineData {
   bool resource_timing_buffer_full_event_pending_ = false;
   PerformanceEntryVector event_timing_buffer_;
   unsigned event_timing_buffer_max_size_;
+  PerformanceEntryVector element_timing_buffer_;
+  unsigned element_timing_buffer_max_size_;
+  PerformanceEntryVector layout_jank_buffer_;
   Member<PerformanceEntry> navigation_timing_;
-  Member<UserTiming> user_timing_;
+  TraceWrapperMember<UserTiming> user_timing_;
   Member<PerformanceEntry> first_paint_timing_;
   Member<PerformanceEntry> first_contentful_paint_timing_;
   Member<PerformanceEventTiming> first_input_timing_;

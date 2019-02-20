@@ -9,6 +9,7 @@
 
 #include <limits>
 
+#include "base/bind.h"
 #include "base/debug/alias.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
@@ -39,6 +40,7 @@ static const int kMsgHaveWork = WM_USER + 1;
 // MessagePumpWin public:
 
 MessagePumpWin::MessagePumpWin() = default;
+MessagePumpWin::~MessagePumpWin() = default;
 
 void MessagePumpWin::Run(Delegate* delegate) {
   RunState s;
@@ -93,7 +95,8 @@ MessagePumpForUI::MessagePumpForUI() {
 MessagePumpForUI::~MessagePumpForUI() = default;
 
 void MessagePumpForUI::ScheduleWork() {
-  if (InterlockedExchange(&work_state_, HAVE_WORK) != READY)
+  bool not_scheduled = false;
+  if (!work_scheduled_.compare_exchange_strong(not_scheduled, true))
     return;  // Someone else continued the pumping.
 
   // Make sure the MessagePump does some work for us.
@@ -111,7 +114,7 @@ void MessagePumpForUI::ScheduleWork() {
   // probably be recoverable.
 
   // Clarify that we didn't really insert.
-  InterlockedExchange(&work_state_, READY);
+  work_scheduled_ = false;
   UMA_HISTOGRAM_ENUMERATION("Chrome.MessageLoopProblem", MESSAGE_POST_ERROR,
                             MESSAGE_LOOP_PROBLEM_MAX);
 }
@@ -172,6 +175,7 @@ void MessagePumpForUI::DoRunLoop() {
     // work, then it is a good time to consider sleeping (waiting) for more
     // work.
 
+    state_->delegate->BeforeDoInternalWork();
     bool more_work_is_plausible = ProcessNextWindowsMessage();
     if (state_->should_quit)
       break;
@@ -201,6 +205,8 @@ void MessagePumpForUI::DoRunLoop() {
     if (more_work_is_plausible)
       continue;
 
+    // WaitForWork() does some work itself, so notify the delegate of it.
+    state_->delegate->BeforeDoInternalWork();
     WaitForWork();  // Wait (sleep) until we have work to do again.
   }
 }
@@ -259,7 +265,7 @@ void MessagePumpForUI::HandleWorkMessage() {
   // sort.
   if (!state_) {
     // Since we handled a kMsgHaveWork message, we must still update this flag.
-    InterlockedExchange(&work_state_, READY);
+    work_scheduled_ = false;
     return;
   }
 
@@ -402,10 +408,10 @@ bool MessagePumpForUI::ProcessPumpReplacementMessage() {
          msg.hwnd != message_window_.hwnd());
 
   // Since we discarded a kMsgHaveWork message, we must update the flag.
-  int old_work_state_ = InterlockedExchange(&work_state_, READY);
-  DCHECK_EQ(HAVE_WORK, old_work_state_);
+  DCHECK(work_scheduled_);
+  work_scheduled_ = false;
 
-  // We don't need a special time slice if we didn't have_message to process.
+  // We don't need a special time slice if we didn't |have_message| to process.
   if (!have_message)
     return false;
 
@@ -454,7 +460,8 @@ MessagePumpForIO::MessagePumpForIO() {
 MessagePumpForIO::~MessagePumpForIO() = default;
 
 void MessagePumpForIO::ScheduleWork() {
-  if (InterlockedExchange(&work_state_, HAVE_WORK) != READY)
+  bool not_scheduled = false;
+  if (!work_scheduled_.compare_exchange_strong(not_scheduled, true))
     return;  // Someone else continued the pumping.
 
   // Make sure the MessagePump does some work for us.
@@ -465,7 +472,8 @@ void MessagePumpForIO::ScheduleWork() {
     return;  // Post worked perfectly.
 
   // See comment in MessagePumpForUI::ScheduleWork() for this error recovery.
-  InterlockedExchange(&work_state_, READY);  // Clarify that we didn't succeed.
+
+  work_scheduled_ = false;  // Clarify that we didn't succeed.
   UMA_HISTOGRAM_ENUMERATION("Chrome.MessageLoopProblem", COMPLETION_POST_ERROR,
                             MESSAGE_LOOP_PROBLEM_MAX);
 }
@@ -596,7 +604,7 @@ bool MessagePumpForIO::ProcessInternalIOItem(const IOItem& item) {
       reinterpret_cast<void*>(this) == reinterpret_cast<void*>(item.handler)) {
     // This is our internal completion.
     DCHECK(!item.bytes_transfered);
-    InterlockedExchange(&work_state_, READY);
+    work_scheduled_ = false;
     return true;
   }
   return false;

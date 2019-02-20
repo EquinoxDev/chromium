@@ -7,6 +7,7 @@
 #include "base/android/apk_assets.h"
 #include "base/android/application_status_listener.h"
 #include "base/android/jni_array.h"
+#include "base/bind.h"
 #include "base/i18n/icu_util.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
@@ -226,9 +227,9 @@ void ChildProcessLauncherHelper::SetProcessPriorityOnLauncherThread(
   DCHECK(env);
   return Java_ChildProcessLauncherHelperImpl_setPriority(
       env, java_peer_, process.Handle(), priority.visible,
-      priority.has_media_stream, priority.frame_depth,
-      priority.intersects_viewport, priority.boost_for_pending_views,
-      static_cast<jint>(priority.importance));
+      priority.has_media_stream, priority.has_foreground_service_worker,
+      priority.frame_depth, priority.intersects_viewport,
+      priority.boost_for_pending_views, static_cast<jint>(priority.importance));
 }
 
 // static

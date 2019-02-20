@@ -4,6 +4,9 @@
 
 #include "gpu/ipc/gpu_in_process_thread_service.h"
 
+#include <utility>
+#include <vector>
+
 #include "base/threading/thread_task_runner_handle.h"
 #include "gpu/command_buffer/service/scheduler.h"
 
@@ -55,13 +58,17 @@ GpuInProcessThreadService::GpuInProcessThreadService(
     scoped_refptr<gl::GLShareGroup> share_group,
     gl::GLSurfaceFormat share_group_surface_format,
     const GpuFeatureInfo& gpu_feature_info,
-    const GpuPreferences& gpu_preferences)
+    const GpuPreferences& gpu_preferences,
+    SharedImageManager* shared_image_manager,
+    gles2::ProgramCache* program_cache)
     : CommandBufferTaskExecutor(gpu_preferences,
                                 gpu_feature_info,
                                 sync_point_manager,
                                 mailbox_manager,
                                 share_group,
-                                share_group_surface_format),
+                                share_group_surface_format,
+                                shared_image_manager,
+                                program_cache),
       task_runner_(task_runner),
       scheduler_(scheduler) {}
 

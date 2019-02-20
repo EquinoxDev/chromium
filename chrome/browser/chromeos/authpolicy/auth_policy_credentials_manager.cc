@@ -9,11 +9,13 @@
 
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/public/cpp/vector_icons/vector_icons.h"
+#include "base/bind.h"
 #include "base/files/important_file_writer.h"
 #include "base/location.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "chrome/browser/browser_process.h"

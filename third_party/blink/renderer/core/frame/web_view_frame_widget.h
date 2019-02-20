@@ -48,12 +48,15 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void DidEnterFullscreen() override;
   void DidExitFullscreen() override;
   void SetSuppressFrameRequestsWorkaroundFor704763Only(bool) final;
-  void BeginFrame(base::TimeTicks last_frame_time) override;
+  void BeginFrame(base::TimeTicks last_frame_time,
+                  bool record_main_frame_metrics) override;
+  void BeginRafAlignedInput() override;
+  void EndRafAlignedInput() override;
+  void RecordStartOfFrameMetrics() override;
   void RecordEndOfFrameMetrics(base::TimeTicks frame_begin_time) override;
   void UpdateLifecycle(LifecycleUpdate requested_update,
                        LifecycleUpdateReason reason) override;
   void PaintContent(cc::PaintCanvas*, const WebRect& view_port) override;
-  void LayoutAndPaintAsync(base::OnceClosure callback) override;
   void CompositeAndReadbackAsync(
       base::OnceCallback<void(const SkBitmap&)>) override;
   void ThemeChanged() override;
@@ -63,11 +66,15 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   void ApplyViewportChanges(const ApplyViewportChangesArgs&) override;
   void RecordWheelAndTouchScrollingCount(bool has_scrolled_by_wheel,
                                          bool has_scrolled_by_touch) override;
+  void SendOverscrollEventFromImplSide(
+      const gfx::Vector2dF& overscroll_delta,
+      cc::ElementId scroll_latched_element_id) override;
+  void SendScrollEndEventFromImplSide(
+      cc::ElementId scroll_latched_element_id) override;
   void MouseCaptureLost() override;
   void SetFocus(bool) override;
   bool SelectionBounds(WebRect& anchor, WebRect& focus) const override;
   bool IsAcceleratedCompositingActive() const override;
-  void WillCloseLayerTreeView() override;
   WebURL GetURLForDebugTrace() override;
 
   // WebFrameWidget overrides:
@@ -76,8 +83,7 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   WebHitTestResult HitTestResultAt(const gfx::Point&) override;
 
   // WebFrameWidgetBase overrides:
-  void Initialize() override;
-  void SetLayerTreeView(WebLayerTreeView*) override;
+  void SetLayerTreeView(WebLayerTreeView*, cc::AnimationHost*) override;
   bool ForSubframe() const override { return false; }
   base::WeakPtr<AnimationWorkletMutatorDispatcherImpl>
   EnsureCompositorMutatorDispatcher(
@@ -86,7 +92,7 @@ class CORE_EXPORT WebViewFrameWidget : public WebFrameWidgetBase {
   GraphicsLayer* RootGraphicsLayer() const override;
   void SetRootLayer(scoped_refptr<cc::Layer>) override;
   WebLayerTreeView* GetLayerTreeView() const override;
-  CompositorAnimationHost* AnimationHost() const override;
+  cc::AnimationHost* AnimationHost() const override;
   HitTestResult CoreHitTestResultAt(const gfx::Point&) override;
   void ZoomToFindInPageRect(const WebRect& rect_in_root_frame) override;
 

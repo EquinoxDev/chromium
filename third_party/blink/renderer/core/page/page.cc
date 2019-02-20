@@ -51,6 +51,7 @@
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/inspector/console_message_storage.h"
+#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/text_autosizer.h"
 #include "third_party/blink/renderer/core/page/autoscroll_controller.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
@@ -64,6 +65,7 @@
 #include "third_party/blink/renderer/core/page/scrolling/overscroll_controller.h"
 #include "third_party/blink/renderer/core/page/scrolling/scrolling_coordinator.h"
 #include "third_party/blink/renderer/core/page/scrolling/top_document_root_scroller_controller.h"
+#include "third_party/blink/renderer/core/page/spatial_navigation_controller.h"
 #include "third_party/blink/renderer/core/page/validation_message_client_impl.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
@@ -75,6 +77,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/plugins/plugin_data.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
+#include "third_party/skia/include/core/SkColor.h"
 
 namespace blink {
 
@@ -298,6 +301,13 @@ void Page::SetOpenedByDOM() {
   opened_by_dom_ = true;
 }
 
+SpatialNavigationController& Page::GetSpatialNavigationController() {
+  DCHECK(GetSettings().GetSpatialNavigationEnabled());
+  if (!spatial_navigation_controller_)
+    spatial_navigation_controller_ = SpatialNavigationController::Create(*this);
+  return *spatial_navigation_controller_;
+}
+
 void Page::PlatformColorsChanged() {
   for (const Page* page : AllPages())
     for (Frame* frame = page->MainFrame(); frame;
@@ -354,13 +364,14 @@ void Page::SetPaused(bool paused) {
     return;
 
   paused_ = paused;
+  mojom::FrameLifecycleState state = paused
+                                         ? mojom::FrameLifecycleState::kPaused
+                                         : mojom::FrameLifecycleState::kRunning;
   for (Frame* frame = MainFrame(); frame;
        frame = frame->Tree().TraverseNext()) {
     if (!frame->IsLocalFrame())
       continue;
-    LocalFrame* local_frame = ToLocalFrame(frame);
-    local_frame->Loader().SetDefersLoading(paused);
-    local_frame->GetFrameScheduler()->SetPaused(paused);
+    ToLocalFrame(frame)->SetLifecycleState(state);
   }
 }
 
@@ -646,6 +657,23 @@ void Page::SettingsChanged(SettingsDelegate::ChangeType change_type) {
       NotifyPluginsChanged();
       break;
     }
+    case SettingsDelegate::kHighlightAdsChange: {
+      for (Frame* frame = MainFrame(); frame;
+           frame = frame->Tree().TraverseNext()) {
+        if (frame->IsLocalFrame())
+          ToLocalFrame(frame)->UpdateAdHighlight();
+      }
+      break;
+    }
+    case SettingsDelegate::kPaintChange:
+      for (Frame* frame = MainFrame(); frame;
+           frame = frame->Tree().TraverseNext()) {
+        if (!frame->IsLocalFrame())
+          continue;
+        if (LayoutView* view = ToLocalFrame(frame)->ContentLayoutObject())
+          view->InvalidatePaintForViewAndCompositedLayers();
+      }
+      break;
   }
 }
 
@@ -715,6 +743,7 @@ void Page::Trace(blink::Visitor* visitor) {
   visitor->Trace(visual_viewport_);
   visitor->Trace(overscroll_controller_);
   visitor->Trace(link_highlights_);
+  visitor->Trace(spatial_navigation_controller_);
   visitor->Trace(main_frame_);
   visitor->Trace(plugin_data_);
   visitor->Trace(validation_message_client_);
@@ -726,10 +755,13 @@ void Page::Trace(blink::Visitor* visitor) {
 }
 
 void Page::LayerTreeViewInitialized(WebLayerTreeView& layer_tree_view,
+                                    cc::AnimationHost& animation_host,
                                     LocalFrameView* view) {
-  if (GetScrollingCoordinator())
-    GetScrollingCoordinator()->LayerTreeViewInitialized(layer_tree_view, view);
-  GetLinkHighlights().LayerTreeViewInitialized(layer_tree_view);
+  if (GetScrollingCoordinator()) {
+    GetScrollingCoordinator()->LayerTreeViewInitialized(layer_tree_view,
+                                                        animation_host, view);
+  }
+  GetLinkHighlights().LayerTreeViewInitialized(layer_tree_view, animation_host);
 }
 
 void Page::WillCloseLayerTreeView(WebLayerTreeView& layer_tree_view,
@@ -833,6 +865,14 @@ void Page::ClearAutoplayFlags() {
 
 int32_t Page::AutoplayFlags() const {
   return autoplay_flags_;
+}
+
+void Page::SetInsidePortal(bool inside_portal) {
+  inside_portal_ = inside_portal;
+}
+
+bool Page::InsidePortal() const {
+  return inside_portal_;
 }
 
 Page::PageClients::PageClients() : chrome_client(nullptr) {}

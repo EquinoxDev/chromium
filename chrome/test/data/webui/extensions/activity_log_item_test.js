@@ -12,23 +12,24 @@ suite('ExtensionsActivityLogItemTest', function() {
   let testVisible;
 
   /**
-   * ApiGroup data for the activityLogItem
-   * @type {extensions.ApiGroup}
+   * ActivityGroup data for the activityLogItem
+   * @type {extensions.ActivityGroup}
    */
-  let testApiGroup;
+  let testActivityGroup;
 
   // Initialize an extension activity log item before each test.
   setup(function() {
     PolymerTest.clearBody();
-    testApiGroup = {
-      apiCall: 'i18n.getUILanguage',
+    testActivityGroup = {
+      activityIds: ['1'],
+      key: 'i18n.getUILanguage',
       count: 1,
       activityType: chrome.activityLogPrivate.ExtensionActivityFilter.API_CALL,
       countsByUrl: new Map()
     };
 
     activityLogItem = new extensions.ActivityLogItem();
-    activityLogItem.data = testApiGroup;
+    activityLogItem.data = testActivityGroup;
     testVisible = extension_test_util.testVisible.bind(null, activityLogItem);
 
     document.body.appendChild(activityLogItem);
@@ -41,25 +42,50 @@ suite('ExtensionsActivityLogItemTest', function() {
   test('no page urls shown when activity has no associated page', function() {
     Polymer.dom.flush();
 
-    testVisible('#activity-call-and-count', true);
+    testVisible('#activity-item-main-row', true);
     testVisible('#page-url-list', false);
   });
 
-  test('count not shown when there is only 1 page url', function() {
+  test('clicking the expand button shows the associated page url', function() {
     const countsByUrl = new Map([['google.com', 1]]);
 
-    testApiGroup = {
-      apiCall: 'Storage.getItem',
+    testActivityGroup = {
+      activityIds: ['2'],
+      key: 'Storage.getItem',
       count: 3,
       activityType:
           chrome.activityLogPrivate.ExtensionActivityFilter.DOM_ACCESS,
       countsByUrl
     };
-    activityLogItem.set('data', testApiGroup);
+    activityLogItem.set('data', testActivityGroup);
 
     Polymer.dom.flush();
 
-    testVisible('#activity-call-and-count', true);
+    testVisible('#activity-item-main-row', true);
+    testVisible('#page-url-list', false);
+
+    activityLogItem.$$('#activity-item-main-row').click();
+    testVisible('#page-url-list', true);
+  });
+
+  test('count not shown when there is only 1 page url', function() {
+    const countsByUrl = new Map([['google.com', 1]]);
+
+    testActivityGroup = {
+      activityIds: ['3'],
+      key: 'Storage.getItem',
+      count: 3,
+      activityType:
+          chrome.activityLogPrivate.ExtensionActivityFilter.DOM_ACCESS,
+      countsByUrl
+    };
+
+    activityLogItem.set('data', testActivityGroup);
+    activityLogItem.$$('#activity-item-main-row').click();
+
+    Polymer.dom.flush();
+
+    testVisible('#activity-item-main-row', true);
     testVisible('#page-url-list', true);
     testVisible('.page-url-count', false);
   });
@@ -68,18 +94,20 @@ suite('ExtensionsActivityLogItemTest', function() {
     const countsByUrl =
         new Map([['google.com', 5], ['chrome://extensions', 10]]);
 
-    testApiGroup = {
-      apiCall: 'Storage.getItem',
+    testActivityGroup = {
+      activityIds: ['1'],
+      key: 'Storage.getItem',
       count: 15,
       activityType:
           chrome.activityLogPrivate.ExtensionActivityFilter.DOM_ACCESS,
       countsByUrl
     };
-    activityLogItem.set('data', testApiGroup);
+    activityLogItem.set('data', testActivityGroup);
+    activityLogItem.$$('#activity-item-main-row').click();
 
     Polymer.dom.flush();
 
-    testVisible('#activity-call-and-count', true);
+    testVisible('#activity-item-main-row', true);
     testVisible('#page-url-list', true);
     testVisible('.page-url-count', true);
 

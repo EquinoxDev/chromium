@@ -63,10 +63,22 @@ struct CommitDataRequest {
   uint64 flush_request_id;
 };
 
+// Passed as part of DataSourceConfig
+struct ChromeConfig {
+  // TODO(crbug/928687): Once we've completed removing the old IPC layer we
+  // should convert this into a struct that represents a
+  // base::trace_event::TraceConfig object rather then the json encoded string
+  // used currently.
+  string trace_config;
+};
+
 struct DataSourceConfig {
   string name;
-  string trace_config;
   uint32 target_buffer;
+  uint32 trace_duration_ms;
+  uint64 tracing_session_id;
+  ChromeConfig chrome_config;
+  string legacy_config;
 };
 
 struct DataSourceRegistration {
@@ -90,12 +102,16 @@ interface ProducerHost {
 
   // Called to let the Service know that a flush is complete.
   NotifyFlushComplete(uint64 flush_request_id);
+
+  // Called by the ProducerClient to associate a TraceWriter with a target
+  // buffer, which is required to support scraping of the SMB by the service.
+  RegisterTraceWriter(uint32 writer_id, uint32 target_buffer);
+  UnregisterTraceWriter(uint32 writer_id);
 };
 
 interface ProducerClient {
     OnTracingStart(handle<shared_buffer> shared_memory);
 
-    // TODO(oysteine): Make a TypeTrait for sending the full DataSourceConfig.
     // Called by Perfetto (via ProducerHost) to request a data source to start
     // logging.
     StartDataSource(uint64 id, DataSourceConfig data_source_config);

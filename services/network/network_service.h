@@ -5,9 +5,11 @@
 #ifndef SERVICES_NETWORK_NETWORK_SERVICE_H_
 #define SERVICES_NETWORK_NETWORK_SERVICE_H_
 
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/component_export.h"
 #include "base/containers/flat_set.h"
@@ -17,6 +19,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/optional.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/bindings/binding.h"
 #include "net/http/http_auth_preferences.h"
@@ -170,6 +173,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
       mojom::DnsConfigChangeManagerRequest request) override;
   void GetTotalNetworkUsages(
       mojom::NetworkService::GetTotalNetworkUsagesCallback callback) override;
+  void GetNetworkList(
+      uint32_t policy,
+      mojom::NetworkService::GetNetworkListCallback callback) override;
 #if BUILDFLAG(IS_CT_SUPPORTED)
   void UpdateSignedTreeHead(const net::ct::SignedTreeHead& sth) override;
 #endif  // !BUILDFLAG(IS_CT_SUPPORTED)
@@ -263,12 +269,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkService
 
   KeepaliveStatisticsRecorder keepalive_statistics_recorder_;
 
+  std::unique_ptr<NetworkChangeManager> network_change_manager_;
+
   // Observer that logs network changes to the NetLog. Must be below the NetLog
   // and the NetworkChangeNotifier (Once this class creates it), so it's
-  // destroyed before them.
+  // destroyed before them. Must be below the |network_change_manager_|, which
+  // it references.
   std::unique_ptr<net::LoggingNetworkChangeObserver> network_change_observer_;
-
-  std::unique_ptr<NetworkChangeManager> network_change_manager_;
 
   std::unique_ptr<service_manager::BinderRegistry> registry_;
 

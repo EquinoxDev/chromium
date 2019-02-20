@@ -91,13 +91,13 @@ enum ModelType {
   // An extension setting from the extension settings API.
   EXTENSION_SETTINGS,
   // App notifications. Deprecated.
-  APP_NOTIFICATIONS,
+  DEPRECATED_APP_NOTIFICATIONS,
   // History delete directives.
   HISTORY_DELETE_DIRECTIVES,
   // Synced push notifications. Deprecated.
-  SYNCED_NOTIFICATIONS,
+  DEPRECATED_SYNCED_NOTIFICATIONS,
   // Synced Notification app info. Deprecated.
-  SYNCED_NOTIFICATION_APP_INFO,
+  DEPRECATED_SYNCED_NOTIFICATION_APP_INFO,
   // Custom spelling dictionary.
   DICTIONARY,
   // Favicon images.
@@ -138,6 +138,8 @@ enum ModelType {
   USER_CONSENTS,
   // Tabs sent between devices.
   SEND_TAB_TO_SELF,
+  // Commit only security events.
+  SECURITY_EVENTS,
 
   // ---- Proxy types ----
   // Proxy types are excluded from the sync protocol, but are still considered
@@ -209,14 +211,15 @@ constexpr ModelTypeSet ProtocolTypes() {
       BOOKMARKS, PREFERENCES, PASSWORDS, AUTOFILL_PROFILE, AUTOFILL,
       AUTOFILL_WALLET_DATA, AUTOFILL_WALLET_METADATA, THEMES, TYPED_URLS,
       EXTENSIONS, SEARCH_ENGINES, SESSIONS, APPS, APP_SETTINGS,
-      EXTENSION_SETTINGS, APP_NOTIFICATIONS, HISTORY_DELETE_DIRECTIVES,
-      SYNCED_NOTIFICATIONS, SYNCED_NOTIFICATION_APP_INFO, DICTIONARY,
-      FAVICON_IMAGES, FAVICON_TRACKING, DEVICE_INFO, PRIORITY_PREFERENCES,
+      EXTENSION_SETTINGS, DEPRECATED_APP_NOTIFICATIONS,
+      HISTORY_DELETE_DIRECTIVES, DEPRECATED_SYNCED_NOTIFICATIONS,
+      DEPRECATED_SYNCED_NOTIFICATION_APP_INFO, DICTIONARY, FAVICON_IMAGES,
+      FAVICON_TRACKING, DEVICE_INFO, PRIORITY_PREFERENCES,
       SUPERVISED_USER_SETTINGS, DEPRECATED_SUPERVISED_USERS,
       DEPRECATED_SUPERVISED_USER_SHARED_SETTINGS, DEPRECATED_ARTICLES, APP_LIST,
       DEPRECATED_WIFI_CREDENTIALS, SUPERVISED_USER_WHITELISTS, ARC_PACKAGE,
       PRINTERS, READING_LIST, USER_EVENTS, NIGORI, EXPERIMENTS, MOUNTAIN_SHARES,
-      USER_CONSENTS, SEND_TAB_TO_SELF);
+      USER_CONSENTS, SEND_TAB_TO_SELF, SECURITY_EVENTS);
 }
 
 // These are the normal user-controlled types. This is to distinguish from
@@ -228,7 +231,8 @@ constexpr ModelTypeSet UserTypes() {
 
 // User types, which are not user-controlled.
 constexpr ModelTypeSet AlwaysPreferredUserTypes() {
-  return ModelTypeSet(DEVICE_INFO, USER_CONSENTS);
+  return ModelTypeSet(DEVICE_INFO, USER_CONSENTS, SUPERVISED_USER_SETTINGS,
+                      SUPERVISED_USER_WHITELISTS);
 }
 
 // These are the user-selectable data types.
@@ -248,7 +252,8 @@ constexpr bool IsUserSelectableType(ModelType model_type) {
 // This is the subset of UserTypes() that have priority over other types.  These
 // types are synced before other user types and are never encrypted.
 constexpr ModelTypeSet PriorityUserTypes() {
-  return ModelTypeSet(DEVICE_INFO, PRIORITY_PREFERENCES);
+  return ModelTypeSet(DEVICE_INFO, PRIORITY_PREFERENCES,
+                      SUPERVISED_USER_SETTINGS, SUPERVISED_USER_WHITELISTS);
 }
 
 // Proxy types are placeholder types for handling implicitly enabling real
@@ -280,23 +285,9 @@ constexpr bool IsControlType(ModelType model_type) {
   return ControlTypes().Has(model_type);
 }
 
-// Core types are those data types used by sync's core functionality (i.e. not
-// user data types). These types are always enabled, and include ControlTypes().
-//
-// The set of all core types.
-constexpr ModelTypeSet CoreTypes() {
-  return ModelTypeSet(NIGORI, EXPERIMENTS, SUPERVISED_USER_SETTINGS,
-                      SYNCED_NOTIFICATIONS, SYNCED_NOTIFICATION_APP_INFO,
-                      SUPERVISED_USER_WHITELISTS);
-}
-// Those core types that have high priority (includes ControlTypes()).
-constexpr ModelTypeSet PriorityCoreTypes() {
-  return ModelTypeSet(NIGORI, EXPERIMENTS, SUPERVISED_USER_SETTINGS);
-}
-
 // Types that may commit data, but should never be included in a GetUpdates.
 constexpr ModelTypeSet CommitOnlyTypes() {
-  return ModelTypeSet(USER_EVENTS, USER_CONSENTS);
+  return ModelTypeSet(USER_EVENTS, USER_CONSENTS, SECURITY_EVENTS);
 }
 
 ModelTypeNameMap GetUserSelectableTypeNameMap();

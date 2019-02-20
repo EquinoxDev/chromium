@@ -92,6 +92,8 @@ public class ProfileSyncService {
      */
     private MasterSyncEnabledProvider mMasterSyncEnabledProvider;
 
+    private int mSetupInProgressCounter;
+
     /**
      * Retrieves or creates the ProfileSyncService singleton instance. Returns null if sync is
      * disabled (via flag or variation).
@@ -209,6 +211,10 @@ public class ProfileSyncService {
         return nativeGetSyncEnterCustomPassphraseBodyText(mNativeProfileSyncServiceAndroid);
     }
 
+    public int getNumberOfSyncedDevices() {
+        return nativeGetNumberOfSyncedDevices(mNativeProfileSyncServiceAndroid);
+    }
+
     /**
      * Checks if sync is currently set to use a custom passphrase. The sync engine must be running
      * (isEngineInitialized() returns true) before calling this function.
@@ -252,7 +258,8 @@ public class ProfileSyncService {
     }
 
     /**
-     * Checks if the all the data types are encrypted.
+     * Checks if the user has chosen to encrypt all data types. Note that some data types (e.g.
+     * DEVICE_INFO) are never encrypted.
      *
      * @return true if all data types are encrypted, false if only passwords are encrypted.
      */
@@ -377,24 +384,81 @@ public class ProfileSyncService {
         return nativeIsFirstSetupComplete(mNativeProfileSyncServiceAndroid);
     }
 
+    /**
+     * Checks whether syncing is "requested" by the user, i.e. the user has not disabled syncing
+     * in settings. Note that even if this is true, other reasons might prevent Sync from actually
+     * starting up.
+     *
+     * @return true if the user wants to sync, false otherwise.
+     */
     public boolean isSyncRequested() {
         return nativeIsSyncRequested(mNativeProfileSyncServiceAndroid);
     }
 
-    // TODO(maxbogue): Remove this annotation once this method is used outside of tests.
-    @VisibleForTesting
+    /**
+     * Checks whether Sync-the-feature can (attempt to) start. This means that there is a primary
+     * account and no disable reasons. Note that the Sync machinery may start up in transport-only
+     * mode even if this is false.
+     *
+     * @return true if Sync can start, false otherwise.
+     */
+    public boolean canSyncFeatureStart() {
+        return nativeCanSyncFeatureStart(mNativeProfileSyncServiceAndroid);
+    }
+
+    /**
+     * Checks whether Sync-the-feature is currently active. Note that Sync-the-transport may be
+     * active even if this is false.
+     *
+     * @return true if Sync is active, false otherwise.
+     */
     public boolean isSyncActive() {
         return nativeIsSyncActive(mNativeProfileSyncServiceAndroid);
     }
 
     /**
-     * Notifies sync whether sync setup is in progress - this tells sync whether it should start
-     * syncing data types when it starts up, or if it should just stay in "configuration mode".
-     *
-     * @param inProgress True to put sync in configuration mode, false to turn off configuration
-     *                   and allow syncing.
+     * Instances of this class keep sync paused until {@link #close} is called. Use
+     * {@link ProfileSyncService#getSetupInProgressHandle} to create. Please note that
+     * {@link #close} should be called on every instance of this class.
      */
-    public void setSetupInProgress(boolean inProgress) {
+    public final class SyncSetupInProgressHandle {
+        private boolean mClosed;
+
+        private SyncSetupInProgressHandle() {
+            ThreadUtils.assertOnUiThread();
+            if (++mSetupInProgressCounter == 1) {
+                setSetupInProgress(true);
+            }
+        }
+
+        public void close() {
+            ThreadUtils.assertOnUiThread();
+            if (mClosed) return;
+            mClosed = true;
+
+            assert mSetupInProgressCounter > 0;
+            if (--mSetupInProgressCounter == 0) {
+                setSetupInProgress(false);
+                // The user has finished setting up sync at least once.
+                setFirstSetupComplete();
+            }
+        }
+    }
+
+    /**
+     * Called by the UI to prevent changes in sync settings from taking effect while these settings
+     * are being modified by the user. When sync settings UI is no longer visible,
+     * {@link SyncSetupInProgressHandle#close} has to be invoked for sync settings to be applied.
+     * Sync settings will remain paused as long as there are unclosed objects returned by this
+     * method. Please note that the behavior of SyncSetupInProgressHandle is slightly different from
+     * the equivalent C++ object, as Java instances don't commit sync settings as soon as any
+     * instance of SyncSetupInProgressHandle is closed.
+     */
+    public SyncSetupInProgressHandle getSetupInProgressHandle() {
+        return new SyncSetupInProgressHandle();
+    }
+
+    private void setSetupInProgress(boolean inProgress) {
         nativeSetSetupInProgress(mNativeProfileSyncServiceAndroid, inProgress);
     }
 
@@ -582,6 +646,7 @@ public class ProfileSyncService {
     private native String nativeGetCurrentSignedInAccountText(long nativeProfileSyncServiceAndroid);
     private native String nativeGetSyncEnterCustomPassphraseBodyText(
             long nativeProfileSyncServiceAndroid);
+    private native int nativeGetNumberOfSyncedDevices(long nativeProfileSyncServiceAndroid);
     private native int[] nativeGetActiveDataTypes(long nativeProfileSyncServiceAndroid);
     private native int[] nativeGetChosenDataTypes(long nativeProfileSyncServiceAndroid);
     private native int[] nativeGetPreferredDataTypes(long nativeProfileSyncServiceAndroid);
@@ -592,6 +657,7 @@ public class ProfileSyncService {
     private native void nativeSetFirstSetupComplete(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsFirstSetupComplete(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncRequested(long nativeProfileSyncServiceAndroid);
+    private native boolean nativeCanSyncFeatureStart(long nativeProfileSyncServiceAndroid);
     private native boolean nativeIsSyncActive(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasKeepEverythingSynced(long nativeProfileSyncServiceAndroid);
     private native boolean nativeHasUnrecoverableError(long nativeProfileSyncServiceAndroid);

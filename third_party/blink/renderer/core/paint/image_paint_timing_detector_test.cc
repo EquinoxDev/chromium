@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/paint/image_paint_timing_detector.h"
+#include "base/bind.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/web_url_loader_mock_factory.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
@@ -30,7 +31,7 @@ class ImagePaintTimingDetectorTest
  public:
   ImagePaintTimingDetectorTest()
       : ScopedFirstContentfulPaintPlusPlusForTest(true),
-        base_url_("http://www.test.com/"){};
+        base_url_("http://www.test.com/") {}
 
   ~ImagePaintTimingDetectorTest() override {
     Platform::Current()
@@ -70,16 +71,22 @@ class ImagePaintTimingDetectorTest
         .id_record_map_.size();
   }
 
+  void Analyze() {
+    return GetPaintTimingDetector().GetImagePaintTimingDetector().Analyze();
+  }
+
   TimeTicks LargestPaintStoredResult() {
-    return GetPaintTimingDetector()
-        .GetImagePaintTimingDetector()
-        .largest_image_paint_;
+    ImageRecord* record = GetPaintTimingDetector()
+                              .GetImagePaintTimingDetector()
+                              .largest_image_paint_;
+    return !record ? base::TimeTicks() : record->first_paint_time_after_loaded;
   }
 
   TimeTicks LastPaintStoredResult() {
-    return GetPaintTimingDetector()
-        .GetImagePaintTimingDetector()
-        .last_image_paint_;
+    ImageRecord* record = GetPaintTimingDetector()
+                              .GetImagePaintTimingDetector()
+                              .last_image_paint_;
+    return !record ? base::TimeTicks() : record->first_paint_time_after_loaded;
   }
 
   void UpdateAllLifecyclePhasesAndInvokeCallbackIfAny() {
@@ -182,6 +189,7 @@ TEST_F(ImagePaintTimingDetectorTest,
 
 TEST_F(ImagePaintTimingDetectorTest, LargestImagePaint_Largest) {
   SetBodyInnerHTML(R"HTML(
+    <style>img { display:block }</style>
     <img id="smaller"></img>
     <img id="medium"></img>
     <img id="larger"></img>
@@ -197,22 +205,14 @@ TEST_F(ImagePaintTimingDetectorTest, LargestImagePaint_Largest) {
   UpdateAllLifecyclePhasesAndInvokeCallbackIfAny();
   record = FindLargestPaintCandidate();
   EXPECT_TRUE(record);
-#if defined(OS_MACOSX)
-  EXPECT_EQ(record->first_size, 90ul);
-#else
   EXPECT_EQ(record->first_size, 81ul);
-#endif
   EXPECT_TRUE(record->loaded);
 
   SetImageAndPaint("medium", 7, 7);
   UpdateAllLifecyclePhasesAndInvokeCallbackIfAny();
   record = FindLargestPaintCandidate();
   EXPECT_TRUE(record);
-#if defined(OS_MACOSX)
-  EXPECT_EQ(record->first_size, 90ul);
-#else
   EXPECT_EQ(record->first_size, 81ul);
-#endif
   EXPECT_TRUE(record->loaded);
 }
 
@@ -316,6 +316,7 @@ TEST_F(ImagePaintTimingDetectorTest,
 // This bahavior is the same with Last Image Paint as well.
 TEST_F(ImagePaintTimingDetectorTest, DiscardAnalysisWhenLargestIsLoading) {
   SetBodyInnerHTML(R"HTML(
+    <style>img { display:block }</style>
     <div id="parent">
       <img height="5" width="5" id="1"></img>
       <img height="9" width="9" id="2"></img>
@@ -333,11 +334,7 @@ TEST_F(ImagePaintTimingDetectorTest, DiscardAnalysisWhenLargestIsLoading) {
   InvokeCallback();
   record = FindLargestPaintCandidate();
   EXPECT_TRUE(record);
-#if defined(OS_MACOSX)
-  EXPECT_EQ(record->first_size, 90ul);
-#else
   EXPECT_EQ(record->first_size, 81ul);
-#endif
   EXPECT_FALSE(record->first_paint_time_after_loaded.is_null());
 }
 
@@ -419,6 +416,7 @@ TEST_F(ImagePaintTimingDetectorTest, LastImagePaint_OneImage) {
 TEST_F(ImagePaintTimingDetectorTest, LastImagePaint_Last) {
   WTF::ScopedMockClock clock;
   SetBodyInnerHTML(R"HTML(
+    <style>img { display:block }</style>
     <div id="parent">
       <img height="10" width="10" id="1"></img>
       <img height="5" width="5" id="2"></img>
@@ -445,11 +443,7 @@ TEST_F(ImagePaintTimingDetectorTest, LastImagePaint_Last) {
 
   record = FindLastPaintCandidate();
   EXPECT_TRUE(record);
-#if defined(OS_MACOSX)
-  EXPECT_EQ(record->first_size, 30ul);
-#else
   EXPECT_EQ(record->first_size, 25ul);
-#endif
   EXPECT_EQ(record->first_paint_time_after_loaded,
             base::TimeTicks() + TimeDelta::FromSecondsD(2));
 
@@ -532,6 +526,7 @@ TEST_F(ImagePaintTimingDetectorTest,
 
 TEST_F(ImagePaintTimingDetectorTest, LastImagePaint_OneSwapPromiseForOneFrame) {
   SetBodyInnerHTML(R"HTML(
+    <style>img { display:block }</style>
     <div id="parent">
       <img id="1"></img>
       <img id="2"></img>
@@ -547,21 +542,13 @@ TEST_F(ImagePaintTimingDetectorTest, LastImagePaint_OneSwapPromiseForOneFrame) {
   ImageRecord* record;
   record = FindLastPaintCandidate();
   EXPECT_TRUE(record);
-#if defined(OS_MACOSX)
-  EXPECT_EQ(record->first_size, 90ul);
-#else
   EXPECT_EQ(record->first_size, 81ul);
-#endif
   EXPECT_TRUE(record->first_paint_time_after_loaded.is_null());
 
   InvokeCallback();
   record = FindLastPaintCandidate();
   EXPECT_TRUE(record);
-#if defined(OS_MACOSX)
-  EXPECT_EQ(record->first_size, 90ul);
-#else
   EXPECT_EQ(record->first_size, 81ul);
-#endif
   EXPECT_FALSE(record->first_paint_time_after_loaded.is_null());
 }
 
@@ -705,6 +692,15 @@ TEST_F(ImagePaintTimingDetectorTest, DeactivateAfterUserInput) {
   SetImageAndPaint("target", 5, 5);
   UpdateAllLifecyclePhasesAndInvokeCallbackIfAny();
   EXPECT_EQ(CountRecords(), 0u);
+}
+
+TEST_F(ImagePaintTimingDetectorTest, NullTimeNoCrash) {
+  SetBodyInnerHTML(R"HTML(
+    <img id="target"></img>
+  )HTML");
+  SetImageAndPaint("target", 5, 5);
+  UpdateAllLifecyclePhasesForTest();
+  Analyze();
 }
 
 }  // namespace blink

@@ -124,6 +124,9 @@ struct AutocompleteMatch {
     DRIVE_FORMS,
     DRIVE_SHEETS,
     DRIVE_SLIDES,
+    DRIVE_IMAGE,
+    DRIVE_PDF,
+    DRIVE_VIDEO,
     DRIVE_OTHER
   };
 
@@ -307,8 +310,10 @@ struct AutocompleteMatch {
   // there isn't an image URL, returns an empty GURL (test with is_empty()).
   GURL ImageUrl() const;
 
-  // Changes properties to make use of the Pedal (e.g. content, URLs...).
-  void ApplyPedal();
+  // Returns a new Pedal match suggestion instance derived from this match,
+  // which is considered to be the triggering suggestion.  The new match
+  // will be set to use the given |pedal|.
+  AutocompleteMatch DerivePedalSuggestion(OmniboxPedal* pedal) const;
 
   // Adds optional information to the |additional_info| dictionary.
   void RecordAdditionalInfo(const std::string& property,
@@ -363,6 +368,9 @@ struct AutocompleteMatch {
   // for example, when the switch button is not shown because a keyword match
   // is taking precedence.
   bool ShouldShowTabMatch() const;
+
+  // Returns true if the suggestion should show a tab match button or pedal.
+  bool ShouldShowButton() const;
 
   // The provider of this match, used to remember which provider the user had
   // selected when the input changes. This may be NULL, in which case there is
@@ -483,6 +491,9 @@ struct AutocompleteMatch {
   // it!
   base::string16 keyword;
 
+  // Set in matches originating from keyword results.
+  bool from_keyword;
+
   // Set to a matching pedal if appropriate.  The pedal is not owned, and the
   // owning OmniboxPedalProvider must outlive this.
   OmniboxPedal* pedal = nullptr;
@@ -498,6 +509,10 @@ struct AutocompleteMatch {
   // and sorted.  Most providers will leave this as NULL, which will cause the
   // AutocompleteController to do no additional transformations.
   std::unique_ptr<TemplateURLRef::SearchTermsArgs> search_terms_args;
+
+  // Optional post content. If this is set, the request to load the destination
+  // url will pass this post content as well.
+  std::unique_ptr<TemplateURLRef::PostContent> post_content;
 
   // Information dictionary into which each provider can optionally record a
   // property and associated value and which is presented in chrome://omnibox.

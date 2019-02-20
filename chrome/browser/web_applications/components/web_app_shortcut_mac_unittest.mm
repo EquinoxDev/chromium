@@ -93,10 +93,13 @@ class WebAppShortcutCreatorTest : public testing::Test {
     destination_dir_ = temp_destination_dir_.GetPath();
 
     info_ = GetShortcutInfo();
-    shim_base_name_ = base::FilePath(info_->profile_path.BaseName().value() +
-                                     " " + info_->extension_id + ".app");
-    internal_shim_path_ = app_data_dir_.Append(shim_base_name_);
+    fallback_shim_base_name_ =
+        base::FilePath(info_->profile_path.BaseName().value() + " " +
+                       info_->extension_id + ".app");
+
+    shim_base_name_ = base::FilePath(base::UTF16ToUTF8(info_->title) + ".app");
     shim_path_ = destination_dir_.Append(shim_base_name_);
+    internal_shim_path_ = app_data_dir_.Append(shim_base_name_);
   }
 
   // Needed by DCHECK_CURRENTLY_ON in ShortcutInfo destructor.
@@ -108,8 +111,9 @@ class WebAppShortcutCreatorTest : public testing::Test {
   base::FilePath destination_dir_;
 
   std::unique_ptr<web_app::ShortcutInfo> info_;
-  base::FilePath shim_base_name_;
+  base::FilePath fallback_shim_base_name_;
   base::FilePath internal_shim_path_;
+  base::FilePath shim_base_name_;
   base::FilePath shim_path_;
 
  private:
@@ -181,6 +185,47 @@ TEST_F(WebAppShortcutCreatorTest, CreateShortcuts) {
   }
 }
 
+TEST_F(WebAppShortcutCreatorTest, CreateShortcutsConflict) {
+  NiceMock<WebAppShortcutCreatorMock> shortcut_creator(app_data_dir_,
+                                                       info_.get());
+  EXPECT_CALL(shortcut_creator, GetApplicationsDirname())
+      .WillRepeatedly(Return(destination_dir_));
+  base::FilePath strings_file =
+      destination_dir_.Append(".localized").Append("en_US.strings");
+
+  // Create a conflicting .app.
+  EXPECT_FALSE(base::PathExists(shim_path_));
+  base::CreateDirectory(shim_path_);
+  EXPECT_TRUE(base::PathExists(shim_path_));
+
+  // Ensure that the " (2).app" path does not yet exist.
+  base::FilePath conflict_base_name(base::UTF16ToUTF8(info_->title) + " 2.app");
+  base::FilePath conflict_path = destination_dir_.Append(conflict_base_name);
+  EXPECT_FALSE(base::PathExists(conflict_path));
+
+  EXPECT_TRUE(shortcut_creator.CreateShortcuts(SHORTCUT_CREATION_AUTOMATED,
+                                               web_app::ShortcutLocations()));
+
+  // We should have created the " 2.app" path.
+  EXPECT_TRUE(base::PathExists(conflict_path));
+  EXPECT_TRUE(base::PathExists(destination_dir_));
+}
+
+TEST_F(WebAppShortcutCreatorTest, NormalizeTitle) {
+  NiceMock<WebAppShortcutCreatorMock> shortcut_creator(app_data_dir_,
+                                                       info_.get());
+  EXPECT_CALL(shortcut_creator, GetApplicationsDirname())
+      .WillRepeatedly(Return(destination_dir_));
+
+  info_->title = base::UTF8ToUTF16("../../Evil/");
+  EXPECT_EQ(destination_dir_.Append(":..:Evil:.app"),
+            shortcut_creator.GetApplicationsShortcutPath(false));
+
+  info_->title = base::UTF8ToUTF16("....");
+  EXPECT_EQ(destination_dir_.Append(fallback_shim_base_name_),
+            shortcut_creator.GetApplicationsShortcutPath(false));
+}
+
 TEST_F(WebAppShortcutCreatorTest, UpdateShortcuts) {
   base::ScopedTempDir other_folder_temp_dir;
   EXPECT_TRUE(other_folder_temp_dir.CreateUniqueTempDir());
@@ -208,10 +253,7 @@ TEST_F(WebAppShortcutCreatorTest, UpdateShortcuts) {
   EXPECT_FALSE(base::PathExists(shim_path_));
   EXPECT_TRUE(base::PathExists(other_shim_path.Append("Contents")));
 
-  // The list of updated paths is the paths found by bundle, plus the internal
-  // path.
-  EXPECT_EQ(bundle_by_id_paths.size() + 1, updated_paths.size());
-  updated_paths.pop_back();
+  // The list of updated paths is the paths found by bundle.
   EXPECT_EQ(bundle_by_id_paths, updated_paths);
 
   // Also test case where GetAppBundlesByIdUnsorted fails.
@@ -238,7 +280,7 @@ TEST_F(WebAppShortcutCreatorTest, UpdateShortcuts) {
   // The default shim path is created along with the internal path.
   updated_paths.clear();
   EXPECT_TRUE(shortcut_creator.UpdateShortcuts(true, &updated_paths));
-  EXPECT_EQ(2u, updated_paths.size());
+  EXPECT_EQ(1u, updated_paths.size());
   EXPECT_EQ(shim_path_, updated_paths[0]);
   EXPECT_TRUE(base::PathExists(shim_path_));
   EXPECT_FALSE(base::PathExists(other_shim_path.Append("Contents")));
@@ -291,38 +333,25 @@ TEST_F(WebAppShortcutCreatorTest, DeleteShortcuts) {
   EXPECT_CALL(shortcut_creator, GetApplicationsDirname())
       .WillRepeatedly(Return(destination_dir_));
 
+  // Create an extra shim in another folder. It should be deleted since its
+  // bundle id matches.
   std::string expected_bundle_id = kFakeChromeBundleId;
   expected_bundle_id += ".app.Profile-1-" + info_->extension_id;
   std::vector<base::FilePath> bundle_by_id_paths;
+  bundle_by_id_paths.push_back(shim_path_);
   bundle_by_id_paths.push_back(other_shim_path);
   EXPECT_CALL(shortcut_creator, GetAppBundlesByIdUnsorted())
-      .WillOnce(Return(bundle_by_id_paths));
-
+      .WillRepeatedly(Return(bundle_by_id_paths));
   EXPECT_TRUE(shortcut_creator.CreateShortcuts(SHORTCUT_CREATION_AUTOMATED,
                                                web_app::ShortcutLocations()));
-  EXPECT_TRUE(base::PathExists(internal_shim_path_));
+
+  // Ensure the paths were created, and that they are destroyed.
   EXPECT_TRUE(base::PathExists(shim_path_));
-
-  // Create an extra shim in another folder. It should be deleted since its
-  // bundle id matches.
-  EXPECT_TRUE(shortcut_creator.BuildShortcut(other_shim_path));
   EXPECT_TRUE(base::PathExists(other_shim_path));
-
-  // Change the user_data_dir of the shim at shim_path_. It should not be
-  // deleted since its user_data_dir does not match.
-  NSString* plist_path = base::mac::FilePathToNSString(
-      shim_path_.Append("Contents").Append("Info.plist"));
-  NSMutableDictionary* plist =
-      [NSMutableDictionary dictionaryWithContentsOfFile:plist_path];
-  [plist setObject:@"fake_user_data_dir"
-            forKey:app_mode::kCrAppModeUserDataDirKey];
-  [plist writeToFile:plist_path atomically:YES];
-
   EXPECT_TRUE(
       base::PathService::Override(chrome::DIR_USER_DATA, app_data_dir_));
   shortcut_creator.DeleteShortcuts();
-  EXPECT_FALSE(base::PathExists(internal_shim_path_));
-  EXPECT_TRUE(base::PathExists(shim_path_));
+  EXPECT_FALSE(base::PathExists(shim_path_));
   EXPECT_FALSE(base::PathExists(other_shim_path));
 }
 
@@ -405,7 +434,7 @@ TEST_F(WebAppShortcutCreatorTest, SortAppBundles) {
   base::FilePath app_dir("/home/apps");
   NiceMock<WebAppShortcutCreatorSortingMock> shortcut_creator(app_dir,
                                                               info_.get());
-  base::FilePath a = shortcut_creator.GetApplicationsShortcutPath();
+  base::FilePath a = shortcut_creator.GetApplicationsShortcutPath(false);
   base::FilePath b = shortcut_creator.GetApplicationsDirname().Append("a");
   base::FilePath c = shortcut_creator.GetApplicationsDirname().Append("z");
   base::FilePath d("/a/b/c");

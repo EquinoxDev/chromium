@@ -52,11 +52,11 @@
 #include "chrome/grit/generated_resources.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chromeos/constants/chromeos_switches.h"
+#include "chromeos/constants/devicetype.h"
 #include "chromeos/dbus/util/version_loader.h"
 #include "chromeos/login/auth/authpolicy_login_helper.h"
 #include "chromeos/login/auth/user_context.h"
 #include "chromeos/settings/cros_settings_names.h"
-#include "chromeos/system/devicetype.h"
 #include "components/login/localized_values_builder.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
 #include "components/prefs/pref_service.h"
@@ -285,11 +285,12 @@ struct GaiaScreenHandler::GaiaContext {
 GaiaScreenHandler::GaiaContext::GaiaContext() {}
 
 GaiaScreenHandler::GaiaScreenHandler(
+    JSCallsContainer* js_calls_container,
     CoreOobeView* core_oobe_view,
     const scoped_refptr<NetworkStateInformer>& network_state_informer,
     ActiveDirectoryPasswordChangeScreenHandler*
         active_directory_password_change_screen_handler)
-    : BaseScreenHandler(kScreenId),
+    : BaseScreenHandler(kScreenId, js_calls_container),
       network_state_informer_(network_state_informer),
       core_oobe_view_(core_oobe_view),
       active_directory_password_change_screen_handler_(
@@ -368,6 +369,8 @@ void GaiaScreenHandler::LoadGaiaWithPartition(
           Profile::FromWebUI(web_ui()));
   content::StoragePartition* partition =
       signin_partition_manager->GetCurrentStoragePartition();
+  if (!partition)
+    return;
 
   std::string gaps_cookie_value(kGAPSCookie);
   gaps_cookie_value += "=" + context.gaps_cookie;
@@ -491,7 +494,7 @@ void GaiaScreenHandler::LoadGaiaWithPartitionAndVersionAndConsent(
   params.SetString("webviewPartitionName", partition_name);
 
   frame_state_ = FRAME_STATE_LOADING;
-  CallJSWithPrefix("loadAuthExtension", params);
+  CallJS("login.GaiaSigninScreen.loadAuthExtension", params);
 }
 
 void GaiaScreenHandler::ReloadGaia(bool force_reload) {
@@ -514,7 +517,7 @@ void GaiaScreenHandler::ReloadGaia(bool force_reload) {
 }
 
 void GaiaScreenHandler::MonitorOfflineIdle(bool is_online) {
-  CallJSWithPrefix("monitorOfflineIdle", is_online);
+  CallJS("login.GaiaSigninScreen.monitorOfflineIdle", is_online);
 }
 
 void GaiaScreenHandler::DeclareLocalizedValues(
@@ -735,18 +738,16 @@ void GaiaScreenHandler::DoAdAuth(
       break;
     case authpolicy::ERROR_PARSE_UPN_FAILED:
     case authpolicy::ERROR_BAD_USER_NAME:
-      CallJSWithPrefix(
-          "invalidateAd", username,
-          static_cast<int>(ActiveDirectoryErrorState::BAD_USERNAME));
+      CallJS("login.GaiaSigninScreen.invalidateAd", username,
+             static_cast<int>(ActiveDirectoryErrorState::BAD_USERNAME));
       break;
     case authpolicy::ERROR_BAD_PASSWORD:
-      CallJSWithPrefix(
-          "invalidateAd", username,
-          static_cast<int>(ActiveDirectoryErrorState::BAD_AUTH_PASSWORD));
+      CallJS("login.GaiaSigninScreen.invalidateAd", username,
+             static_cast<int>(ActiveDirectoryErrorState::BAD_AUTH_PASSWORD));
       break;
     default:
-      CallJSWithPrefix("invalidateAd", username,
-                       static_cast<int>(ActiveDirectoryErrorState::NONE));
+      CallJS("login.GaiaSigninScreen.invalidateAd", username,
+             static_cast<int>(ActiveDirectoryErrorState::NONE));
       core_oobe_view_->ShowSignInError(
           0, GetAdErrorMessage(error), std::string(),
           HelpAppLauncher::HELP_CANT_ACCESS_ACCOUNT);
@@ -887,8 +888,12 @@ void GaiaScreenHandler::HandleGaiaUIReady() {
   if (test_expects_complete_login_)
     SubmitLoginFormForTest();
 
-  if (LoginDisplayHost::default_host())
+  if (LoginDisplayHost::default_host()) {
     LoginDisplayHost::default_host()->OnGaiaScreenReady();
+  } else {
+    // Used to debug crbug.com/902315. Feel free to remove after that is fixed.
+    LOG(ERROR) << "HandleGaiaUIReady: There is no LoginDisplayHost";
+  }
 }
 
 void GaiaScreenHandler::HandleUpdateOobeDialogSize(int width, int height) {
@@ -1227,7 +1232,7 @@ void GaiaScreenHandler::ShowWhitelistCheckFailedError() {
                     g_browser_process->platform_part()
                         ->browser_policy_connector_chromeos()
                         ->IsEnterpriseManaged());
-  CallJSWithPrefix("showWhitelistCheckFailedError", true, params);
+  CallJS("login.GaiaSigninScreen.showWhitelistCheckFailedError", true, params);
 }
 
 void GaiaScreenHandler::LoadAuthExtension(bool force,

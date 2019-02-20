@@ -31,7 +31,9 @@ class ImageRecord : public base::SupportsWeakPtr<ImageRecord> {
   unsigned frame_index = 0;
   base::TimeTicks first_paint_time_after_loaded = base::TimeTicks();
   bool loaded = false;
+#ifndef NDEBUG
   String image_url = "";
+#endif
 };
 
 // ImagePaintTimingDetector contains Largest Image Paint and Last Image Paint.
@@ -60,6 +62,10 @@ class ImageRecord : public base::SupportsWeakPtr<ImageRecord> {
 class CORE_EXPORT ImagePaintTimingDetector final
     : public GarbageCollectedFinalized<ImagePaintTimingDetector> {
   friend class ImagePaintTimingDetectorTest;
+  using NodesQueueComparator = bool (*)(const base::WeakPtr<ImageRecord>&,
+                                        const base::WeakPtr<ImageRecord>&);
+  using ImageRecordSet =
+      std::set<base::WeakPtr<ImageRecord>, NodesQueueComparator>;
 
  public:
   ImagePaintTimingDetector(LocalFrameView*);
@@ -67,8 +73,22 @@ class CORE_EXPORT ImagePaintTimingDetector final
   static bool HasContentfulBackgroundImage(const LayoutObject& object);
   void OnPrePaintFinished();
   void NotifyNodeRemoved(DOMNodeId);
-  base::TimeTicks LargestImagePaint() const { return largest_image_paint_; }
-  base::TimeTicks LastImagePaint() const { return last_image_paint_; }
+  base::TimeTicks LargestImagePaint() const {
+    return !largest_image_paint_
+               ? base::TimeTicks()
+               : largest_image_paint_->first_paint_time_after_loaded;
+  }
+  uint64_t LargestImagePaintSize() const {
+    return !largest_image_paint_ ? 0 : largest_image_paint_->first_size;
+  }
+  base::TimeTicks LastImagePaint() const {
+    return !last_image_paint_
+               ? base::TimeTicks()
+               : last_image_paint_->first_paint_time_after_loaded;
+  }
+  uint64_t LastImagePaintSize() const {
+    return !last_image_paint_ ? 0 : last_image_paint_->first_size;
+  }
   // After the method being called, the detector stops to record new entries and
   // node removal. But it still observe the loading status. In other words, if
   // an image is recorded before stopping recording, and finish loading after
@@ -81,10 +101,7 @@ class CORE_EXPORT ImagePaintTimingDetector final
  private:
   ImageRecord* FindLargestPaintCandidate();
   ImageRecord* FindLastPaintCandidate();
-  ImageRecord* FindCandidate(
-      std::set<base::WeakPtr<ImageRecord>,
-               bool (*)(const base::WeakPtr<ImageRecord>&,
-                        const base::WeakPtr<ImageRecord>&)>& heap);
+  ImageRecord* FindCandidate(ImageRecordSet&);
   void PopulateTraceValue(TracedValue&,
                           const ImageRecord& first_image_paint,
                           unsigned report_count) const;
@@ -93,23 +110,21 @@ class CORE_EXPORT ImagePaintTimingDetector final
                       WebLayerTreeView::SwapResult,
                       base::TimeTicks);
   void RegisterNotifySwapTime();
-  void OnLargestImagePaintDetected(const ImageRecord&);
-  void OnLastImagePaintDetected(const ImageRecord&);
+  void OnLargestImagePaintDetected(ImageRecord*);
+  void OnLastImagePaintDetected(ImageRecord*);
+  void Deactivate();
+
   void Analyze();
 
   base::RepeatingCallback<void(WebLayerTreeView::ReportTimeCallback)>
       notify_swap_time_override_for_testing_;
 
   HashSet<DOMNodeId> size_zero_ids_;
+  // We will never destroy the pointers within |id_record_map_|. Once created
+  // they will exist for the whole life cycle of |id_record_map_|.
   HashMap<DOMNodeId, std::unique_ptr<ImageRecord>> id_record_map_;
-  std::set<base::WeakPtr<ImageRecord>,
-           bool (*)(const base::WeakPtr<ImageRecord>&,
-                    const base::WeakPtr<ImageRecord>&)>
-      size_ordered_set_;
-  std::set<base::WeakPtr<ImageRecord>,
-           bool (*)(const base::WeakPtr<ImageRecord>&,
-                    const base::WeakPtr<ImageRecord>&)>
-      time_ordered_set_;
+  ImageRecordSet size_ordered_set_;
+  ImageRecordSet time_ordered_set_;
   HashSet<DOMNodeId> detached_ids_;
 
   // Node-ids of records pending swap time are stored in this queue until they
@@ -131,8 +146,8 @@ class CORE_EXPORT ImagePaintTimingDetector final
   // no effect on recording the loading status.
   bool is_recording_ = true;
 
-  base::TimeTicks largest_image_paint_;
-  base::TimeTicks last_image_paint_;
+  ImageRecord* largest_image_paint_ = nullptr;
+  ImageRecord* last_image_paint_ = nullptr;
   Member<LocalFrameView> frame_view_;
 };
 }  // namespace blink

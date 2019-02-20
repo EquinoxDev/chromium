@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_streamer_thread.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_code_cache.h"
@@ -21,9 +22,9 @@
 #include "third_party/blink/renderer/platform/loader/fetch/cached_metadata.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
-#include "third_party/blink/renderer/platform/scheduler/public/background_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"
 #include "third_party/blink/renderer/platform/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/deque.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
@@ -34,8 +35,6 @@ namespace blink {
 // (consumer). The main thread prepares the data (copies it from Resource) and
 // the streamer thread feeds it to V8.
 class SourceStreamDataQueue {
-  WTF_MAKE_NONCOPYABLE(SourceStreamDataQueue);
-
  public:
   SourceStreamDataQueue() : finished_(false), have_data_(mutex_) {}
   ~SourceStreamDataQueue() { DiscardQueuedData(); }
@@ -47,6 +46,9 @@ class SourceStreamDataQueue {
   }
 
   void Produce(const uint8_t* data, size_t length) {
+    TRACE_EVENT_WITH_FLOW1(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
+                           "v8.streamingCompile.sendData", this,
+                           TRACE_EVENT_FLAG_FLOW_OUT, "length", length);
     MutexLocker locker(mutex_);
     DCHECK(!finished_);
     data_.push_back(std::make_pair(data, length));
@@ -54,6 +56,9 @@ class SourceStreamDataQueue {
   }
 
   void Finish() {
+    TRACE_EVENT_WITH_FLOW0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
+                           "v8.streamingCompile.finishData", this,
+                           TRACE_EVENT_FLAG_FLOW_OUT);
     MutexLocker locker(mutex_);
     finished_ = true;
     have_data_.Signal();
@@ -61,12 +66,19 @@ class SourceStreamDataQueue {
 
   void Consume(const uint8_t** data, size_t* length) {
     MutexLocker locker(mutex_);
-    while (!TryGetData(data, length))
+    while (!TryGetData(data, length)) {
+      TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
+                   "v8.streamingCompile.waitForData");
       have_data_.Wait();
+      TRACE_EVENT_WITH_FLOW1(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
+                             "v8.streamingCompile.receivedData", this,
+                             TRACE_EVENT_FLAG_FLOW_IN, "length", *length);
+    }
   }
 
  private:
-  bool TryGetData(const uint8_t** data, size_t* length) {
+  bool TryGetData(const uint8_t** data, size_t* length)
+      EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
     mutex_.AssertAcquired();
     if (!data_.IsEmpty()) {
       std::pair<const uint8_t*, size_t> next_data = data_.TakeFirst();
@@ -81,17 +93,19 @@ class SourceStreamDataQueue {
     return false;
   }
 
-  void DiscardQueuedData() {
+  void DiscardQueuedData() EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
     while (!data_.IsEmpty()) {
       std::pair<const uint8_t*, size_t> next_data = data_.TakeFirst();
       delete[] next_data.first;
     }
   }
 
-  Deque<std::pair<const uint8_t*, size_t>> data_;
-  bool finished_;
+  Deque<std::pair<const uint8_t*, size_t>> data_ GUARDED_BY(mutex_);
+  bool finished_ GUARDED_BY(mutex_);
   Mutex mutex_;
-  ThreadCondition have_data_;
+  ThreadCondition have_data_ GUARDED_BY(mutex_);
+
+  DISALLOW_COPY_AND_ASSIGN(SourceStreamDataQueue);
 };
 
 // SourceStream implements the streaming interface towards V8. The main
@@ -99,15 +113,16 @@ class SourceStreamDataQueue {
 // actually giving the data (via GetMoreData which is called on a background
 // thread).
 class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
-  WTF_MAKE_NONCOPYABLE(SourceStream);
-
  public:
   SourceStream()
       : v8::ScriptCompiler::ExternalSourceStream(),
         cancelled_(false),
+#if DCHECK_IS_ON()
         finished_(false),
+#endif  // DCHECK_IS_ON()
         queue_lead_position_(0),
-        queue_tail_position_(0) {}
+        queue_tail_position_(0) {
+  }
 
   ~SourceStream() override = default;
 
@@ -134,7 +149,9 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
 
   void DidFinishLoading() {
     DCHECK(IsMainThread());
+#if DCHECK_IS_ON()
     finished_ = true;
+#endif  // DCHECK_IS_ON()
     data_queue_.Finish();
   }
 
@@ -162,7 +179,12 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
                                ScriptStreamer* streamer) {
     DCHECK(IsMainThread());
 
-    if (cancelled_) {
+    bool was_canceled;
+    {
+      MutexLocker locker(mutex_);
+      was_canceled = cancelled_;
+    }
+    if (was_canceled) {
       data_queue_.Finish();
       return;
     }
@@ -193,7 +215,10 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
     DCHECK(IsMainThread());
     MutexLocker locker(mutex_);
 
+#if DCHECK_IS_ON()
     DCHECK(!finished_);
+#endif  // DCHECK_IS_ON()
+
     if (cancelled_) {
       data_queue_.Finish();
       return;
@@ -216,14 +241,15 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
   }
 
   // For coordinating between the main thread and background thread tasks.
-  // Guards m_cancelled and m_queueTailPosition.
   Mutex mutex_;
 
-  // The shared buffer containing the resource data + state variables.
-  // Used by both threads, guarded by m_mutex.
-  bool cancelled_;
-  bool finished_;
+  bool cancelled_ GUARDED_BY(mutex_);  // Used by both threads.
 
+#if DCHECK_IS_ON()
+  bool finished_;  // Only used by the main thread.
+#endif             // DCHECK_IS_ON()
+
+  // The shared buffer containing the resource data + state variables.
   scoped_refptr<const SharedBuffer>
       resource_buffer_;  // Only used by the main thread.
 
@@ -233,7 +259,9 @@ class SourceStream : public v8::ScriptCompiler::ExternalSourceStream {
   //   bookmarkPosition: position of the bookmark.
   SourceStreamDataQueue data_queue_;  // Thread safe.
   size_t queue_lead_position_;        // Only used by v8 thread.
-  size_t queue_tail_position_;  // Used by both threads; guarded by m_mutex.
+  size_t queue_tail_position_ GUARDED_BY(mutex_);  // Used by both threads.
+
+  DISALLOW_COPY_AND_ASSIGN(SourceStream);
 };
 
 size_t ScriptStreamer::small_script_threshold_ = 30 * 1024;
@@ -312,8 +340,10 @@ namespace {
 void RunScriptStreamingTask(
     std::unique_ptr<v8::ScriptCompiler::ScriptStreamingTask> task,
     ScriptStreamer* streamer) {
-  TRACE_EVENT1(
-      "v8,devtools.timeline", "v8.parseOnBackground", "data",
+  TRACE_EVENT_WITH_FLOW1(
+      "v8,devtools.timeline," TRACE_DISABLED_BY_DEFAULT("v8.compile"),
+      "v8.parseOnBackground", streamer,
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "data",
       inspector_parse_script_event::Data(streamer->ScriptResourceIdentifier(),
                                          streamer->ScriptURLString()));
   // Running the task can and will block: SourceStream::GetSomeData will get
@@ -398,7 +428,7 @@ void ScriptStreamer::NotifyAppendData() {
     DCHECK(!stream_);
     DCHECK(!source_);
     stream_ = new SourceStream;
-    // m_source takes ownership of m_stream.
+    // |source_| takes ownership of |stream_|.
     source_ = std::make_unique<v8::ScriptCompiler::StreamedSource>(stream_,
                                                                    encoding_);
 
@@ -415,6 +445,12 @@ void ScriptStreamer::NotifyAppendData() {
       return;
     }
 
+    TRACE_EVENT_WITH_FLOW1(
+        TRACE_DISABLED_BY_DEFAULT("v8.compile"), "v8.streamingCompile.start",
+        this, TRACE_EVENT_FLAG_FLOW_OUT, "data",
+        inspector_parse_script_event::Data(this->ScriptResourceIdentifier(),
+                                           this->ScriptURLString()));
+
     if (RuntimeEnabledFeatures::ScheduledScriptStreamingEnabled()) {
       // Script streaming tasks are high priority, as they can block the parser,
       // and they can (and probably will) block during their own execution as
@@ -425,7 +461,7 @@ void ScriptStreamer::NotifyAppendData() {
       // cancel the task.
       //
       // TODO(leszeks): Decrease the priority of these tasks where possible.
-      background_scheduler::PostOnBackgroundThreadWithTraits(
+      worker_pool::PostTaskWithTraits(
           FROM_HERE, {base::TaskPriority::USER_BLOCKING, base::MayBlock()},
           CrossThreadBind(RunBlockingScriptStreamingTask,
                           WTF::Passed(std::move(script_streaming_task)),
@@ -478,7 +514,7 @@ void ScriptStreamer::NotifyFinished() {
       // The task creation shouldn't fail, since it didn't fail before during
       // NotifyAppendData.
       CHECK(script_streaming_task);
-      background_scheduler::PostOnBackgroundThreadWithTraits(
+      worker_pool::PostTaskWithTraits(
           FROM_HERE, {base::TaskPriority::USER_BLOCKING},
           CrossThreadBind(RunNonBlockingScriptStreamingTask,
                           WTF::Passed(std::move(script_streaming_task)),
@@ -522,6 +558,13 @@ void ScriptStreamer::Trace(blink::Visitor* visitor) {
 }
 
 void ScriptStreamer::StreamingComplete() {
+  TRACE_EVENT_WITH_FLOW2(
+      TRACE_DISABLED_BY_DEFAULT("v8.compile"), "v8.streamingCompile.complete",
+      this, TRACE_EVENT_FLAG_FLOW_IN, "streaming_suppressed",
+      streaming_suppressed_, "data",
+      inspector_parse_script_event::Data(this->ScriptResourceIdentifier(),
+                                         this->ScriptURLString()));
+
   // The background task is completed; do the necessary ramp-down in the main
   // thread.
   DCHECK(IsMainThread());

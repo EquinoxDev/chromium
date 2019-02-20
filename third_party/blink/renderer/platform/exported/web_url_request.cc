@@ -31,6 +31,7 @@
 #include "third_party/blink/public/platform/web_url_request.h"
 
 #include <memory>
+
 #include "base/time/time.h"
 #include "third_party/blink/public/platform/web_http_body.h"
 #include "third_party/blink/public/platform/web_http_header_visitor.h"
@@ -40,7 +41,6 @@
 #include "third_party/blink/renderer/platform/network/encoded_form_data.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
-#include "third_party/blink/renderer/platform/wtf/noncopyable.h"
 
 namespace blink {
 
@@ -377,13 +377,6 @@ void WebURLRequest::SetPriority(WebURLRequest::Priority priority) {
   resource_request_->SetPriority(static_cast<ResourceLoadPriority>(priority));
 }
 
-bool WebURLRequest::WasDiscarded() const {
-  return resource_request_->WasDiscarded();
-}
-void WebURLRequest::SetWasDiscarded(bool was_discarded) {
-  resource_request_->SetWasDiscarded(was_discarded);
-}
-
 bool WebURLRequest::IsExternalRequest() const {
   return resource_request_->IsExternalRequest();
 }
@@ -402,10 +395,6 @@ base::Optional<WebString> WebURLRequest::GetSuggestedFilename() const {
 
 bool WebURLRequest::IsAdResource() const {
   return resource_request_->IsAdResource();
-}
-
-const WebContentSecurityPolicyList& WebURLRequest::GetInitiatorCSP() const {
-  return resource_request_->GetInitiatorCSP();
 }
 
 void WebURLRequest::SetUpgradeIfInsecure(bool upgrade_if_insecure) {
@@ -429,28 +418,12 @@ const base::Optional<base::UnguessableToken>& WebURLRequest::GetDevToolsToken()
   return resource_request_->GetDevToolsToken();
 }
 
-const WebString WebURLRequest::GetOriginPolicy() const {
-  return resource_request_->GetOriginPolicy();
-}
-
-void WebURLRequest::SetOriginPolicy(const WebString& policy) {
-  resource_request_->SetOriginPolicy(policy);
-}
-
 const WebString WebURLRequest::GetRequestedWithHeader() const {
   return resource_request_->GetRequestedWithHeader();
 }
 
 void WebURLRequest::SetRequestedWithHeader(const WebString& value) {
   resource_request_->SetRequestedWithHeader(value);
-}
-
-const WebString WebURLRequest::GetClientDataHeader() const {
-  return resource_request_->GetClientDataHeader();
-}
-
-void WebURLRequest::SetClientDataHeader(const WebString& value) {
-  resource_request_->SetClientDataHeader(value);
 }
 
 const base::UnguessableToken& WebURLRequest::GetFetchWindowId() const {

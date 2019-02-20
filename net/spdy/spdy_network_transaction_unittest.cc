@@ -54,8 +54,8 @@
 #include "net/test/gtest_util.h"
 #include "net/test/test_data_directory.h"
 #include "net/test/test_with_scoped_task_environment.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
-#include "net/third_party/spdy/core/spdy_test_utils.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_test_utils.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request_test_util.h"
 #include "net/websockets/websocket_test_util.h"
@@ -5656,9 +5656,9 @@ class SpdyNetworkTransactionPushHeaderTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        SpdyNetworkTransactionPushHeaderTest,
-                        ::testing::ValuesIn(push_header_test_cases));
+INSTANTIATE_TEST_SUITE_P(,
+                         SpdyNetworkTransactionPushHeaderTest,
+                         ::testing::ValuesIn(push_header_test_cases));
 
 TEST_P(SpdyNetworkTransactionPushHeaderTest,
        PushedResponseHeadersReceivedBeforeRequest) {
@@ -5863,9 +5863,9 @@ class SpdyNetworkTransactionPushUrlTest
   }
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        SpdyNetworkTransactionPushUrlTest,
-                        ::testing::ValuesIn(push_url_test_cases));
+INSTANTIATE_TEST_SUITE_P(,
+                         SpdyNetworkTransactionPushUrlTest,
+                         ::testing::ValuesIn(push_url_test_cases));
 
 TEST_P(SpdyNetworkTransactionPushUrlTest, PushUrlTest) {
   RunTest();

@@ -9,11 +9,11 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
 
 namespace autofill {
 
-class AutofillProfile;
 class CreditCard;
 
 // For classic Autofill form fields, the KeyType is AutofillKey.
@@ -21,11 +21,7 @@ class CreditCard;
 template <typename KeyType>
 class GenericAutofillChange {
  public:
-  enum Type {
-    ADD,
-    UPDATE,
-    REMOVE
-  };
+  enum Type { ADD, UPDATE, REMOVE, EXPIRE };
 
   virtual ~GenericAutofillChange() {}
 
@@ -87,6 +83,48 @@ class AutofillDataModelChange : public GenericAutofillChange<std::string> {
 
 typedef AutofillDataModelChange<AutofillProfile> AutofillProfileChange;
 typedef AutofillDataModelChange<CreditCard> CreditCardChange;
+
+class AutofillProfileDeepChange : public AutofillProfileChange {
+ public:
+  AutofillProfileDeepChange(Type type, const AutofillProfile& profile)
+      : AutofillProfileChange(type, profile.guid(), &profile),
+        profile_(profile) {}
+
+  AutofillProfileDeepChange(Type type, const std::string& guid)
+      : AutofillProfileChange(type, guid, nullptr), profile_(guid, "") {
+    DCHECK(type == GenericAutofillChange::REMOVE);
+  }
+
+  ~AutofillProfileDeepChange() override {}
+
+  const AutofillProfile* profile() const { return &profile_; }
+  bool is_ongoing_on_background() const { return is_ongoing_on_background_; }
+  void set_is_ongoing_on_background() const {
+    is_ongoing_on_background_ = true;
+  }
+
+  void validation_effort_made() const { validation_effort_made_ = true; }
+  bool has_validation_effort_made() const { return validation_effort_made_; }
+
+  void set_enforce_update() { enforce_update_ = true; }
+  bool enforce_update() const { return enforce_update_; }
+
+ private:
+  AutofillProfile profile_;
+  // Is true when the change is taking place on the database side on the
+  // background.
+  mutable bool is_ongoing_on_background_ = false;
+  // Is true when the |profile_| has gone through the validation process.
+  // Note: This could be different from the
+  // profile_.is_client_validity_states_updated. |validation_effort_made_| shows
+  // that the effort has been made, but not necessarily successful, and profile
+  // validity may or may not be updated.
+  mutable bool validation_effort_made_ = false;
+
+  // Is true when the update should happen regardless of an equal profile.
+  // (equal in the sense of AutofillProfile::EqualForUpdate)
+  mutable bool enforce_update_ = false;
+};
 
 }  // namespace autofill
 

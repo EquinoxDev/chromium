@@ -28,9 +28,9 @@ import org.chromium.chrome.browser.tab.EmptyTabObserver;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.Tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabObserver;
-import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
+import org.chromium.chrome.browser.tabmodel.TabSelectionType;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.DropdownPopupWindow;
 import org.chromium.ui.base.WindowAndroid;
@@ -104,6 +104,8 @@ class ManualFillingMediator extends EmptyTabObserver
         ActionProviderCacheAdapter mActionsProvider;
         @Nullable
         PasswordAccessorySheetCoordinator mPasswordAccessorySheet;
+        @Nullable
+        CreditCardAccessorySheetCoordinator mCreditCardAccessorySheet;
     }
 
     // TODO(fhorschig): Do we need a MapObservable type? (This would be only observer though).
@@ -162,7 +164,7 @@ class ManualFillingMediator extends EmptyTabObserver
         mActivity.findViewById(android.R.id.content).addOnLayoutChangeListener(this);
         mTabModelObserver = new TabModelSelectorTabModelObserver(mActivity.getTabModelSelector()) {
             @Override
-            public void didSelectTab(Tab tab, @TabModel.TabSelectionType int type, int lastId) {
+            public void didSelectTab(Tab tab, @TabSelectionType int type, int lastId) {
                 mActiveBrowserTab = tab;
                 restoreCachedState(tab);
             }
@@ -181,7 +183,7 @@ class ManualFillingMediator extends EmptyTabObserver
         Tab currentTab = mActivity.getTabModelSelector().getCurrentTab();
         if (currentTab != null) {
             mTabModelObserver.didSelectTab(
-                    currentTab, TabModel.TabSelectionType.FROM_USER, Tab.INVALID_TAB_ID);
+                    currentTab, TabSelectionType.FROM_USER, Tab.INVALID_TAB_ID);
         }
     }
 
@@ -227,6 +229,11 @@ class ManualFillingMediator extends EmptyTabObserver
         accessorySheet.registerDataProvider(dataProvider);
     }
 
+    void registerCreditCardProvider() {
+        CreditCardAccessorySheetCoordinator accessorySheet = getCreditCardAccessorySheet();
+        if (accessorySheet == null) return;
+    }
+
     void registerActionProvider(KeyboardAccessoryData.PropertyProvider<Action[]> actionProvider) {
         if (!isInitialized()) return;
         if (mActiveBrowserTab == null) return;
@@ -240,11 +247,11 @@ class ManualFillingMediator extends EmptyTabObserver
         if (!isInitialized()) return;
         pause();
         mActivity.findViewById(android.R.id.content).removeOnLayoutChangeListener(this);
+        mTabModelObserver.destroy();
         LayoutManager manager = getLayoutManager();
         if (manager != null) manager.removeSceneChangeObserver(mTabSwitcherObserver);
         mWindowAndroid = null;
         mActivity = null;
-        mTabModelObserver.destroy();
     }
 
     boolean handleBackPress() {
@@ -324,7 +331,7 @@ class ManualFillingMediator extends EmptyTabObserver
 
     @Override
     public void onChangeAccessorySheet(int tabIndex) {
-        assert mActivity != null : "ManualFillingMediator needs initialization.";
+        if (mActivity == null) return; // Mediator not initialized or already destroyed.
         mAccessorySheet.setActiveTab(tabIndex);
         if (mPopup != null && mPopup.isShowing()) mPopup.dismiss();
         // If there is a keyboard, update the accessory sheet's height and hide the keyboard.
@@ -431,6 +438,9 @@ class ManualFillingMediator extends EmptyTabObserver
         if (state.mPasswordAccessorySheet != null) {
             addTab(state.mPasswordAccessorySheet.getTab());
         }
+        if (state.mCreditCardAccessorySheet != null) {
+            addTab(state.mCreditCardAccessorySheet.getTab());
+        }
         if (state.mActionsProvider != null) state.mActionsProvider.notifyAboutCachedItems();
     }
 
@@ -479,6 +489,27 @@ class ManualFillingMediator extends EmptyTabObserver
             addTab(state.mPasswordAccessorySheet.getTab());
         }
         return state.mPasswordAccessorySheet;
+    }
+
+    @VisibleForTesting
+    @Nullable
+    CreditCardAccessorySheetCoordinator getCreditCardAccessorySheet() {
+        if (!isInitialized()) return null;
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.AUTOFILL_MANUAL_FALLBACK_ANDROID)) {
+            return null;
+        }
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.EXPERIMENTAL_UI)
+                && !ChromeFeatureList.isEnabled(ChromeFeatureList.PASSWORDS_KEYBOARD_ACCESSORY)) {
+            return null;
+        }
+        if (mActiveBrowserTab == null) return null; // No need for a sheet if there is no tab.
+        AccessoryState state = getOrCreateAccessoryState(mActiveBrowserTab);
+        if (state.mCreditCardAccessorySheet == null) {
+            state.mCreditCardAccessorySheet = new CreditCardAccessorySheetCoordinator(
+                    mActivity, mAccessorySheet.getScrollListener());
+            addTab(state.mCreditCardAccessorySheet.getTab());
+        }
+        return state.mCreditCardAccessorySheet;
     }
 
     @VisibleForTesting

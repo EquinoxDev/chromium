@@ -48,6 +48,9 @@ void DecryptingRenderer::Initialize(MediaResource* media_resource,
   DCHECK(media_resource);
   DCHECK(client);
 
+  // Using |this| with a MediaResource::Type::URL will result in a crash.
+  DCHECK_EQ(media_resource->GetType(), MediaResource::Type::STREAM);
+
   media_resource_ = media_resource;
   client_ = client;
   init_cb_ = std::move(init_cb);
@@ -143,8 +146,11 @@ void DecryptingRenderer::CreateAndInitializeDecryptingMediaResource() {
 
   decrypting_media_resource_ = std::make_unique<DecryptingMediaResource>(
       media_resource_, cdm_context_, media_log_, media_task_runner_);
-  decrypting_media_resource_->Initialize(base::BindOnce(
-      &DecryptingRenderer::InitializeRenderer, weak_factory_.GetWeakPtr()));
+  decrypting_media_resource_->Initialize(
+      base::BindOnce(&DecryptingRenderer::InitializeRenderer,
+                     weak_factory_.GetWeakPtr()),
+      base::BindRepeating(&DecryptingRenderer::OnWaiting,
+                          weak_factory_.GetWeakPtr()));
 }
 
 void DecryptingRenderer::InitializeRenderer(bool success) {
@@ -155,6 +161,8 @@ void DecryptingRenderer::InitializeRenderer(bool success) {
     return;
   }
 
+  // |decrypting_media_resource_| when |cdm_context_| is null and there are no
+  // encrypted streams.
   MediaResource* const maybe_decrypting_media_resource =
       decrypting_media_resource_ ? decrypting_media_resource_.get()
                                  : media_resource_;
@@ -179,6 +187,11 @@ bool DecryptingRenderer::HasEncryptedStream() {
 
 bool DecryptingRenderer::HasDecryptingMediaResourceForTesting() const {
   return decrypting_media_resource_ != nullptr;
+}
+
+void DecryptingRenderer::OnWaiting(WaitingReason reason) {
+  DCHECK(media_task_runner_->BelongsToCurrentThread());
+  client_->OnWaiting(reason);
 }
 
 }  // namespace media

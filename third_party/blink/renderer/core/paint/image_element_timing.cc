@@ -4,11 +4,11 @@
 
 #include "third_party/blink/renderer/core/paint/image_element_timing.h"
 
-#include "third_party/blink/renderer/core/html/html_image_element.h"
-#include "third_party/blink/renderer/core/layout/layout_image.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/loader/resource/image_resource_content.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
@@ -40,30 +40,30 @@ ImageElementTiming& ImageElementTiming::From(LocalDOMWindow& window) {
 
 ImageElementTiming::ImageElementTiming(LocalDOMWindow& window)
     : Supplement<LocalDOMWindow>(window) {
-  DCHECK(RuntimeEnabledFeatures::ElementTimingEnabled());
+  DCHECK(origin_trials::ElementTimingEnabled(GetSupplementable()->document()));
 }
 
-void ImageElementTiming::NotifyImagePainted(const HTMLImageElement* element,
-                                            const LayoutImage* layout_image,
-                                            const PaintLayer* painting_layer) {
-  if (images_notified_.find(layout_image) != images_notified_.end())
+void ImageElementTiming::NotifyImagePainted(
+    const LayoutObject* layout_object,
+    const ImageResourceContent* cached_image,
+    const PaintLayer* painting_layer) {
+  auto result = images_notified_.insert(layout_object);
+  if (!result.is_new_entry)
     return;
 
-  images_notified_.insert(layout_image);
 
   LocalFrame* frame = GetSupplementable()->GetFrame();
-  DCHECK(frame == layout_image->GetDocument().GetFrame());
-  if (!frame)
+  DCHECK(frame == layout_object->GetDocument().GetFrame());
+  if (!frame || !cached_image)
     return;
 
   // Skip the computations below if the element is not same origin.
-  if (!layout_image->CachedImage())
-    return;
-
-  const KURL& url = layout_image->CachedImage()->Url();
-  DCHECK(GetSupplementable()->document() == &layout_image->GetDocument());
-  if (!SecurityOrigin::AreSameSchemeHostPort(layout_image->GetDocument().Url(),
-                                             url))
+  DCHECK(GetSupplementable()->document() == &layout_object->GetDocument());
+  DCHECK(layout_object->GetDocument().GetSecurityOrigin());
+  if (!Performance::PassesTimingAllowCheck(
+          cached_image->GetResponse(),
+          *layout_object->GetDocument().GetSecurityOrigin(),
+          &layout_object->GetDocument()))
     return;
 
   // Compute the viewport rect.
@@ -75,12 +75,12 @@ void ImageElementTiming::NotifyImagePainted(const HTMLImageElement* element,
   IntRect viewport = frame->View()->LayoutViewport()->VisibleContentRect();
 
   // Compute the visible part of the image rect.
-  LayoutRect image_visual_rect = layout_image->FirstFragment().VisualRect();
-  const auto* local_transform = painting_layer->GetLayoutObject()
+  LayoutRect image_visual_rect = layout_object->FirstFragment().VisualRect();
+  const auto& local_transform = painting_layer->GetLayoutObject()
                                     .FirstFragment()
                                     .LocalBorderBoxProperties()
                                     .Transform();
-  const auto* ancestor_transform = painting_layer->GetLayoutObject()
+  const auto& ancestor_transform = painting_layer->GetLayoutObject()
                                        .View()
                                        ->FirstFragment()
                                        .LocalBorderBoxProperties()
@@ -91,6 +91,7 @@ void ImageElementTiming::NotifyImagePainted(const HTMLImageElement* element,
   IntRect visible_new_visual_rect = RoundedIntRect(new_visual_rect_abs);
   visible_new_visual_rect.Intersect(viewport);
 
+  const Element* element = ToElement(layout_object->GetNode());
   const AtomicString attr =
       element->FastGetAttribute(html_names::kElementtimingAttr);
   // Do not create an entry if 'elementtiming' is not present or the image is
@@ -121,33 +122,19 @@ void ImageElementTiming::NotifyImagePainted(const HTMLImageElement* element,
 
 void ImageElementTiming::ReportImagePaintSwapTime(WebLayerTreeView::SwapResult,
                                                   base::TimeTicks timestamp) {
-  Document* document = GetSupplementable()->document();
-  DCHECK(document);
-  const SecurityOrigin* current_origin = document->GetSecurityOrigin();
-  // It suffices to check the current origin against the parent origin since all
-  // origins stored in |element_timings_| have been checked against the current
-  // origin.
-  while (document &&
-         current_origin->IsSameSchemeHostPort(document->GetSecurityOrigin())) {
-    DCHECK(document->domWindow());
-    WindowPerformance* performance =
-        DOMWindowPerformance::performance(*document->domWindow());
-    if (performance &&
-        performance->HasObserverFor(PerformanceEntry::kElement)) {
-      for (const auto& element_timing : element_timings_) {
-        performance->AddElementTiming(element_timing.name, element_timing.rect,
-                                      timestamp);
-      }
+  WindowPerformance* performance =
+      DOMWindowPerformance::performance(*GetSupplementable());
+  if (performance && (performance->HasObserverFor(PerformanceEntry::kElement) ||
+                      performance->ShouldBufferEntries())) {
+    for (const auto& element_timing : element_timings_) {
+      performance->AddElementTiming(element_timing.name, element_timing.rect,
+                                    timestamp);
     }
-    // Provide the entry to the parent documents for as long as the origin check
-    // still holds.
-    document = document->ParentDocument();
   }
-
   element_timings_.clear();
 }
 
-void ImageElementTiming::NotifyWillBeDestroyed(const LayoutImage* image) {
+void ImageElementTiming::NotifyWillBeDestroyed(const LayoutObject* image) {
   images_notified_.erase(image);
 }
 

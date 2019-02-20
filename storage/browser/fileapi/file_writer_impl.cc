@@ -4,6 +4,7 @@
 
 #include "storage/browser/fileapi/file_writer_impl.h"
 
+#include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "mojo/public/cpp/system/data_pipe_drainer.h"
 #include "storage/browser/blob/blob_data_handle.h"
@@ -17,7 +18,8 @@ FileWriterImpl::FileWriterImpl(
     base::WeakPtr<BlobStorageContext> blob_context)
     : operation_runner_(std::move(operation_runner)),
       blob_context_(std::move(blob_context)),
-      url_(std::move(url)) {
+      url_(std::move(url)),
+      weak_ptr_factory_(this) {
   DCHECK(url_.is_valid());
 }
 
@@ -28,7 +30,7 @@ void FileWriterImpl::Write(uint64_t position,
                            WriteCallback callback) {
   blob_context_->GetBlobDataFromBlobPtr(
       std::move(blob),
-      base::BindOnce(&FileWriterImpl::DoWrite, base::Unretained(this),
+      base::BindOnce(&FileWriterImpl::DoWrite, weak_ptr_factory_.GetWeakPtr(),
                      std::move(callback), position));
 }
 

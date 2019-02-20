@@ -4,17 +4,13 @@
 
 package org.chromium.chrome.browser.autofill_assistant;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.inOrder;
 
 import android.content.Intent;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.filters.MediumTest;
+import android.support.v7.widget.RecyclerView;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.TextView;
 
 import org.junit.After;
@@ -23,12 +19,10 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
-import org.mockito.stubbing.Answer;
 
 import org.chromium.base.PathUtils;
 import org.chromium.base.ThreadUtils;
@@ -36,6 +30,13 @@ import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.autofill_assistant.R;
+import org.chromium.chrome.browser.autofill_assistant.carousel.AssistantChip;
+import org.chromium.chrome.browser.autofill_assistant.carousel.AssistantChipType;
+import org.chromium.chrome.browser.autofill_assistant.details.AssistantDetails;
+import org.chromium.chrome.browser.autofill_assistant.details.AssistantDetailsModel;
+import org.chromium.chrome.browser.autofill_assistant.header.AssistantHeaderModel;
+import org.chromium.chrome.browser.autofill_assistant.overlay.AssistantOverlayModel;
+import org.chromium.chrome.browser.autofill_assistant.overlay.AssistantOverlayState;
 import org.chromium.chrome.browser.customtabs.CustomTabActivity;
 import org.chromium.chrome.browser.customtabs.CustomTabActivityTestRule;
 import org.chromium.chrome.browser.customtabs.CustomTabsTestUtils;
@@ -43,9 +44,8 @@ import org.chromium.chrome.browser.firstrun.FirstRunStatus;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.net.test.EmbeddedTestServer;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -58,12 +58,12 @@ public class AutofillAssistantUiTest {
 
     @Rule
     public MockitoRule mMockitoRule = MockitoJUnit.rule();
+
     @Mock
-    private AbstractAutofillAssistantUiController mControllerMock;
-    @Captor
-    private ArgumentCaptor<UiDelegateHolder> mUiDelegateHolderCaptor;
-    @Captor
-    private ArgumentCaptor<String> mLastSelectedScriptPathCaptor;
+    public AssistantCoordinator.Delegate mCoordinatorDelegateMock;
+
+    @Mock
+    public Runnable mRunnableMock;
 
     @Rule
     public CustomTabActivityTestRule mCustomTabActivityTestRule = new CustomTabActivityTestRule();
@@ -105,75 +105,78 @@ public class AutofillAssistantUiTest {
     // highlight chips and so on.
     @Test
     @MediumTest
-    public void testStartAndDismiss() throws InterruptedException {
+    public void testStartAndAccept() throws Exception {
+        InOrder inOrder = inOrder(mRunnableMock);
+
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(createMinimalCustomTabIntent());
+        AssistantCoordinator assistantCoordinator = ThreadUtils.runOnUiThreadBlocking(
+                ()
+                        -> new AssistantCoordinator(getActivity(),
+                                mCustomTabActivityTestRule.getWebContents(),
+                                mCoordinatorDelegateMock));
 
-        // Start autofill assistant UI. The first run screen must be shown first since the
-        // preference hasn't been set.
-        ThreadUtils.runOnUiThreadBlocking(
-                () -> AutofillAssistantFacade.startInternal(getActivity(), mControllerMock));
-        View firstRunScreen = findViewByIdInMainCoordinator(R.id.init_screen);
-        Assert.assertNotNull(firstRunScreen);
-        Assert.assertTrue(firstRunScreen.isShown());
-        verify(mControllerMock, never()).init(any(), any());
+        // Bottom sheet is shown when creating the AssistantCoordinator.
+        View bottomSheet = findViewByIdInMainCoordinator(R.id.autofill_assistant);
+        Assert.assertTrue(bottomSheet.isShown());
 
-        // Accept on the first run screen so as to continue.
-        View initOkButton = firstRunScreen.findViewById(R.id.button_init_ok);
+        // Show onboarding.
+        ThreadUtils.runOnUiThreadBlocking(() -> assistantCoordinator.showOnboarding(mRunnableMock));
+        View onboardingView = bottomSheet.findViewById(R.id.assistant_onboarding);
+        Assert.assertNotNull(onboardingView);
+        View initOkButton = onboardingView.findViewById(R.id.button_init_ok);
+        Assert.assertNotNull(initOkButton);
         ThreadUtils.runOnUiThreadBlocking(() -> { initOkButton.performClick(); });
-        verify(mControllerMock, times(1))
-                .init(mUiDelegateHolderCaptor.capture(), any(Details.class));
-        Assert.assertNotNull(mUiDelegateHolderCaptor.getValue());
+        ThreadUtils.runOnUiThreadBlocking(() -> inOrder.verify(mRunnableMock).run());
 
         // Show and check status message.
         String testStatusMessage = "test message";
         ThreadUtils.runOnUiThreadBlocking(
                 ()
-                        -> mUiDelegateHolderCaptor.getValue().performUiOperation(
-                                uiDelegate -> uiDelegate.showStatusMessage(testStatusMessage)));
-        View bottomSheet = findViewByIdInMainCoordinator(R.id.autofill_assistant);
-        Assert.assertTrue(bottomSheet.isShown());
-        TextView statusMessageView = (TextView) bottomSheet.findViewById(R.id.status_message);
+                        -> assistantCoordinator.getModel().getHeaderModel().set(
+                                AssistantHeaderModel.STATUS_MESSAGE, testStatusMessage));
+        TextView statusMessageView = bottomSheet.findViewById(R.id.status_message);
         Assert.assertEquals(statusMessageView.getText(), testStatusMessage);
 
         // Show overlay.
         ThreadUtils.runOnUiThreadBlocking(
-                () -> mUiDelegateHolderCaptor.getValue().performUiOperation(uiDelegate -> {
-                    uiDelegate.showOverlay();
-                    uiDelegate.disableProgressBarPulsing();
-                }));
+                ()
+                        -> assistantCoordinator.getModel().getOverlayModel().set(
+                                AssistantOverlayModel.STATE, AssistantOverlayState.FULL));
         View overlay = bottomSheet.findViewById(R.id.touch_event_filter);
         Assert.assertTrue(overlay.isShown());
 
-        // Show scripts.
-        List<AutofillAssistantUiDelegate.ScriptHandle> scriptHandles = new ArrayList<>();
-        scriptHandles.add(
-                new AutofillAssistantUiDelegate.ScriptHandle("testScript1", false, "path1"));
-        scriptHandles.add(
-                new AutofillAssistantUiDelegate.ScriptHandle("testScript2", false, "path2"));
+        // Show chips.
+        List<AssistantChip> chips = Arrays.asList(
+                new AssistantChip(
+                        AssistantChipType.CHIP_ASSISTIVE, "chip 0", () -> {/* do nothing */}),
+                new AssistantChip(AssistantChipType.CHIP_ASSISTIVE, "chip 1", mRunnableMock));
         ThreadUtils.runOnUiThreadBlocking(
                 ()
-                        -> mUiDelegateHolderCaptor.getValue().performUiOperation(
-                                uiDelegate -> uiDelegate.updateScripts(scriptHandles)));
-        ViewGroup chipsViewContainer = (ViewGroup) bottomSheet.findViewById(R.id.carousel);
-        Assert.assertEquals(2, chipsViewContainer.getChildCount());
+                        -> assistantCoordinator.getModel().getCarouselModel().getChipsModel().set(
+                                chips));
+        RecyclerView chipsViewContainer =
+                assistantCoordinator.getBottomBarCoordinator().getCarouselCoordinator().getView();
+        Assert.assertEquals(2, chipsViewContainer.getAdapter().getItemCount());
 
-        //  choose the first script.
+        // Choose the second chip.
         ThreadUtils.runOnUiThreadBlocking(
-                () -> { chipsViewContainer.getChildAt(0).performClick(); });
-        verify(mControllerMock, times(1)).onScriptSelected(mLastSelectedScriptPathCaptor.capture());
-        Assert.assertEquals("path1", mLastSelectedScriptPathCaptor.getValue());
+                () -> { chipsViewContainer.getChildAt(1).performClick(); });
+        inOrder.verify(mRunnableMock).run();
 
         // Show movie details.
         String movieTitle = "testTitle";
         String movieDescription = "This is a fancy test movie";
         ThreadUtils.runOnUiThreadBlocking(
                 ()
-                        -> mUiDelegateHolderCaptor.getValue().performUiOperation(uiDelegate
-                                -> uiDelegate.showDetails(new Details(movieTitle, /* url = */ "",
+                        -> assistantCoordinator.getModel().getDetailsModel().set(
+                                AssistantDetailsModel.DETAILS,
+                                new AssistantDetails(movieTitle, /* url = */ "",
                                         Calendar.getInstance().getTime(), movieDescription,
                                         /* mId = */ "",
                                         /* price = */ null,
-                                        /* isFinal= */ true, Collections.emptySet()))));
+                                        /* userApprovalRequired= */ false,
+                                        /* highlightTitle= */ false, /* highlightDate= */
+                                        false, /* showPlaceholdersForEmptyFields= */ false)));
         TextView detailsTitle = (TextView) bottomSheet.findViewById(R.id.details_title);
         TextView detailsText = (TextView) bottomSheet.findViewById(R.id.details_text);
         Assert.assertEquals(detailsTitle.getText(), movieTitle);
@@ -182,15 +185,11 @@ public class AutofillAssistantUiTest {
         // Progress bar must be shown.
         Assert.assertTrue(bottomSheet.findViewById(R.id.progress_bar).isShown());
 
-        // Click 'X' button to graceful shutdown.
-        doAnswer((Answer<Void>) invocation -> {
-            mUiDelegateHolderCaptor.getValue().dismiss(R.string.autofill_assistant_stopped);
-            return null;
-        })
-                .when(mControllerMock)
-                .onDismiss();
+        // Click 'X' button runs the AssistantHeaderModel.CLOSE_BUTTON_CALLBACK.
+        AssistantHeaderModel headerModel = assistantCoordinator.getModel().getHeaderModel();
+        headerModel.set(AssistantHeaderModel.CLOSE_BUTTON_CALLBACK, mRunnableMock);
         ThreadUtils.runOnUiThreadBlocking(
                 () -> { bottomSheet.findViewById(R.id.close_button).performClick(); });
-        Assert.assertFalse(bottomSheet.isShown());
+        inOrder.verify(mRunnableMock).run();
     }
 }

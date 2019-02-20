@@ -2,63 +2,123 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-window.dispatch_ = {};
-
 cr.define('app_management', function() {
-  /*
-   * TODO(rekanorman): Should implement appManagement.mojom.PageHandlerInterface
-   * once backend permissions are implemented.
+  /**
+   * @implements {appManagement.mojom.PageHandlerInterface}
    */
   class FakePageHandler {
     /**
+     * @return {!Object<number, Permission>}
+     */
+    static createWebPermissions() {
+      const permissionIds = [
+        PwaPermissionType.CONTENT_SETTINGS_TYPE_GEOLOCATION,
+        PwaPermissionType.CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
+        PwaPermissionType.CONTENT_SETTINGS_TYPE_MEDIASTREAM_MIC,
+        PwaPermissionType.CONTENT_SETTINGS_TYPE_MEDIASTREAM_CAMERA,
+      ];
+
+      const permissions = {};
+
+      for (const permissionId of permissionIds) {
+        permissions[permissionId] = app_management.util.createPermission(
+            permissionId, PermissionValueType.kTriState, TriState.kAllow);
+      }
+
+      return permissions;
+    }
+
+    /**
+     * @return {!Object<number, Permission>}
+     */
+    static createArcPermissions() {
+      const permissionIds = [
+        ArcPermissionType.CAMERA,
+        ArcPermissionType.LOCATION,
+        ArcPermissionType.MICROPHONE,
+      ];
+
+      const permissions = {};
+
+      for (const permissionId of permissionIds) {
+        permissions[permissionId] = app_management.util.createPermission(
+            permissionId, PermissionValueType.kBool, Bool.kTrue);
+      }
+
+      return permissions;
+    }
+
+    /**
+     * @param {AppType} appType
+     * @return {!Object<number, Permission>}
+     */
+    static createPermissions(appType) {
+      switch (appType) {
+        case (AppType.kWeb):
+          return FakePageHandler.createWebPermissions();
+        case (AppType.kArc):
+          return FakePageHandler.createArcPermissions();
+        default:
+          return {};
+      }
+    }
+
+    /**
      * @param {string} id
-     * @param {Object=} config
+     * @param {Object=} optConfig
      * @return {!App}
      */
-    static createApp(id, config) {
-      const permissionMap = {
-        [TestPermissionTypeEnum.NOTIFICATIONS]: false,
-        [TestPermissionTypeEnum.LOCATION]: false,
-        [TestPermissionTypeEnum.CAMERA]: false,
-        [TestPermissionTypeEnum.MICROPHONE]: false,
-      };
-
+    static createApp(id, optConfig) {
       const app = {
         id: id,
-        type: apps.mojom.AppType.kUnknown,
+        type: apps.mojom.AppType.kWeb,
         title: 'App Title',
+        description: '',
         version: '5.1',
         size: '9.0MB',
-        isPinned: apps.mojom.OptionalBool.kUnknown,
-        permissions: permissionMap,
+        isPinned: apps.mojom.OptionalBool.kFalse,
+        permissions: {},
       };
 
-      if (config) {
-        Object.assign(app, config);
+      if (optConfig) {
+        Object.assign(app, optConfig);
+      }
+
+      // Only create default permissions if none were provided in the config.
+      if (!optConfig || optConfig.permissions === undefined) {
+        app.permissions = FakePageHandler.createPermissions(app.type);
       }
 
       return app;
     }
 
     /**
-     * TODO(rekanorman): Change type to appManagement.mojom.PageProxy once
-     *   the App struct has a permissions field.
-     * @param {appManagement.mojom.PageCallbackRouter} page
+     * @param {appManagement.mojom.PageProxy} page
      */
     constructor(page) {
-      /**
-       * TODO(rekanorman): Change type to appManagement.mojom.PageProxy once
-       *   the App struct has a permissions field.
-       * @type {Object}
-       */
+      /** @type {appManagement.mojom.PageProxy} */
       this.page = page;
 
       /** @type {!Array<App>} */
       this.apps_ = [];
+
+      this.$ = {
+        flushForTesting: async () => {
+          await this.page.$.flushForTesting();
+        }
+      };
     }
 
-    getApps() {
-      return Promise.resolve({apps: this.apps_});
+    async getApps() {
+      return {apps: this.apps_};
+    }
+
+    /**
+     * @param {string} appId
+     * @return {!Promise}
+     */
+    async getExtensionAppPermissionMessages(appId) {
+      return [];
     }
 
     /**
@@ -70,22 +130,64 @@ cr.define('app_management', function() {
 
     /**
      * @param {string} appId
-     * @param {TestPermissionType} permissionType
-     * @param {PermissionValue} newPermissionValue
+     * @param {OptionalBool} pinnedValue
      */
-    setPermission(appId, permissionType, newPermissionValue) {
+    setPinned(appId, pinnedValue) {
       const app = app_management.Store.getInstance().data.apps[appId];
+
+      const newApp =
+          /** @type {App} */ (Object.assign({}, app, {isPinned: pinnedValue}));
+      this.page.onAppChanged(newApp);
+    }
+
+    /**
+     * @param {string} appId
+     * @param {Permission} permission
+     */
+    setPermission(appId, permission) {
+      const app = app_management.Store.getInstance().data.apps[appId];
+
+      // Check that the app had a previous value for the given permission
+      assert(app.permissions[permission.permissionId]);
+
       const newPermissions = Object.assign({}, app.permissions);
-      newPermissions[permissionType] = newPermissionValue;
-      const newApp = Object.assign({}, app, {permissions: newPermissions});
-      this.page.onAppChanged.dispatch_(newApp);
+      newPermissions[permission.permissionId] = permission;
+      const newApp = /** @type {App} */ (
+          Object.assign({}, app, {permissions: newPermissions}));
+      this.page.onAppChanged(newApp);
     }
 
     /**
      * @param {string} appId
      */
     uninstall(appId) {
-      this.page.onAppRemoved.dispatch_(appId);
+      this.page.onAppRemoved(appId);
+    }
+
+    /**
+     * @param {string} appId
+     */
+    openNativeSettings(appId) {}
+
+    /**
+     * @param {string} id
+     * @param {Object=} optConfig
+     */
+    async addApp(id, optConfig) {
+      this.page.onAppAdded(FakePageHandler.createApp(id, optConfig));
+      await this.$.flushForTesting();
+    }
+
+    /**
+     * Takes an app id and an object mapping app fields to the values they
+     * should be changed to, and dispatches an action to carry out these
+     * changes.
+     * @param {string} id
+     * @param {Object} changes
+     */
+    async changeApp(id, changes) {
+      this.page.onAppChanged(FakePageHandler.createApp(id, changes));
+      await this.$.flushForTesting();
     }
   }
 

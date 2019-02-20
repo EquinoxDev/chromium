@@ -3,11 +3,14 @@
 // found in the LICENSE file.
 
 #include "content/browser/frame_host/origin_policy_throttle.h"
+#include "content/public/browser/origin_policy_commands.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/no_destructor.h"
 #include "content/browser/frame_host/navigation_handle_impl.h"
+#include "content/browser/frame_host/navigation_request.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_handle.h"
@@ -26,12 +29,24 @@ static const char* kDefaultPolicy = "0";
 static const char* kDeletePolicy = "0";
 static const char* kWellKnown = "/.well-known/origin-policy/";
 
+// Marker for (temporarily) exempted origins.
+// TODO(vogelheim): Make sure this is outside the value space for policy
+//                  names. A name with a comma in it shouldn't be allowed, but
+//                  I don't think we presently check this anywhere.
+static const char* kExemptedOriginPolicy = "exception,";
+
 // Maximum policy size (implementation-defined limit in bytes).
 // (Limit copied from network::SimpleURLLoader::kMaxBoundedStringDownloadSize.)
 static const size_t kMaxPolicySize = 1024 * 1024;
 }  // namespace
 
 namespace content {
+
+// Implement the public "API" from
+// content/public/browser/origin_policy_commands.h:
+void OriginPolicyAddExceptionFor(const GURL& url) {
+  OriginPolicyThrottle::AddExceptionFor(url);
+}
 
 // static
 bool OriginPolicyThrottle::ShouldRequestOriginPolicy(
@@ -51,8 +66,9 @@ bool OriginPolicyThrottle::ShouldRequestOriginPolicy(
   if (request_version) {
     const KnownVersionMap& versions = GetKnownVersions();
     const auto iter = versions.find(url::Origin::Create(url));
-    *request_version =
-        iter == versions.end() ? std::string(kDefaultPolicy) : iter->second;
+    bool has_version = iter != versions.end();
+    bool use_default = !has_version || iter->second == kExemptedOriginPolicy;
+    *request_version = use_default ? std::string(kDefaultPolicy) : iter->second;
   }
   return true;
 }
@@ -75,6 +91,11 @@ OriginPolicyThrottle::MaybeCreateThrottleFor(NavigationHandle* handle) {
   DCHECK(OriginPolicyThrottle::ShouldRequestOriginPolicy(handle->GetURL(),
                                                          nullptr));
   return base::WrapUnique(new OriginPolicyThrottle(handle));
+}
+
+// static
+void OriginPolicyThrottle::AddExceptionFor(const GURL& url) {
+  GetKnownVersions()[url::Origin::Create(url)] = kExemptedOriginPolicy;
 }
 
 OriginPolicyThrottle::~OriginPolicyThrottle() {}
@@ -126,6 +147,11 @@ OriginPolicyThrottle::WillProcessResponse() {
   if (header_found && response_version == kDeletePolicy) {
     if (iter != versions.end())
       versions.erase(iter);
+    return NavigationThrottle::PROCEED;
+  }
+
+  // Process policy exceptions.
+  if (iter != versions.end() && iter->second == kExemptedOriginPolicy) {
     return NavigationThrottle::PROCEED;
   }
 
@@ -244,7 +270,8 @@ void OriginPolicyThrottle::OnTheGloriousPolicyHasArrived(
   //                  the policy content at this point.
 
   static_cast<NavigationHandleImpl*>(navigation_handle())
-      ->set_origin_policy(*policy_content);
+      ->navigation_request()
+      ->SetOriginPolicy(*policy_content);
   Resume();
 }
 
@@ -260,7 +287,7 @@ void OriginPolicyThrottle::OnRedirect(
 void OriginPolicyThrottle::CancelNavigation(OriginPolicyErrorReason reason) {
   base::Optional<std::string> error_page =
       GetContentClient()->browser()->GetOriginPolicyErrorPage(
-          reason, GetRequestOrigin(), navigation_handle()->GetURL());
+          reason, navigation_handle());
   CancelDeferredNavigation(NavigationThrottle::ThrottleCheckResult(
       NavigationThrottle::CANCEL, net::ERR_BLOCKED_BY_CLIENT, error_page));
 }

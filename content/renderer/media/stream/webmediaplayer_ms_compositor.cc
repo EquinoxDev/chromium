@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/hash.h"
 #include "base/message_loop/message_loop_current.h"
@@ -161,7 +162,7 @@ WebMediaPlayerMSCompositor::WebMediaPlayerMSCompositor(
                        weak_ptr_factory_.GetWeakPtr()));
     update_submission_state_callback_ = media::BindToLoop(
         video_frame_compositor_task_runner_,
-        base::BindRepeating(&WebMediaPlayerMSCompositor::UpdateSubmissionState,
+        base::BindRepeating(&WebMediaPlayerMSCompositor::SetIsSurfaceVisible,
                             weak_ptr_factory_.GetWeakPtr()));
   }
 
@@ -203,9 +204,9 @@ void WebMediaPlayerMSCompositor::InitializeSubmitter() {
   submitter_->Initialize(this);
 }
 
-void WebMediaPlayerMSCompositor::UpdateSubmissionState(bool state) {
+void WebMediaPlayerMSCompositor::SetIsSurfaceVisible(bool state) {
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
-  submitter_->UpdateSubmissionState(state);
+  submitter_->SetIsSurfaceVisible(state);
 }
 
 // TODO(https://crbug/879424): Rename, since it really doesn't enable
@@ -214,9 +215,7 @@ void WebMediaPlayerMSCompositor::EnableSubmission(
     const viz::SurfaceId& id,
     base::TimeTicks local_surface_id_allocation_time,
     media::VideoRotation rotation,
-    bool force_submit,
-    bool is_opaque,
-    blink::WebFrameSinkDestroyedCallback frame_sink_destroyed_callback) {
+    bool force_submit) {
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
 
   // If we're switching to |submitter_| from some other client, then tell it.
@@ -227,9 +226,7 @@ void WebMediaPlayerMSCompositor::EnableSubmission(
 
   submitter_->SetRotation(rotation);
   submitter_->SetForceSubmit(force_submit);
-  submitter_->SetIsOpaque(is_opaque);
-  submitter_->EnableSubmission(id, local_surface_id_allocation_time,
-                               std::move(frame_sink_destroyed_callback));
+  submitter_->EnableSubmission(id, local_surface_id_allocation_time);
   video_frame_provider_client_ = submitter_.get();
 
   if (!stopped_)
@@ -239,6 +236,12 @@ void WebMediaPlayerMSCompositor::EnableSubmission(
 void WebMediaPlayerMSCompositor::SetForceSubmit(bool force_submit) {
   DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
   submitter_->SetForceSubmit(force_submit);
+}
+
+void WebMediaPlayerMSCompositor::SetIsPageVisible(bool is_visible) {
+  DCHECK(video_frame_compositor_task_runner_->BelongsToCurrentThread());
+  if (submitter_)
+    submitter_->SetIsPageVisible(is_visible);
 }
 
 gfx::Size WebMediaPlayerMSCompositor::GetCurrentSize() {
@@ -567,8 +570,6 @@ void WebMediaPlayerMSCompositor::CheckForFrameChanges(
     main_task_runner_->PostTask(
         FROM_HERE, base::BindOnce(&WebMediaPlayerMS::OnOpacityChanged, player_,
                                   new_frame_is_opaque));
-    if (submitter_)
-      submitter_->SetIsOpaque(new_frame_is_opaque);
   }
   if (old_frame->natural_size() != new_frame->natural_size()) {
     main_task_runner_->PostTask(

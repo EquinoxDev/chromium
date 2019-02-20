@@ -275,14 +275,16 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteHostedAppsData] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[browsing_data::prefs::kDeleteMediaLicenses] =
-      settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[browsing_data::prefs::kDeleteTimePeriod] =
       settings_api::PrefType::PREF_TYPE_NUMBER;
   (*s_whitelist)[browsing_data::prefs::kDeleteTimePeriodBasic] =
       settings_api::PrefType::PREF_TYPE_NUMBER;
   (*s_whitelist)[browsing_data::prefs::kLastClearBrowsingDataTab] =
       settings_api::PrefType::PREF_TYPE_NUMBER;
+
+  // Accessibility.
+  (*s_whitelist)[::prefs::kAccessibilityImageLabelsEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
 #if defined(OS_CHROMEOS)
   // Accounts / Users / People.
@@ -370,6 +372,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_LIST;
   (*s_whitelist)[crostini::prefs::kCrostiniSharedUsbDevices] =
       settings_api::PrefType::PREF_TYPE_LIST;
+  (*s_whitelist)[crostini::prefs::kCrostiniContainers] =
+      settings_api::PrefType::PREF_TYPE_LIST;
 
   // Android Apps.
   (*s_whitelist)[arc::prefs::kArcEnabled] =
@@ -378,11 +382,11 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   // Google Assistant.
   (*s_whitelist)[arc::prefs::kVoiceInteractionActivityControlAccepted] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[arc::prefs::kArcVoiceInteractionValuePropAccepted] =
-      settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[arc::prefs::kVoiceInteractionEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[arc::prefs::kVoiceInteractionContextEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
+  (*s_whitelist)[arc::prefs::kVoiceInteractionHotwordAlwaysOn] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[arc::prefs::kVoiceInteractionHotwordEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
@@ -394,7 +398,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
   // Misc.
   (*s_whitelist)[::prefs::kUse24HourClock] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
-  (*s_whitelist)[::prefs::kLanguagePreferredLanguages] =
+  (*s_whitelist)[::language::prefs::kPreferredLanguages] =
       settings_api::PrefType::PREF_TYPE_STRING;
   (*s_whitelist)[ash::prefs::kTapDraggingEnabled] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
@@ -440,6 +444,8 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_NUMBER;
 
   // Ash settings.
+  (*s_whitelist)[ash::prefs::kContainedShellEnabled] =
+      settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[ash::prefs::kEnableStylusTools] =
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
   (*s_whitelist)[ash::prefs::kLaunchPaletteOnEjectEvent] =
@@ -516,7 +522,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil::GetWhitelistedKeys() {
       settings_api::PrefType::PREF_TYPE_BOOLEAN;
 
 #else
-  (*s_whitelist)[::prefs::kAcceptLanguages] =
+  (*s_whitelist)[::language::prefs::kAcceptLanguages] =
       settings_api::PrefType::PREF_TYPE_STRING;
 
   // System settings.

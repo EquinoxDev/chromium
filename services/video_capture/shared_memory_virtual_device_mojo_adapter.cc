@@ -4,6 +4,7 @@
 
 #include "services/video_capture/shared_memory_virtual_device_mojo_adapter.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/capture/video/scoped_buffer_pool_reservation.h"
@@ -168,16 +169,6 @@ void SharedMemoryVirtualDeviceMojoAdapter::Start(
   }
 }
 
-void SharedMemoryVirtualDeviceMojoAdapter::OnReceiverReportingUtilization(
-    int32_t frame_feedback_id,
-    double utilization) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-}
-
-void SharedMemoryVirtualDeviceMojoAdapter::RequestRefreshFrame() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-}
-
 void SharedMemoryVirtualDeviceMojoAdapter::MaybeSuspend() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
@@ -203,18 +194,21 @@ void SharedMemoryVirtualDeviceMojoAdapter::TakePhoto(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
 
-void SharedMemoryVirtualDeviceMojoAdapter::Stop() {
+void SharedMemoryVirtualDeviceMojoAdapter::Stop(StopCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!receiver_.is_bound())
+  if (!receiver_.is_bound()) {
+    std::move(callback).Run();
     return;
+  }
   // Unsubscribe from connection error callbacks.
   receiver_.set_connection_error_handler(base::OnceClosure());
   receiver_.reset();
+  std::move(callback).Run();
 }
 
 void SharedMemoryVirtualDeviceMojoAdapter::OnReceiverConnectionErrorOrClose() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  Stop();
+  Stop(base::DoNothing());
 }
 
 }  // namespace video_capture

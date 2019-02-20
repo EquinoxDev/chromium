@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <utility>
 
 #include "third_party/blink/public/platform/web_scroll_into_view_params.h"
 #include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
@@ -179,7 +180,7 @@ struct SameSizeAsLayoutObject : DisplayItemClient {
   void* pointers[5];
   Member<void*> members[1];
 #if DCHECK_IS_ON()
-  unsigned debug_bitfields_ : 2;
+  unsigned debug_bitfields_;
 #endif
   unsigned bitfields_;
   unsigned bitfields2_;
@@ -293,6 +294,7 @@ LayoutObject::LayoutObject(Node* node)
 #if DCHECK_IS_ON()
       has_ax_object_(false),
       set_needs_layout_forbidden_(false),
+      as_image_observer_count_(0),
 #endif
       bitfields_(node) {
   InstanceCounters::IncrementCounter(InstanceCounters::kLayoutObjectCounter);
@@ -974,6 +976,44 @@ void LayoutObject::MarkContainerChainForLayout(bool schedule_relayout,
     last->ScheduleRelayout();
 }
 
+// LayoutNG has different OOF-positioned handling compared to the existing
+// layout system. To correctly determine the static-position of the object,
+// LayoutNG "bubbles" up the static-position inside the NGLayoutResult.
+// See: |NGLayoutResult::OutOfFlowPositionedDescendants()|.
+//
+// Whenever an OOF-positioned object is added/removed we need to invalidate
+// layout for all the layout objects which may have stored a NGLayoutResult
+// with this object contained in that list.
+//
+// In the future it may be possible to optimize this, e.g.
+//  - For the removal case, add a pass which modifies the layout result to
+//    remove the OOF-positioned descendant.
+//  - For the adding case, if the OOF-positioned doesn't require a
+//    static-position, simply insert the object up the NGLayoutResult chain with
+//    an invalid static-position.
+void LayoutObject::MarkParentForOutOfFlowPositionedChange() {
+#if DCHECK_IS_ON()
+  DCHECK(!IsSetNeedsLayoutForbidden());
+#endif
+
+  LayoutObject* object = Parent();
+  if (!object)
+    return;
+
+  // As OOF-positioned objects are represented as an object replacement
+  // character in the inline items list. We need to ensure we collect the
+  // inline items again to either collect or drop the OOF-positioned object.
+  object->MarkContainerNeedsCollectInlines();
+
+  while (object && !object->IsLayoutBlock())
+    object = object->Parent();
+
+  // Finally mark the parent block for layout. This will mark everything which
+  // has an OOF-positioned object in a NGLayoutResult as needing layout.
+  if (object)
+    object->SetChildNeedsLayout();
+}
+
 #if DCHECK_IS_ON()
 void LayoutObject::CheckBlockPositionedObjectsNeedLayout() {
   DCHECK(!NeedsLayout());
@@ -1474,7 +1514,7 @@ bool LayoutObject::HasDistortingVisualEffects() const {
                                            .LocalBorderBoxProperties();
 
   // No filters, no blends, no opacity < 100%.
-  for (const auto* effect = SafeUnalias(paint_properties.Effect()); effect;
+  for (const auto* effect = &paint_properties.Effect().Unalias(); effect;
        effect = SafeUnalias(effect->Parent())) {
     if (!effect->Filter().IsEmpty() || !effect->BackdropFilter().IsEmpty() ||
         effect->GetColorFilter() != kColorFilterNone ||
@@ -1492,10 +1532,12 @@ bool LayoutObject::HasDistortingVisualEffects() const {
                                           .LocalBorderBoxProperties();
 
   // The only allowed transforms are 2D translation and proportional up-scaling.
-  const TransformationMatrix& matrix =
+  const auto& translation_2d_or_matrix =
       GeometryMapper::SourceToDestinationProjection(
           paint_properties.Transform(), root_properties.Transform());
-  if (!matrix.Is2DProportionalUpscaleAndOr2DTranslation())
+  if (!translation_2d_or_matrix.IsIdentityOr2DTranslation() &&
+      !translation_2d_or_matrix.Matrix()
+           .Is2DProportionalUpscaleAndOr2DTranslation())
     return true;
 
   return false;
@@ -1507,7 +1549,7 @@ bool LayoutObject::HasNonZeroEffectiveOpacity() const {
                                            .FirstFragment()
                                            .LocalBorderBoxProperties();
 
-  for (const auto* effect = SafeUnalias(paint_properties.Effect()); effect;
+  for (const auto* effect = &paint_properties.Effect().Unalias(); effect;
        effect = SafeUnalias(effect->Parent())) {
     if (effect->Opacity() == 0.0)
       return false;
@@ -1546,6 +1588,10 @@ String LayoutObject::DebugName() const {
     name.Append(node->DebugName());
   }
   return name.ToString();
+}
+
+DOMNodeId LayoutObject::OwnerNodeId() const {
+  return GetNode() ? DOMNodeIds::IdForNode(GetNode()) : kInvalidDOMNodeId;
 }
 
 LayoutRect LayoutObject::FragmentsVisualRectBoundingBox() const {
@@ -1636,16 +1682,6 @@ void LayoutObject::ClearPreviousVisualRects() {
        fragment = fragment->NextFragment()) {
     fragment->SetVisualRect(LayoutRect());
     fragment->SetSelectionVisualRect(LayoutRect());
-  }
-
-  if (IsInline()) {
-    auto fragments = NGPaintFragment::InlineFragmentsFor(this);
-    if (fragments.IsInLayoutNGInlineFormattingContext()) {
-      for (auto* fragment : fragments) {
-        fragment->SetVisualRect(LayoutRect());
-        fragment->SetSelectionVisualRect(LayoutRect());
-      }
-    }
   }
 
   // After clearing ("invalidating") the visual rects, mark this object as
@@ -1864,7 +1900,15 @@ void LayoutObject::DumpLayoutTreeAndMark(StringBuilder& string_builder,
 #endif  // NDEBUG
 
 bool LayoutObject::IsSelected() const {
-  return LayoutSelection::IsSelected(*this);
+  // Keep this fast and small, used in very hot functions to skip computing
+  // selection when this is not selected. This function may be inlined in
+  // link-optimized builds, but keeping fast and small helps running perf
+  // tests.
+  return GetSelectionState() != SelectionState::kNone ||
+         // TODO(kojii): Can't we set SelectionState() properly to
+         // LayoutTextFragment too?
+         (IsText() && ToLayoutText(*this).IsTextFragment() &&
+          LayoutSelection::IsSelected(*this));
 }
 
 bool LayoutObject::IsSelectable() const {
@@ -1965,39 +2009,6 @@ void LayoutObject::SetPseudoStyle(scoped_refptr<ComputedStyle> pseudo_style) {
   SetStyle(std::move(pseudo_style));
 }
 
-void LayoutObject::FirstLineStyleDidChange(const ComputedStyle& old_style,
-                                           const ComputedStyle& new_style) {
-  StyleDifference diff =
-      old_style.VisualInvalidationDiff(GetDocument(), new_style);
-
-  if (diff.NeedsFullPaintInvalidation() ||
-      diff.TextDecorationOrColorChanged()) {
-    // We need to invalidate all inline boxes in the first line, because they
-    // need to be repainted with the new style, e.g. background, font style,
-    // etc.
-    LayoutBlockFlow* first_line_container = nullptr;
-    if (BehavesLikeBlockContainer()) {
-      // This object is a LayoutBlock having PseudoIdFirstLine pseudo style
-      // changed.
-      first_line_container =
-          ToLayoutBlock(this)->NearestInnerBlockWithFirstLine();
-    } else if (IsLayoutInline()) {
-      // This object is a LayoutInline having FIRST_LINE_INHERITED pesudo style
-      // changed. This method can be called even if the LayoutInline doesn't
-      // intersect the first line, but we only need to invalidate if it does.
-      if (InlineBox* first_line_box =
-              ToLayoutInline(this)->FirstLineBoxIncludingCulling()) {
-        if (first_line_box->IsFirstLineStyle())
-          first_line_container = ToLayoutBlockFlow(ContainingBlock());
-      }
-    }
-    if (first_line_container)
-      first_line_container->SetShouldDoFullPaintInvalidationForFirstLine();
-  }
-  if (diff.NeedsLayout())
-    SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
-}
-
 void LayoutObject::MarkContainerChainForOverflowRecalcIfNeeded() {
   LayoutObject* object = this;
   do {
@@ -2007,26 +2018,45 @@ void LayoutObject::MarkContainerChainForOverflowRecalcIfNeeded() {
     object = object->IsTableCell() || object->IsTableRow()
                  ? object->Parent()
                  : object->Container();
-    if (object)
+    if (object) {
       object->SetChildNeedsLayoutOverflowRecalc();
+
+      if (object->HasLayer()) {
+        auto* box_model_object = ToLayoutBoxModelObject(object);
+        if (box_model_object->HasSelfPaintingLayer())
+          box_model_object->Layer()->SetNeedsVisualOverflowRecalc();
+      }
+    }
+
   } while (object);
 }
 
 void LayoutObject::SetNeedsOverflowRecalc() {
-  bool needed_recalc = NeedsLayoutOverflowRecalc();
+  bool needed_recalc = SelfNeedsLayoutOverflowRecalc();
   SetSelfNeedsLayoutOverflowRecalc();
-  if (auto* painting_layer = PaintingLayer())
-    painting_layer->SetNeedsVisualOverflowRecalc();
   SetShouldCheckForPaintInvalidation();
+
+  if (HasLayer()) {
+    auto* box_model_object = ToLayoutBoxModelObject(this);
+    if (box_model_object->HasSelfPaintingLayer())
+      box_model_object->Layer()->SetNeedsVisualOverflowRecalc();
+  }
   if (!needed_recalc)
     MarkContainerChainForOverflowRecalcIfNeeded();
 }
 
 DISABLE_CFI_PERF
-void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style) {
-  DCHECK(style);
+void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style,
+                            ApplyStyleChanges apply_changes) {
   if (style_ == style)
     return;
+
+  if (apply_changes == ApplyStyleChanges::kNo) {
+    SetStyleInternal(std::move(style));
+    return;
+  }
+
+  DCHECK(style);
 
   StyleDifference diff;
   if (style_) {
@@ -2046,39 +2076,8 @@ void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style) {
   scoped_refptr<ComputedStyle> old_style = std::move(style_);
   SetStyleInternal(std::move(style));
 
-  UpdateFillImages(old_style ? &old_style->BackgroundLayers() : nullptr,
-                   style_->BackgroundLayers());
-  UpdateFillImages(old_style ? &old_style->MaskLayers() : nullptr,
-                   style_->MaskLayers());
-
-  UpdateImage(old_style ? old_style->BorderImage().GetImage() : nullptr,
-              style_->BorderImage().GetImage());
-  UpdateImage(old_style ? old_style->MaskBoxImage().GetImage() : nullptr,
-              style_->MaskBoxImage().GetImage());
-
-  StyleImage* new_content_image =
-      style_->GetContentData() && style_->GetContentData()->IsImage()
-          ? ToImageContentData(style_->GetContentData())->GetImage()
-          : nullptr;
-  StyleImage* old_content_image =
-      old_style && old_style->GetContentData() &&
-              old_style->GetContentData()->IsImage()
-          ? ToImageContentData(old_style->GetContentData())->GetImage()
-          : nullptr;
-  UpdateImage(old_content_image, new_content_image);
-
-  StyleImage* new_box_reflect_mask_image =
-      style_->BoxReflect() ? style_->BoxReflect()->Mask().GetImage() : nullptr;
-  StyleImage* old_box_reflect_mask_image =
-      old_style && old_style->BoxReflect()
-          ? old_style->BoxReflect()->Mask().GetImage()
-          : nullptr;
-  UpdateImage(old_box_reflect_mask_image, new_box_reflect_mask_image);
-
-  UpdateShapeImage(old_style ? old_style->ShapeOutside() : nullptr,
-                   style_->ShapeOutside());
-  UpdateCursorImages(old_style ? old_style->Cursors() : nullptr,
-                     style_->Cursors());
+  if (!IsText())
+    UpdateImageObservers(old_style.get(), style_.get());
 
   CheckCounterChanges(old_style.get(), style_.get());
 
@@ -2155,6 +2154,91 @@ void LayoutObject::SetStyle(scoped_refptr<ComputedStyle> style) {
        diff.BackdropFilterChanged() || diff.CssClipChanged() ||
        diff.BlendModeChanged() || diff.MaskChanged())) {
     SetNeedsPaintPropertyUpdate();
+  }
+}
+
+void LayoutObject::UpdateImageObservers(const ComputedStyle* old_style,
+                                        const ComputedStyle* new_style) {
+  DCHECK(old_style || new_style);
+  DCHECK(!IsText());
+
+  UpdateFillImages(old_style ? &old_style->BackgroundLayers() : nullptr,
+                   new_style ? &new_style->BackgroundLayers() : nullptr);
+  UpdateFillImages(old_style ? &old_style->MaskLayers() : nullptr,
+                   new_style ? &new_style->MaskLayers() : nullptr);
+
+  UpdateImage(old_style ? old_style->BorderImage().GetImage() : nullptr,
+              new_style ? new_style->BorderImage().GetImage() : nullptr);
+  UpdateImage(old_style ? old_style->MaskBoxImage().GetImage() : nullptr,
+              new_style ? new_style->MaskBoxImage().GetImage() : nullptr);
+
+  StyleImage* old_content_image =
+      old_style && old_style->GetContentData() &&
+              old_style->GetContentData()->IsImage()
+          ? ToImageContentData(old_style->GetContentData())->GetImage()
+          : nullptr;
+  StyleImage* new_content_image =
+      new_style && new_style->GetContentData() &&
+              new_style->GetContentData()->IsImage()
+          ? ToImageContentData(new_style->GetContentData())->GetImage()
+          : nullptr;
+  UpdateImage(old_content_image, new_content_image);
+
+  StyleImage* old_box_reflect_mask_image =
+      old_style && old_style->BoxReflect()
+          ? old_style->BoxReflect()->Mask().GetImage()
+          : nullptr;
+  StyleImage* new_box_reflect_mask_image =
+      new_style && new_style->BoxReflect()
+          ? new_style->BoxReflect()->Mask().GetImage()
+          : nullptr;
+  UpdateImage(old_box_reflect_mask_image, new_box_reflect_mask_image);
+
+  UpdateShapeImage(old_style ? old_style->ShapeOutside() : nullptr,
+                   new_style ? new_style->ShapeOutside() : nullptr);
+  UpdateCursorImages(old_style ? old_style->Cursors() : nullptr,
+                     new_style ? new_style->Cursors() : nullptr);
+
+  UpdateFirstLineImageObservers(old_style, new_style);
+}
+
+void LayoutObject::UpdateFirstLineImageObservers(
+    const ComputedStyle* old_style,
+    const ComputedStyle* new_style) {
+  bool has_old_first_line_style =
+      old_style && old_style->HasPseudoStyle(kPseudoIdFirstLine);
+  bool has_new_first_line_style =
+      new_style && new_style->HasPseudoStyle(kPseudoIdFirstLine);
+  if (!has_old_first_line_style && !has_new_first_line_style)
+    return;
+
+  // Don't call CacheFirstLineStyle() which will update the cache, because this
+  // function can be called when the object has not been inserted into the tree
+  // and we can't update the pseudo style cache which may depend on ancestors.
+  const auto* cached_old_first_line_style =
+      has_old_first_line_style
+          ? old_style->GetCachedPseudoStyle(kPseudoIdFirstLine)
+          : nullptr;
+  const auto* cached_new_first_line_style =
+      has_new_first_line_style
+          ? new_style->GetCachedPseudoStyle(kPseudoIdFirstLine)
+          : nullptr;
+
+  if (has_new_first_line_style) {
+    // If cached_new_first_line_style is null, it means that the new first line
+    // style has not been cached yet. Will check again when the object's first
+    // line style is actually used and cached.
+    bitfields_.SetPendingUpdateFirstLineImageObservers(
+        !cached_new_first_line_style);
+  }
+
+  if (cached_old_first_line_style || cached_new_first_line_style) {
+    UpdateFillImages(cached_old_first_line_style
+                         ? &cached_old_first_line_style->BackgroundLayers()
+                         : nullptr,
+                     cached_new_first_line_style
+                         ? &cached_new_first_line_style->BackgroundLayers()
+                         : nullptr);
   }
 }
 
@@ -2320,8 +2404,11 @@ void LayoutObject::StyleDidChange(StyleDifference diff,
     // to mark the new containing blocks for layout. The change that can
     // directly affect the containing block of this object is a change to
     // the position style.
-    if (NeedsLayout() && old_style->GetPosition() != style_->GetPosition())
+    if (NeedsLayout() && old_style->GetPosition() != style_->GetPosition()) {
       MarkContainerChainForLayout();
+      if (RuntimeEnabledFeatures::LayoutNGEnabled())
+        MarkParentForOutOfFlowPositionedChange();
+    }
 
     SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
   } else if (diff.NeedsPositionedMovementLayout()) {
@@ -2352,8 +2439,7 @@ void LayoutObject::StyleDidChange(StyleDifference diff,
       SetBackgroundNeedsFullPaintInvalidation();
   }
 
-  if (old_style && old_style->StyleType() == kPseudoIdNone)
-    ApplyPseudoStyleChanges(*old_style);
+  ApplyPseudoStyleChanges(old_style);
 
   if (old_style &&
       old_style->UsedTransformStyle3D() != StyleRef().UsedTransformStyle3D()) {
@@ -2363,30 +2449,47 @@ void LayoutObject::StyleDidChange(StyleDifference diff,
   }
 }
 
-void LayoutObject::ApplyPseudoStyleChanges(const ComputedStyle& old_style) {
-  if (old_style.HasPseudoStyle(kPseudoIdFirstLine) ||
-      StyleRef().HasPseudoStyle(kPseudoIdFirstLine))
-    ApplyFirstLineChanges(old_style);
+void LayoutObject::ApplyPseudoStyleChanges(const ComputedStyle* old_style) {
+  ApplyFirstLineChanges(old_style);
 
-  if (old_style.HasPseudoStyle(kPseudoIdSelection) ||
+  if ((old_style && old_style->HasPseudoStyle(kPseudoIdSelection)) ||
       StyleRef().HasPseudoStyle(kPseudoIdSelection))
     InvalidateSelectedChildrenOnStyleChange();
 }
 
-void LayoutObject::ApplyFirstLineChanges(const ComputedStyle& old_style) {
-  if (old_style.HasPseudoStyle(kPseudoIdFirstLine)) {
-    scoped_refptr<const ComputedStyle> old_pseudo_style =
-        old_style.GetCachedPseudoStyle(kPseudoIdFirstLine);
-    if (StyleRef().HasPseudoStyle(kPseudoIdFirstLine) && old_pseudo_style) {
-      scoped_refptr<const ComputedStyle> new_pseudo_style =
-          UncachedFirstLineStyle();
-      if (new_pseudo_style) {
-        FirstLineStyleDidChange(*old_pseudo_style, *new_pseudo_style);
-        return;
+void LayoutObject::ApplyFirstLineChanges(const ComputedStyle* old_style) {
+  bool has_old_first_line_style =
+      old_style && old_style->HasPseudoStyle(kPseudoIdFirstLine);
+  bool has_new_first_line_style = StyleRef().HasPseudoStyle(kPseudoIdFirstLine);
+  if (!has_old_first_line_style && !has_new_first_line_style)
+    return;
+
+  StyleDifference diff;
+  bool has_diff = false;
+  if (Parent() && has_old_first_line_style && has_new_first_line_style) {
+    if (const auto* old_first_line_style =
+            old_style->GetCachedPseudoStyle(kPseudoIdFirstLine)) {
+      if (auto new_first_line_style = UncachedFirstLineStyle()) {
+        diff = old_first_line_style->VisualInvalidationDiff(
+            GetDocument(), *new_first_line_style);
+        has_diff = true;
       }
     }
   }
-  SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
+  if (!has_diff) {
+    diff.SetNeedsPaintInvalidationObject();
+    diff.SetNeedsFullLayout();
+  }
+
+  if (BehavesLikeBlockContainer() && (diff.NeedsFullPaintInvalidation() ||
+                                      diff.TextDecorationOrColorChanged())) {
+    if (auto* first_line_container =
+            ToLayoutBlock(this)->NearestInnerBlockWithFirstLine())
+      first_line_container->SetShouldDoFullPaintInvalidationForFirstLine();
+  }
+
+  if (diff.NeedsLayout())
+    SetNeedsLayoutAndPrefWidthsRecalc(layout_invalidation_reason::kStyleChange);
 }
 
 void LayoutObject::PropagateStyleToAnonymousChildren() {
@@ -2459,25 +2562,40 @@ void LayoutObject::SetStyleWithWritingModeOfParent(
   SetStyleWithWritingModeOf(std::move(style), Parent());
 }
 
+void LayoutObject::AddAsImageObserver(StyleImage* image) {
+  if (!image)
+    return;
+#if DCHECK_IS_ON()
+  ++as_image_observer_count_;
+#endif
+  image->AddClient(this);
+}
+
+void LayoutObject::RemoveAsImageObserver(StyleImage* image) {
+  if (!image)
+    return;
+#if DCHECK_IS_ON()
+  SECURITY_DCHECK(as_image_observer_count_ > 0u);
+  --as_image_observer_count_;
+#endif
+  image->RemoveClient(this);
+}
+
 void LayoutObject::UpdateFillImages(const FillLayer* old_layers,
-                                    const FillLayer& new_layers) {
+                                    const FillLayer* new_layers) {
   // Optimize the common case
-  if (FillLayer::ImagesIdentical(old_layers, &new_layers))
+  if (FillLayer::ImagesIdentical(old_layers, new_layers))
     return;
 
-  // Go through the new layers and addClients first, to avoid removing all
-  // clients of an image.
-  for (const FillLayer* curr_new = &new_layers; curr_new;
-       curr_new = curr_new->Next()) {
-    if (curr_new->GetImage())
-      curr_new->GetImage()->AddClient(this);
-  }
+  // Go through the new layers and AddAsImageObserver() first, to avoid removing
+  // all clients of an image.
+  for (const FillLayer* curr_new = new_layers; curr_new;
+       curr_new = curr_new->Next())
+    AddAsImageObserver(curr_new->GetImage());
 
   for (const FillLayer* curr_old = old_layers; curr_old;
-       curr_old = curr_old->Next()) {
-    if (curr_old->GetImage())
-      curr_old->GetImage()->RemoveClient(this);
-  }
+       curr_old = curr_old->Next())
+    RemoveAsImageObserver(curr_old->GetImage());
 }
 
 void LayoutObject::UpdateCursorImages(const CursorList* old_cursors,
@@ -2486,20 +2604,20 @@ void LayoutObject::UpdateCursorImages(const CursorList* old_cursors,
     return;
 
   if (new_cursors) {
-    for (const CursorData& cursor_new : *new_cursors) {
-      if (cursor_new.GetImage())
-        cursor_new.GetImage()->AddClient(this);
-    }
+    for (const auto& cursor : *new_cursors)
+      AddAsImageObserver(cursor.GetImage());
   }
-  RemoveCursorImageClient(old_cursors);
+  if (old_cursors) {
+    for (const auto& cursor : *old_cursors)
+      RemoveAsImageObserver(cursor.GetImage());
+  }
 }
 
 void LayoutObject::UpdateImage(StyleImage* old_image, StyleImage* new_image) {
   if (old_image != new_image) {
-    if (old_image)
-      old_image->RemoveClient(this);
-    if (new_image)
-      new_image->AddClient(this);
+    // AddAsImageObserver first, to avoid removing all clients of an image.
+    AddAsImageObserver(new_image);
+    RemoveAsImageObserver(old_image);
   }
 }
 
@@ -3154,36 +3272,14 @@ void LayoutObject::WillBeDestroyed() {
 
   ClearLayoutRootIfNeeded();
 
-  if (style_) {
-    for (const FillLayer* bg_layer = &style_->BackgroundLayers(); bg_layer;
-         bg_layer = bg_layer->Next()) {
-      if (StyleImage* background_image = bg_layer->GetImage())
-        background_image->RemoveClient(this);
-    }
+  // Remove this object as ImageResourceObserver.
+  if (style_ && !IsText())
+    UpdateImageObservers(style_.get(), nullptr);
 
-    for (const FillLayer* mask_layer = &style_->MaskLayers(); mask_layer;
-         mask_layer = mask_layer->Next()) {
-      if (StyleImage* mask_image = mask_layer->GetImage())
-        mask_image->RemoveClient(this);
-    }
-
-    if (StyleImage* border_image = style_->BorderImage().GetImage())
-      border_image->RemoveClient(this);
-
-    if (StyleImage* mask_box_image = style_->MaskBoxImage().GetImage())
-      mask_box_image->RemoveClient(this);
-
-    if (style_->GetContentData() && style_->GetContentData()->IsImage())
-      ToImageContentData(style_->GetContentData())
-          ->GetImage()
-          ->RemoveClient(this);
-
-    if (style_->BoxReflect() && style_->BoxReflect()->Mask().GetImage())
-      style_->BoxReflect()->Mask().GetImage()->RemoveClient(this);
-
-    RemoveShapeImageClient(style_->ShapeOutside());
-    RemoveCursorImageClient(style_->Cursors());
-  }
+#if DCHECK_IS_ON()
+  // We must have removed all image observers.
+  SECURITY_DCHECK(as_image_observer_count_ == 0u);
+#endif
 
   if (GetFrameView())
     SetIsBackgroundAttachmentFixedObject(false);
@@ -3211,6 +3307,12 @@ void LayoutObject::InsertedIntoTree() {
       layer = Parent()->EnclosingLayer();
     if (layer)
       layer->DirtyVisibleContentStatus();
+  }
+
+  if (IsInLayoutNGInlineFormattingContext()) {
+    // In case of |this| layout object is moved, to avoid paint fragments in old
+    // tree live longer than |this|, we reset associated paint fragment list.
+    SetFirstInlineFragment(nullptr);
   }
 
   if (Parent()->ChildrenInline())
@@ -3403,23 +3505,6 @@ void LayoutObject::DestroyAndCleanupAnonymousWrappers() {
 void LayoutObject::Destroy() {
   WillBeDestroyed();
   delete this;
-}
-
-DISABLE_CFI_PERF
-void LayoutObject::RemoveShapeImageClient(ShapeValue* shape_value) {
-  if (!shape_value)
-    return;
-  if (StyleImage* shape_image = shape_value->GetImage())
-    shape_image->RemoveClient(this);
-}
-
-void LayoutObject::RemoveCursorImageClient(const CursorList* cursor_list) {
-  if (!cursor_list)
-    return;
-  for (const CursorData& cursor : *cursor_list) {
-    if (cursor.GetImage())
-      cursor.GetImage()->RemoveClient(this);
-  }
 }
 
 PositionWithAffinity LayoutObject::PositionForPoint(const LayoutPoint&) const {
@@ -3617,8 +3702,16 @@ const ComputedStyle* LayoutObject::GetCachedPseudoStyle(
   if (!element)
     return nullptr;
 
-  return element->CachedStyleForPseudoElement(PseudoStyleRequest(pseudo),
-                                              parent_style);
+  const auto* cached_pseudo_style = element->CachedStyleForPseudoElement(
+      PseudoStyleRequest(pseudo), parent_style);
+  if (cached_pseudo_style && pseudo == kPseudoIdFirstLine &&
+      bitfields_.PendingUpdateFirstLineImageObservers()) {
+    // Update image observers now after we have updated the first line
+    // style cache.
+    const_cast<LayoutObject*>(this)->UpdateFirstLineImageObservers(nullptr,
+                                                                   Style());
+  }
+  return cached_pseudo_style;
 }
 
 scoped_refptr<ComputedStyle> LayoutObject::GetUncachedPseudoStyle(
@@ -3663,7 +3756,7 @@ bool LayoutObject::WillRenderImage() {
   if (StyleRef().Visibility() != EVisibility::kVisible)
     return false;
 
-  // We will not render a new image when PausableObjects is paused
+  // We will not render a new image when ExecutionContext is paused
   if (GetDocument().IsContextPaused())
     return false;
 
@@ -4085,12 +4178,7 @@ void LayoutObject::InvalidateSelectedChildrenOnStyleChange() {
       continue;
     if (!child->IsSelected())
       continue;
-    if (RuntimeEnabledFeatures::LayoutNGEnabled()) {
-      child->SetShouldDoFullPaintInvalidation(
-          PaintInvalidationReason::kSelection);
-    } else {
-      child->SetShouldInvalidateSelection();
-    }
+    child->SetShouldInvalidateSelection();
   }
 }
 
@@ -4213,6 +4301,15 @@ Vector<LayoutRect> LayoutObject::PhysicalOutlineRects(
     r.MoveBy(additional_offset);
   }
   return outline_rects;
+}
+
+void LayoutObject::SetModifiedStyleOutsideStyleRecalc(
+    scoped_refptr<ComputedStyle> style,
+    ApplyStyleChanges apply_changes) {
+  SetStyle(style, apply_changes);
+  if (IsAnonymous() || !GetNode() || !GetNode()->IsElementNode())
+    return;
+  GetNode()->SetComputedStyle(std::move(style));
 }
 
 }  // namespace blink

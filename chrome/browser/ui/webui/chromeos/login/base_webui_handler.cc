@@ -16,15 +16,22 @@
 
 namespace chromeos {
 
-namespace {
-const char kMethodContextChanged[] = "contextChanged";
-}  // namespace
-
 JSCallsContainer::JSCallsContainer() = default;
 
 JSCallsContainer::~JSCallsContainer() = default;
 
-BaseWebUIHandler::BaseWebUIHandler() = default;
+void JSCallsContainer::ExecuteDeferredJSCalls() {
+  DCHECK(!is_initialized());
+  is_initialized_ = true;
+  // Copy deferred_js_calls_ into a separate variable to avoid any potential
+  // concurrent modifications.
+  auto calls = std::move(deferred_js_calls_);
+  for (const auto& call : calls)
+    call.Run();
+  // We're initialized so no more calls should have been queued.
+  // TODO(jdufault): Rework this class API so that this is not possible.
+  DCHECK(deferred_js_calls_.empty());
+}
 
 BaseWebUIHandler::BaseWebUIHandler(JSCallsContainer* js_calls_container)
     : js_calls_container_(js_calls_container) {}
@@ -49,10 +56,16 @@ void BaseWebUIHandler::GetLocalizedStrings(base::DictionaryValue* dict) {
   GetAdditionalParameters(dict);
 }
 
+std::string BaseWebUIHandler::FullMethodPath(const std::string& method) const {
+  DCHECK(!method.empty());
+  return js_screen_path_prefix_ + method;
+}
+
 void BaseWebUIHandler::RegisterMessages() {
-  AddPrefixedCallback("userActed", &BaseScreenHandler::HandleUserAction);
-  AddPrefixedCallback("contextChanged",
-                      &BaseScreenHandler::HandleContextChanged);
+  AddCallback(FullMethodPath("userActed"),
+              &BaseScreenHandler::HandleUserAction);
+  AddCallback(FullMethodPath("contextChanged"),
+              &BaseScreenHandler::HandleContextChanged);
   DeclareJSCallbacks();
 }
 
@@ -60,13 +73,13 @@ void BaseWebUIHandler::CommitContextChanges(const base::DictionaryValue& diff) {
   if (!page_is_ready())
     pending_context_changes_.MergeDictionary(&diff);
   else
-    CallJSWithPrefix(kMethodContextChanged, diff);
+    CallJS(FullMethodPath("contextChanged"), diff);
 }
 
 void BaseWebUIHandler::GetAdditionalParameters(base::DictionaryValue* dict) {}
 
-void BaseWebUIHandler::CallJSWithPrefix(const std::string& method) {
-  web_ui()->CallJavascriptFunctionUnsafe(FullMethodPath(method));
+void BaseWebUIHandler::CallJS(const std::string& method) {
+  web_ui()->CallJavascriptFunctionUnsafe(method);
 }
 
 void BaseWebUIHandler::ShowScreen(OobeScreen screen) {
@@ -111,11 +124,6 @@ void BaseWebUIHandler::SetBaseScreen(BaseScreen* base_screen) {
     base_screen_->set_model_view_channel(this);
 }
 
-std::string BaseWebUIHandler::FullMethodPath(const std::string& method) const {
-  DCHECK(!method.empty());
-  return js_screen_path_prefix_ + method;
-}
-
 void BaseWebUIHandler::HandleUserAction(const std::string& action_id) {
   if (base_screen_)
     base_screen_->OnUserAction(action_id);
@@ -124,14 +132,6 @@ void BaseWebUIHandler::HandleUserAction(const std::string& action_id) {
 void BaseWebUIHandler::HandleContextChanged(const base::DictionaryValue* diff) {
   if (diff && base_screen_)
     base_screen_->OnContextChanged(*diff);
-}
-
-void BaseWebUIHandler::ExecuteDeferredJSCalls() {
-  DCHECK(!js_calls_container_->is_initialized());
-  js_calls_container_->mark_initialized();
-  for (const auto& deferred_js_call : js_calls_container_->deferred_js_calls())
-    deferred_js_call.Run();
-  js_calls_container_->deferred_js_calls().clear();
 }
 
 }  // namespace chromeos

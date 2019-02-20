@@ -25,10 +25,27 @@ using FinishedReason = ServiceWorkerInstalledScriptReader::FinishedReason;
 ServiceWorkerInstalledScriptLoader::ServiceWorkerInstalledScriptLoader(
     uint32_t options,
     network::mojom::URLLoaderClientPtr client,
-    std::unique_ptr<ServiceWorkerResponseReader> response_reader)
+    std::unique_ptr<ServiceWorkerResponseReader> response_reader,
+    scoped_refptr<ServiceWorkerVersion>
+        version_for_main_script_http_response_info,
+    const GURL& request_url)
     : options_(options),
       client_(std::move(client)),
       request_start_(base::TimeTicks::Now()) {
+  // Normally, the main script info is set by ServiceWorkerNewScriptLoader for
+  // new service workers and ServiceWorkerInstalledScriptsSender for installed
+  // service workes. But some embedders might preinstall scripts to the
+  // ServiceWorkerScriptCacheMap while not setting the ServiceWorkerVersion
+  // status to INSTALLED, so we can come to here instead of using
+  // SeviceWorkerInstalledScriptsSender.
+  // In this case, the main script info would not yet have been set, so set it
+  // here.
+  if (request_url == version_for_main_script_http_response_info->script_url() &&
+      !version_for_main_script_http_response_info
+           ->GetMainScriptHttpResponseInfo()) {
+    version_for_main_script_http_response_info_ =
+        std::move(version_for_main_script_http_response_info);
+  }
   reader_ = std::make_unique<ServiceWorkerInstalledScriptReader>(
       std::move(response_reader), this);
   reader_->Start();
@@ -61,6 +78,12 @@ void ServiceWorkerInstalledScriptLoader::OnStarted(
 void ServiceWorkerInstalledScriptLoader::OnHttpInfoRead(
     scoped_refptr<HttpResponseInfoIOBuffer> http_info) {
   net::HttpResponseInfo* info = http_info->http_info.get();
+  DCHECK(info);
+
+  if (version_for_main_script_http_response_info_) {
+    version_for_main_script_http_response_info_->SetMainScriptHttpResponseInfo(
+        *info);
+  }
 
   network::ResourceResponseHead head;
   head.request_start = request_start_;
@@ -119,9 +142,8 @@ void ServiceWorkerInstalledScriptLoader::OnFinished(FinishedReason reason) {
 }
 
 void ServiceWorkerInstalledScriptLoader::FollowRedirect(
-    const base::Optional<std::vector<std::string>>&
-        to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers,
+    const std::vector<std::string>& removed_headers,
+    const net::HttpRequestHeaders& modified_headers,
     const base::Optional<GURL>& new_url) {
   // This class never returns a redirect response to its client, so should never
   // be asked to follow one.

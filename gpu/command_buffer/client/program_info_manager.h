@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
 #include "base/synchronization/lock.h"
 #include "gles2_impl_export.h"
@@ -83,6 +82,27 @@ class GLES2_IMPL_EXPORT ProgramInfoManager {
   bool GetActiveUniformsiv(
       GLES2Implementation* gl, GLuint program, GLsizei count,
       const GLuint* indices, GLenum pname, GLint* params);
+
+  bool GetProgramInterfaceiv(
+      GLES2Implementation* gl, GLuint program, GLenum program_interface,
+      GLenum pname, GLint* params);
+
+  GLuint GetProgramResourceIndex(
+      GLES2Implementation* gl, GLuint program, GLenum program_interface,
+      const char* name);
+
+  bool GetProgramResourceName(
+      GLES2Implementation* gl, GLuint program, GLenum program_interface,
+      GLuint index, GLsizei bufsize, GLsizei* length, char* name);
+
+  bool GetProgramResourceiv(
+      GLES2Implementation* gl, GLuint program, GLenum program_interface,
+      GLuint index, GLsizei prop_count, const GLenum* props, GLsizei bufsize,
+      GLsizei* length, GLint* params);
+
+  GLint GetProgramResourceLocation(
+      GLES2Implementation* gl, GLuint program, GLenum program_interface,
+      const char* name);
 
  private:
   friend class ProgramInfoManagerTest;

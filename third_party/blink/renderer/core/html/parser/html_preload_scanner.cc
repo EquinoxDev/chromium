@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/core/loader/importance_attribute.h"
 #include "third_party/blink/renderer/core/loader/preload_helper.h"
 #include "third_party/blink/renderer/core/loader/subresource_integrity_helper.h"
+#include "third_party/blink/renderer/core/origin_trials/origin_trials.h"
 #include "third_party/blink/renderer/core/script/script_loader.h"
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
@@ -120,37 +121,6 @@ static bool MediaAttributeMatches(const MediaValuesCached& media_values,
   return media_query_evaluator.Eval(*media_queries);
 }
 
-static bool IsDimensionSmallAndAbsoluteForLazyLoad(
-    const String& attribute_value) {
-  // Minimum height or width of the image to start lazyloading.
-  const unsigned kMinDimensionToLazyLoad = 10;
-  HTMLDimension dimension;
-  return ParseDimensionValue(attribute_value, dimension) &&
-         dimension.IsAbsolute() && dimension.Value() <= kMinDimensionToLazyLoad;
-}
-
-static bool IsInlineStyleDimensionsSmall(const String& style_value,
-                                         bool strict_mode) {
-  // Minimum height or width of the image to start lazyloading.
-  const unsigned kMinDimensionToLazyLoad = 10;
-  CSSParserMode mode = strict_mode ? kHTMLStandardMode : kHTMLQuirksMode;
-  const ImmutableCSSPropertyValueSet* property_set =
-      CSSParser::ParseInlineStyleDeclaration(
-          style_value, mode, SecureContextMode::kInsecureContext);
-  const CSSValue* height = property_set->GetPropertyCSSValue(CSSPropertyHeight);
-  const CSSValue* width = property_set->GetPropertyCSSValue(CSSPropertyWidth);
-
-  if (!height || !height->IsPrimitiveValue() || !width ||
-      !width->IsPrimitiveValue())
-    return false;
-  const CSSPrimitiveValue* width_prim = ToCSSPrimitiveValue(width);
-  const CSSPrimitiveValue* height_prim = ToCSSPrimitiveValue(height);
-  return height_prim->IsPx() &&
-         (height_prim->GetDoubleValue() <= kMinDimensionToLazyLoad) &&
-         width_prim->IsPx() &&
-         (width_prim->GetDoubleValue() <= kMinDimensionToLazyLoad);
-}
-
 class TokenPreloadScanner::StartTagScanner {
   STACK_ALLOCATED();
 
@@ -158,7 +128,8 @@ class TokenPreloadScanner::StartTagScanner {
   StartTagScanner(const StringImpl* tag_impl,
                   MediaValuesCached* media_values,
                   SubresourceIntegrity::IntegrityFeatures features,
-                  TokenPreloadScanner::ScannerType scanner_type)
+                  TokenPreloadScanner::ScannerType scanner_type,
+                  bool priority_hints_origin_trial_enabled)
       : tag_impl_(tag_impl),
         link_is_style_sheet_(false),
         link_is_preconnect_(false),
@@ -183,7 +154,9 @@ class TokenPreloadScanner::StartTagScanner {
         width_attr_small_absolute_(false),
         height_attr_small_absolute_(false),
         inline_style_dimensions_small_(false),
-        scanner_type_(scanner_type) {
+        scanner_type_(scanner_type),
+        priority_hints_origin_trial_enabled_(
+            priority_hints_origin_trial_enabled) {
     if (Match(tag_impl_, kImgTag) || Match(tag_impl_, kSourceTag) ||
         Match(tag_impl_, kLinkTag)) {
       source_size_ = SizesAttributeParser(media_values_, String()).length();
@@ -366,6 +339,10 @@ class TokenPreloadScanner::StartTagScanner {
                !attribute_value.IsNull()) {
       SetReferrerPolicy(attribute_value,
                         kDoNotSupportReferrerPolicyLegacyKeywords);
+    } else if (!importance_mode_set_ &&
+               Match(attribute_name, kImportanceAttr) &&
+               priority_hints_origin_trial_enabled_) {
+      SetImportance(attribute_value);
     }
   }
 
@@ -387,7 +364,7 @@ class TokenPreloadScanner::StartTagScanner {
       SetReferrerPolicy(attribute_value, kSupportReferrerPolicyLegacyKeywords);
     } else if (!importance_mode_set_ &&
                Match(attribute_name, kImportanceAttr) &&
-               RuntimeEnabledFeatures::PriorityHintsEnabled()) {
+               priority_hints_origin_trial_enabled_) {
       SetImportance(attribute_value);
     } else if (!lazyload_attr_set_to_off_ &&
                Match(attribute_name, kLazyloadAttr) &&
@@ -398,17 +375,24 @@ class TokenPreloadScanner::StartTagScanner {
                Match(attribute_name, kWidthAttr) &&
                RuntimeEnabledFeatures::LazyImageLoadingEnabled()) {
       width_attr_small_absolute_ =
-          IsDimensionSmallAndAbsoluteForLazyLoad(attribute_value);
+          HTMLImageElement::IsDimensionSmallAndAbsoluteForLazyLoad(
+              attribute_value);
     } else if (!height_attr_small_absolute_ &&
                Match(attribute_name, kHeightAttr) &&
                RuntimeEnabledFeatures::LazyImageLoadingEnabled()) {
       height_attr_small_absolute_ =
-          IsDimensionSmallAndAbsoluteForLazyLoad(attribute_value);
+          HTMLImageElement::IsDimensionSmallAndAbsoluteForLazyLoad(
+              attribute_value);
     } else if (!inline_style_dimensions_small_ &&
                Match(attribute_name, kStyleAttr) &&
                RuntimeEnabledFeatures::LazyImageLoadingEnabled()) {
-      inline_style_dimensions_small_ = IsInlineStyleDimensionsSmall(
-          attribute_value, media_values_->StrictMode());
+      CSSParserMode mode =
+          media_values_->StrictMode() ? kHTMLStandardMode : kHTMLQuirksMode;
+      const ImmutableCSSPropertyValueSet* property_set =
+          CSSParser::ParseInlineStyleDeclaration(
+              attribute_value, mode, SecureContextMode::kInsecureContext);
+      inline_style_dimensions_small_ =
+          HTMLImageElement::IsInlineStyleDimensionsSmall(property_set);
     }
   }
 
@@ -465,7 +449,7 @@ class TokenPreloadScanner::StartTagScanner {
       ParseSourceSize(attribute_value);
     } else if (!importance_mode_set_ &&
                Match(attribute_name, kImportanceAttr) &&
-               RuntimeEnabledFeatures::PriorityHintsEnabled()) {
+               priority_hints_origin_trial_enabled_) {
       SetImportance(attribute_value);
     }
   }
@@ -629,9 +613,15 @@ class TokenPreloadScanner::StartTagScanner {
       return false;
     if (Match(tag_impl_, kScriptTag)) {
       mojom::ScriptType script_type = mojom::ScriptType::kClassic;
+      bool is_import_map = false;
       if (!ScriptLoader::IsValidScriptTypeAndLanguage(
               type_attribute_value_, language_attribute_value_,
-              ScriptLoader::kAllowLegacyTypeInTypeAttribute, script_type)) {
+              ScriptLoader::kAllowLegacyTypeInTypeAttribute, &script_type,
+              &is_import_map)) {
+        return false;
+      }
+      if (is_import_map) {
+        // External import maps are not yet supported. https://crbug.com/922212
         return false;
       }
       if (ScriptLoader::BlockForNoModule(script_type,
@@ -661,7 +651,7 @@ class TokenPreloadScanner::StartTagScanner {
   }
 
   void SetImportance(const String& importance) {
-    DCHECK(RuntimeEnabledFeatures::PriorityHintsEnabled());
+    DCHECK(priority_hints_origin_trial_enabled_);
     importance_mode_set_ = true;
     importance_ = GetFetchImportanceAttributeValue(importance);
   }
@@ -707,13 +697,16 @@ class TokenPreloadScanner::StartTagScanner {
   bool height_attr_small_absolute_;
   bool inline_style_dimensions_small_;
   TokenPreloadScanner::ScannerType scanner_type_;
+  // For explanation, see TokenPreloadScanner's declaration.
+  bool priority_hints_origin_trial_enabled_;
 };
 
 TokenPreloadScanner::TokenPreloadScanner(
     const KURL& document_url,
     std::unique_ptr<CachedDocumentParameters> document_parameters,
     const MediaValuesCached::MediaValuesCachedData& media_values_cached_data,
-    const ScannerType scanner_type)
+    const ScannerType scanner_type,
+    bool priority_hints_origin_trial_enabled)
     : document_url_(document_url),
       in_style_(false),
       in_picture_(false),
@@ -722,6 +715,7 @@ TokenPreloadScanner::TokenPreloadScanner(
       document_parameters_(std::move(document_parameters)),
       media_values_(MediaValuesCached::Create(media_values_cached_data)),
       scanner_type_(scanner_type),
+      priority_hints_origin_trial_enabled_(priority_hints_origin_trial_enabled),
       did_rewind_(false) {
   DCHECK(document_parameters_.get());
   DCHECK(media_values_.Get());
@@ -932,9 +926,9 @@ void TokenPreloadScanner::ScanCommon(const Token& token,
         return;
       }
 
-      StartTagScanner scanner(tag_impl, media_values_,
-                              document_parameters_->integrity_features,
-                              scanner_type_);
+      StartTagScanner scanner(
+          tag_impl, media_values_, document_parameters_->integrity_features,
+          scanner_type_, priority_hints_origin_trial_enabled_);
       scanner.ProcessAttributes(token.Attributes());
       // TODO(yoav): ViewportWidth is currently racy and might be zero in some
       // cases, at least in tests. That problem will go away once
@@ -973,7 +967,8 @@ HTMLPreloadScanner::HTMLPreloadScanner(
     : scanner_(document_url,
                std::move(document_parameters),
                media_values_cached_data,
-               scanner_type),
+               scanner_type,
+               options.priority_hints_origin_trial_enabled),
       tokenizer_(HTMLTokenizer::Create(options)) {}
 
 HTMLPreloadScanner::~HTMLPreloadScanner() = default;

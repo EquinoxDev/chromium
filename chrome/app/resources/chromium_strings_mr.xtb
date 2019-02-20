@@ -77,14 +77,16 @@
 <translation id="3479552764303398839">सध्या नाही</translation>
 <translation id="3509308970982693815">कृपया सर्व Chromium विंडो बंद करा आणि पुन्‍हा प्रयत्‍न करा.</translation>
 <translation id="352783484088404971">Chromium मधून काढून टाका...</translation>
+<translation id="3575459661164320785">तुमच्या काँप्युटरवर हानिकारक सॉफ्टवेअर आहे. Chromium ते काढून टाकून तुमचा ब्राउझर पुन्हा नीट चालावा यासाठी तुमच्या सेटिंग्ज रिस्टोअर आणि एक्स्टेंशन बंद करू शकते.</translation>
 <translation id="3582788516608077514">Chromium अपडेट करीत आहे...</translation>
 <translation id="358997566136285270">Chromium लोगो</translation>
+<translation id="3639635944603682591">या व्यक्तीचा ब्राउझिंग डेटा या डिव्हाइसवरून हटवला जाईल. डेटा रीकव्हर करण्यासाठी, Chromium वर <ph name="USER_EMAIL" /> म्हणून साइन इन करा.</translation>
 <translation id="3713809861844741608">लिंक नवीन Chromium &amp;टॅबमध्ये उघडा</translation>
 <translation id="3728336900324680424">अॅड्रेस बारमध्ये सूचना देण्यासाठी Chromium तुमची ड्राइव्ह अॅक्सेस करेल</translation>
-<translation id="3762167353400286894">Chromium OS या भाषेत प्रदर्शित केले आहे</translation>
 <translation id="378917192836375108">Chromium तुम्हाला वेबवरील फोन नंबर क्लिक करू देते आणि Skype सह त्याला कॉल करते!</translation>
 <translation id="3848258323044014972"><ph name="PAGE_TITLE" /> - Chromium</translation>
 <translation id="3852700440713538496">Chromium ला आपल्या टास्कबारवर पिन करा</translation>
+<translation id="388648406173476553">Chromium कस्टमाइझ करा आणि नियंत्रित करा. एका गोष्टीवर तुम्ही लक्ष द्यायला हवे - तपशिलांसाठी क्लिक करा.</translation>
 <translation id="3889543394854987837">Chromium उघडण्यासाठी तुमचे नाव क्लिक करा आणि ब्राउझिंग प्रारंभ करा.</translation>
 <translation id="3898493977366060150">Google smarts सह वेब ब्राउझिंग</translation>
 <translation id="3965668104013180445">{0,plural, =1{Chromium OS एका तासात रीस्टार्ट करेल}one{Chromium OS # तासामध्ये रीस्टार्ट करेल}other{Chromium OS # तासांमध्ये रीस्टार्ट करेल}}</translation>
@@ -92,10 +94,10 @@
 <translation id="4050175100176540509">नवीनतम आवृत्तीमध्‍ये महत्त्वाच्या सुरक्षितता सुधारणा आणि नवीन वैशिष्ट्ये उपलब्‍ध आहेत.</translation>
 <translation id="407254336480250557"><ph name="SMALL_PRODUCT_LOGO" /> <ph name="BEGIN_BOLD" />Chromium<ph name="END_BOLD" /> निवडा</translation>
 <translation id="421369550622382712">Chromium साठी उत्कृष्ट अॅप्स, गेम, विस्तार आणि थीम शोधा</translation>
+<translation id="4216212958613226427">ही भाषा Chromium UI दाखवण्यासाठी वापरली जाते</translation>
 <translation id="4222580632002216401">तुम्ही आता Chromium वर साइन इन केले आहे! आपल्या प्रशासकाद्वारे संकालन अक्षम केले गेले आहे.</translation>
 <translation id="4224199872375172890">Chromium अद्ययावत आहे.</translation>
 <translation id="4230135487732243613">या खात्यावर आपल्या Chromium डेटा चा दुवा साधायचा?</translation>
-<translation id="4260985389288095068">तुमच्या काँप्युटरवर धोकादायक सॉफ्टवेअर आढळले आहे. Chromium ते काढून टाकू शकते आणि तुमचा ब्राउझर पुन्हा नीट चालावा यासाठी तुमचे सेटिंग्ज रिस्टोअर करू शकते.</translation>
 <translation id="4271805377592243930">Chromium सह मदत मिळवा</translation>
 <translation id="4285930937574705105">अनिर्दिष्ट त्रुटीमुळे स्थापना अयशस्वी झाली. सध्‍या Chromium चालत असल्‍यास, कृपया त्‍यास बंद करा आणि पुन्‍हा प्रयत्‍न करा.</translation>
 <translation id="4407044323746248786">तरीही Chromium बंद करायचे?</translation>
@@ -137,7 +139,7 @@
 <translation id="5680901439334282664">Chromium वर साइन इन करा</translation>
 <translation id="5698481217667032250">Chromium या भाषेत डिस्प्ले करा</translation>
 <translation id="5712253116097046984">तुमचा अॅडमिनिस्ट्रेटर हे अपडेट लागू करण्यासाठी तुम्हाला Chrome OS ला रीस्टार्ट करण्याची विनंती करत आहे</translation>
-<translation id="5726838626470692954">तुमच्या व्यवस्थापकाने तुम्हाला Chromium वरून काढणे आणि पुन्हा जोडणे आवश्यक आहे.</translation>
+<translation id="5756484659843248772">ही भाषा Chromium OS UI दाखवण्यासाठी वापरली जाते</translation>
 <translation id="5768914737813585044">Chromium OS या भाषेत डिस्प्ले करा</translation>
 <translation id="5796460469508169315">Chromium जवळजवळ तयार आहे</translation>
 <translation id="5820394555380036790">Chromium OS</translation>
@@ -166,6 +168,7 @@
 <translation id="6373523479360886564">आपल्‍याला खात्री आहे की तुम्ही Chromium विस्‍थापित करू इच्‍छिता?</translation>
 <translation id="6400072781405947421">Mac OS X 10.9 वर Chromium ला सपोर्ट नसल्यामुळे ते कदाचित नीट चालणार नाही.</translation>
 <translation id="6403826409255603130">Chromium हे एक वेबब्राउझर असून ते वेबपृष्ठे आणि अॅप्लिकेशन अतिशय वेगात चालवते. हे वापरण्यास जलद, स्थिर आणि सोपे आहे. Chromium मध्ये तयार करण्यासाठी मालवेयर आणि फिशिंग संरक्षणासह वेब अधिक सुरक्षितपणे ब्राउझ करा.</translation>
+<translation id="6434250628340475518">Chromium OS सिस्टम</translation>
 <translation id="6457450909262716557">{SECONDS,plural, =1{Chromium १ सेकंदात रीस्टार्ट होईल}one{Chromium # सेकंदात रीस्टार्ट होईल}other{Chromium # सेकंदांत रीस्टार्ट होईल}}</translation>
 <translation id="6475912303565314141">तुम्ही Chromium सुरू करता तेव्हा कोणते पृष्ठ दर्शविले जाते हे देखील हे नियंत्रित करते.</translation>
 <translation id="6485906693002546646">तुम्ही तुमची Chromium आशय सिंक करण्यासाठी <ph name="PROFILE_EMAIL" /> वापरत आहात. तुमचे सिंक प्राधान्य अपडेट करण्यासाठी किंवा Google खाते न सोडता Chromium वापरण्यासाठी, <ph name="SETTINGS_LINK" /> ला भेट द्या.</translation>
@@ -181,6 +184,7 @@
 <translation id="6810143991807788455">वर्तमान सेटिंग्जचा अहवाल देऊन Chromium उत्कृष्ट बनविण्यास मदत करा</translation>
 <translation id="6857782730669500492">Chromium - <ph name="PAGE_TITLE" /></translation>
 <translation id="6863361426438995919">Google Pay (Chromium वर कॉपी केले)</translation>
+<translation id="6877899728743402439">तुमच्या सिस्टम अ‍ॅडमिनिस्ट्रेटरने Chromium पर्यायी ब्राउझर उघडण्यासाठी कॉन्फिगर केले आहे.</translation>
 <translation id="6893813176749746474">Chromium अपडेट केले गेले, परंतु तुम्ही ते किमान 30 दिवसांपासून वापरलेले नाही.</translation>
 <translation id="6964305034639999644">लिंक Chromium गु&amp;प्त विंडो मध्ये उघडा</translation>
 <translation id="6970811910055250180">तुमचे डिव्हाइस अपडेट करीत आहे...</translation>
@@ -211,6 +215,7 @@ Chromium तुमची सेटिंग्ज रिकव्हर कर�
 <translation id="7471302858145901434">{0,plural, =1{Chromium OS एका दिवसात रीस्टार्ट करा}one{Chromium OS # दिवसात रीस्टार्ट करा}other{Chromium OS # दिवसांमध्ये रीस्टार्ट करा}}</translation>
 <translation id="7483335560992089831">सध्‍या चालू असलेल्‍या सारख्याच Chromium आवृत्तीची स्‍थापना होऊ शकत नाही. कृपया Chromium बंद करा आणि पुन्‍हा प्रयत्‍न करा.</translation>
 <translation id="7549178288319965365">Chromium OS बद्दल</translation>
+<translation id="7561906087460245826">तसेच Chromium (<ph name="URL" />) वरील डेटा साफ करा</translation>
 <translation id="761356813943268536">Chromium तुमचा कॅमेरा आणि मायक्रोफोन वापरत आहे.</translation>
 <translation id="7617377681829253106">Chromium आता उत्कृष्ट झाले आहे</translation>
 <translation id="7686590090926151193">Chromium तुमचा डीफॉल्ट ब्राउझर नाही</translation>
@@ -228,7 +233,6 @@ Chromium तुमची सेटिंग्ज रिकव्हर कर�
 <translation id="7979877361127045932">Chromium मेनूमध्‍ये लपवा</translation>
 <translation id="8013436988911883588">एकदा का Chromium ला अॅक्सेस मिळाला की, वेबसाइट तुम्हाला अॅक्सेससाठी विचारू शकतील.</translation>
 <translation id="8030318113982266900"><ph name="CHANNEL_NAME" /> चॅनेलवर तुमचे डिव्हाइस अपडेट करत आहे...</translation>
-<translation id="8157153840442649507">Chromium या भाषेत प्रदर्शित केले आहे</translation>
 <translation id="81770708095080097">ही फाईल धोकादायक आहे, त्यामुळे Chromium ने अवरोधित केली आहे.</translation>
 <translation id="8222496066431494154">तुमच्या फोनवर Chromium इंस्टॉल करा. आम्ही तुमच्या या खाते रिकव्हरी फोन नंबरवर एक SMS पाठवू: <ph name="PHONE_NUMBER" /></translation>
 <translation id="8269379391216269538">Chromium उत्कृष्ट करण्यात मदत करा</translation>

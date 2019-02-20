@@ -7,29 +7,24 @@
 #include <memory>
 #include <set>
 
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "base/test/bind_test_util.h"
 #include "components/browser_sync/profile_sync_service_mock.h"
-#include "components/signin/core/browser/account_tracker_service.h"
-#include "components/signin/core/browser/device_id_helper.h"
-#include "components/signin/core/browser/fake_gaia_cookie_manager_service.h"
-#include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
-#include "components/signin/core/browser/fake_signin_manager.h"
+#include "components/browser_sync/profile_sync_test_util.h"
 #include "components/signin/core/browser/signin_error_controller.h"
-#include "components/signin/core/browser/test_signin_client.h"
-#include "components/signin/ios/browser/fake_profile_oauth2_token_service_ios_provider.h"
-#include "components/signin/ios/browser/profile_oauth2_token_service_ios_delegate.h"
-#include "components/signin/ios/browser/profile_oauth2_token_service_ios_provider.h"
-#include "components/sync/device_info/local_device_info_provider_mock.h"
-#include "components/sync/driver/fake_sync_client.h"
 #include "components/sync/driver/sync_service_observer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #import "ios/web/public/test/fakes/test_web_state.h"
 #include "ios/web/public/test/test_web_thread_bundle.h"
+#include "ios/web_view/internal/app/application_context.h"
 #include "ios/web_view/internal/web_view_browser_state.h"
 #import "ios/web_view/public/cwv_identity.h"
 #import "ios/web_view/public/cwv_sync_controller_data_source.h"
 #import "ios/web_view/public/cwv_sync_controller_delegate.h"
+#include "services/identity/public/cpp/identity_test_environment.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -41,59 +36,41 @@
 #endif
 
 namespace ios_web_view {
+namespace {
 
 using testing::_;
 using testing::Invoke;
 using testing::Return;
 
+}  // namespace
+
 class CWVSyncControllerTest : public PlatformTest {
  protected:
   CWVSyncControllerTest()
       : browser_state_(/*off_the_record=*/false),
-        signin_client_(browser_state_.GetPrefs()),
-        token_service_delegate_(new ProfileOAuth2TokenServiceIOSDelegate(
-            &signin_client_,
-            std::make_unique<FakeProfileOAuth2TokenServiceIOSProvider>(),
-            &account_tracker_service_)),
-        token_service_(browser_state_.GetPrefs(),
-                       std::unique_ptr<ProfileOAuth2TokenServiceIOSDelegate>(
-                           token_service_delegate_)),
-        gaia_cookie_manager_service_(&token_service_,
-                                     &signin_client_,
-                                     /*use_fake_url_fetcher=*/true),
-        signin_manager_(&signin_client_,
-                        &token_service_,
-                        &account_tracker_service_,
-                        &gaia_cookie_manager_service_),
         signin_error_controller_(
             SigninErrorController::AccountMode::ANY_ACCOUNT,
-            &token_service_,
-            &signin_manager_) {
+            identity_test_env_.identity_manager()) {
     web_state_.SetBrowserState(&browser_state_);
 
     browser_sync::ProfileSyncService::InitParams init_params;
     init_params.start_behavior = browser_sync::ProfileSyncService::MANUAL_START;
-    init_params.sync_client = std::make_unique<syncer::FakeSyncClient>();
+    init_params.sync_client =
+        profile_sync_service_bundle_.CreateSyncClientMock();
     init_params.url_loader_factory = browser_state_.GetSharedURLLoaderFactory();
     init_params.network_time_update_callback = base::DoNothing();
-    init_params.local_device_info_provider =
-        std::make_unique<syncer::LocalDeviceInfoProviderMock>();
+    init_params.identity_manager = identity_test_env_.identity_manager();
     profile_sync_service_ =
         std::make_unique<browser_sync::ProfileSyncServiceMock>(
             std::move(init_params));
-
-    account_tracker_service_.Initialize(browser_state_.GetPrefs(),
-                                        base::FilePath());
 
     EXPECT_CALL(*profile_sync_service_, AddObserver(_))
         .WillOnce(Invoke(this, &CWVSyncControllerTest::AddObserver));
 
     sync_controller_ = [[CWVSyncController alloc]
-        initWithProfileSyncService:profile_sync_service_.get()
-             accountTrackerService:&account_tracker_service_
-                     signinManager:&signin_manager_
-                      tokenService:&token_service_
-             signinErrorController:&signin_error_controller_];
+          initWithSyncService:profile_sync_service_.get()
+              identityManager:identity_test_env_.identity_manager()
+        signinErrorController:&signin_error_controller_];
   };
 
   ~CWVSyncControllerTest() override {
@@ -112,17 +89,10 @@ class CWVSyncControllerTest : public PlatformTest {
   web::TestWebThreadBundle web_thread_bundle_;
   ios_web_view::WebViewBrowserState browser_state_;
   web::TestWebState web_state_;
-  std::unique_ptr<browser_sync::ProfileSyncServiceMock> profile_sync_service_;
-  AccountTrackerService account_tracker_service_;
-  TestSigninClient signin_client_;
-
-  // Weak, owned by the token service.
-  ProfileOAuth2TokenServiceIOSDelegate* token_service_delegate_;
-
-  FakeProfileOAuth2TokenService token_service_;
-  FakeGaiaCookieManagerService gaia_cookie_manager_service_;
-  FakeSigninManager signin_manager_;
+  browser_sync::ProfileSyncServiceBundle profile_sync_service_bundle_;
+  identity::IdentityTestEnvironment identity_test_env_;
   SigninErrorController signin_error_controller_;
+  std::unique_ptr<browser_sync::ProfileSyncServiceMock> profile_sync_service_;
   CWVSyncController* sync_controller_;
   syncer::SyncServiceObserver* sync_service_observer_;
 };
@@ -183,10 +153,14 @@ TEST_F(CWVSyncControllerTest, DelegateCallbacks) {
     // Create authentication error.
     GoogleServiceAuthError auth_error(
         GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
-    std::string account_id = account_tracker_service_.SeedAccountInfo(
-        "gaia_id", "email@example.com");
-    token_service_delegate_->AddOrUpdateAccount(account_id);
-    token_service_delegate_->UpdateAuthError(account_id, auth_error);
+    std::string account_id =
+        identity_test_env_.MakePrimaryAccountAvailable("email@example.com")
+            .account_id;
+    // TODO(crbug.com/930094): Eliminate this.
+    identity_test_env_.identity_manager()->LegacyAddAccountFromSystem(
+        account_id);
+    identity_test_env_.UpdatePersistentErrorOfRefreshTokenForAccount(
+        account_id, auth_error);
 
     [[delegate expect] syncController:sync_controller_
                 didStopSyncWithReason:CWVStopSyncReasonServer];

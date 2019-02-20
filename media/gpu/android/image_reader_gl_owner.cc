@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "base/android/jni_android.h"
+#include "base/android/scoped_hardware_buffer_fence_sync.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
@@ -48,27 +49,34 @@ struct FrameAvailableEvent_ImageReader
 };
 
 class ImageReaderGLOwner::ScopedHardwareBufferImpl
-    : public gl::GLImage::ScopedHardwareBuffer {
+    : public base::android::ScopedHardwareBufferFenceSync {
  public:
   ScopedHardwareBufferImpl(scoped_refptr<ImageReaderGLOwner> texture_owner,
                            AImage* image,
                            base::android::ScopedHardwareBufferHandle handle,
                            base::ScopedFD fence_fd)
-      : gl::GLImage::ScopedHardwareBuffer(std::move(handle),
-                                          std::move(fence_fd)),
+      : base::android::ScopedHardwareBufferFenceSync(std::move(handle),
+                                                     std::move(fence_fd)),
         texture_owner_(std::move(texture_owner)),
         image_(image) {}
   ~ScopedHardwareBufferImpl() override {
-    texture_owner_->ReleaseRefOnImage(image_);
+    texture_owner_->ReleaseRefOnImage(image_, std::move(read_fence_));
+  }
+
+  void SetReadFence(base::ScopedFD fence_fd) final {
+    DCHECK(!read_fence_.is_valid());
+    read_fence_ = std::move(fence_fd);
   }
 
  private:
+  base::ScopedFD read_fence_;
   scoped_refptr<ImageReaderGLOwner> texture_owner_;
   AImage* image_;
 };
 
 ImageReaderGLOwner::ImageReaderGLOwner(
-    std::unique_ptr<gpu::gles2::AbstractTexture> texture)
+    std::unique_ptr<gpu::gles2::AbstractTexture> texture,
+    SecureMode secure_mode)
     : TextureOwner(std::move(texture)),
       current_image_(nullptr),
       loader_(base::android::AndroidImageReader::GetInstance()),
@@ -78,18 +86,19 @@ ImageReaderGLOwner::ImageReaderGLOwner(
   DCHECK(context_);
   DCHECK(surface_);
 
-  // TODO(khushalsagar): Need plumbing here to select the correct format and
-  // usage for secure media.
-
   // Set the width, height and format to some default value. This parameters
   // are/maybe overriden by the producer sending buffers to this imageReader's
   // Surface.
-  int32_t width = 1, height = 1, max_images = 3;
-  AIMAGE_FORMATS format = AIMAGE_FORMAT_YUV_420_888;
+  int32_t width = 1, height = 1, max_images = 4;
+  AIMAGE_FORMATS format = secure_mode == SecureMode::kSecure
+                              ? AIMAGE_FORMAT_PRIVATE
+                              : AIMAGE_FORMAT_YUV_420_888;
   AImageReader* reader = nullptr;
   // The usage flag below should be used when the buffer will be read from by
   // the GPU as a texture.
-  const uint64_t usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
+  const uint64_t usage = secure_mode == SecureMode::kSecure
+                             ? AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT
+                             : AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
 
   // Create a new reader for images of the desired size and format.
   media_status_t return_code = loader_.AImageReader_newWithUsage(
@@ -176,7 +185,7 @@ gl::ScopedJavaSurface ImageReaderGLOwner::CreateJavaSurface() const {
   return gl::ScopedJavaSurface::AcquireExternalSurface(j_surface);
 }
 
-void ImageReaderGLOwner::UpdateTexImage() {
+void ImageReaderGLOwner::UpdateTexImage(bool bind_egl_image) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   // If we've lost the texture, then do nothing.
@@ -242,9 +251,12 @@ void ImageReaderGLOwner::UpdateTexImage() {
   current_image_fence_ = std::move(scoped_acquire_fence_fd);
   current_image_bound_ = false;
 
-  // TODO(khushalsagar): This should be on the public API so that we only bind
-  // the texture if we were going to render it without an overlay.
-  EnsureTexImageBound();
+  // Skip generating and binding egl image if bind_egl_image is false.
+  if (bind_egl_image) {
+    // TODO(khushalsagar): This should be on the public API so that we only bind
+    // the texture if we were going to render it without an overlay.
+    EnsureTexImageBound();
+  }
 }
 
 void ImageReaderGLOwner::EnsureTexImageBound() {
@@ -276,7 +288,7 @@ bool ImageReaderGLOwner::MaybeDeleteCurrentImage() {
   return gpu::DeleteAImageAsync(current_image_, &loader_);
 }
 
-std::unique_ptr<gl::GLImage::ScopedHardwareBuffer>
+std::unique_ptr<base::android::ScopedHardwareBufferFenceSync>
 ImageReaderGLOwner::GetAHardwareBuffer() {
   if (!current_image_)
     return nullptr;
@@ -289,35 +301,42 @@ ImageReaderGLOwner::GetAHardwareBuffer() {
   auto fence_fd = base::ScopedFD(HANDLE_EINTR(dup(current_image_fence_.get())));
 
   // Add a ref that the caller will release.
-  auto it = external_image_refs_.find(current_image_);
-  if (it == external_image_refs_.end())
-    external_image_refs_[current_image_] = 1;
-  else
-    it->second++;
-
+  external_image_refs_[current_image_].count++;
   return std::make_unique<ScopedHardwareBufferImpl>(
       this, current_image_,
       base::android::ScopedHardwareBufferHandle::Create(buffer),
       std::move(fence_fd));
 }
 
-void ImageReaderGLOwner::ReleaseRefOnImage(AImage* image) {
+void ImageReaderGLOwner::ReleaseRefOnImage(AImage* image,
+                                           base::ScopedFD fence_fd) {
   auto it = external_image_refs_.find(image);
   DCHECK(it != external_image_refs_.end());
-  DCHECK_GT(it->second, 0u);
-  it->second--;
 
-  if (it->second > 0)
+  auto& image_ref = it->second;
+  DCHECK_GT(image_ref.count, 0u);
+  image_ref.count--;
+
+  // TODO(khushalsagar): We should probably merge this fence with any
+  // pre-existing fence, and there are also a couple of other cases that are
+  // being ignored here (delete image async if it is the |current_image| using
+  // this fence, combining display compositor fence with the |fence_fd| here).
+  // But all of this is going to be automagically fixed with SharedImages, so
+  // need to do the proper thing once media switches to that.
+  image_ref.fence_fd = std::move(fence_fd);
+
+  if (image_ref.count > 0)
     return;
+
+  // Delete the image if it has no pending refs and it is not the current image.
+  if (image != current_image_) {
+    if (image_ref.fence_fd.is_valid())
+      loader_.AImage_deleteAsync(image, image_ref.fence_fd.release());
+    else
+      loader_.AImage_delete(image);
+  }
+
   external_image_refs_.erase(it);
-
-  if (image == current_image_)
-    return;
-
-  // No refs on the image. If it is no longer current, delete it. Note that this
-  // can be deleted synchronously here since the caller ensures that any pending
-  // GPU work for the image is finished before marking it for release.
-  loader_.AImage_delete(image);
 }
 
 void ImageReaderGLOwner::GetTransformMatrix(float mtx[]) {
@@ -373,25 +392,35 @@ void ImageReaderGLOwner::WaitForFrameAvailable() {
   const base::TimeDelta elapsed = call_time - release_time_;
   const base::TimeDelta remaining = max_wait - elapsed;
   release_time_ = base::TimeTicks();
+  bool timed_out = false;
 
   if (remaining <= base::TimeDelta()) {
     if (!frame_available_event_->event.IsSignaled()) {
       DVLOG(1) << "Deferred WaitForFrameAvailable() timed out, elapsed: "
                << elapsed.InMillisecondsF() << "ms";
+      timed_out = true;
     }
-    return;
+  } else {
+    DCHECK_LE(remaining, max_wait);
+    SCOPED_UMA_HISTOGRAM_TIMER(
+        "Media.CodecImage.ImageReaderGLOwner.WaitTimeForFrame");
+    if (!frame_available_event_->event.TimedWait(remaining)) {
+      DVLOG(1) << "WaitForFrameAvailable() timed out, elapsed: "
+               << elapsed.InMillisecondsF()
+               << "ms, additionally waited: " << remaining.InMillisecondsF()
+               << "ms, total: " << (elapsed + remaining).InMillisecondsF()
+               << "ms";
+      timed_out = true;
+    }
   }
-
-  DCHECK_LE(remaining, max_wait);
-  SCOPED_UMA_HISTOGRAM_TIMER(
-      "Media.CodecImage.ImageReaderGLOwner.WaitTimeForFrame");
-  if (!frame_available_event_->event.TimedWait(remaining)) {
-    DVLOG(1) << "WaitForFrameAvailable() timed out, elapsed: "
-             << elapsed.InMillisecondsF()
-             << "ms, additionally waited: " << remaining.InMillisecondsF()
-             << "ms, total: " << (elapsed + remaining).InMillisecondsF()
-             << "ms";
-  }
+  UMA_HISTOGRAM_BOOLEAN("Media.CodecImage.ImageReaderGLOwner.FrameTimedOut",
+                        timed_out);
 }
+
+ImageReaderGLOwner::ImageRef::ImageRef() = default;
+ImageReaderGLOwner::ImageRef::~ImageRef() = default;
+ImageReaderGLOwner::ImageRef::ImageRef(ImageRef&& other) = default;
+ImageReaderGLOwner::ImageRef& ImageReaderGLOwner::ImageRef::operator=(
+    ImageRef&& other) = default;
 
 }  // namespace media

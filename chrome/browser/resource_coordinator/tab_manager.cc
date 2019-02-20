@@ -30,6 +30,7 @@
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
 #include "chrome/browser/memory/oom_memory_details.h"
+#include "chrome/browser/performance_manager/performance_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/background_tab_navigation_throttle.h"
 #include "chrome/browser/resource_coordinator/tab_activity_watcher.h"
@@ -185,7 +186,7 @@ TabManager::TabManager(PageSignalReceiver* page_signal_receiver,
 #endif
   browser_tab_strip_tracker_.Init();
   session_restore_observer_.reset(new TabManagerSessionRestoreObserver(this));
-  if (PageSignalReceiver::IsEnabled()) {
+  if (performance_manager::PerformanceManager::GetInstance()) {
     resource_coordinator_signal_observer_.reset(
         new ResourceCoordinatorSignalObserver(page_signal_receiver));
   }
@@ -233,7 +234,7 @@ void TabManager::Start() {
   // MemoryCoordinator is disabled. When MemoryCoordinator is enabled
   // it asks TabManager to do tab discarding.
   base::MemoryPressureMonitor* monitor = base::MemoryPressureMonitor::Get();
-  if (monitor && !base::FeatureList::IsEnabled(features::kMemoryCoordinator)) {
+  if (monitor) {
     memory_pressure_listener_.reset(new base::MemoryPressureListener(
         base::Bind(&TabManager::OnMemoryPressure, base::Unretained(this))));
     base::MemoryPressureListener::MemoryPressureLevel level =

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/metrics/metrics_hashes.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -463,7 +464,7 @@ TEST_P(TabManagerStatsCollectorParameterizedTest, HistogramsTabCount) {
                                                                            : 0);
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ,
     TabManagerStatsCollectorTabSwitchTest,
     ::testing::Values(std::make_pair(false,   // Session restore
@@ -471,7 +472,7 @@ INSTANTIATE_TEST_CASE_P(
                       std::make_pair(true, false),
                       std::make_pair(false, true),
                       std::make_pair(true, true)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ,
     TabManagerStatsCollectorParameterizedTest,
     ::testing::Values(std::make_pair(false,   // Session restore

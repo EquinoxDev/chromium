@@ -125,6 +125,7 @@ IOSPaymentInstrumentFinder::CreateIOSPaymentInstrumentsForMethods(
 
 void IOSPaymentInstrumentFinder::OnPaymentManifestDownloaded(
     const GURL& method,
+    const GURL& method_url_after_redirects,
     const std::string& content) {
   // If |content| is empty then the download failed.
   if (content.empty()) {
@@ -162,7 +163,7 @@ bool IOSPaymentInstrumentFinder::GetWebAppManifestURLsFromPaymentManifest(
 
   std::set<GURL> web_app_manifest_urls;
 
-  std::unique_ptr<base::Value> value = base::JSONReader::Read(input);
+  std::unique_ptr<base::Value> value = base::JSONReader::ReadDeprecated(input);
   if (!value) {
     LOG(ERROR) << "Payment method manifest must be in JSON format.";
     return false;
@@ -212,6 +213,7 @@ bool IOSPaymentInstrumentFinder::GetWebAppManifestURLsFromPaymentManifest(
 void IOSPaymentInstrumentFinder::OnWebAppManifestDownloaded(
     const GURL& method,
     const GURL& web_app_manifest_url,
+    const GURL& web_app_manifest_url_after_redirects,
     const std::string& content) {
   // If |content| is empty then the download failed.
   if (content.empty()) {
@@ -238,7 +240,7 @@ bool IOSPaymentInstrumentFinder::GetPaymentAppDetailsFromWebAppManifest(
     std::string* out_app_name,
     GURL* out_app_icon_url,
     GURL* out_universal_link) {
-  std::unique_ptr<base::Value> value = base::JSONReader::Read(input);
+  std::unique_ptr<base::Value> value = base::JSONReader::ReadDeprecated(input);
   if (!value) {
     LOG(ERROR) << "Web app manifest must be in JSON format.";
     return false;

@@ -108,7 +108,7 @@ bool IsPrintable(base::StringPiece str) {
 
 namespace i18n {
 
-const size_t kMaxPhoneNumberSize = 1000u;
+const size_t kMaxPhoneNumberSize = 40u;
 
 // Returns true if |phone_number| is a possible number.
 bool IsPossiblePhoneNumber(
@@ -214,7 +214,7 @@ bool ParsePhoneNumber(const base::string16& value,
       i18n_number->country_code_source() !=
           ::i18n::phonenumbers::PhoneNumber::FROM_DEFAULT_COUNTRY) {
     *country_code =
-        base::UTF8ToUTF16(base::IntToString(i18n_number->country_code()));
+        base::UTF8ToUTF16(base::NumberToString(i18n_number->country_code()));
   }
 
   // The region might be different from what we started with.

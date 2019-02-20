@@ -26,8 +26,10 @@
 #include "ash/sticky_keys/sticky_keys_controller.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/power/backlights_forced_off_setter.h"
+#include "ash/system/power/power_status.h"
 #include "ash/system/power/scoped_backlights_forced_off.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/metrics/user_metrics.h"
 #include "base/strings/string16.h"
@@ -593,6 +595,11 @@ void AccessibilityController::SetSwitchAccessKeysToCapture(
 void AccessibilityController::SetSwitchAccessIgnoreVirtualKeyEvent(
     bool should_ignore) {
   switch_access_event_handler_->set_ignore_virtual_key_events(should_ignore);
+}
+
+void AccessibilityController::ForwardKeyEventsToSwitchAccess(
+    bool should_forward) {
+  switch_access_event_handler_->set_forward_key_events(should_forward);
 }
 
 void AccessibilityController::SetSwitchAccessEventHandlerDelegate(
@@ -1234,6 +1241,13 @@ void AccessibilityController::UpdateVirtualKeyboardFromPref() {
     Shell::Get()->EnableKeyboard();
   else
     Shell::Get()->DisableKeyboard();
+}
+
+void AccessibilityController::GetBatteryDescription(
+    GetBatteryDescriptionCallback callback) {
+  // Pass battery status as string to callback function.
+  std::move(callback).Run(PowerStatus::Get()->GetAccessibleNameString(
+      true /* Enables full description*/));
 }
 
 }  // namespace ash

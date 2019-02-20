@@ -29,6 +29,9 @@ class RendererClient;
 // implementation.
 //
 // All methods are pass-through except Initialize() and SetCdm().
+//
+// The caller must guarantee that DecryptingRenderer will never be initialized
+// with a |media_resource| of type MediaResource::Type::URL.
 class MEDIA_EXPORT DecryptingRenderer : public Renderer {
  public:
   DecryptingRenderer(
@@ -68,6 +71,7 @@ class MEDIA_EXPORT DecryptingRenderer : public Renderer {
   // initialized.
   void InitializeRenderer(bool success);
   bool HasEncryptedStream();
+  void OnWaiting(WaitingReason reason);
 
   const std::unique_ptr<Renderer> renderer_;
   MediaLog* const media_log_;

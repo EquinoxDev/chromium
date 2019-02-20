@@ -5,10 +5,13 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 
 #include "base/atomicops.h"
+#include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/task/post_task.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::test::ScopedTaskEnvironment;
@@ -105,6 +108,8 @@ TEST(TestBrowserThreadBundleTest, RunIOThreadUntilIdle) {
 }
 
 TEST(TestBrowserThreadBundleTest, MessageLoopTypeMismatch) {
+  testing::FLAGS_gtest_death_test_style = "threadsafe";
+
   base::test::ScopedTaskEnvironment task_environment(
       base::test::ScopedTaskEnvironment::MainThreadType::UI);
 
@@ -117,12 +122,58 @@ TEST(TestBrowserThreadBundleTest, MessageLoopTypeMismatch) {
 }
 
 TEST(TestBrowserThreadBundleTest, MultipleTestBrowserThreadBundle) {
+  testing::FLAGS_gtest_death_test_style = "threadsafe";
+
   EXPECT_DEATH_IF_SUPPORTED(
       {
         TestBrowserThreadBundle test_browser_thread_bundle;
         TestBrowserThreadBundle other_test_browser_thread_bundle;
       },
       "");
+}
+
+TEST(TestBrowserThreadBundleTest, TraitsConstructor) {
+  TestBrowserThreadBundle test_browser_thread_bundle(
+      TestBrowserThreadBundle::Options::REAL_IO_THREAD,
+      base::test::ScopedTaskEnvironment::ExecutionMode::QUEUED);
+  // Should set up a UI main thread.
+  EXPECT_TRUE(base::MessageLoopCurrentForUI::IsSet());
+  EXPECT_FALSE(base::MessageLoopCurrentForIO::IsSet());
+
+  // Should create a real IO thread. If it was on the same thread the following
+  // will timeout.
+  base::WaitableEvent signaled_on_real_io_thread;
+  base::PostTaskWithTraits(
+      FROM_HERE, {BrowserThread::IO},
+      base::BindOnce(&base::WaitableEvent::Signal,
+                     Unretained(&signaled_on_real_io_thread)));
+  signaled_on_real_io_thread.TimedWait(base::TimeDelta::FromSeconds(5));
+  EXPECT_TRUE(signaled_on_real_io_thread.IsSignaled());
+
+  // Tasks posted via PostTask don't run in ExecutionMode::QUEUED until
+  // RunUntilIdle is called.
+  base::AtomicFlag task_ran;
+  PostTask(FROM_HERE,
+           BindOnce([](base::AtomicFlag* task_ran) { task_ran->Set(); },
+                    Unretained(&task_ran)));
+
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
+  EXPECT_FALSE(task_ran.IsSet());
+
+  test_browser_thread_bundle.RunUntilIdle();
+  EXPECT_TRUE(task_ran.IsSet());
+}
+
+TEST(TestBrowserThreadBundleTest, TraitsConstructorOverrideMainThreadType) {
+  TestBrowserThreadBundle test_browser_thread_bundle(
+      base::test::ScopedTaskEnvironment::MainThreadType::UI_MOCK_TIME);
+
+  // Should set up a UI main thread.
+  EXPECT_TRUE(base::MessageLoopCurrentForUI::IsSet());
+  EXPECT_FALSE(base::MessageLoopCurrentForIO::IsSet());
+
+  // There should be a mock clock.
+  EXPECT_THAT(test_browser_thread_bundle.GetMockClock(), testing::NotNull());
 }
 
 }  // namespace content

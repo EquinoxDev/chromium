@@ -35,10 +35,20 @@ config("features") {
 # inside_blink -----------------------------------------------------------------
 
 config("inside_blink") {
+  cflags = []
   defines = [
     "BLINK_IMPLEMENTATION=1",
     "INSIDE_BLINK",
   ]
+  if (is_clang) {
+    cflags += [
+      "-Wconversion",
+      "-Wno-float-conversion",
+      "-Wno-sign-conversion",
+      "-Wno-implicit-float-conversion",
+      "-Wno-implicit-int-conversion",
+    ]
+  }
 }
 
 # blink_pch --------------------------------------------------------------------

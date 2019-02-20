@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/chromeos/printing/cups_printers_manager_factory.h"
 #include "chrome/browser/chromeos/printing/ppd_provider_factory.h"
 #include "chrome/browser/chromeos/printing/printer_configurer.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_utils.h"
 #include "chrome/common/pref_names.h"
@@ -26,7 +28,7 @@
 #include "chromeos/dbus/debug_daemon_client.h"
 #include "chromeos/printing/ppd_provider.h"
 #include "chromeos/printing/printer_configuration.h"
-#include "components/printing/common/printer_capabilities.h"
+#include "components/printing/browser/printer_capabilities.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "printing/backend/print_backend_consts.h"
@@ -64,23 +66,23 @@ void AddPrintersToList(const std::vector<chromeos::Printer>& printers,
   }
 }
 
-void CapabilitiesFetched(base::DictionaryValue policies,
+void CapabilitiesFetched(base::Value policies,
                          LocalPrinterHandlerChromeos::GetCapabilityCallback cb,
-                         std::unique_ptr<base::DictionaryValue> printer_info) {
-  printer_info->FindKey(kPrinter)->SetKey(kSettingPolicies,
-                                          std::move(policies));
-  std::move(cb).Run(std::move(*printer_info));
+                         base::Value printer_info) {
+  printer_info.FindKey(kPrinter)->SetKey(kSettingPolicies, std::move(policies));
+  std::move(cb).Run(std::move(printer_info));
 }
 
 void FetchCapabilities(std::unique_ptr<chromeos::Printer> printer,
-                       base::DictionaryValue policies,
+                       base::Value policies,
                        LocalPrinterHandlerChromeos::GetCapabilityCallback cb) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   PrinterBasicInfo basic_info = ToBasicInfo(*printer);
 
+  // USER_VISIBLE because the result is displayed in the print preview dialog.
   base::PostTaskWithTraitsAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
+      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
       base::BindOnce(&GetSettingsOnBlockingPool, printer->id(), basic_info,
                      PrinterSemanticCapsAndDefaults::Papers(), nullptr),
       base::BindOnce(&CapabilitiesFetched, std::move(policies), std::move(cb)));
@@ -185,17 +187,18 @@ void LocalPrinterHandlerChromeos::HandlePrinterSetup(
       printers_manager_->PrinterInstalled(*printer, true /*is_automatic*/);
 
       // populate |policies| with policies for native printers.
-      auto* prefs = profile_->GetPrefs();
-      base::DictionaryValue policies;
-      policies.SetInteger(kAllowedColorModes,
-                          prefs->GetInteger(prefs::kPrintingAllowedColorModes));
-      policies.SetInteger(
+      base::Value policies(base::Value::Type::DICTIONARY);
+      const PrefService* prefs = profile_->GetPrefs();
+      policies.SetKey(
+          kAllowedColorModes,
+          base::Value(prefs->GetInteger(prefs::kPrintingAllowedColorModes)));
+      policies.SetKey(
           kAllowedDuplexModes,
-          prefs->GetInteger(prefs::kPrintingAllowedDuplexModes));
-      policies.SetInteger(kDefaultColorMode,
-                          prefs->GetInteger(prefs::kPrintingColorDefault));
-      policies.SetInteger(kDefaultDuplexMode,
-                          prefs->GetInteger(prefs::kPrintingDuplexDefault));
+          base::Value(prefs->GetInteger(prefs::kPrintingAllowedDuplexModes)));
+      policies.SetKey(kDefaultColorMode,
+                      base::Value(prefs->Get(prefs::kPrintingColorDefault)));
+      policies.SetKey(kDefaultDuplexMode,
+                      base::Value(prefs->Get(prefs::kPrintingDuplexDefault)));
       // fetch settings on the blocking pool and invoke callback.
       FetchCapabilities(std::move(printer), std::move(policies), std::move(cb));
       return;
@@ -230,18 +233,22 @@ void LocalPrinterHandlerChromeos::HandlePrinterSetup(
 }
 
 void LocalPrinterHandlerChromeos::StartPrint(
-    const std::string& destination_id,
-    const std::string& capability,
     const base::string16& job_title,
-    const std::string& ticket_json,
-    const gfx::Size& page_size,
-    const scoped_refptr<base::RefCountedMemory>& print_data,
+    base::Value settings,
+    scoped_refptr<base::RefCountedMemory> print_data,
     PrintCallback callback) {
   size_t size_in_kb = print_data->size() / 1024;
   UMA_HISTOGRAM_MEMORY_KB("Printing.CUPS.PrintDocumentSize", size_in_kb);
-
-  StartLocalPrint(ticket_json, print_data, preview_web_contents_,
-                  std::move(callback));
+  if (profile_->GetPrefs()->GetBoolean(
+          prefs::kPrintingSendUsernameAndFilenameEnabled)) {
+    settings.SetKey(kSettingUsername,
+                    base::Value(chromeos::ProfileHelper::Get()
+                                    ->GetUserByProfile(profile_)
+                                    ->display_email()));
+    settings.SetKey(kSettingSendUserInfo, base::Value(true));
+  }
+  StartLocalPrint(std::move(settings), std::move(print_data),
+                  preview_web_contents_, std::move(callback));
 }
 
 }  // namespace printing

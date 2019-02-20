@@ -57,7 +57,6 @@ import java.io.File;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Entry point to the WebView. The system framework talks to this class to get instances of the
@@ -127,7 +126,7 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
     private SharedPreferences mWebViewPrefs;
     private WebViewDelegate mWebViewDelegate;
 
-    private boolean mShouldDisableThreadChecking;
+    protected boolean mShouldDisableThreadChecking;
 
     // Initialization guarded by mAwInit.getLock()
     private Statics mStaticsAdapter;
@@ -321,8 +320,8 @@ public class WebViewChromiumFactoryProvider implements WebViewFactoryProvider {
             setSingleton(this);
         }
 
-        TimesHistogramSample histogram = new TimesHistogramSample(
-                "Android.WebView.Startup.CreationTime.Stage1.FactoryInit", TimeUnit.MILLISECONDS);
+        TimesHistogramSample histogram =
+                new TimesHistogramSample("Android.WebView.Startup.CreationTime.Stage1.FactoryInit");
         histogram.record(SystemClock.elapsedRealtime() - startTime);
     }
 

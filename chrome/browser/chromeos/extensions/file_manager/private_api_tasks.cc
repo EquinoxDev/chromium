@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
@@ -106,8 +107,9 @@ bool FileManagerPrivateInternalExecuteTaskFunction::RunAsync() {
 
   const bool result = file_manager::file_tasks::ExecuteFileTask(
       GetProfile(), source_url(), task, urls,
-      base::Bind(&FileManagerPrivateInternalExecuteTaskFunction::OnTaskExecuted,
-                 this));
+      base::BindOnce(
+          &FileManagerPrivateInternalExecuteTaskFunction::OnTaskExecuted,
+          this));
   if (!result) {
     results_ =
         Create(extensions::api::file_manager_private::TASK_RESULT_FAILED);
@@ -187,7 +189,7 @@ void FileManagerPrivateInternalGetFileTasksFunction::
 
   file_manager::file_tasks::FindAllTypesOfTasks(
       GetProfile(), entries, urls_,
-      base::Bind(
+      base::BindOnce(
           &FileManagerPrivateInternalGetFileTasksFunction::OnFileTasksListed,
           this));
 }

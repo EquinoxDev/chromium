@@ -8,7 +8,7 @@
 #include "ash/accessibility/test_accessibility_controller_client.h"
 #include "ash/display/screen_orientation_controller.h"
 #include "ash/display/screen_orientation_controller_test_api.h"
-#include "ash/media_controller.h"
+#include "ash/media/media_controller.h"
 #include "ash/public/cpp/ash_switches.h"
 #include "ash/session/session_controller.h"
 #include "ash/shell.h"
@@ -1363,11 +1363,11 @@ TEST_P(PowerButtonControllerWithPositionTest, AdjustMenuShownForDisplaySize) {
       power_button_test_api_->GetMenuBoundsInScreen()));
 }
 
-INSTANTIATE_TEST_CASE_P(AshPowerButtonPosition,
-                        PowerButtonControllerWithPositionTest,
-                        testing::Values(PowerButtonPosition::LEFT,
-                                        PowerButtonPosition::RIGHT,
-                                        PowerButtonPosition::TOP,
-                                        PowerButtonPosition::BOTTOM));
+INSTANTIATE_TEST_SUITE_P(AshPowerButtonPosition,
+                         PowerButtonControllerWithPositionTest,
+                         testing::Values(PowerButtonPosition::LEFT,
+                                         PowerButtonPosition::RIGHT,
+                                         PowerButtonPosition::TOP,
+                                         PowerButtonPosition::BOTTOM));
 
 }  // namespace ash

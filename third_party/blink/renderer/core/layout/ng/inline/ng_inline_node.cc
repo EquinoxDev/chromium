@@ -248,6 +248,9 @@ void CollectInlinesInternal(LayoutBlockFlow* block,
       if (builder->ShouldAbort())
         return;
 
+      if (update_layout)
+        ClearInlineFragment(node);
+
     } else if (node->IsAtomicInlineLevel()) {
       if (node->IsLayoutNGListMarker() || node->IsListMarker()) {
         // LayoutNGListItem produces the 'outside' list marker as an inline
@@ -343,6 +346,13 @@ void TruncateOrPadText(String* text, unsigned length) {
   }
 }
 
+template <typename OffsetMappingBuilder>
+bool MayBeBidiEnabled(
+    const String& text_content,
+    const NGInlineItemsBuilderTemplate<OffsetMappingBuilder>& builder) {
+  return !text_content.Is8Bit() || builder.HasBidiControls();
+}
+
 }  // namespace
 
 NGInlineNode::NGInlineNode(LayoutBlockFlow* block)
@@ -428,12 +438,16 @@ void NGInlineNode::ComputeOffsetMapping(LayoutBlockFlow* layout_block_flow,
   CollectInlinesInternal(layout_block_flow, &builder, nullptr, nullptr,
                          update_layout);
 
-  // We need the text for non-NG object. Otherwise |data| already has the text
-  // from the pre-layout phase, check they match.
-  if (data->text_content.IsNull())
+  // For non-NG object, we need the text, and also the inline items to resolve
+  // bidi levels. Otherwise |data| already has the text from the pre-layout
+  // phase, check they match.
+  if (data->text_content.IsNull()) {
+    DCHECK(!layout_block_flow->IsLayoutNGMixin());
     data->text_content = builder.ToString();
-  else
+  } else {
+    DCHECK(layout_block_flow->IsLayoutNGMixin());
     DCHECK_EQ(data->text_content, builder.ToString());
+  }
 
   // TODO(xiaochengh): This doesn't compute offset mapping correctly when
   // text-transform CSS property changes text length.
@@ -500,9 +514,10 @@ void NGInlineNode::CollectInlines(NGInlineNodeData* data,
   // point the string may or may not contain RTL characters.
   // |SegmentText()| will analyze the text and reset |is_bidi_enabled_| if it
   // doesn't contain any RTL characters.
-  data->is_bidi_enabled_ =
-      !data->text_content.Is8Bit() || builder.HasBidiControls();
+  data->is_bidi_enabled_ = MayBeBidiEnabled(data->text_content, builder);
   data->is_empty_inline_ = builder.IsEmptyInline();
+  data->changes_may_affect_earlier_lines_ =
+      builder.ChangesMayAffectEarlierLines();
 }
 
 void NGInlineNode::SegmentText(NGInlineNodeData* data) {
@@ -659,6 +674,11 @@ void NGInlineNode::ShapeText(NGInlineItemsData* data,
     TextDirection direction = start_item.Direction();
     unsigned end_index = index + 1;
     unsigned end_offset = start_item.EndOffset();
+
+    // Scan forward until an item is encountered that should trigger a shaping
+    // break. This ensures that adjacent text items are shaped together whenever
+    // possible as this is required for accurate cross-element shaping.
+    unsigned num_text_items = 1;
     for (; end_index < items->size(); end_index++) {
       const NGInlineItem& item = (*items)[end_index];
 
@@ -678,6 +698,7 @@ void NGInlineNode::ShapeText(NGInlineItemsData* data,
             !item.EqualsRunSegment(start_item))
           break;
         end_offset = item.EndOffset();
+        num_text_items++;
       } else if (item.Type() == NGInlineItem::kOpenTag ||
                  item.Type() == NGInlineItem::kCloseTag) {
         // These items are opaque to shaping.
@@ -755,7 +776,10 @@ void NGInlineNode::ShapeText(NGInlineItemsData* data,
 
     // If the text is from multiple items, split the ShapeResult to
     // corresponding items.
-    unsigned opaque_context = 0;
+    DCHECK_GT(num_text_items, 0u);
+    std::unique_ptr<ShapeResult::ShapeRange[]> text_item_ranges =
+        std::make_unique<ShapeResult::ShapeRange[]>(num_text_items);
+    unsigned range_index = 0;
     for (; index < end_index; index++) {
       NGInlineItem& item = (*items)[index];
       if (item.Type() != NGInlineItem::kText)
@@ -767,12 +791,14 @@ void NGInlineNode::ShapeText(NGInlineItemsData* data,
       //
       // When multiple code units shape to one glyph, such as ligatures, the
       // item that has its first code unit keeps the glyph.
-      item.shape_result_ = shape_result->SubRange(
-          item.StartOffset(), item.EndOffset(), &opaque_context);
-      DCHECK(item.TextShapeResult());
-      DCHECK_EQ(item.TextShapeResult()->StartIndex(), item.StartOffset());
-      DCHECK_EQ(item.TextShapeResult()->EndIndex(), item.EndOffset());
+      scoped_refptr<ShapeResult> item_result =
+          ShapeResult::CreateEmpty(*shape_result.get());
+      item.shape_result_ = item_result;
+      text_item_ranges[range_index++] = {item.StartOffset(), item.EndOffset(),
+                                         item_result.get()};
     }
+    DCHECK_EQ(range_index, num_text_items);
+    shape_result->CopyRanges(&text_item_ranges[0], num_text_items);
   }
 
 #if DCHECK_IS_ON()
@@ -853,32 +879,69 @@ void NGInlineNode::ShapeTextForFirstLineIfNeeded(NGInlineNodeData* data) {
 }
 
 void NGInlineNode::AssociateItemsWithInlines(NGInlineNodeData* data) {
-  LayoutObject* last_object = nullptr;
-  for (auto& item : data->items) {
-    LayoutObject* object = item.GetLayoutObject();
-    if (!object)
+#if DCHECK_IS_ON()
+  HashSet<LayoutObject*> associated_objects;
+#endif
+  Vector<NGInlineItem>& items = data->items;
+  for (NGInlineItem* item = items.begin(); item != items.end();) {
+    LayoutObject* object = item->GetLayoutObject();
+    if (LayoutNGText* layout_text = ToLayoutNGTextOrNull(object)) {
+#if DCHECK_IS_ON()
+      // Items split from a LayoutObject should be consecutive.
+      DCHECK(associated_objects.insert(object).is_new_entry);
+#endif
+      NGInlineItem* begin = item;
+      for (++item; item != items.end(); ++item) {
+        if (item->GetLayoutObject() != object)
+          break;
+      }
+      layout_text->SetInlineItems(begin, item);
       continue;
-    if (object->IsText()) {
-      LayoutText* layout_text = ToLayoutText(object);
-      if (object != last_object)
-        layout_text->ClearInlineItems();
-      layout_text->AddInlineItem(&item);
     }
-    last_object = object;
+    ++item;
   }
 }
 
-// Clear associated fragments for all LayoutObjects. They are associated when
-// NGPaintFragment is constructed.
 void NGInlineNode::ClearAssociatedFragments(
-    const NGInlineBreakToken* break_token) {
-  if (!IsPrepareLayoutFinished())
+    const NGPhysicalFragment& fragment,
+    const NGBlockBreakToken* block_break_token) {
+  LayoutBlockFlow* block_flow = ToLayoutBlockFlow(fragment.GetLayoutObject());
+  if (!block_flow->ChildrenInline())
     return;
+  NGInlineNode node = NGInlineNode(block_flow);
+#if DCHECK_IS_ON()
+  // We assume this function is called for the LayoutObject of an NGInlineNode.
+  NGLayoutInputNode first_child = NGBlockNode(block_flow).FirstChild();
+  DCHECK(first_child && first_child.IsInline());
+  DCHECK(first_child == node);
+#endif
+
+  DCHECK(node.IsPrepareLayoutFinished());
+  const Vector<NGInlineItem>& items = node.MaybeDirtyData().items;
+
+  unsigned start_index;
+  if (!block_break_token) {
+    start_index = 0;
+  } else {
+    // TODO(kojii): Not fully supported, need more logic when the block is
+    // fragmented, because one inline LayoutObject may span across
+    // fragmentainers.
+    // TODO(kojii): Not sure if using |block_break_token->InputNode()| is
+    // correct for multicol. Should verify and somehow get NGInlineNode from it.
+    // Also change |InlineBreakTokenFor| to receive NGInlineNode instead of
+    // NGLayoutInputNode once this is done.
+    const NGInlineBreakToken* inline_break_token =
+        block_break_token->InlineBreakTokenFor(block_break_token->InputNode());
+    // TODO(kojii): This needs to investigate in what case this happens. It's
+    // probably wrong to create NGPaintFragment when there's no inline break
+    // token.
+    if (!inline_break_token)
+      return;
+    start_index = inline_break_token->ItemIndex();
+  }
 
   LayoutObject* last_object = nullptr;
-  const Vector<NGInlineItem>& items = Data().items;
-  for (unsigned i = break_token ? break_token->ItemIndex() : 0;
-       i < items.size(); i++) {
+  for (unsigned i = start_index; i < items.size(); i++) {
     const NGInlineItem& item = items[i];
     if (item.Type() == NGInlineItem::kOutOfFlowPositioned ||
         item.Type() == NGInlineItem::kListMarker)
@@ -895,15 +958,10 @@ scoped_refptr<NGLayoutResult> NGInlineNode::Layout(
     const NGConstraintSpace& constraint_space,
     const NGBreakToken* break_token,
     NGInlineChildLayoutContext* context) {
-  bool needs_clear_fragments = IsPrepareLayoutFinished();
   PrepareLayoutIfNeeded();
 
   const NGInlineBreakToken* inline_break_token =
       ToNGInlineBreakToken(break_token);
-  if (needs_clear_fragments && !constraint_space.IsIntermediateLayout()) {
-    ClearAssociatedFragments(inline_break_token);
-  }
-
   NGInlineLayoutAlgorithm algorithm(*this, constraint_space, inline_break_token,
                                     context);
   return algorithm.Layout();
@@ -926,10 +984,16 @@ bool NGInlineNode::PrepareReuseFragments(
   if (!block_flow->AreCachedLinesValidFor(constraint_space))
     return false;
 
+  if (MaybeDirtyData().changes_may_affect_earlier_lines_)
+    return false;
+
   if (!MarkLineBoxesDirty(block_flow))
     return false;
 
   PrepareLayoutIfNeeded();
+
+  if (Data().changes_may_affect_earlier_lines_)
+    return false;
 
   return true;
 }
@@ -964,6 +1028,8 @@ static LayoutUnit ComputeContentSize(
                                /* is_new_fc */ false)
           .SetTextDirection(style.Direction())
           .SetAvailableSize({available_inline_size, NGSizeIndefinite})
+          .SetPercentageResolutionSize({LayoutUnit(), LayoutUnit()})
+          .SetReplacedPercentageResolutionSize({LayoutUnit(), LayoutUnit()})
           .SetIsIntermediateLayout(true)
           .ToConstraintSpace();
 
@@ -978,7 +1044,8 @@ static LayoutUnit ComputeContentSize(
   NGLineBreaker line_breaker(
       node, mode, space, line_opportunity, empty_leading_floats,
       /* handled_leading_floats_index */ 0u,
-      /* break_token */ nullptr, &empty_exclusion_space, &floats_for_min_max);
+      /* break_token */ nullptr, &empty_exclusion_space,
+      input.percentage_resolution_block_size, &floats_for_min_max);
   do {
     floats_for_min_max.Shrink(0);
 
@@ -1006,9 +1073,10 @@ static LayoutUnit ComputeContentSize(
       NGBlockNode float_node(ToLayoutBox(floating_object));
       const ComputedStyle& float_style = float_node.Style();
 
-      MinMaxSizeInput zero_input;  // Floats don't intrude into floats.
+      // Floats don't intrude into floats.
+      MinMaxSizeInput float_input(input.percentage_resolution_block_size);
       MinMaxSize child_sizes =
-          ComputeMinAndMaxContentContribution(style, float_node, zero_input);
+          ComputeMinAndMaxContentContribution(style, float_node, float_input);
       LayoutUnit child_inline_margins =
           ComputeMinMaxMargins(style, float_node).InlineSum();
 
@@ -1075,6 +1143,11 @@ MinMaxSize NGInlineNode::ComputeMinMaxSize(
   sizes.min_size = std::min(sizes.min_size, sizes.max_size);
 
   return sizes;
+}
+
+bool NGInlineNode::UseFirstLineStyle() const {
+  return GetLayoutBox() &&
+         GetLayoutBox()->GetDocument().GetStyleEngine().UsesFirstLineRules();
 }
 
 void NGInlineNode::CheckConsistency() const {

@@ -4,6 +4,7 @@
 
 #include "extensions/browser/extension_message_filter.h"
 
+#include "base/bind.h"
 #include "base/macros.h"
 #include "base/memory/singleton.h"
 #include "components/crx_file/id_util.h"
@@ -18,6 +19,7 @@
 #include "extensions/browser/process_manager_factory.h"
 #include "extensions/browser/process_map.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_endpoint.h"
 #include "extensions/common/api/messaging/port_id.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_messages.h"
@@ -384,15 +386,13 @@ void ExtensionMessageFilter::OnOpenChannelToExtension(
     int routing_id,
     const ExtensionMsg_ExternalConnectionInfo& info,
     const std::string& channel_name,
-    bool include_tls_channel_id,
     const PortId& port_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (browser_context_) {
     MessageService::Get(browser_context_)
         ->OpenChannelToExtension(render_process_id_, routing_id, port_id,
-                                 info.source_id, info.target_id,
-                                 info.source_url, channel_name,
-                                 include_tls_channel_id);
+                                 info.source_endpoint, info.target_id,
+                                 info.source_url, channel_name);
   }
 }
 

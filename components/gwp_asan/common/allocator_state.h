@@ -27,7 +27,6 @@
 
 #include <atomic>
 
-#include "base/debug/stack_trace.h"
 #include "base/threading/platform_thread.h"
 
 namespace gwp_asan {
@@ -39,6 +38,11 @@ class AllocatorState {
  public:
   // Maximum number of pages this class can allocate.
   static constexpr size_t kGpaMaxPages = 256;
+  // Maximum number of stack trace frames to collect.
+  static constexpr size_t kMaxStackFrames = 60;
+  // Number of bytes to allocate for packed stack traces. This can hold
+  // approximately kMaxStackFrames under normal conditions.
+  static constexpr size_t kMaxPackedTraceLength = 200;
 
   enum class ErrorType {
     kUseAfterFree = 0,
@@ -46,6 +50,7 @@ class AllocatorState {
     kBufferOverflow = 2,
     kDoubleFree = 3,
     kUnknown = 4,
+    kFreeInvalidAddress = 5,
   };
 
   enum class GetMetadataReturnType {
@@ -56,29 +61,34 @@ class AllocatorState {
 
   // Structure for storing data about a slot.
   struct SlotMetadata {
+    SlotMetadata();
+
     // Information saved for allocations and deallocations.
     struct AllocationInfo {
       // (De)allocation thread id or base::kInvalidThreadId if no (de)allocation
       // occurred.
       base::PlatformThreadId tid = base::kInvalidThreadId;
-      // Pointer to stack trace addresses or null if no (de)allocation occurred.
-      uintptr_t trace_addr = 0;
-      // Stack trace length or 0 if no (de)allocation occurred.
+      // Packed stack trace.
+      uint8_t packed_trace[kMaxPackedTraceLength];
+      // Length used to encode the packed stack trace.
       size_t trace_len = 0;
+      // Whether a stack trace has been collected for this (de)allocation.
+      bool trace_collected = false;
     };
 
     // Size of the allocation
     size_t alloc_size = 0;
     // The allocation address.
     uintptr_t alloc_ptr = 0;
+    // Used to synchronize whether a deallocation has occurred (e.g. whether a
+    // double free has occurred) between threads.
+    std::atomic<bool> deallocation_occurred{false};
 
     AllocationInfo alloc;
     AllocationInfo dealloc;
   };
 
-  // TODO(vtsyrklevich): Get rid of inline (requires chromium-style plugin
-  // update.)
-  inline constexpr AllocatorState();
+  AllocatorState();
 
   // Returns true if address is in memory managed by this class.
   inline bool PointerIsMine(uintptr_t addr) const {
@@ -96,13 +106,12 @@ class AllocatorState {
   // This method is meant to be called from the crash handler with a validated
   // AllocatorState object read from the crashed process. This method checks if
   // exception_address is an address in the GWP-ASan region, and writes the
-  // error type and slot metadata to the provided arguments if so.
+  // address of the SlotMetadata to the provided arguments if so.
   //
   // Returns an enum indicating an error, unrelated exception, or a GWP-ASan
-  // exception (with slot and error_type filled out.)
+  // exception (with slot_address filled out.)
   GetMetadataReturnType GetMetadataForAddress(uintptr_t exception_address,
-                                              SlotMetadata* slot,
-                                              ErrorType* error_type) const;
+                                              uintptr_t* slot_address) const;
 
   // Returns the likely error type given an exception address and whether its
   // previously been allocated and deallocated.
@@ -122,23 +131,25 @@ class AllocatorState {
   uintptr_t SlotToAddr(size_t slot) const;
   size_t AddrToSlot(uintptr_t addr) const;
 
-  // Information about every allocation, including its size, offset, and
-  // pointers to the allocation/deallocation stack traces (if present.)
-  SlotMetadata data[kGpaMaxPages] = {};
-
   uintptr_t pages_base_addr = 0;  // Points to start of mapped region.
   uintptr_t pages_end_addr = 0;   // Points to the end of mapped region.
   uintptr_t first_page_addr = 0;  // Points to first allocatable page.
   size_t total_pages = 0;         // Size of the page pool to allocate from.
   size_t page_size = 0;           // Page size.
 
-  // Set to true if a double free has occurred.
-  std::atomic<bool> double_free_detected{false};
+  // Pointer to an array of metadata about every allocation, including its size,
+  // offset, and pointers to the allocation/deallocation stack traces (if
+  // present.)
+  uintptr_t slot_metadata = 0;
+
+  // Set to the address of a double freed allocation if a double free occurred.
+  uintptr_t double_free_address = 0;
+  // If an invalid pointer has been free()d, this is the address of that invalid
+  // pointer.
+  uintptr_t free_invalid_address = 0;
 
   DISALLOW_COPY_AND_ASSIGN(AllocatorState);
 };
-
-constexpr AllocatorState::AllocatorState() {}
 
 // Ensure that the allocator state is a plain-old-data. That way we can safely
 // initialize it by copying memory from out-of-process without worrying about

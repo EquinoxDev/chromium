@@ -13,6 +13,7 @@
 #include "mojo/public/cpp/bindings/strong_associated_binding.h"
 #include "third_party/blink/renderer/modules/indexeddb/idb_key_range.h"
 #include "third_party/blink/renderer/modules/indexeddb/indexed_db_dispatcher.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 
 using blink::mojom::blink::IDBCallbacksAssociatedPtrInfo;
 using blink::mojom::blink::IDBCursorAssociatedPtrInfo;
@@ -21,14 +22,16 @@ namespace blink {
 
 WebIDBCursorImpl::WebIDBCursorImpl(
     mojom::blink::IDBCursorAssociatedPtrInfo cursor_info,
-    int64_t transaction_id)
+    int64_t transaction_id,
+    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : transaction_id_(transaction_id),
-      cursor_(std::move(cursor_info)),
       continue_count_(0),
       used_prefetches_(0),
       pending_onsuccess_callbacks_(0),
       prefetch_amount_(kMinPrefetchAmount),
+      task_runner_(task_runner),
       weak_factory_(this) {
+  cursor_.Bind(std::move(cursor_info), std::move(task_runner));
   IndexedDBDispatcher::RegisterCursor(this);
 }
 
@@ -48,9 +51,35 @@ void WebIDBCursorImpl::Advance(uint32_t count, WebIDBCallbacks* callbacks_ptr) {
   }
   ResetPrefetchCache();
 
-  auto callbacks_impl = std::make_unique<IndexedDBCallbacksImpl>(
-      std::move(callbacks), transaction_id_, weak_factory_.GetWeakPtr());
-  cursor_->Advance(count, GetCallbacksProxy(std::move(callbacks_impl)));
+  // Reset all cursor prefetch caches except for this cursor.
+  IndexedDBDispatcher::ResetCursorPrefetchCaches(transaction_id_, this);
+
+  callbacks->SetState(weak_factory_.GetWeakPtr(), transaction_id_);
+  cursor_->Advance(count,
+                   WTF::Bind(&WebIDBCursorImpl::AdvanceCallback,
+                             WTF::Unretained(this), std::move(callbacks)));
+}
+
+void WebIDBCursorImpl::AdvanceCallback(
+    std::unique_ptr<WebIDBCallbacks> callbacks,
+    mojom::blink::IDBErrorPtr error,
+    mojom::blink::IDBCursorValuePtr cursor_value) {
+  if (error) {
+    callbacks->Error(error->error_code, error->error_message);
+    callbacks.reset();
+    return;
+  }
+
+  if (!cursor_value) {
+    callbacks->SuccessValue(nullptr);
+    callbacks.reset();
+    return;
+  }
+
+  callbacks->SuccessCursorContinue(std::move(cursor_value->key),
+                                   std::move(cursor_value->primary_key),
+                                   std::move(cursor_value->value));
+  callbacks.reset();
 }
 
 void WebIDBCursorImpl::CursorContinue(const IDBKey* key,
@@ -74,10 +103,9 @@ void WebIDBCursorImpl::CursorContinue(const IDBKey* key,
       // Request pre-fetch.
       ++pending_onsuccess_callbacks_;
 
-      auto callbacks_impl = std::make_unique<IndexedDBCallbacksImpl>(
-          std::move(callbacks), transaction_id_, weak_factory_.GetWeakPtr());
+      callbacks->SetState(weak_factory_.GetWeakPtr(), transaction_id_);
       cursor_->Prefetch(prefetch_amount_,
-                        GetCallbacksProxy(std::move(callbacks_impl)));
+                        GetCallbacksProxy(std::move(callbacks)));
 
       // Increase prefetch_amount_ exponentially.
       prefetch_amount_ *= 2;
@@ -91,10 +119,12 @@ void WebIDBCursorImpl::CursorContinue(const IDBKey* key,
     ResetPrefetchCache();
   }
 
-  auto callbacks_impl = std::make_unique<IndexedDBCallbacksImpl>(
-      std::move(callbacks), transaction_id_, weak_factory_.GetWeakPtr());
+  // Reset all cursor prefetch caches except for this cursor.
+  IndexedDBDispatcher::ResetCursorPrefetchCaches(transaction_id_, this);
+
+  callbacks->SetState(weak_factory_.GetWeakPtr(), transaction_id_);
   cursor_->CursorContinue(IDBKey::Clone(key), IDBKey::Clone(primary_key),
-                          GetCallbacksProxy(std::move(callbacks_impl)));
+                          GetCallbacksProxy(std::move(callbacks)));
 }
 
 void WebIDBCursorImpl::PostSuccessHandlerCallback() {
@@ -172,8 +202,8 @@ void WebIDBCursorImpl::CachedContinue(WebIDBCallbacks* callbacks) {
     ResetPrefetchCache();
   }
 
-  callbacks->OnSuccess(std::move(key), std::move(primary_key),
-                       std::move(value));
+  callbacks->SuccessCursorContinue(std::move(key), std::move(primary_key),
+                                   std::move(value));
 }
 
 void WebIDBCursorImpl::ResetPrefetchCache() {
@@ -197,10 +227,11 @@ void WebIDBCursorImpl::ResetPrefetchCache() {
 }
 
 IDBCallbacksAssociatedPtrInfo WebIDBCursorImpl::GetCallbacksProxy(
-    std::unique_ptr<IndexedDBCallbacksImpl> callbacks) {
+    std::unique_ptr<WebIDBCallbacks> callbacks) {
   IDBCallbacksAssociatedPtrInfo ptr_info;
   auto request = mojo::MakeRequest(&ptr_info);
-  mojo::MakeStrongAssociatedBinding(std::move(callbacks), std::move(request));
+  mojo::MakeStrongAssociatedBinding(std::move(callbacks), std::move(request),
+                                    task_runner_);
   return ptr_info;
 }
 

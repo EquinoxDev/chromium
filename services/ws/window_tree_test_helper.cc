@@ -71,20 +71,29 @@ bool WindowTreeTestHelper::ReorderWindow(aura::Window* window,
       direction);
 }
 
+bool WindowTreeTestHelper::SetTransform(aura::Window* window,
+                                        const gfx::Transform& transform) {
+  return window_tree_->SetWindowTransformImpl(ClientWindowIdForWindow(window),
+                                              transform);
+}
+
 bool WindowTreeTestHelper::SetWindowBounds(
     aura::Window* window,
     const gfx::Rect& bounds,
-    const base::Optional<viz::LocalSurfaceId>& local_surface_id) {
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation) {
   return window_tree_->SetWindowBoundsImpl(ClientWindowIdForWindow(window),
-                                           bounds, local_surface_id);
+                                           bounds, local_surface_id_allocation);
 }
 
-void WindowTreeTestHelper::SetWindowBoundsWithAck(aura::Window* window,
-                                                  const gfx::Rect& bounds,
-                                                  uint32_t change_id) {
-  base::Optional<viz::LocalSurfaceId> local_surface_id;
+void WindowTreeTestHelper::SetWindowBoundsWithAck(
+    aura::Window* window,
+    const gfx::Rect& bounds,
+    const base::Optional<viz::LocalSurfaceIdAllocation>&
+        local_surface_id_allocation,
+    uint32_t change_id) {
   window_tree_->SetWindowBounds(change_id, TransportIdForWindow(window), bounds,
-                                local_surface_id);
+                                local_surface_id_allocation);
 }
 
 void WindowTreeTestHelper::SetClientArea(
@@ -161,8 +170,7 @@ void WindowTreeTestHelper::SetCanFocus(aura::Window* window, bool can_focus) {
                             can_focus);
 }
 
-void WindowTreeTestHelper::SetCursor(aura::Window* window,
-                                     ui::CursorData cursor) {
+void WindowTreeTestHelper::SetCursor(aura::Window* window, ui::Cursor cursor) {
   window_tree_->SetCursorImpl(ClientWindowIdForWindow(window), cursor);
 }
 

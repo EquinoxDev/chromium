@@ -4,8 +4,9 @@
 #ifndef CONTENT_BROWSER_INDEXED_DB_SCOPES_SCOPE_LOCK_RANGE_H_
 #define CONTENT_BROWSER_INDEXED_DB_SCOPES_SCOPE_LOCK_RANGE_H_
 
+#include <stdint.h>
 #include <iosfwd>
-#include <string>
+#include <vector>
 
 #include "base/logging.h"
 #include "content/common/content_export.h"
@@ -14,13 +15,15 @@
 
 namespace content {
 
-// The range is [begin, end).
+// The range is [begin, end). Bytewise comparison is used to determine
+// overlapping ranges.
 struct CONTENT_EXPORT ScopeLockRange {
-  ScopeLockRange(std::string begin, std::string end);
   ScopeLockRange() = default;
   ~ScopeLockRange() = default;
   std::string begin;
   std::string end;
+
+  bool IsValid() const { return begin < end; }
 };
 
 // Logging support.

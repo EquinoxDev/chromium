@@ -50,8 +50,7 @@ CrComponentsManagedFootnoteTest.prototype = {
   __proto__: CrComponentsBrowserTest.prototype,
 
   /** @override */
-  browsePreload:
-      'chrome://resources/cr_components/managed_footnote/managed_footnote.html',
+  browsePreload: 'chrome://downloads',
 
   /** @override */
   extraLibraries: CrComponentsBrowserTest.prototype.extraLibraries.concat([
@@ -75,6 +74,7 @@ CrComponentsNetworkConfigTest.prototype = {
   __proto__: CrComponentsBrowserTest.prototype,
 
   /** @override */
+
   browsePreload: 'chrome://internet-config-dialog',
 
   /** @override */

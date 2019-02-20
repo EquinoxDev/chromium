@@ -26,7 +26,7 @@ are treated in different ways during painting:
     *   Stacking contexts: elements with non-auto z-indices or other properties
         that affect stacking e.g. transform, opacity, blend-mode.
 
-    *   Replaced normal-flow stacking elements: [replaced elements](https://html.spec.whatwg.org/multipage/rendering.html#replaced-elements)
+    *   Replaced normal-flow stacking elements: [replaced elements](https://html.spec.whatwg.org/C/#replaced-elements)
         that do not have non-auto z-index but are stacking contexts for
         elements below them. Right now the only example is SVG <foreignObject>.
         The difference between these elements and regular stacking contexts is
@@ -574,7 +574,7 @@ If the first line contains any `LayoutInline`, we compute the style from the
 `::first-line` style and the style of the `LayoutInline` and apply the computed
 style to the first line part of the `LayoutInline`. In Blink's style
 implementation, the combined first line style of `LayoutInline` is identified
-with `FIRST_LINE_INHERITED` pseudo ID.
+with `kPseudoIdFirstLineInherited`.
 
 The normal paint invalidation of texts doesn't work for first line because
 *   `ComputedStyle::VisualInvalidationDiff()` can't detect first line style

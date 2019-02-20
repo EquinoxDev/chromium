@@ -21,7 +21,8 @@ from util import jar_info_utils
 
 import jar
 
-sys.path.append(
+sys.path.insert(
+    0,
     os.path.join(build_utils.DIR_SOURCE_ROOT, 'third_party', 'colorama', 'src'))
 import colorama
 
@@ -266,9 +267,6 @@ def _CreateInfoFile(java_files, jar_path, chromium_code, srcjar_files,
 
   This maps fully qualified names for classes to either the java file that they
   are defined in or the path of the srcjar that they came from.
-
-  For apks this also produces a coalesced .apk.jar.info file combining all the
-  .jar.info files of its transitive dependencies.
   """
   output_path = jar_path + '.info'
   logging.info('Start creating info file: %s', output_path)
@@ -290,7 +288,7 @@ def _CreateInfoFile(java_files, jar_path, chromium_code, srcjar_files,
       all_info_data[fully_qualified_name] = java_file
   logging.info('Writing info file: %s', output_path)
   with build_utils.AtomicOutput(output_path) as f:
-    jar_info_utils.WriteJarInfoFile(f.name, all_info_data, srcjar_files)
+    jar_info_utils.WriteJarInfoFile(f, all_info_data, srcjar_files)
   logging.info('Completed info file: %s', output_path)
 
 
@@ -317,7 +315,7 @@ def _OnStaleMd5(changes, options, javac_cmd, java_files, classpath_inputs,
 
   # Compiles with Error Prone take twice as long to run as pure javac. Thus GN
   # rules run both in parallel, with Error Prone only used for checks.
-  save_outputs = not options.use_errorprone_path
+  save_outputs = not options.enable_errorprone
 
   with build_utils.TempDir() as temp_dir:
     srcjars = options.java_srcjars
@@ -471,13 +469,6 @@ def _OnStaleMd5(changes, options, javac_cmd, java_files, classpath_inputs,
     logging.info('Completed all steps in _OnStaleMd5')
 
 
-def _ParseAndFlattenGnLists(gn_lists):
-  ret = []
-  for arg in gn_lists:
-    ret.extend(build_utils.ParseGnList(arg))
-  return ret
-
-
 def _ParseOptions(argv):
   parser = optparse.OptionParser()
   build_utils.AddDepfileOption(parser)
@@ -546,8 +537,11 @@ def _ParseOptions(argv):
       help='Whether code being compiled should be built with stricter '
       'warnings for chromium code.')
   parser.add_option(
-      '--use-errorprone-path',
-      help='Use the Errorprone compiler at this path.')
+      '--errorprone-path', help='Use the Errorprone compiler at this path.')
+  parser.add_option(
+      '--enable-errorprone',
+      action='store_true',
+      help='Enable errorprone checks')
   parser.add_option('--jar-path', help='Jar output path.')
   parser.add_option(
       '--javac-arg',
@@ -558,13 +552,13 @@ def _ParseOptions(argv):
   options, args = parser.parse_args(argv)
   build_utils.CheckOptions(options, parser, required=('jar_path',))
 
-  options.bootclasspath = _ParseAndFlattenGnLists(options.bootclasspath)
-  options.full_classpath = _ParseAndFlattenGnLists(options.full_classpath)
-  options.interface_classpath = _ParseAndFlattenGnLists(
+  options.bootclasspath = build_utils.ParseGnList(options.bootclasspath)
+  options.full_classpath = build_utils.ParseGnList(options.full_classpath)
+  options.interface_classpath = build_utils.ParseGnList(
       options.interface_classpath)
-  options.processorpath = _ParseAndFlattenGnLists(options.processorpath)
-  options.processors = _ParseAndFlattenGnLists(options.processors)
-  options.java_srcjars = _ParseAndFlattenGnLists(options.java_srcjars)
+  options.processorpath = build_utils.ParseGnList(options.processorpath)
+  options.processors = build_utils.ParseGnList(options.processors)
+  options.java_srcjars = build_utils.ParseGnList(options.java_srcjars)
 
   if options.java_version == '1.8' and options.bootclasspath:
     # Android's boot jar doesn't contain all java 8 classes.
@@ -603,27 +597,38 @@ def main(argv):
   argv = build_utils.ExpandFileArgs(argv)
   options, java_files = _ParseOptions(argv)
 
-  if options.use_errorprone_path:
-    javac_path = options.use_errorprone_path
+  # Until we add a version of javac via DEPS, use errorprone with all checks
+  # disabled rather than javac. This ensures builds are reproducible.
+  # https://crbug.com/693079
+  # As of Jan 2019, on a z920, compiling chrome_java times:
+  # * With javac: 17 seconds
+  # * With errorprone (checks disabled): 20 seconds
+  # * With errorprone (checks enabled): 30 seconds
+  if options.errorprone_path:
+    javac_path = options.errorprone_path
   else:
     javac_path = distutils.spawn.find_executable('javac')
-  javac_cmd = [javac_path]
 
-  javac_cmd.extend((
-    '-g',
-    # Chromium only allows UTF8 source files.  Being explicit avoids
-    # javac pulling a default encoding from the user's environment.
-    '-encoding', 'UTF-8',
-    # Prevent compiler from compiling .java files not listed as inputs.
-    # See: http://blog.ltgt.net/most-build-tools-misuse-javac/
-    '-sourcepath', ':',
-  ))
+  javac_cmd = [
+      javac_path,
+      '-g',
+      # Chromium only allows UTF8 source files.  Being explicit avoids
+      # javac pulling a default encoding from the user's environment.
+      '-encoding',
+      'UTF-8',
+      # Prevent compiler from compiling .java files not listed as inputs.
+      # See: http://blog.ltgt.net/most-build-tools-misuse-javac/
+      '-sourcepath',
+      ':',
+  ]
 
-  if options.use_errorprone_path:
+  if options.enable_errorprone:
     for warning in ERRORPRONE_WARNINGS_TO_TURN_OFF:
       javac_cmd.append('-Xep:{}:OFF'.format(warning))
     for warning in ERRORPRONE_WARNINGS_TO_ERROR:
       javac_cmd.append('-Xep:{}:ERROR'.format(warning))
+  elif options.errorprone_path:
+    javac_cmd.append('-XepDisableAllChecks')
 
   if options.java_version:
     javac_cmd.extend([
@@ -665,13 +670,13 @@ def main(argv):
                       options.processorpath)
   # GN already knows of java_files, so listing them just make things worse when
   # they change.
-  depfile_deps = ([javac_path] + classpath_inputs + options.java_srcjars)
+  depfile_deps = [javac_path] + classpath_inputs + options.java_srcjars
   input_paths = depfile_deps + java_files
 
   output_paths = [
       options.jar_path,
       options.jar_path + '.info',
-      ]
+  ]
   if options.incremental:
     output_paths.append(options.jar_path + '.pdb')
 

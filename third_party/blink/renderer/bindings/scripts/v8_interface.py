@@ -120,7 +120,7 @@ def origin_trial_features(interface, constants, attributes, methods):
     KEY = 'origin_trial_feature_name'  # pylint: disable=invalid-name
 
     def member_filter(members):
-        return sorted([member for member in members if member.get(KEY) and not member.get('exposed_test')])
+        return sorted([member for member in members if member.get(KEY)])
 
     def member_filter_by_name(members, name):
         return [member for member in members if member[KEY] == name]
@@ -147,10 +147,12 @@ def origin_trial_features(interface, constants, attributes, methods):
         # TODO(chasej): Need to handle method overloads? e.g.
         # (method['overloads']['secure_context_test_all'] if 'overloads' in method else method['secure_context_test'])
         feature['needs_secure_context'] = any(member.get('secure_context_test', False) for member in members)
+        feature['needs_context'] = feature['needs_secure_context'] or any(member.get('exposed_test', False) for member in members)
 
     if features:
         includes.add('platform/bindings/script_state.h')
         includes.add('core/origin_trials/origin_trials.h')
+
     return features
 
 
@@ -331,7 +333,7 @@ def interface_context(interface, interfaces):
 
     # [HTMLConstructor]
     has_html_constructor = 'HTMLConstructor' in extended_attributes
-    # https://html.spec.whatwg.org/multipage/dom.html#html-element-constructors
+    # https://html.spec.whatwg.org/C/#html-element-constructors
     if has_html_constructor:
         if ('Constructor' in extended_attributes) or ('NoInterfaceObject' in extended_attributes):
             raise Exception('[Constructor] and [NoInterfaceObject] MUST NOT be'
@@ -685,13 +687,13 @@ def methods_context(interface):
                     generated_iterator_method('keys'),
                     entries_or_values_method,
 
-                    # void forEach(Function callback, [Default=Undefined] optional any thisArg)
+                    # void forEach(Function callback, [DefaultValue=Undefined] optional any thisArg)
                     generated_method(IdlType('void'), 'forEach',
                                      # TODO(yukishiino): |callback| should be type of Function.
                                      arguments=[generated_argument(IdlType('CallbackFunctionTreatedAsScriptValue'), 'callback'),
                                                 generated_argument(IdlType('any'), 'thisArg',
                                                                    is_optional=True,
-                                                                   extended_attributes={'Default': 'Undefined'})],
+                                                                   extended_attributes={'DefaultValue': 'Undefined'})],
                                      extended_attributes=forEach_extended_attributes),
                 ])
 
@@ -761,24 +763,6 @@ def methods_context(interface):
 
         # FIXME: maplike<> and setlike<> should also imply the presence of a
         # 'size' attribute.
-
-    # Serializer
-    if interface.serializer:
-        serializer = interface.serializer
-        serializer_ext_attrs = serializer.extended_attributes.copy()
-        if serializer.operation:
-            return_type = serializer.operation.idl_type
-            implemented_as = serializer.operation.name
-        else:
-            return_type = IdlType('any')
-            implemented_as = None
-            if 'CallWith' not in serializer_ext_attrs:
-                serializer_ext_attrs['CallWith'] = 'ScriptState'
-        methods.append(generated_method(
-            return_type=return_type,
-            name='toJSON',
-            extended_attributes=serializer_ext_attrs,
-            implemented_as=implemented_as))
 
     # Stringifier
     if interface.stringifier:

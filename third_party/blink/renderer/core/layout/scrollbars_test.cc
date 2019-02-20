@@ -201,12 +201,11 @@ class ScrollbarsWebWidgetClient
 
 TEST_F(ScrollbarsTest, ScrollbarSizeForUseZoomDSF) {
   ScrollbarsWebWidgetClient client;
-  frame_test_helpers::TestWebViewClient view_client(&client);
   client.set_device_scale_factor(1.f);
 
   frame_test_helpers::WebViewHelper web_view_helper;
   WebViewImpl* web_view_impl =
-      web_view_helper.Initialize(nullptr, &view_client);
+      web_view_helper.Initialize(nullptr, nullptr, &client);
 
   // Needed so visual viewport supplies its own scrollbars.
   web_view_impl->GetSettings()->SetViewportEnabled(true);
@@ -1423,7 +1422,7 @@ class ScrollbarTestingPlatformSupport : public TestingPlatformSupport {
 };
 
 // Test both overlay and non-overlay scrollbars.
-INSTANTIATE_TEST_CASE_P(All, ScrollbarAppearanceTest, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(All, ScrollbarAppearanceTest, testing::Bool());
 
 // Make sure native scrollbar can change by Emulator.
 // Disable on Android since Android always enable OverlayScrollbar.

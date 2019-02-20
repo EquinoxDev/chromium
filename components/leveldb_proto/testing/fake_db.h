@@ -16,14 +16,14 @@
 #include "base/files/file_path.h"
 #include "base/task/post_task.h"
 #include "base/test/test_simple_task_runner.h"
-#include "components/leveldb_proto/proto_database.h"
-#include "components/leveldb_proto/unique_proto_database.h"
+#include "components/leveldb_proto/internal/proto_database_impl.h"
+#include "components/leveldb_proto/public/proto_database.h"
 
 namespace leveldb_proto {
 namespace test {
 
 template <typename T>
-class FakeDB : public UniqueProtoDatabase<T> {
+class FakeDB : public ProtoDatabaseImpl<T> {
   using Callback = base::OnceCallback<void(bool)>;
 
  public:
@@ -38,10 +38,6 @@ class FakeDB : public UniqueProtoDatabase<T> {
             const base::FilePath& database_dir,
             const leveldb_env::Options& options,
             Callbacks::InitCallback callback) override;
-  void InitWithDatabase(LevelDB* database,
-                        const base::FilePath& database_dir,
-                        const leveldb_env::Options& options,
-                        Callbacks::InitStatusCallback callback) override;
   void UpdateEntries(std::unique_ptr<typename ProtoDatabase<T>::KeyEntryVector>
                          entries_to_save,
                      std::unique_ptr<std::vector<std::string>> keys_to_remove,
@@ -49,15 +45,21 @@ class FakeDB : public UniqueProtoDatabase<T> {
   void UpdateEntriesWithRemoveFilter(
       std::unique_ptr<typename Util::Internal<T>::KeyEntryVector>
           entries_to_save,
-      const LevelDB::KeyFilter& filter,
+      const KeyFilter& filter,
+      Callbacks::UpdateCallback callback) override;
+  void UpdateEntriesWithRemoveFilter(
+      std::unique_ptr<typename Util::Internal<T>::KeyEntryVector>
+          entries_to_save,
+      const leveldb_proto::KeyFilter& filter,
+      const std::string& target_prefix,
       Callbacks::UpdateCallback callback) override;
   void LoadEntries(
       typename Callbacks::Internal<T>::LoadCallback callback) override;
   void LoadEntriesWithFilter(
-      const LevelDB::KeyFilter& key_filter,
+      const KeyFilter& key_filter,
       typename Callbacks::Internal<T>::LoadCallback callback) override;
   void LoadEntriesWithFilter(
-      const LevelDB::KeyFilter& filter,
+      const KeyFilter& filter,
       const leveldb::ReadOptions& options,
       const std::string& target_prefix,
       typename Callbacks::Internal<T>::LoadCallback callback) override;
@@ -65,13 +67,18 @@ class FakeDB : public UniqueProtoDatabase<T> {
       typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback)
       override;
   void LoadKeysAndEntriesWithFilter(
-      const LevelDB::KeyFilter& filter,
+      const KeyFilter& filter,
       typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback)
       override;
   void LoadKeysAndEntriesWithFilter(
-      const LevelDB::KeyFilter& filter,
+      const KeyFilter& filter,
       const leveldb::ReadOptions& options,
       const std::string& target_prefix,
+      typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback)
+      override;
+  void LoadKeysAndEntriesInRange(
+      const std::string& start,
+      const std::string& end,
       typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback)
       override;
   void LoadKeys(Callbacks::LoadKeysCallback callback) override;
@@ -131,8 +138,7 @@ class FakeDB : public UniqueProtoDatabase<T> {
 
 template <typename T>
 FakeDB<T>::FakeDB(EntryMap* db)
-    : UniqueProtoDatabase<T>(
-          base::MakeRefCounted<base::TestSimpleTaskRunner>()) {
+    : ProtoDatabaseImpl<T>(base::MakeRefCounted<base::TestSimpleTaskRunner>()) {
   db_ = db;
 }
 
@@ -153,15 +159,6 @@ void FakeDB<T>::Init(const char* client_name,
 }
 
 template <typename T>
-void FakeDB<T>::InitWithDatabase(LevelDB* database,
-                                 const base::FilePath& database_dir,
-                                 const leveldb_env::Options& options,
-                                 Callbacks::InitStatusCallback callback) {
-  dir_ = database_dir;
-  init_status_callback_ = std::move(callback);
-}
-
-template <typename T>
 void FakeDB<T>::UpdateEntries(
     std::unique_ptr<typename ProtoDatabase<T>::KeyEntryVector> entries_to_save,
     std::unique_ptr<std::vector<std::string>> keys_to_remove,
@@ -178,7 +175,7 @@ void FakeDB<T>::UpdateEntries(
 template <typename T>
 void FakeDB<T>::UpdateEntriesWithRemoveFilter(
     std::unique_ptr<typename Util::Internal<T>::KeyEntryVector> entries_to_save,
-    const LevelDB::KeyFilter& delete_key_filter,
+    const KeyFilter& delete_key_filter,
     Callbacks::UpdateCallback callback) {
   for (const auto& pair : *entries_to_save)
     (*db_)[pair.first] = pair.second;
@@ -195,14 +192,35 @@ void FakeDB<T>::UpdateEntriesWithRemoveFilter(
 }
 
 template <typename T>
+void FakeDB<T>::UpdateEntriesWithRemoveFilter(
+    std::unique_ptr<typename Util::Internal<T>::KeyEntryVector> entries_to_save,
+    const leveldb_proto::KeyFilter& delete_key_filter,
+    const std::string& target_prefix,
+    Callbacks::UpdateCallback callback) {
+  for (const auto& pair : *entries_to_save)
+    (*db_)[pair.first] = pair.second;
+
+  auto it = db_->begin();
+  while (it != db_->end()) {
+    if (!delete_key_filter.is_null() && delete_key_filter.Run(it->first) &&
+        (it->first).compare(0, target_prefix.length(), target_prefix) == 0)
+      db_->erase(it++);
+    else
+      ++it;
+  }
+
+  update_callback_ = std::move(callback);
+}
+
+template <typename T>
 void FakeDB<T>::LoadEntries(
     typename Callbacks::Internal<T>::LoadCallback callback) {
-  LoadEntriesWithFilter(LevelDB::KeyFilter(), std::move(callback));
+  LoadEntriesWithFilter(KeyFilter(), std::move(callback));
 }
 
 template <typename T>
 void FakeDB<T>::LoadEntriesWithFilter(
-    const LevelDB::KeyFilter& key_filter,
+    const KeyFilter& key_filter,
     typename Callbacks::Internal<T>::LoadCallback callback) {
   LoadEntriesWithFilter(key_filter, leveldb::ReadOptions(), std::string(),
                         std::move(callback));
@@ -210,7 +228,7 @@ void FakeDB<T>::LoadEntriesWithFilter(
 
 template <typename T>
 void FakeDB<T>::LoadEntriesWithFilter(
-    const LevelDB::KeyFilter& key_filter,
+    const KeyFilter& key_filter,
     const leveldb::ReadOptions& options,
     const std::string& target_prefix,
     typename Callbacks::Internal<T>::LoadCallback callback) {
@@ -229,12 +247,12 @@ void FakeDB<T>::LoadEntriesWithFilter(
 template <typename T>
 void FakeDB<T>::LoadKeysAndEntries(
     typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback) {
-  LoadKeysAndEntriesWithFilter(LevelDB::KeyFilter(), std::move(callback));
+  LoadKeysAndEntriesWithFilter(KeyFilter(), std::move(callback));
 }
 
 template <typename T>
 void FakeDB<T>::LoadKeysAndEntriesWithFilter(
-    const LevelDB::KeyFilter& key_filter,
+    const KeyFilter& key_filter,
     typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback) {
   LoadKeysAndEntriesWithFilter(key_filter, leveldb::ReadOptions(),
                                std::string(), std::move(callback));
@@ -242,7 +260,7 @@ void FakeDB<T>::LoadKeysAndEntriesWithFilter(
 
 template <typename T>
 void FakeDB<T>::LoadKeysAndEntriesWithFilter(
-    const LevelDB::KeyFilter& key_filter,
+    const KeyFilter& key_filter,
     const leveldb::ReadOptions& options,
     const std::string& target_prefix,
     typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback) {
@@ -252,6 +270,22 @@ void FakeDB<T>::LoadKeysAndEntriesWithFilter(
       if (pair.first.compare(0, target_prefix.length(), target_prefix) == 0)
         keys_entries->insert(pair);
     }
+  }
+
+  load_callback_ = base::BindOnce(RunLoadKeysAndEntriesCallback,
+                                  std::move(callback), std::move(keys_entries));
+}
+
+template <typename T>
+void FakeDB<T>::LoadKeysAndEntriesInRange(
+    const std::string& start,
+    const std::string& end,
+    typename Callbacks::Internal<T>::LoadKeysAndEntriesCallback callback) {
+  auto keys_entries = std::make_unique<std::map<std::string, T>>();
+  for (const auto& pair : *db_) {
+    std::string key = pair.first;
+    if (start <= key && key <= end)
+      keys_entries->insert(pair);
   }
 
   load_callback_ = base::BindOnce(RunLoadKeysAndEntriesCallback,

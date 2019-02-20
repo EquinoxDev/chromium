@@ -57,9 +57,10 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
       const std::vector<PasswordFormGenerationData>& forms) override;
   void FoundFormEligibleForGeneration(
       const NewPasswordFormGenerationData& form) override;
-  // Sets |generation_element_| to the focused password field and shows a
-  // generation popup at this field.
-  void UserTriggeredGeneratePassword() override;
+  // Sets |generation_element_| to the focused password field and responds back
+  // if the generation was triggered successfully.
+  void UserTriggeredGeneratePassword(
+      UserTriggeredGeneratePasswordCallback callback) override;
 
   // Returns true if the field being changed is one where a generated password
   // is being offered. Updates the state of the popup if necessary.
@@ -88,7 +89,9 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
 #if defined(UNIT_TEST)
   // This method requests the autofill::mojom::PasswordManagerClient which binds
   // requests the binding if it wasn't bound yet.
-  void RequestPasswordManagerClientForTesting() { GetPasswordManagerClient(); }
+  void RequestPasswordManagerClientForTesting() {
+    GetPasswordGenerationDriver();
+  }
 #endif
 
  protected:
@@ -117,7 +120,8 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
 
   const mojom::PasswordManagerDriverAssociatedPtr& GetPasswordManagerDriver();
 
-  const mojom::PasswordManagerClientAssociatedPtr& GetPasswordManagerClient();
+  const mojom::PasswordGenerationDriverAssociatedPtr&
+  GetPasswordGenerationDriver();
 
   // Helper function that will try and populate |password_elements_| and
   // |possible_account_creation_form_|.
@@ -159,7 +163,9 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
   // Creates |current_generation_item_| for |element| if |element| is a
   // generation enabled element. If |current_generation_item_| is already
   // created for |element| it is not recreated.
-  void MaybeCreateCurrentGenerationItem(const blink::WebInputElement& element);
+  void MaybeCreateCurrentGenerationItem(
+      blink::WebInputElement element,
+      uint32_t confirmation_password_renderer_id);
 
   // Runs HTML parsing based classifier and saves its outcome to proto.
   // TODO(crbug.com/621442): Remove client-side form classifier when server-side
@@ -222,7 +228,7 @@ class PasswordGenerationAgent : public content::RenderFrameObserver,
   // in password fields are updated.
   PasswordAutofillAgent* password_agent_;
 
-  mojom::PasswordManagerClientAssociatedPtr password_manager_client_;
+  mojom::PasswordGenerationDriverAssociatedPtr password_generation_client_;
 
   mojo::AssociatedBinding<mojom::PasswordGenerationAgent> binding_;
 

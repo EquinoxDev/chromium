@@ -217,6 +217,15 @@ Polymer({
     return this.languages != undefined && this.languages.enabled.length <= 1;
   },
 
+  /**
+   * @param {string} languageCode The language code identifying a language.
+   * @return {boolean} True iff this language is the one used when translating
+   *     pages.
+   */
+  isTranslationTarget_: function(languageCode) {
+    return languageCode == this.languages.translateTarget;
+  },
+
   // <if expr="chromeos">
   /**
    * Applies Chrome OS session tweaks to the menu.
@@ -357,18 +366,23 @@ Polymer({
   // </if>
 
   /**
-   * @param {!chrome.languageSettingsPrivate.Language} language
+   * @param {!LanguageState|undefined} languageState
    * @param {string} targetLanguageCode The default translate target language.
    * @return {boolean} True if the translate checkbox should be disabled.
    * @private
    */
-  disableTranslateCheckbox_: function(language, targetLanguageCode) {
-    if (language == undefined || !language.supportsTranslate) {
+  disableTranslateCheckbox_: function(languageState, targetLanguageCode) {
+    if (languageState == undefined || languageState.language == undefined ||
+        !languageState.language.supportsTranslate) {
       return true;
     }
 
-    return this.languageHelper.convertLanguageCodeForTranslate(language.code) ==
-        targetLanguageCode;
+    if (this.languageHelper.isOnlyTranslateBlockedLanguage(languageState)) {
+      return true;
+    }
+
+    return this.languageHelper.convertLanguageCodeForTranslate(
+               languageState.language.code) == targetLanguageCode;
   },
 
   /**
@@ -776,6 +790,7 @@ Polymer({
     const expandButton = e.currentTarget.querySelector(expandButtonTag);
     assert(expandButton);
     expandButton.expanded = !expandButton.expanded;
+    cr.ui.focusWithoutInk(expandButton);
   },
 });
 })();

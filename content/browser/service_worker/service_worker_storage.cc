@@ -596,6 +596,23 @@ void ServiceWorkerStorage::DeleteRegistration(int64_t registration_id,
     registration->set_is_deleted(true);
 }
 
+void ServiceWorkerStorage::PerformStorageCleanup(base::OnceClosure callback) {
+  DCHECK(state_ == STORAGE_STATE_INITIALIZED ||
+         state_ == STORAGE_STATE_DISABLED)
+      << state_;
+  if (IsDisabled()) {
+    RunSoon(FROM_HERE, std::move(callback));
+    return;
+  }
+
+  if (!has_checked_for_stale_resources_)
+    DeleteStaleResources();
+
+  database_task_runner_->PostTaskAndReply(
+      FROM_HERE, base::BindOnce(&PerformStorageCleanupInDB, database_.get()),
+      std::move(callback));
+}
+
 std::unique_ptr<ServiceWorkerResponseReader>
 ServiceWorkerStorage::CreateResponseReader(int64_t resource_id) {
   return base::WrapUnique(
@@ -997,6 +1014,41 @@ void ServiceWorkerStorage::GetUserDataForAllRegistrationsByKeyPrefix(
           base::BindOnce(
               &ServiceWorkerStorage::DidGetUserDataForAllRegistrations,
               weak_factory_.GetWeakPtr(), std::move(callback))));
+}
+
+void ServiceWorkerStorage::ClearUserDataForAllRegistrationsByKeyPrefix(
+    const std::string& key_prefix,
+    StatusCallback callback) {
+  switch (state_) {
+    case STORAGE_STATE_DISABLED:
+      RunSoon(FROM_HERE,
+              base::BindOnce(std::move(callback),
+                             blink::ServiceWorkerStatusCode::kErrorAbort));
+      return;
+    case STORAGE_STATE_INITIALIZING:  // Fall-through.
+    case STORAGE_STATE_UNINITIALIZED:
+      LazyInitialize(base::BindOnce(
+          &ServiceWorkerStorage::ClearUserDataForAllRegistrationsByKeyPrefix,
+          weak_factory_.GetWeakPtr(), key_prefix, std::move(callback)));
+      return;
+    case STORAGE_STATE_INITIALIZED:
+      break;
+  }
+
+  if (key_prefix.empty()) {
+    RunSoon(FROM_HERE,
+            base::BindOnce(std::move(callback),
+                           blink::ServiceWorkerStatusCode::kErrorFailed));
+    return;
+  }
+
+  base::PostTaskAndReplyWithResult(
+      database_task_runner_.get(), FROM_HERE,
+      base::BindOnce(
+          &ServiceWorkerDatabase::DeleteUserDataForAllRegistrationsByKeyPrefix,
+          base::Unretained(database_.get()), key_prefix),
+      base::BindOnce(&ServiceWorkerStorage::DidDeleteUserData,
+                     weak_factory_.GetWeakPtr(), std::move(callback)));
 }
 
 void ServiceWorkerStorage::DeleteAndStartOver(StatusCallback callback) {
@@ -2100,6 +2152,12 @@ void ServiceWorkerStorage::DeleteAllDataForOriginsFromDB(
 
   std::vector<int64_t> newly_purgeable_resources;
   database->DeleteAllDataForOrigins(origins, &newly_purgeable_resources);
+}
+
+void ServiceWorkerStorage::PerformStorageCleanupInDB(
+    ServiceWorkerDatabase* database) {
+  DCHECK(database);
+  database->RewriteDB();
 }
 
 bool ServiceWorkerStorage::IsDisabled() const {

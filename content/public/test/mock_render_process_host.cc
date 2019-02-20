@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/process/process_handle.h"
@@ -56,6 +57,7 @@ MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
       is_process_backgrounded_(false),
       is_unused_(true),
       keep_alive_ref_count_(0),
+      foreground_service_worker_count_(0),
       child_identity_(
           mojom::kRendererServiceName,
           BrowserContext::GetServiceInstanceGroupFor(browser_context),
@@ -65,7 +67,7 @@ MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
       weak_ptr_factory_(this) {
   // Child process security operations can't be unit tested unless we add
   // ourselves as an existing child process.
-  ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
+  ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID(), browser_context);
 
   RenderProcessHostImpl::RegisterHost(GetID(), this);
 }
@@ -190,6 +192,15 @@ MockRenderProcessHost::GetRendererAudioOutputStreamFactoryContext() {
 void MockRenderProcessHost::OnMediaStreamAdded() {}
 
 void MockRenderProcessHost::OnMediaStreamRemoved() {}
+
+void MockRenderProcessHost::OnForegroundServiceWorkerAdded() {
+  foreground_service_worker_count_ += 1;
+}
+
+void MockRenderProcessHost::OnForegroundServiceWorkerRemoved() {
+  DCHECK_GT(foreground_service_worker_count_, 0);
+  foreground_service_worker_count_ -= 1;
+}
 
 StoragePartition* MockRenderProcessHost::GetStoragePartition() {
   return BrowserContext::GetDefaultStoragePartition(browser_context_);
@@ -395,21 +406,6 @@ mojom::Renderer* MockRenderProcessHost::GetRendererInterface() {
   return renderer_interface_->get();
 }
 
-resource_coordinator::ProcessResourceCoordinator*
-MockRenderProcessHost::GetProcessResourceCoordinator() {
-  if (!process_resource_coordinator_) {
-    content::ServiceManagerConnection* connection =
-        content::ServiceManagerConnection::GetForProcess();
-    // Tests may not set up a connection.
-    service_manager::Connector* connector =
-        connection ? connection->GetConnector() : nullptr;
-    process_resource_coordinator_ =
-        std::make_unique<resource_coordinator::ProcessResourceCoordinator>(
-            connector);
-  }
-  return process_resource_coordinator_.get();
-}
-
 void MockRenderProcessHost::CreateURLLoaderFactory(
     const base::Optional<url::Origin>& origin,
     network::mojom::TrustedURLLoaderHeaderClientPtrInfo header_client,
@@ -437,9 +433,11 @@ bool MockRenderProcessHost::HostHasNotBeenUsed() {
   return IsUnused() && listeners_.IsEmpty() && GetKeepAliveRefCount() == 0;
 }
 
-void MockRenderProcessHost::LockToOrigin(const GURL& lock_url) {
-  ChildProcessSecurityPolicyImpl::GetInstance()->LockToOrigin(GetID(),
-                                                              lock_url);
+void MockRenderProcessHost::LockToOrigin(
+    const IsolationContext& isolation_context,
+    const GURL& lock_url) {
+  ChildProcessSecurityPolicyImpl::GetInstance()->LockToOrigin(
+      isolation_context, GetID(), lock_url);
   if (SiteInstanceImpl::IsOriginLockASite(lock_url))
     is_renderer_locked_to_site_ = true;
 }

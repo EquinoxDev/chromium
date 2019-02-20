@@ -31,6 +31,7 @@ import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.notifications.NotificationUmaTracker;
 import org.chromium.chrome.browser.profiles.Profile;
+import org.chromium.chrome.browser.util.FeatureUtilities;
 import org.chromium.components.offline_items_collection.ContentId;
 import org.chromium.components.offline_items_collection.FailState;
 import org.chromium.components.offline_items_collection.LegacyHelpers;
@@ -242,7 +243,7 @@ public class DownloadNotificationService {
                                                 .setPendingState(pendingState)
                                                 .build();
         Notification notification = DownloadNotificationFactory.buildNotification(
-                context, DownloadStatus.IN_PROGRESS, downloadUpdate);
+                context, DownloadStatus.IN_PROGRESS, downloadUpdate, notificationId);
         updateNotification(notificationId, notification, id,
                 new DownloadSharedPreferenceEntry(id, notificationId, isOffTheRecord,
                         canDownloadWhileMetered, fileName, true, isTransient));
@@ -343,7 +344,7 @@ public class DownloadNotificationService {
                                                 .build();
 
         Notification notification = DownloadNotificationFactory.buildNotification(
-                context, DownloadStatus.PAUSED, downloadUpdate);
+                context, DownloadStatus.PAUSED, downloadUpdate, notificationId);
         updateNotification(notificationId, notification, id,
                 new DownloadSharedPreferenceEntry(id, notificationId, isOffTheRecord,
                         canDownloadWhileMetered, fileName, isAutoResumable, isTransient));
@@ -401,7 +402,7 @@ public class DownloadNotificationService {
                                                 .setTotalBytes(totalBytes)
                                                 .build();
         Notification notification = DownloadNotificationFactory.buildNotification(
-                context, DownloadStatus.COMPLETED, downloadUpdate);
+                context, DownloadStatus.COMPLETED, downloadUpdate, notificationId);
 
         updateNotification(notificationId, notification, id, null);
         mDownloadForegroundServiceManager.updateDownloadStatus(
@@ -445,7 +446,7 @@ public class DownloadNotificationService {
                                                 .setFailState(failState)
                                                 .build();
         Notification notification = DownloadNotificationFactory.buildNotification(
-                context, DownloadStatus.FAILED, downloadUpdate);
+                context, DownloadStatus.FAILED, downloadUpdate, notificationId);
 
         updateNotification(notificationId, notification, id, null);
         mDownloadForegroundServiceManager.updateDownloadStatus(
@@ -528,6 +529,8 @@ public class DownloadNotificationService {
      * already in progress, do nothing.
      */
     void resumeAllPendingDownloads() {
+        if (FeatureUtilities.isDownloadAutoResumptionEnabledInNative()) return;
+
         // Limit the number of auto resumption attempts in case Chrome falls into a vicious cycle.
         DownloadResumptionScheduler.getDownloadResumptionScheduler().cancel();
         int numAutoResumptionAtemptLeft = getResumptionAttemptLeft();

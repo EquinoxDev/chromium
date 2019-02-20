@@ -148,17 +148,13 @@ void PaymentRequestBrowserTestBase::OnCanMakePaymentReturned() {
 }
 
 void PaymentRequestBrowserTestBase::OnHasEnrolledInstrumentCalled() {
-  // TODO(https://crbug.com/915907): rename enum to HAS_ENROLLED_INSTRUMENT
-  // version when new CanMakePayment behavior is implemented.
   if (event_waiter_)
-    event_waiter_->OnEvent(DialogEvent::CAN_MAKE_PAYMENT_CALLED);
+    event_waiter_->OnEvent(DialogEvent::HAS_ENROLLED_INSTRUMENT_CALLED);
 }
 
 void PaymentRequestBrowserTestBase::OnHasEnrolledInstrumentReturned() {
-  // TODO(https://crbug.com/915907): rename enum to HAS_ENROLLED_INSTRUMENT
-  // version when new CanMakePayment behavior is implemented.
   if (event_waiter_)
-    event_waiter_->OnEvent(DialogEvent::CAN_MAKE_PAYMENT_RETURNED);
+    event_waiter_->OnEvent(DialogEvent::HAS_ENROLLED_INSTRUMENT_RETURNED);
 }
 
 void PaymentRequestBrowserTestBase::OnNotSupportedError() {
@@ -460,8 +456,10 @@ void PaymentRequestBrowserTestBase::AddAutofillProfile(
   PersonalDataLoadedObserverMock personal_data_observer;
   personal_data_manager->AddObserver(&personal_data_observer);
   base::RunLoop data_loop;
-  EXPECT_CALL(personal_data_observer, OnPersonalDataChanged())
+  EXPECT_CALL(personal_data_observer, OnPersonalDataFinishedProfileTasks())
       .WillOnce(QuitMessageLoop(&data_loop));
+  EXPECT_CALL(personal_data_observer, OnPersonalDataChanged())
+      .Times(testing::AnyNumber());
   personal_data_manager->AddProfile(profile);
   data_loop.Run();
 
@@ -482,13 +480,28 @@ void PaymentRequestBrowserTestBase::AddCreditCard(
   PersonalDataLoadedObserverMock personal_data_observer;
   personal_data_manager->AddObserver(&personal_data_observer);
   base::RunLoop data_loop;
-  EXPECT_CALL(personal_data_observer, OnPersonalDataChanged())
+  EXPECT_CALL(personal_data_observer, OnPersonalDataFinishedProfileTasks())
       .WillOnce(QuitMessageLoop(&data_loop));
+  EXPECT_CALL(personal_data_observer, OnPersonalDataChanged())
+      .Times(testing::AnyNumber());
+
   personal_data_manager->AddCreditCard(card);
   data_loop.Run();
 
   personal_data_manager->RemoveObserver(&personal_data_observer);
   EXPECT_EQ(card_count + 1, personal_data_manager->GetCreditCards().size());
+}
+
+void PaymentRequestBrowserTestBase::WaitForOnPersonalDataChanged() {
+  autofill::PersonalDataManager* personal_data_manager = GetDataManager();
+  PersonalDataLoadedObserverMock personal_data_observer;
+  personal_data_manager->AddObserver(&personal_data_observer);
+  base::RunLoop run_loop;
+  EXPECT_CALL(personal_data_observer, OnPersonalDataFinishedProfileTasks())
+      .WillOnce(QuitMessageLoop(&run_loop));
+  EXPECT_CALL(personal_data_observer, OnPersonalDataChanged())
+      .Times(testing::AnyNumber());
+  run_loop.Run();
 }
 
 void PaymentRequestBrowserTestBase::CreatePaymentRequestForTest(

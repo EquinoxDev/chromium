@@ -111,6 +111,16 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
 #include "gpu/command_buffer/client/raster_implementation_autogen.h"
 
   // RasterInterface implementation.
+  void CopySubTexture(const gpu::Mailbox& source_mailbox,
+                      const gpu::Mailbox& dest_mailbox,
+                      GLenum dest_target,
+                      GLint xoffset,
+                      GLint yoffset,
+                      GLint x,
+                      GLint y,
+                      GLsizei width,
+                      GLsizei height) override;
+
   void BeginRasterCHROMIUM(GLuint sk_color,
                            GLuint msaa_sample_count,
                            GLboolean can_use_lcd_text,
@@ -124,11 +134,15 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                       const gfx::Vector2dF& post_translate,
                       GLfloat post_scale,
                       bool requires_clear) override;
+  bool CanDecodeWithHardwareAcceleration(
+      base::span<const uint8_t> encoded_data) override;
   SyncToken ScheduleImageDecode(base::span<const uint8_t> encoded_data,
                                 const gfx::Size& output_size,
                                 uint32_t transfer_cache_entry_id,
                                 const gfx::ColorSpace& target_color_space,
                                 bool needs_mips) override;
+  GLuint CreateAndConsumeForGpuRaster(const GLbyte* mailbox) override;
+  void DeleteGpuRasterTexture(GLuint texture) override;
   void BeginGpuRaster() override;
   void EndGpuRaster() override;
 
@@ -163,7 +177,7 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
       uint32_t texture_id) override;
   bool ThreadsafeDiscardableTextureIsDeletedForTracing(
       uint32_t texture_id) override;
-  void* MapTransferCacheEntry(size_t serialized_size) override;
+  void* MapTransferCacheEntry(uint32_t serialized_size) override;
   void UnmapAndCreateTransferCacheEntry(uint32_t type, uint32_t id) override;
   bool ThreadsafeLockTransferCacheEntry(uint32_t type, uint32_t id) override;
   void UnlockTransferCacheEntries(
@@ -177,9 +191,9 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                                  GLuint64* params);
 
   // ClientFontManager::Client implementation.
-  void* MapFontBuffer(size_t size) override;
+  void* MapFontBuffer(uint32_t size) override;
 
-  void set_max_inlined_entry_size_for_testing(size_t max_size) {
+  void set_max_inlined_entry_size_for_testing(uint32_t max_size) {
     max_inlined_entry_size_ = max_size;
   }
 
@@ -230,13 +244,15 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
                              GLenum value,
                              const char* label);
 
-  void* MapRasterCHROMIUM(GLsizeiptr size);
+  // Try to map a transfer buffer of |size|.  Will return a pointer to a
+  // buffer of |size_allocated|, which will be equal to or lesser than |size|.
+  void* MapRasterCHROMIUM(uint32_t size, uint32_t* size_allocated);
 
   // |raster_written_size| is the size of buffer used by raster commands.
   // |total_written_size| is the total size of the buffer written to, including
   // any transfer cache entries inlined into the buffer.
-  void UnmapRasterCHROMIUM(GLsizeiptr raster_written_size,
-                           GLsizeiptr total_written_size);
+  void UnmapRasterCHROMIUM(uint32_t raster_written_size,
+                           uint32_t total_written_size);
 
   // Returns the last error and clears it. Useful for debugging.
   const std::string& GetLastError() { return last_error_; }
@@ -244,7 +260,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   void GenQueriesEXTHelper(GLsizei n, const GLuint* queries);
 
   void DeleteTexturesHelper(GLsizei n, const GLuint* textures);
-  void UnbindTexturesHelper(GLsizei n, const GLuint* textures);
   void DeleteQueriesEXTHelper(GLsizei n, const GLuint* queries);
 
   // IdAllocators for objects that can't be shared among contexts.
@@ -291,11 +306,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   gles2::DebugMarkerManager debug_marker_manager_;
   std::string this_in_hex_;
 
-  std::unique_ptr<TextureUnit[]> texture_units_;
-
-  // 0 to capabilities_.max_combined_texture_image_units.
-  GLuint active_texture_unit_;
-
   // Current GL error bits.
   uint32_t error_bits_;
 
@@ -318,7 +328,6 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   // whether it should aggressively free them.
   bool aggressively_free_resources_;
 
-  IdAllocator texture_id_allocator_;
   IdAllocator query_id_allocator_;
 
   ClientFontManager font_manager_;
@@ -342,7 +351,7 @@ class RASTER_EXPORT RasterImplementation : public RasterInterface,
   };
   base::Optional<RasterProperties> raster_properties_;
 
-  size_t max_inlined_entry_size_;
+  uint32_t max_inlined_entry_size_;
   ClientTransferCache transfer_cache_;
   std::string last_active_url_;
 

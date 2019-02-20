@@ -18,6 +18,7 @@
 #import "net/base/mac/url_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+#include "url/scheme_host_port.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -52,7 +53,7 @@ int ExtractSessionDict(GURL restore_session_url,
       net::UnescapeRule::URL_SPECIAL_CHARS_EXCEPT_PATH_SEPARATORS);
 
   int error_code = 0;
-  *session_value = base::JSONReader::ReadAndReturnError(
+  *session_value = base::JSONReader::ReadAndReturnErrorDeprecated(
       session_json, base::JSON_PARSE_RFC, &error_code,
       /*error_msg_out=*/nullptr);
   return error_code;
@@ -303,6 +304,15 @@ TEST_F(WKNavigationUtilTest, URLNeedsUserAgentType) {
   // Not a placeholder or normal URL.
   EXPECT_TRUE(URLNeedsUserAgentType(GURL("about:blank?for=")));
   EXPECT_TRUE(URLNeedsUserAgentType(GURL("http://www.0.com")));
+
+  // file:// URL.
+  EXPECT_FALSE(URLNeedsUserAgentType(GURL("file://foo.pdf")));
+
+  // App specific URL or a placeholder for an app specific URL.
+  GURL app_specific(
+      url::SchemeHostPort(kTestAppSpecificScheme, "foo", 0).Serialize());
+  EXPECT_FALSE(URLNeedsUserAgentType(app_specific));
+  EXPECT_FALSE(URLNeedsUserAgentType(CreatePlaceholderUrlForUrl(app_specific)));
 }
 
 }  // namespace wk_navigation_util

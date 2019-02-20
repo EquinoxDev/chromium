@@ -34,12 +34,6 @@
 
 using views::Widget;
 
-namespace {
-bool UsingNewLoadingAnimation() {
-  return base::FeatureList::IsEnabled(features::kNewTabLoadingAnimation);
-}
-}  // namespace
-
 class FakeTabController : public TabController {
  public:
   FakeTabController() {}
@@ -71,7 +65,6 @@ class FakeTabController : public TabController {
   bool IsTabPinned(const Tab* tab) const override { return false; }
   bool IsFirstVisibleTab(const Tab* tab) const override { return false; }
   bool IsLastVisibleTab(const Tab* tab) const override { return false; }
-  bool SingleTabMode() const override { return false; }
   void MaybeStartDrag(
       Tab* tab,
       const ui::LocatedEvent& event,
@@ -86,7 +79,7 @@ class FakeTabController : public TabController {
   void OnMouseEventInTab(views::View* source,
                          const ui::MouseEvent& event) override {}
   void UpdateHoverCard(Tab* tab, bool hovered) override {}
-  bool ShouldPaintTab(const Tab* tab, float scale, gfx::Path* clip) override {
+  bool ShouldPaintTab(const Tab* tab, float scale, SkPath* clip) override {
     return true;
   }
   bool ShouldPaintAsActiveFrame() const override { return true; }
@@ -319,15 +312,6 @@ class TabTest : public ChromeViewsTestBase {
 
   void SetupFakeClock(TabIcon* icon) { icon->clock_ = &fake_clock_; }
 
-  void FinishRunningLoadingAnimations(TabIcon* icon) {
-    // Forward the clock enough for any running animations to finish.
-    DCHECK(icon->clock_ == &fake_clock_);
-    constexpr base::TimeDelta delta = base::TimeDelta::FromMilliseconds(2000);
-    fake_clock_.Advance(delta);
-    icon->StepLoadingAnimation(icon->waiting_state_.elapsed_time + delta);
-    icon->animation_state_ = icon->pending_animation_state_;
-  }
-
  protected:
   void InitWidget(Widget* widget) {
     Widget::InitParams params(CreateParams(Widget::InitParams::TYPE_WINDOW));
@@ -412,7 +396,7 @@ TEST_F(TabTest, HitTestTopPixel) {
   InitWidget(&widget);
 
   FakeTabController tab_controller;
-  Tab tab(&tab_controller, nullptr);
+  Tab tab(&tab_controller);
   widget.GetContentsView()->AddChildView(&tab);
   tab.SizeToPreferredSize();
 
@@ -446,7 +430,7 @@ TEST_F(TabTest, LayoutAndVisibilityOfElements) {
   InitWidget(&widget);
 
   FakeTabController controller;
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
 
   SkBitmap bitmap;
@@ -498,7 +482,7 @@ TEST_F(TabTest, TooltipProvidedByTab) {
   InitWidget(&widget);
 
   FakeTabController controller;
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
   tab.SizeToPreferredSize();
 
@@ -548,7 +532,7 @@ TEST_F(TabTest, TooltipProvidedByTab) {
 // shouldn't change the insets of the close button.
 TEST_F(TabTest, CloseButtonLayout) {
   FakeTabController tab_controller;
-  Tab tab(&tab_controller, nullptr);
+  Tab tab(&tab_controller);
   tab.SetBounds(0, 0, 100, 50);
   LayoutTab(&tab);
   gfx::Insets close_button_insets = GetCloseButton(tab)->GetInsets();
@@ -569,7 +553,7 @@ TEST_F(TabTest, CloseButtonFocus) {
   Widget widget;
   InitWidget(&widget);
   FakeTabController tab_controller;
-  Tab tab(&tab_controller, nullptr);
+  Tab tab(&tab_controller);
   widget.GetContentsView()->AddChildView(&tab);
 
   views::ImageButton* tab_close_button = GetCloseButton(tab);
@@ -590,7 +574,7 @@ TEST_F(TabTest, LayeredThrobber) {
   InitWidget(&widget);
 
   FakeTabController tab_controller;
-  Tab tab(&tab_controller, nullptr);
+  Tab tab(&tab_controller);
   widget.GetContentsView()->AddChildView(&tab);
   tab.SizeToPreferredSize();
 
@@ -613,12 +597,6 @@ TEST_F(TabTest, LayeredThrobber) {
   EXPECT_TRUE(icon->layer());
   data.network_state = TabNetworkState::kNone;
   tab.SetData(data);
-  if (UsingNewLoadingAnimation()) {
-    // The post-loading animation should still be playing (loading bar fades
-    // out).
-    EXPECT_TRUE(icon->ShowingLoadingAnimation());
-    FinishRunningLoadingAnimations(icon);
-  }
   EXPECT_FALSE(icon->ShowingLoadingAnimation());
 
   // Simulate a tab that should hide throbber.
@@ -648,12 +626,6 @@ TEST_F(TabTest, LayeredThrobber) {
   EXPECT_TRUE(icon->layer());
   data.network_state = TabNetworkState::kNone;
   tab.SetData(data);
-  if (UsingNewLoadingAnimation()) {
-    // The post-loading animation should still be playing (loading bar fades
-    // out).
-    EXPECT_TRUE(icon->ShowingLoadingAnimation());
-    FinishRunningLoadingAnimations(icon);
-  }
   EXPECT_FALSE(icon->ShowingLoadingAnimation());
 
   // After loading is done, simulate another resource starting to load.
@@ -664,7 +636,6 @@ TEST_F(TabTest, LayeredThrobber) {
   // Reset.
   data.network_state = TabNetworkState::kNone;
   tab.SetData(data);
-  FinishRunningLoadingAnimations(icon);
   EXPECT_FALSE(icon->ShowingLoadingAnimation());
 
   // Simulate a drag started and stopped during a load: layer painting stops
@@ -683,7 +654,6 @@ TEST_F(TabTest, LayeredThrobber) {
   EXPECT_TRUE(icon->layer());
   data.network_state = TabNetworkState::kNone;
   tab.SetData(data);
-  FinishRunningLoadingAnimations(icon);
   EXPECT_FALSE(icon->ShowingLoadingAnimation());
 
   // Simulate a tab load starting and stopping during tab dragging (or with
@@ -695,13 +665,12 @@ TEST_F(TabTest, LayeredThrobber) {
   EXPECT_FALSE(icon->layer());
   data.network_state = TabNetworkState::kNone;
   tab.SetData(data);
-  FinishRunningLoadingAnimations(icon);
   EXPECT_FALSE(icon->ShowingLoadingAnimation());
 }
 
 TEST_F(TabTest, TitleHiddenWhenSmall) {
   FakeTabController tab_controller;
-  Tab tab(&tab_controller, nullptr);
+  Tab tab(&tab_controller);
   tab.SetBounds(0, 0, 100, 50);
   EXPECT_GT(GetTitleWidth(tab), 0);
   tab.SetBounds(0, 0, 0, 50);
@@ -715,7 +684,7 @@ TEST_F(TabTest, FaviconDoesntMoveWhenShowingAlertIndicator) {
   for (bool is_active_tab : {false, true}) {
     FakeTabController controller;
     controller.set_active_tab(is_active_tab);
-    Tab tab(&controller, nullptr);
+    Tab tab(&controller);
     widget.GetContentsView()->AddChildView(&tab);
     tab.SizeToPreferredSize();
 
@@ -734,7 +703,7 @@ TEST_F(TabTest, SmallTabsHideCloseButton) {
 
   FakeTabController controller;
   controller.set_active_tab(false);
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
   const int width = tab.tab_style()->GetContentsInsets().width() +
                     Tab::kMinimumContentsWidthForCloseButtons;
@@ -757,7 +726,7 @@ TEST_F(TabTest, ExtraLeftPaddingNotShownOnSmallActiveTab) {
 
   FakeTabController controller;
   controller.set_active_tab(true);
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
   tab.SetBounds(0, 0, 200, 50);
   const views::View* close = GetCloseButton(tab);
@@ -777,7 +746,7 @@ TEST_F(TabTest, ExtraLeftPaddingShownOnSiteWithoutFavicon) {
   InitWidget(&widget);
 
   FakeTabController controller;
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
 
   tab.SizeToPreferredSize();
@@ -800,7 +769,7 @@ TEST_F(TabTest, ExtraAlertPaddingNotShownOnSmallActiveTab) {
 
   FakeTabController controller;
   controller.set_active_tab(true);
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
   TabRendererData data;
   data.alert_state = TabAlertState::AUDIO_PLAYING;
@@ -845,7 +814,7 @@ TEST_F(TabTest, TitleTextHasSufficientContrast) {
   Widget widget;
   InitWidget(&widget);
   FakeTabController controller;
-  Tab tab(&controller, nullptr);
+  Tab tab(&controller);
   widget.GetContentsView()->AddChildView(&tab);
 
   for (const auto& colors : color_schemes) {

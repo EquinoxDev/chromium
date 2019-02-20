@@ -117,16 +117,20 @@ FakeOAuth2TokenServiceDelegate::GetURLLoaderFactory() const {
   return shared_factory_;
 }
 
+bool FakeOAuth2TokenServiceDelegate::FixRequestErrorIfPossible() {
+  return fix_request_if_possible_;
+}
+
 void FakeOAuth2TokenServiceDelegate::UpdateAuthError(
     const std::string& account_id,
     const GoogleServiceAuthError& error) {
-  if (error.IsTransientError() || GetAuthError(account_id) == error)
-    return;
-
   // Drop transient errors to match OAuth2TokenService's stated contract for
   // GetAuthError() and to allow clients to test proper behavior in the case of
   // transient errors.
   if (error.IsTransientError())
+    return;
+
+  if (GetAuthError(account_id) == error)
     return;
 
   auto it = refresh_tokens_.find(account_id);

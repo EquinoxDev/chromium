@@ -30,6 +30,7 @@ import android.widget.RemoteViews;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import org.chromium.base.Callback;
 import org.chromium.base.CommandLine;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
@@ -44,6 +45,7 @@ import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.library_loader.ProcessInitException;
 import org.chromium.base.metrics.CachedMetrics.EnumeratedHistogramSample;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.AppHooks;
 import org.chromium.chrome.browser.ChromeApplication;
@@ -55,6 +57,7 @@ import org.chromium.chrome.browser.browserservices.BrowserSessionContentUtils;
 import org.chromium.chrome.browser.browserservices.Origin;
 import org.chromium.chrome.browser.browserservices.PostMessageHandler;
 import org.chromium.chrome.browser.customtabs.dynamicmodule.ModuleLoader;
+import org.chromium.chrome.browser.customtabs.dynamicmodule.ModuleMetrics;
 import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.init.ChainedTasks;
 import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
@@ -66,6 +69,7 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.util.IntentUtils;
 import org.chromium.content_public.browser.BrowserStartupController;
 import org.chromium.content_public.browser.ChildProcessLauncherHelper;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.common.Referrer;
 import org.chromium.network.mojom.ReferrerPolicy;
@@ -200,6 +204,9 @@ public class CustomTabsConnection {
     private final AtomicBoolean mWarmupHasBeenCalled = new AtomicBoolean();
     private final AtomicBoolean mWarmupHasBeenFinished = new AtomicBoolean();
 
+    @Nullable
+    private Callback<CustomTabsSessionToken> mDisconnectCallback;
+
     // Conversion between native TimeTicks and SystemClock.uptimeMillis().
     private long mNativeTickOffsetUs;
     private boolean mNativeTickOffsetUsComputed;
@@ -304,6 +311,11 @@ public class CustomTabsConnection {
                 "extraCallback(" + PAGE_LOAD_METRICS_CALLBACK + ")", bundleToJson(args).toString());
     }
 
+    /** Sets a callback to be triggered when a service connection is terminated. */
+    public void setDisconnectCallback(@Nullable Callback<CustomTabsSessionToken> callback) {
+        mDisconnectCallback = callback;
+    }
+
     public boolean newSession(CustomTabsSessionToken session) {
         boolean success = newSessionInternal(session);
         logCall("newSession()", success);
@@ -316,6 +328,9 @@ public class CustomTabsConnection {
             @Override
             public void run(CustomTabsSessionToken session) {
                 cancelSpeculation(session);
+                if (mDisconnectCallback != null) {
+                    mDisconnectCallback.onResult(session);
+                }
             }
         };
         PostMessageServiceConnection serviceConnection = new PostMessageServiceConnection(session);
@@ -363,8 +378,8 @@ public class CustomTabsConnection {
     /**
      * @return Whether {@link CustomTabsConnection#warmup(long)} has been called.
      */
-    public static boolean hasWarmUpBeenFinished() {
-        return getInstance().mWarmupHasBeenFinished.get();
+    public boolean hasWarmUpBeenFinished() {
+        return mWarmupHasBeenFinished.get();
     }
 
     /**
@@ -546,7 +561,7 @@ public class CustomTabsConnection {
             return false;
         }
 
-        ThreadUtils.postOnUiThread(() -> {
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
             doMayLaunchUrlOnUiThread(
                     lowConfidence, session, uid, urlString, extras, otherLikelyBundles, true);
         });
@@ -566,7 +581,7 @@ public class CustomTabsConnection {
             if (!BrowserStartupController.get(LibraryProcessType.PROCESS_BROWSER)
                             .isStartupSuccessfullyCompleted()) {
                 if (retryIfNotLoaded) {
-                    ThreadUtils.postOnUiThread(() -> {
+                    PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
                         doMayLaunchUrlOnUiThread(lowConfidence, session, uid, urlString, extras,
                                 otherLikelyBundles, false);
                     });
@@ -671,7 +686,7 @@ public class CustomTabsConnection {
         if (!mClientManager.bindToPostMessageServiceForSession(session)) return false;
 
         final int uid = Binder.getCallingUid();
-        ThreadUtils.postOnUiThread(() -> {
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
             // If the API is not enabled, we don't set the post message origin, which will avoid
             // PostMessageHandler initialization and disallow postMessage calls.
             if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_POST_MESSAGE_API)) return;
@@ -747,8 +762,7 @@ public class CustomTabsConnection {
         mClientManager.registerLaunch(session, url);
     }
 
-    @VisibleForTesting
-    @Nullable String getSpeculatedUrl(CustomTabsSessionToken session) {
+    @Nullable public String getSpeculatedUrl(CustomTabsSessionToken session) {
         return mHiddenTabHolder.getSpeculatedUrl(session);
     }
 
@@ -761,7 +775,7 @@ public class CustomTabsConnection {
      * @param referrer The referrer to use for |url|.
      * @return The hidden tab, or null.
      */
-    @Nullable Tab takeHiddenTab(@Nullable CustomTabsSessionToken session, String url,
+    @Nullable public Tab takeHiddenTab(@Nullable CustomTabsSessionToken session, String url,
             @Nullable String referrer) {
         return mHiddenTabHolder.takeHiddenTab(session,
                 mClientManager.getIgnoreFragmentsForSession(session), url, referrer);
@@ -946,6 +960,11 @@ public class CustomTabsConnection {
     /** @see ClientManager#shouldHideDomainForSession(CustomTabsSessionToken) */
     public boolean shouldHideDomainForSession(CustomTabsSessionToken session) {
         return mClientManager.shouldHideDomainForSession(session);
+    }
+
+    /** @see ClientManager#shouldHideTopBarOnModuleManagedUrlsForSession(CustomTabsSessionToken) */
+    public boolean shouldHideTopBarOnModuleManagedUrlsForSession(CustomTabsSessionToken session) {
+        return mClientManager.shouldHideTopBarOnModuleManagedUrlsForSession(session);
     }
 
     /** @see ClientManager#shouldSpeculateLoadOnCellularForSession(CustomTabsSessionToken) */
@@ -1307,13 +1326,17 @@ public class CustomTabsConnection {
         if (!prefs.getNetworkPredictionEnabled()) {
             return SPECULATION_STATUS_ON_START_NOT_ALLOWED_NETWORK_PREDICTION_DISABLED;
         }
-        if (DataReductionProxySettings.getInstance().isDataReductionProxyEnabled()) {
+        if (DataReductionProxySettings.getInstance().isDataReductionProxyEnabled()
+                && !ChromeFeatureList.isEnabled(
+                        ChromeFeatureList.PREDICTIVE_PREFETCHING_ALLOWED_ON_ALL_CONNECTION_TYPES)) {
             return SPECULATION_STATUS_ON_START_NOT_ALLOWED_DATA_REDUCTION_ENABLED;
         }
         ConnectivityManager cm =
                 (ConnectivityManager) ContextUtils.getApplicationContext().getSystemService(
                         Context.CONNECTIVITY_SERVICE);
-        if (cm.isActiveNetworkMetered() && !shouldSpeculateLoadOnCellularForSession(session)) {
+        if (cm.isActiveNetworkMetered() && !shouldSpeculateLoadOnCellularForSession(session)
+                && !ChromeFeatureList.isEnabled(
+                        ChromeFeatureList.PREDICTIVE_PREFETCHING_ALLOWED_ON_ALL_CONNECTION_TYPES)) {
             return SPECULATION_STATUS_ON_START_NOT_ALLOWED_NETWORK_METERED;
         }
         return SPECULATION_STATUS_ON_START_ALLOWED;
@@ -1326,7 +1349,7 @@ public class CustomTabsConnection {
     }
 
     /** Cancels the speculation for a given session, or any session if null. */
-    void cancelSpeculation(@Nullable CustomTabsSessionToken session) {
+    public void cancelSpeculation(@Nullable CustomTabsSessionToken session) {
         ThreadUtils.assertOnUiThread();
         mHiddenTabHolder.destroyHiddenTab(session);
     }
@@ -1383,7 +1406,7 @@ public class CustomTabsConnection {
      * @param intent intent to inspect for referrer header.
      * @return referrer URL as a string if any was found, empty string otherwise.
      */
-    String getReferrer(CustomTabsSessionToken session, Intent intent) {
+    public String getReferrer(CustomTabsSessionToken session, Intent intent) {
         String referrer = IntentHandler.getReferrerUrlIncludingExtraHeaders(intent);
         if (referrer == null && getReferrerForSession(session) != null) {
             referrer = getReferrerForSession(session).getUrl();
@@ -1426,13 +1449,20 @@ public class CustomTabsConnection {
             CustomTabsSessionToken session, String url, String origin, int referrerPolicy,
             @DetachedResourceRequestMotivation int motivation);
 
-    public ModuleLoader getModuleLoader(ComponentName componentName) {
-        if (mModuleLoader == null) mModuleLoader = new ModuleLoader(componentName);
-        if (!componentName.equals(mModuleLoader.getComponentName())) {
-            throw new IllegalStateException("The given component name " + componentName
-                    + " does not match the initialized component name "
-                    + mModuleLoader.getComponentName());
+    public ModuleLoader getModuleLoader(ComponentName componentName, int resourceId) {
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_MODULE_DEX_LOADING)) {
+            resourceId = 0;
         }
+
+        if (mModuleLoader != null &&
+                (!componentName.equals(mModuleLoader.getComponentName()) ||
+                resourceId != mModuleLoader.getDexResourceId())) {
+            mModuleLoader.destroyModule(ModuleMetrics.DestructionReason.MODULE_LOADER_CHANGED);
+            mModuleLoader = null;
+        }
+
+        if (mModuleLoader == null) mModuleLoader = new ModuleLoader(componentName, resourceId);
+
         return mModuleLoader;
     }
 

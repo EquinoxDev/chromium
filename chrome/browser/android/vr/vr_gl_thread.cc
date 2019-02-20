@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/strings/string16.h"
 #include "base/version.h"
 #include "chrome/browser/android/vr/metrics_util_android.h"
@@ -392,6 +393,16 @@ void VrGLThread::ShowExitVrPrompt(UiUnsupportedMode reason) {
                                          weak_browser_ui_, reason));
 }
 
+void VrGLThread::SetHasOrCanRequestRecordAudioPermission(
+    bool const has_or_can_request_record_audio) {
+  DCHECK(OnMainThread());
+  task_runner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          &BrowserUiInterface::SetHasOrCanRequestRecordAudioPermission,
+          weak_browser_ui_, has_or_can_request_record_audio));
+}
+
 void VrGLThread::SetSpeechRecognitionEnabled(bool enabled) {
   DCHECK(OnMainThread());
   task_runner()->PostTask(
@@ -416,7 +427,7 @@ void VrGLThread::OnSpeechRecognitionStateChanged(int new_state) {
 }
 
 void VrGLThread::SetOmniboxSuggestions(
-    std::unique_ptr<OmniboxSuggestions> suggestions) {
+    std::vector<OmniboxSuggestion> suggestions) {
   DCHECK(OnMainThread());
   task_runner()->PostTask(
       FROM_HERE,

@@ -8,6 +8,7 @@
 
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/bind.h"
 #include "components/payments/content/developer_console_logger.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
@@ -27,7 +28,8 @@ class DownloadCallback {
 
   ~DownloadCallback() {}
 
-  void OnPaymentMethodManifestDownload(const std::string& content) {
+  void OnPaymentMethodManifestDownload(const GURL& url_after_redirects,
+                                       const std::string& content) {
     JNIEnv* env = base::android::AttachCurrentThread();
 
     if (content.empty()) {
@@ -39,7 +41,8 @@ class DownloadCallback {
     }
   }
 
-  void OnWebAppManifestDownload(const std::string& content) {
+  void OnWebAppManifestDownload(const GURL& url_after_redirects,
+                                const std::string& content) {
     JNIEnv* env = base::android::AttachCurrentThread();
 
     if (content.empty()) {

@@ -105,8 +105,6 @@ source_set("audio") {
     "audio_output_stream_sink.h",
     "audio_power_monitor.cc",
     "audio_power_monitor.h",
-    "audio_processing.cc",
-    "audio_processing.h",
     "audio_sink_parameters.cc",
     "audio_sink_parameters.h",
     "audio_source_diverter.h",
@@ -272,7 +270,7 @@ source_set("audio") {
       "cras/cras_unified.h",
     ]
     configs += [ ":libcras" ]
-    deps += [ "//chromeos:chromeos" ]
+    deps += [ "//chromeos/audio" ]
   }
 
   if (use_pulseaudio) {
@@ -431,7 +429,10 @@ source_set("unit_tests") {
     ]
 
     if (!is_chromecast) {
-      deps += [ "//chromeos:chromeos" ]
+      deps += [
+        "//chromeos/audio",
+        "//chromeos/dbus:test_support",
+      ]
     }
 
     if (use_cras) {

@@ -64,6 +64,14 @@ Polymer({
       value: false,
     },
 
+    /** @private */
+    showingSubpage_: {
+      type: Boolean,
+      // TODO(dpapad): Initial value only needed for Polymer 1, remove once
+      // Polymer 2 migration is done.
+      value: false,
+    },
+
     toolbarSpinnerActive: {
       type: Boolean,
       value: false,
@@ -89,7 +97,7 @@ Polymer({
       this.boundScroll_ = null;
     } else if (this.overscroll_ && !this.boundScroll_) {
       this.boundScroll_ = () => {
-        if (!this.freezeOverscroll_) {
+        if (!this.showingSubpage_) {
           this.setOverscroll_(0);
         }
       };
@@ -138,19 +146,19 @@ Polymer({
 
   /** @private */
   onShowingSubpage_: function() {
-    this.freezeOverscroll_ = true;
+    this.showingSubpage_ = true;
   },
 
   /** @private */
   onShowingMainPage_: function() {
-    this.freezeOverscroll_ = false;
+    this.showingSubpage_ = false;
   },
 
   /**
    * A handler for the 'showing-section' event fired from settings-basic-page,
    * indicating that a section should be scrolled into view as a result of a
    * navigation.
-   * @param {!CustomEvent} e
+   * @param {!CustomEvent<!HTMLElement>} e
    * @private
    */
   onShowingSection_: function(e) {
@@ -222,5 +230,13 @@ Polymer({
         });
       }, 0);
     });
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  showManagedHeader_: function() {
+    return !this.inSearchMode_ && !this.showingSubpage_;
   },
 });

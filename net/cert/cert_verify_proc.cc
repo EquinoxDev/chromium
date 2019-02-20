@@ -12,7 +12,6 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/sha1.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -334,7 +333,7 @@ bool AreSHA1IntermediatesAllowed() {
 #else
   return false;
 #endif
-};
+}
 
 // Sets the "has_*" boolean members in |verify_result| that correspond with
 // the the presence of |hash| somewhere in the certificate chain (excluding the

@@ -22,7 +22,7 @@
 #include "build/build_config.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/content_switches.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "third_party/android_opengl/etc1/etc1.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -261,7 +261,7 @@ base::FilePath ThumbnailCache::GetCacheDirectory() {
 
 base::FilePath ThumbnailCache::GetFilePath(TabId tab_id) {
   base::FilePath path = GetCacheDirectory();
-  return path.Append(base::IntToString(tab_id));
+  return path.Append(base::NumberToString(tab_id));
 }
 
 bool ThumbnailCache::CheckAndUpdateThumbnailMetaData(TabId tab_id,

@@ -10,6 +10,8 @@ doodles.lastDdllogResponse = '';
 
 doodles.onDdllogResponse = null;
 
+doodles.ei = null;
+
 
 /**
  * Enum for classnames.
@@ -57,6 +59,20 @@ doodles.LOGO_TYPE = {
   SIMPLE: 'SIMPLE',
   ANIMATED: 'ANIMATED',
   INTERACTIVE: 'INTERACTIVE',
+};
+
+
+/**
+ * Subset of gws.plugins.doodle.SharingLightbox.LogType in
+ * googledata/html/templates/gws/head/xjs/plugins/doodle/sharing_lightbox.js.
+ * @enum {number}
+ * @const
+ */
+doodles.SHARE_TYPE = {
+  FACEBOOK: 2,
+  TWITTER: 3,
+  EMAIL: 5,
+  LINK_COPY: 6,
 };
 
 
@@ -196,30 +212,39 @@ doodles.loadDoodle = function(v, onload) {
 
 /**
  * Handles the response of a doodle impression ping, i.e. stores the
- * appropriate interactionLogUrl or onClickUrlExtraParams.
+ * appropriate interactionLogUrl or onClickUrlExtraParams. Also stores
+ * the event id to be used for logging sharing events.
  *
  * @param {!Object} ddllog Response object from the ddllog ping.
  * @param {!boolean} isAnimated
  */
 doodles.handleDdllogResponse = function(ddllog, isAnimated) {
-  if (ddllog && ddllog.interaction_log_url) {
-    let interactionLogUrl =
-        new URL(ddllog.interaction_log_url, configData.googleBaseUrl);
-    if (isAnimated) {
-      doodles.targetDoodle.animatedInteractionLogUrl = interactionLogUrl;
-    } else {
-      doodles.targetDoodle.staticInteractionLogUrl = interactionLogUrl;
+  if (ddllog) {
+    if (ddllog.encoded_ei) {
+      doodles.ei = ddllog.encoded_ei;
     }
-    doodles.lastDdllogResponse =
-        'interaction_log_url ' + ddllog.interaction_log_url;
-  } else if (ddllog && ddllog.target_url_params) {
-    doodles.targetDoodle.onClickUrlExtraParams =
-        new URLSearchParams(ddllog.target_url_params);
-    doodles.lastDdllogResponse =
-        'target_url_params ' + ddllog.target_url_params;
+    if (ddllog.interaction_log_url) {
+      let interactionLogUrl =
+          new URL(ddllog.interaction_log_url, configData.googleBaseUrl);
+      if (isAnimated) {
+        doodles.targetDoodle.animatedInteractionLogUrl = interactionLogUrl;
+      } else {
+        doodles.targetDoodle.staticInteractionLogUrl = interactionLogUrl;
+      }
+      doodles.lastDdllogResponse =
+          'interaction_log_url ' + ddllog.interaction_log_url;
+
+    } else if (ddllog.target_url_params) {
+      doodles.targetDoodle.onClickUrlExtraParams =
+          new URLSearchParams(ddllog.target_url_params);
+      doodles.lastDdllogResponse =
+          'target_url_params ' + ddllog.target_url_params;
+    } else {
+      console.log('Invalid ddllog response:');
+      console.log(ddllog);
+    }
   } else {
-    console.log('Invalid or missing ddllog response:');
-    console.log(ddllog);
+    console.log('Missing ddllog response.');
   }
 };
 
@@ -266,6 +291,32 @@ doodles.logDoodleImpression = function(logUrl, isAnimated) {
 
 
 /**
+ * TODO(896461): Add more click tracking parameters and testing.
+ * Logs a doodle sharing event.
+ * Uses the ct param provided in metadata.onClickUrl to track the doodle.
+ *
+ * @param {string} platform Social media platform the doodle will be shared to.
+ */
+doodles.logDoodleShare = function(platform) {
+  if (doodles.targetDoodle.metadata.onClickUrl) {
+    const onClickUrl = new URL(doodles.targetDoodle.metadata.onClickUrl);
+    const ct = onClickUrl.searchParams.get('ct');
+    if (ct && ct != '') {
+      const url = new URL('/gen_204', configData.googleBaseUrl);
+      url.searchParams.append('atyp', 'i');
+      url.searchParams.append('ct', 'doodle');
+      url.searchParams.append('cad', 'sh,' + platform + ',ct:' + ct);
+      url.searchParams.append('ntp', 1);
+      if (doodles.ei && doodles.ei != '') {
+        url.searchParams.append('ei', doodles.ei);
+      }
+      navigator.sendBeacon(url.toString());
+    }
+  }
+};
+
+
+/**
  * Returns true if the target doodle is currently visible. If |image| is null,
  * returns true when the default logo is visible; if non-null, checks that it
  * matches the doodle that is currently visible. Here, "visible" means
@@ -276,8 +327,9 @@ doodles.logDoodleImpression = function(logUrl, isAnimated) {
 doodles.isDoodleCurrentlyVisible = function() {
   var haveDoodle = ($(doodles.IDS.LOGO_DOODLE)
                         .classList.contains(doodles.CLASSES.SHOW_LOGO));
-  var wantDoodle = (doodles.targetDoodle.image !== null) &&
-      (doodles.targetDoodle.metadata !== null);
+  var wantDoodle = (doodles.targetDoodle.metadata !== null) &&
+      (doodles.targetDoodle.image !== null ||
+       doodles.targetDoodle.metadata.type === doodles.LOGO_TYPE.INTERACTIVE);
   if (!haveDoodle || !wantDoodle) {
     return haveDoodle === wantDoodle;
   }
@@ -505,6 +557,7 @@ doodles.applyDoodleMetadata = function() {
     case doodles.LOGO_TYPE.INTERACTIVE:
       logoDoodleIframe.title = doodles.targetDoodle.metadata.altText;
       logoDoodleIframe.src = doodles.targetDoodle.metadata.fullPageUrl;
+      logoDoodleIframe.allow = 'autoplay';
       document.body.style.setProperty(
           '--logo-iframe-width',
           doodles.targetDoodle.metadata.iframeWidthPx + 'px');
@@ -619,6 +672,7 @@ doodles.updateShareDialog = function() {
         '&href=' + encodeURIComponent(shortLink) +
         '&hashtag=' + encodeURIComponent('#GoogleDoodle');
     window.open(url);
+    doodles.logDoodleShare(doodles.SHARE_TYPE.FACEBOOK);
   };
   facebookButton.title = configData.translatedStrings.shareFacebook;
 
@@ -626,6 +680,7 @@ doodles.updateShareDialog = function() {
     var url = 'https://twitter.com/intent/tweet' +
         '?text=' + encodeURIComponent(title + '\n' + shortLink);
     window.open(url);
+    doodles.logDoodleShare(doodles.SHARE_TYPE.TWITTER);
   };
   twitterButton.title = configData.translatedStrings.shareTwitter;
 
@@ -633,6 +688,7 @@ doodles.updateShareDialog = function() {
     var url = 'mailto:?subject=' + encodeURIComponent(title) +
         '&body=' + encodeURIComponent(shortLink);
     document.location.href = url;
+    doodles.logDoodleShare(doodles.SHARE_TYPE.EMAIL);
   };
   mailButton.title = configData.translatedStrings.shareMail;
 
@@ -645,6 +701,7 @@ doodles.updateShareDialog = function() {
   copyButton.onclick = function() {
     linkText.select();
     document.execCommand('copy');
+    doodles.logDoodleShare(doodles.SHARE_TYPE.LINK_COPY);
   };
   copyButton.title = configData.translatedStrings.copyLink;
 };

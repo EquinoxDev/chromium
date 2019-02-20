@@ -138,7 +138,7 @@ interface TestObject {
     [CachedAttribute=isStringDirty] attribute DOMString? cachedStringOrNoneAttribute;
     [CallWith=ExecutionContext] attribute any callWithExecutionContextAnyAttribute;
     [CallWith=ScriptState] attribute any callWithScriptStateAnyAttribute;
-    [CallWith=(ExecutionContext,ScriptState)] attribute any callWithExecutionContextAndScriptStateAnyAttribute;
+    [CallWith=(ExecutionContext,ScriptState,Isolate)] attribute any callWithExecutionContextAndScriptStateAndIsolateAnyAttribute;
     [CheckSecurity=ReturnValue] readonly attribute Document checkSecurityForNodeReadonlyDocumentAttribute; // All uses are read only
     // Constructors: FIXME: replace suffix with [ConstructorAttribute]
     attribute TestInterfaceEmptyConstructor testInterfaceEmptyConstructorAttribute;
@@ -202,7 +202,6 @@ interface TestObject {
     [Replaceable] readonly attribute long replaceableReadonlyLongAttribute;
     [PutForwards=href] readonly attribute TestNode locationPutForwards;
     [RuntimeEnabled=FeatureName] attribute long runtimeEnabledLongAttribute;
-    [SetterCallWith=(CurrentWindow,EnteredWindow)] attribute DOMString setterCallWithCurrentWindowAndEnteredWindowStringAttribute;
     [SetterCallWith=ExecutionContext] attribute DOMString setterCallWithExecutionContextStringAttribute;
     attribute [TreatNullAs=EmptyString] DOMString treatNullAsEmptyStringStringAttribute;
     [LegacyInterfaceTypeChecking] attribute float legacyInterfaceTypeCheckingFloatAttribute; // nop for non-interface types
@@ -443,29 +442,26 @@ interface TestObject {
     [RaisesException, CallWith=ScriptState] deleter boolean(unsigned long index);
     [CallWith=ScriptState] deleter boolean(DOMString name);
 
-    // Extended attributes for arguments
+    // Annotated types in arguments
     // [Clamp]
-    void voidMethodClampUnsignedShortArg([Clamp] unsigned short clampUnsignedShortArg);
     void voidMethodClampUnsignedLongArg([Clamp] unsigned long clampUnsignedLongArg);
-    // [Default]
-    void voidMethodDefaultUndefinedTestInterfaceEmptyArg([Default=Undefined] optional TestInterfaceEmpty defaultUndefinedTestInterfaceEmptyArg);
-    void voidMethodDefaultUndefinedLongArg([Default=Undefined] optional long defaultUndefinedLongArg);
-    void voidMethodDefaultUndefinedStringArg([Default=Undefined] optional DOMString defaultUndefinedStringArg);
     // [EnforceRange]
     void voidMethodEnforceRangeLongArg([EnforceRange] long enforceRangeLongArg);
     // [TreatNullAs]
     void voidMethodTreatNullAsEmptyStringStringArg([TreatNullAs=EmptyString] DOMString treatNullAsEmptyStringStringArg);
+
+    // Extended attributes for arguments
+    // [DefaultValue]
+    void voidMethodDefaultUndefinedTestInterfaceEmptyArg([DefaultValue=Undefined] optional TestInterfaceEmpty defaultUndefinedTestInterfaceEmptyArg);
+    void voidMethodDefaultUndefinedLongArg([DefaultValue=Undefined] optional long defaultUndefinedLongArg);
+    void voidMethodDefaultUndefinedStringArg([DefaultValue=Undefined] optional DOMString defaultUndefinedStringArg);
 
     // Extended attributes for methods
     [LogActivity, LogAllWorlds] void activityLoggingAccessForAllWorldsMethod();
     [CallWith=ExecutionContext] void callWithExecutionContextVoidMethod();
     [CallWith=ScriptState] void callWithScriptStateVoidMethod();
     [CallWith=ScriptState] long callWithScriptStateLongMethod();
-    [CallWith=(ScriptState,ExecutionContext)] void callWithScriptStateExecutionContextVoidMethod();
-    [CallWith=(ScriptState,ScriptArguments)] void callWithScriptStateScriptArgumentsVoidMethod();
-    [CallWith=(ScriptState,ScriptArguments)] void callWithScriptStateScriptArgumentsVoidMethodOptionalBooleanArg(optional boolean optionalBooleanArg);
-    [CallWith=CurrentWindow] void callWithCurrentWindow();
-    [CallWith=(CurrentWindow,EnteredWindow)] void callWithCurrentWindowScriptWindow();
+    [CallWith=(ScriptState,ExecutionContext,Isolate)] void callWithScriptStateExecutionContextIsolateVoidMethod();
     [CallWith=ThisValue] void callWithThisValue();
     [CheckSecurity=ReturnValue] void checkSecurityForNodeVoidMethod();
     [Custom] void customVoidMethod();
@@ -544,13 +540,11 @@ interface TestObject {
     // Avoid redundant type checking
     void useToImpl4ArgumentsCheckingIfPossibleWithOptionalArg(Node node1, optional Node node2);
     void useToImpl4ArgumentsCheckingIfPossibleWithNullableArg(Node node1, Node? node2);
-    void useToImpl4ArgumentsCheckingIfPossibleWithUndefinedArg(Node node1, [Default=Undefined] optional Node node2);
+    void useToImpl4ArgumentsCheckingIfPossibleWithUndefinedArg(Node node1, [DefaultValue=Undefined] optional Node node2);
     [Unforgeable] void unforgeableVoidMethod();
     [NewObject] TestInterface newObjectTestInterfaceMethod();
     [NewObject] Promise<TestInterface> newObjectTestInterfacePromiseMethod();
     [RuntimeCallStatsCounter=RuntimeCallStatsCounterMethod] void RuntimeCallStatsCounterMethod();
-
-    serializer = { attribute };
 
     // Extended attributes on referenced interfaces
     // (not self; self-reference tests at interface themselves)

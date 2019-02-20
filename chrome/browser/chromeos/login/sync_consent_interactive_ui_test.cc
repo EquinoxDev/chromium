@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/macros.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -248,9 +250,9 @@ IN_PROC_BROWSER_TEST_P(SyncConsentTestWithParams, SyncConsentTestWithLocale) {
 }
 
 // "es" tests language switching, "en-GB" checks switching to language varants.
-INSTANTIATE_TEST_CASE_P(SyncConsentTestWithParamsImpl,
-                        SyncConsentTestWithParams,
-                        testing::Values("es", "en-GB"));
+INSTANTIATE_TEST_SUITE_P(SyncConsentTestWithParamsImpl,
+                         SyncConsentTestWithParams,
+                         testing::Values("es", "en-GB"));
 
 // Check that policy-disabled sync does not trigger SyncConsent screen.
 //
@@ -280,8 +282,8 @@ IN_PROC_BROWSER_TEST_P(SyncConsenPolicyDisabledTest,
   WaitForJsCondition("Oobe.getInstance().currentScreen.id != 'sync-consent'");
 }
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        SyncConsenPolicyDisabledTest,
-                        testing::Bool());
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         SyncConsenPolicyDisabledTest,
+                         testing::Bool());
 
 }  // namespace chromeos

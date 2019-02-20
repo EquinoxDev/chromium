@@ -7,14 +7,15 @@
 #include "ash/keyboard/ash_keyboard_ui.h"
 #include "ash/keyboard/virtual_keyboard_controller.h"
 #include "ash/public/cpp/shell_window_ids.h"
-#include "ash/root_window_controller.h"
 #include "ash/session/session_controller.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
+#include "base/command_line.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/keyboard/keyboard_controller.h"
 #include "ui/keyboard/keyboard_ui_factory.h"
+#include "ui/keyboard/public/keyboard_switches.h"
 #include "ui/wm/core/coordinate_conversion.h"
 
 using keyboard::mojom::KeyboardConfig;
@@ -47,20 +48,16 @@ void AshKeyboardController::EnableKeyboard() {
   if (!keyboard_controller_->IsKeyboardEnableRequested())
     return;
 
-  // De-activate the keyboard, as some callers expect the keyboard to be
-  // reloaded. TODO(https://crbug.com/731537): Add a separate function for
+  // KeyboardController::EnableKeyboard will reload the keyboard if it's already
+  // enabled. TODO(https://crbug.com/731537): Add a separate function for
   // reloading the keyboard.
-  DeactivateKeyboard();
-
   keyboard_controller_->EnableKeyboard(
       keyboard_ui_factory_ ? keyboard_ui_factory_->CreateKeyboardUI()
                            : std::make_unique<AshKeyboardUI>(this),
       virtual_keyboard_controller_.get());
-  ActivateKeyboard();
 }
 
 void AshKeyboardController::DisableKeyboard() {
-  DeactivateKeyboard();
   keyboard_controller_->DisableKeyboard();
 }
 
@@ -70,6 +67,12 @@ void AshKeyboardController::CreateVirtualKeyboard(
       << "keyboard_ui_factory can be null only when window service is used.";
   keyboard_ui_factory_ = std::move(keyboard_ui_factory);
   virtual_keyboard_controller_ = std::make_unique<VirtualKeyboardController>();
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          keyboard::switches::kEnableVirtualKeyboard)) {
+    keyboard_controller_->SetEnableFlag(
+        KeyboardEnableFlag::kCommandLineEnabled);
+  }
 }
 
 void AshKeyboardController::DestroyVirtualKeyboard() {
@@ -221,10 +224,6 @@ void AshKeyboardController::OnSessionStateChanged(
     return;
 
   switch (state) {
-    case session_manager::SessionState::OOBE:
-    case session_manager::SessionState::LOGIN_PRIMARY:
-      ActivateKeyboard();
-      break;
     case session_manager::SessionState::LOGGED_IN_NOT_ACTIVE:
     case session_manager::SessionState::ACTIVE:
       // Reload the keyboard on user profile change to refresh keyboard
@@ -241,33 +240,13 @@ void AshKeyboardController::OnSessionStateChanged(
 
 // private methods
 
-void AshKeyboardController::ActivateKeyboard() {
-  ActivateKeyboardForRoot(Shell::Get()->GetPrimaryRootWindowController());
-}
-
-void AshKeyboardController::ActivateKeyboardForRoot(
-    RootWindowController* controller) {
-  DCHECK(controller);
-  if (!keyboard_controller_->IsEnabled())
-    return;
-
-  // If the keyboard is already activated for |controller|, do nothing.
-  if (controller->GetRootWindow() == keyboard_controller_->GetRootWindow())
-    return;
-
-  aura::Window* container =
-      controller->GetContainer(kShellWindowId_VirtualKeyboardContainer);
-  DCHECK(container);
-  keyboard_controller_->ActivateKeyboardInContainer(container);
-  keyboard_controller_->LoadKeyboardWindowInBackground();
-}
-
-void AshKeyboardController::DeactivateKeyboard() {
-  if (!keyboard_controller_->IsEnabled() ||
-      !keyboard_controller_->GetRootWindow()) {
-    return;
+void AshKeyboardController::OnRootWindowClosing(aura::Window* root_window) {
+  if (keyboard_controller_->GetRootWindow() == root_window) {
+    aura::Window* new_parent =
+        virtual_keyboard_controller_->GetContainerForDefaultDisplay();
+    DCHECK_NE(root_window, new_parent);
+    keyboard_controller_->MoveToParentContainer(new_parent);
   }
-  keyboard_controller_->DeactivateKeyboard();
 }
 
 void AshKeyboardController::UpdateEnableFlag(bool was_enabled) {

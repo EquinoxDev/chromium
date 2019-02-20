@@ -51,7 +51,7 @@
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_view_impl.h"
-#include "content/renderer/service_worker/service_worker_network_provider.h"
+#include "content/renderer/service_worker/service_worker_network_provider_for_frame.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/test/fake_compositor_dependencies.h"
@@ -432,9 +432,12 @@ class RenderViewImplTest : public RenderViewTest {
   // Closes a view created during the test, i.e. not the |view()|. Checks that
   // the main frame is detached and deleted, and makes sure the view does not
   // leak.
-  void CloseRenderView(RenderViewImpl* new_view) {
-    new_view->GetWidget()->Close();
-    EXPECT_FALSE(new_view->GetMainRenderFrame());
+  void CloseRenderWidget(RenderWidget* widget) {
+    WidgetMsg_Close msg(widget->routing_id());
+    widget->OnMessageReceived(msg);
+
+    // WidgetMsg_Close posts a task to do the actual closing. Let that run.
+    base::RunLoop().RunUntilIdle();
   }
 
  private:
@@ -545,23 +548,6 @@ class RenderViewImplDisableZoomForDSFTest
     return deps;
   }
 };
-
-// Ensure that the main RenderFrame is deleted and cleared from the RenderView
-// after closing it.
-TEST_F(RenderViewImplTest, RenderFrameClearedAfterClose) {
-  // Create a new main frame RenderFrame so that we don't interfere with the
-  // shutdown of frame() in RenderViewTest.TearDown.
-  blink::WebURLRequest popup_request(GURL("http://foo.com"));
-  blink::WebView* new_web_view = view()->CreateView(
-      GetMainFrame(), popup_request, blink::WebWindowFeatures(), "foo",
-      blink::kWebNavigationPolicyNewForegroundTab, false,
-      blink::WebSandboxFlags::kNone,
-      blink::AllocateSessionStorageNamespaceId());
-  RenderViewImpl* new_view = RenderViewImpl::FromWebView(new_web_view);
-
-  // Checks that the frame is deleted properly and cleans up the view.
-  CloseRenderView(new_view);
-}
 
 // Test that we get form state change notifications when input fields change.
 TEST_F(RenderViewImplTest, OnNavStateChanged) {
@@ -714,7 +700,7 @@ TEST_F(RenderViewImplTest, BeginNavigation) {
 }
 
 TEST_F(RenderViewImplTest, BeginNavigationHandlesAllTopLevel) {
-  RendererPreferences prefs = view()->renderer_preferences();
+  blink::mojom::RendererPreferences prefs = view()->renderer_preferences();
   prefs.browser_handles_all_top_level_requests = true;
   view()->OnSetRendererPrefs(prefs);
 
@@ -797,7 +783,7 @@ TEST_F(RenderViewImplTest, BeginNavigationForWebUI) {
   blink::WebView* new_web_view = view()->CreateView(
       GetMainFrame(), popup_request, blink::WebWindowFeatures(), "foo",
       blink::kWebNavigationPolicyNewForegroundTab, false,
-      blink::WebSandboxFlags::kNone,
+      blink::WebSandboxFlags::kNone, blink::FeaturePolicy::FeatureState(),
       blink::AllocateSessionStorageNamespaceId());
   RenderViewImpl* new_view = RenderViewImpl::FromWebView(new_web_view);
   auto popup_navigation_info = std::make_unique<blink::WebNavigationInfo>();
@@ -811,7 +797,8 @@ TEST_F(RenderViewImplTest, BeginNavigationForWebUI) {
   EXPECT_TRUE(render_thread_->sink().GetUniqueMessageMatching(
       FrameHostMsg_OpenURL::ID));
 
-  CloseRenderView(new_view);
+  RenderWidget* render_widget = new_view->GetWidget();
+  CloseRenderWidget(render_widget);
 }
 
 class AlwaysForkingRenderViewTest : public RenderViewImplTest {
@@ -988,11 +975,19 @@ TEST_F(RenderViewImplEnableZoomForDSFTest, UpdateDSFAfterSwapIn) {
   int routing_id = kProxyRoutingId + 1;
   service_manager::mojom::InterfaceProviderPtr stub_interface_provider;
   mojo::MakeRequest(&stub_interface_provider);
+  blink::mojom::DocumentInterfaceBrokerPtr
+      stub_document_interface_broker_content;
+  mojo::MakeRequest(&stub_document_interface_broker_content);
+  blink::mojom::DocumentInterfaceBrokerPtr stub_document_interface_broker_blink;
+  mojo::MakeRequest(&stub_document_interface_broker_blink);
+
   mojom::CreateFrameWidgetParams widget_params;
   widget_params.routing_id = view()->GetRoutingID();
   widget_params.hidden = false;
   RenderFrameImpl::CreateFrame(
-      routing_id, std::move(stub_interface_provider), kProxyRoutingId,
+      routing_id, std::move(stub_interface_provider),
+      std::move(stub_document_interface_broker_content),
+      std::move(stub_document_interface_broker_blink), kProxyRoutingId,
       MSG_ROUTING_NONE, MSG_ROUTING_NONE, MSG_ROUTING_NONE,
       base::UnguessableToken::Create(), replication_state, nullptr,
       widget_params, FrameOwnerProperties(), /*has_committed_real_load=*/true);
@@ -1053,11 +1048,19 @@ TEST_F(RenderViewImplTest, DetachingProxyAlsoDestroysProvisionalFrame) {
   int routing_id = kProxyRoutingId + 1;
   service_manager::mojom::InterfaceProviderPtr stub_interface_provider;
   mojo::MakeRequest(&stub_interface_provider);
+  blink::mojom::DocumentInterfaceBrokerPtr
+      stub_document_interface_broker_content;
+  mojo::MakeRequest(&stub_document_interface_broker_content);
+  blink::mojom::DocumentInterfaceBrokerPtr stub_document_interface_broker_blink;
+  mojo::MakeRequest(&stub_document_interface_broker_blink);
+
   mojom::CreateFrameWidgetParams widget_params;
   widget_params.routing_id = MSG_ROUTING_NONE;
   widget_params.hidden = false;
   RenderFrameImpl::CreateFrame(
-      routing_id, std::move(stub_interface_provider), kProxyRoutingId,
+      routing_id, std::move(stub_interface_provider),
+      std::move(stub_document_interface_broker_content),
+      std::move(stub_document_interface_broker_blink), kProxyRoutingId,
       MSG_ROUTING_NONE, frame()->GetRoutingID(), MSG_ROUTING_NONE,
       base::UnguessableToken::Create(), replication_state, nullptr,
       widget_params, FrameOwnerProperties(), /*has_committed_real_load=*/true);
@@ -1925,10 +1928,11 @@ TEST_F(RenderViewImplTest, NavigateSubframe) {
   TestRenderFrame* subframe =
       static_cast<TestRenderFrame*>(RenderFrameImpl::FromWebFrame(
           frame()->GetWebFrame()->FindFrameByName("frame")));
+  FrameLoadWaiter waiter(subframe);
   subframe->Navigate(common_params, commit_params);
-  FrameLoadWaiter(subframe).Wait();
+  waiter.Wait();
 
-  // Copy the document content to std::wstring and compare with the
+  // Copy the document content to std::string and compare with the
   // expected result.
   const int kMaxOutputCharacters = 256;
   std::string output = WebFrameContentDumper::DumpWebViewAsText(
@@ -2025,19 +2029,14 @@ class RendererErrorPageTest : public RenderViewImplTest {
 #endif
 
 TEST_F(RendererErrorPageTest, MAYBE_Suppresses) {
-  WebURLError error(net::ERR_FILE_NOT_FOUND,
-                    GURL("http://example.com/suppress"));
-
-  // Start a load that will reach provisional state synchronously,
-  // but won't complete synchronously.
   CommonNavigationParams common_params;
   common_params.navigation_type = FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT;
-  common_params.url = GURL("data:text/html,test data");
+  common_params.url = GURL("http://example.com/suppress");
   TestRenderFrame* main_frame = static_cast<TestRenderFrame*>(frame());
-  main_frame->Navigate(common_params, CommitNavigationParams());
+  main_frame->NavigateWithError(common_params, CommitNavigationParams(),
+                                net::ERR_FILE_NOT_FOUND,
+                                "A suffusion of yellow.");
 
-  // An error occurred.
-  main_frame->DidFailProvisionalLoad(error, blink::kWebStandardCommit);
   const int kMaxOutputCharacters = 22;
   EXPECT_EQ("", WebFrameContentDumper::DumpWebViewAsText(view()->GetWebView(),
                                                          kMaxOutputCharacters)
@@ -2052,19 +2051,13 @@ TEST_F(RendererErrorPageTest, MAYBE_Suppresses) {
 #endif
 
 TEST_F(RendererErrorPageTest, MAYBE_DoesNotSuppress) {
-  WebURLError error(net::ERR_FILE_NOT_FOUND,
-                    GURL("http://example.com/dont-suppress"));
-
-  // Start a load that will reach provisional state synchronously,
-  // but won't complete synchronously.
   CommonNavigationParams common_params;
   common_params.navigation_type = FrameMsg_Navigate_Type::DIFFERENT_DOCUMENT;
-  common_params.url = GURL("data:text/html,test data");
+  common_params.url = GURL("http://example.com/dont-suppress");
   TestRenderFrame* main_frame = static_cast<TestRenderFrame*>(frame());
-  main_frame->Navigate(common_params, CommitNavigationParams());
-
-  // An error occurred.
-  main_frame->DidFailProvisionalLoad(error, blink::kWebStandardCommit);
+  main_frame->NavigateWithError(common_params, CommitNavigationParams(),
+                                net::ERR_FILE_NOT_FOUND,
+                                "A suffusion of yellow.");
 
   // The error page itself is loaded asynchronously.
   FrameLoadWaiter(main_frame).Wait();
@@ -2163,44 +2156,6 @@ TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
   render_thread_->sink().ClearMessages();
 }
 
-TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
-  blink::WebServiceWorkerNetworkProvider* webprovider = nullptr;
-  ServiceWorkerNetworkProvider* provider = nullptr;
-  RequestExtraData* extra_data = nullptr;
-
-  // Make sure each new document has a new provider and
-  // that the main request is tagged with the provider's id.
-  LoadHTML("<b>A Document</b>");
-  ASSERT_TRUE(GetMainFrame()->GetDocumentLoader());
-  webprovider =
-      GetMainFrame()->GetDocumentLoader()->GetServiceWorkerNetworkProvider();
-  ASSERT_TRUE(webprovider);
-  provider = ServiceWorkerNetworkProvider::FromWebServiceWorkerNetworkProvider(
-      webprovider);
-  ASSERT_TRUE(provider);
-  int provider1_id = provider->provider_id();
-
-  LoadHTML("<b>New Document B Goes Here</b>");
-  ASSERT_TRUE(GetMainFrame()->GetDocumentLoader());
-  webprovider =
-      GetMainFrame()->GetDocumentLoader()->GetServiceWorkerNetworkProvider();
-  ASSERT_TRUE(provider);
-  provider = ServiceWorkerNetworkProvider::FromWebServiceWorkerNetworkProvider(
-      webprovider);
-  ASSERT_TRUE(provider);
-  EXPECT_NE(provider1_id, provider->provider_id());
-
-  // See that subresource requests are also tagged with the provider's id.
-  EXPECT_EQ(frame(), RenderFrameImpl::FromWebFrame(GetMainFrame()));
-  blink::WebURLRequest request(GURL("http://foo.com"));
-  request.SetRequestContext(blink::mojom::RequestContextType::SUBRESOURCE);
-  blink::WebURLResponse redirect_response;
-  webprovider->WillSendRequest(request);
-  extra_data = static_cast<RequestExtraData*>(request.GetExtraData());
-  ASSERT_TRUE(extra_data);
-  EXPECT_EQ(extra_data->service_worker_provider_id(), provider->provider_id());
-}
-
 TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
   ASSERT_TRUE(frame()->accessibility_mode().is_mode_off());
   ASSERT_FALSE(frame()->render_accessibility());
@@ -2222,11 +2177,12 @@ TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
 // recorded at an appropriate time and is passed in the corresponding message.
 TEST_F(RenderViewImplTest, RendererNavigationStartTransmittedToBrowser) {
   base::TimeTicks lower_bound_navigation_start(base::TimeTicks::Now());
+  FrameLoadWaiter waiter(frame());
   frame()->LoadHTMLString("hello world", GURL("data:text/html,"), "UTF-8",
                           GURL(), false /* replace_current_item */);
-
+  waiter.Wait();
   NavigationState* navigation_state = NavigationState::FromDocumentLoader(
-      frame()->GetWebFrame()->GetProvisionalDocumentLoader());
+      frame()->GetWebFrame()->GetDocumentLoader());
   EXPECT_FALSE(navigation_state->common_params().navigation_start.is_null());
   EXPECT_LE(lower_bound_navigation_start,
             navigation_state->common_params().navigation_start);
@@ -2239,9 +2195,11 @@ TEST_F(RenderViewImplTest, RendererNavigationStartTransmittedToBrowser) {
 TEST_F(RenderViewImplTest, BrowserNavigationStart) {
   auto common_params = MakeCommonNavigationParams(-TimeDelta::FromSeconds(1));
 
+  FrameLoadWaiter waiter(frame());
   frame()->Navigate(common_params, CommitNavigationParams());
+  waiter.Wait();
   NavigationState* navigation_state = NavigationState::FromDocumentLoader(
-      frame()->GetWebFrame()->GetProvisionalDocumentLoader());
+      frame()->GetWebFrame()->GetDocumentLoader());
   EXPECT_EQ(common_params.navigation_start,
             navigation_state->common_params().navigation_start);
 }
@@ -2275,10 +2233,11 @@ TEST_F(RenderViewImplTest, NavigationStartWhenInitialDocumentWasAccessed) {
   ExecuteJavaScriptForTests("document.title = 'Hi!';");
 
   auto common_params = MakeCommonNavigationParams(-TimeDelta::FromSeconds(1));
+  FrameLoadWaiter waiter(frame());
   frame()->Navigate(common_params, CommitNavigationParams());
-
+  waiter.Wait();
   NavigationState* navigation_state = NavigationState::FromDocumentLoader(
-      frame()->GetWebFrame()->GetProvisionalDocumentLoader());
+      frame()->GetWebFrame()->GetDocumentLoader());
   EXPECT_EQ(common_params.navigation_start,
             navigation_state->common_params().navigation_start);
 }
@@ -2298,11 +2257,13 @@ TEST_F(RenderViewImplTest, NavigationStartForReload) {
 
   // The browser navigation_start should not be used because beforeunload will
   // be fired during Navigate.
+  FrameLoadWaiter waiter(frame());
   frame()->Navigate(common_params, CommitNavigationParams());
+  waiter.Wait();
 
   // The browser navigation_start is always used.
   NavigationState* navigation_state = NavigationState::FromDocumentLoader(
-      frame()->GetWebFrame()->GetProvisionalDocumentLoader());
+      frame()->GetWebFrame()->GetDocumentLoader());
   EXPECT_EQ(common_params.navigation_start,
             navigation_state->common_params().navigation_start);
 }
@@ -2360,10 +2321,12 @@ TEST_F(RenderViewImplTest, NavigationStartForCrossProcessHistoryNavigation) {
   commit_params.pending_history_list_offset = 1;
   commit_params.current_history_list_offset = 0;
   commit_params.current_history_list_length = 1;
+  FrameLoadWaiter waiter(frame());
   frame()->Navigate(common_params, commit_params);
+  waiter.Wait();
 
   NavigationState* navigation_state = NavigationState::FromDocumentLoader(
-      frame()->GetWebFrame()->GetProvisionalDocumentLoader());
+      frame()->GetWebFrame()->GetDocumentLoader());
   EXPECT_EQ(common_params.navigation_start,
             navigation_state->common_params().navigation_start);
 }

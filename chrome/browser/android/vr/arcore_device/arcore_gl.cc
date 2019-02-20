@@ -9,6 +9,7 @@
 #include <utility>
 #include "base/android/android_hardware_buffer_compat.h"
 #include "base/android/jni_android.h"
+#include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/containers/queue.h"
 #include "base/memory/ptr_util.h"
@@ -265,13 +266,15 @@ void ArCoreGl::ProduceFrame(
   gl_thread_task_runner_->PostTask(
       FROM_HERE,
       base::BindOnce(&ArCoreGl::ProcessFrame, weak_ptr_factory_.GetWeakPtr(),
-                     base::Passed(&frame_data), frame_size,
-                     base::Passed(&callback)));
+                     base::Passed(&frame_data), base::Passed(&callback)));
 }
 
 void ArCoreGl::RequestHitTest(
     mojom::XRRayPtr ray,
     mojom::XREnvironmentIntegrationProvider::RequestHitTestCallback callback) {
+  DVLOG(2) << __func__ << ": ray origin=" << ray->origin.ToString()
+           << ", direction=" << ray->direction.ToString();
+
   DCHECK(IsOnGlThread());
   DCHECK(is_initialized_);
 
@@ -284,7 +287,6 @@ void ArCoreGl::RequestHitTest(
 
 void ArCoreGl::ProcessFrame(
     mojom::XRFrameDataPtr frame_data,
-    const gfx::Size& frame_size,
     mojom::XRFrameDataProvider::GetFrameDataCallback callback) {
   DCHECK(IsOnGlThread());
   DCHECK(is_initialized_);
@@ -304,7 +306,7 @@ void ArCoreGl::ProcessFrame(
   // obvious how the timing between the results and the frame should go.
   for (auto& request : hit_test_requests_) {
     std::vector<mojom::XRHitResultPtr> results;
-    if (arcore_->RequestHitTest(request->ray, frame_size, &results)) {
+    if (arcore_->RequestHitTest(request->ray, &results)) {
       std::move(request->callback).Run(std::move(results));
     } else {
       // Hit test failed, i.e. unprojected location was offscreen.

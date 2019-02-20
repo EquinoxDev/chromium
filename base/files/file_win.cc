@@ -9,6 +9,7 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_util.h"
 #include "base/threading/scoped_blocking_call.h"
 
 #include <windows.h>
@@ -68,7 +69,7 @@ int File::Read(int64_t offset, char* data, int size) {
   LARGE_INTEGER offset_li;
   offset_li.QuadPart = offset;
 
-  OVERLAPPED overlapped = {0};
+  OVERLAPPED overlapped = {};
   overlapped.Offset = offset_li.LowPart;
   overlapped.OffsetHigh = offset_li.HighPart;
 
@@ -119,7 +120,7 @@ int File::Write(int64_t offset, const char* data, int size) {
   LARGE_INTEGER offset_li;
   offset_li.QuadPart = offset;
 
-  OVERLAPPED overlapped = {0};
+  OVERLAPPED overlapped = {};
   overlapped.Offset = offset_li.LowPart;
   overlapped.OffsetHigh = offset_li.HighPart;
 
@@ -229,12 +230,31 @@ bool File::GetInfo(Info* info) {
   return true;
 }
 
-File::Error File::Lock() {
+namespace {
+
+DWORD LockFileFlagsForMode(File::LockMode mode) {
+  DWORD flags = LOCKFILE_FAIL_IMMEDIATELY;
+  switch (mode) {
+    case File::LockMode::kShared:
+      return flags;
+    case File::LockMode::kExclusive:
+      return flags | LOCKFILE_EXCLUSIVE_LOCK;
+  }
+  NOTREACHED();
+}
+
+}  // namespace
+
+File::Error File::Lock(File::LockMode mode) {
   DCHECK(IsValid());
 
   SCOPED_FILE_TRACE("Lock");
 
-  BOOL result = LockFile(file_.Get(), 0, 0, MAXDWORD, MAXDWORD);
+  OVERLAPPED overlapped = {};
+  BOOL result =
+      LockFileEx(file_.Get(), LockFileFlagsForMode(mode), /*dwReserved=*/0,
+                 /*nNumberOfBytesToLockLow=*/MAXDWORD,
+                 /*nNumberOfBytesToLockHigh=*/MAXDWORD, &overlapped);
   if (!result)
     return GetLastFileError();
   return FILE_OK;
@@ -245,7 +265,11 @@ File::Error File::Unlock() {
 
   SCOPED_FILE_TRACE("Unlock");
 
-  BOOL result = UnlockFile(file_.Get(), 0, 0, MAXDWORD, MAXDWORD);
+  OVERLAPPED overlapped = {};
+  BOOL result =
+      UnlockFileEx(file_.Get(), /*dwReserved=*/0,
+                   /*nNumberOfBytesToLockLow=*/MAXDWORD,
+                   /*nNumberOfBytesToLockHigh=*/MAXDWORD, &overlapped);
   if (!result)
     return GetLastFileError();
   return FILE_OK;
@@ -391,7 +415,7 @@ void File::DoInitialize(const FilePath& path, uint32_t flags) {
   if (flags & FLAG_SEQUENTIAL_SCAN)
     create_flags |= FILE_FLAG_SEQUENTIAL_SCAN;
 
-  file_.Set(CreateFile(path.value().c_str(), access, sharing, NULL,
+  file_.Set(CreateFile(as_wcstr(path.value()), access, sharing, NULL,
                        disposition, create_flags, NULL));
 
   if (file_.IsValid()) {
@@ -411,6 +435,10 @@ bool File::Flush() {
   ScopedBlockingCall scoped_blocking_call(BlockingType::MAY_BLOCK);
   DCHECK(IsValid());
   SCOPED_FILE_TRACE("Flush");
+
+  // On Windows 8 and above, FlushFileBuffers is guaranteed to flush the storage
+  // device's internal buffers (if they exist) before returning.
+  // https://blogs.msdn.microsoft.com/oldnewthing/20170510-00/?p=95505
   return ::FlushFileBuffers(file_.Get()) != FALSE;
 }
 

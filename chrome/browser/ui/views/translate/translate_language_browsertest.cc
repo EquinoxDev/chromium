@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
@@ -73,7 +74,7 @@ using translate::test_utils::GetCurrentModel;
 
 using LanguageInfo = language::UrlLanguageHistogram::LanguageInfo;
 
-};  // namespace
+}  // namespace
 
 class TranslateLanguageBrowserTest : public InProcessBrowserTest {
  public:

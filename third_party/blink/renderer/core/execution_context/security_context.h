@@ -29,10 +29,10 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "third_party/blink/public/platform/web_insecure_request_policy.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/frame/sandbox_flags.h"
-#include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
@@ -91,20 +91,16 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
   virtual void DidUpdateSecurityOrigin() = 0;
 
   SandboxFlags GetSandboxFlags() const { return sandbox_flags_; }
-  bool IsSandboxed(SandboxFlags mask) const {
-    return IsSandboxed(mask, sandbox_flags_);
-  }
-  static bool IsSandboxed(SandboxFlags mask, SandboxFlags sandbox_flags) {
-    return sandbox_flags & mask;
-  }
+  bool IsSandboxed(SandboxFlag mask) const;
   virtual void EnforceSandboxFlags(SandboxFlags mask);
 
   void SetAddressSpace(mojom::IPAddressSpace space) { address_space_ = space; }
   mojom::IPAddressSpace AddressSpace() const { return address_space_; }
   String addressSpaceForBindings() const;
 
-  void SetRequireTrustedTypes() { require_safe_types_ = true; }
-  bool RequireTrustedTypes() const { return require_safe_types_; }
+  void SetRequireTrustedTypes();
+  bool RequireTrustedTypes() const;
+  void SetRequireTrustedTypesForTesting();  // Skips sanity checks.
 
   // https://w3c.github.io/webappsec-upgrade-insecure-requests/#upgrade-insecure-navigations-set
   void SetInsecureNavigationsSet(const std::vector<unsigned>& set) {
@@ -137,9 +133,22 @@ class CORE_EXPORT SecurityContext : public GarbageCollectedMixin {
     return report_only_feature_policy_.get();
   }
   void SetFeaturePolicy(std::unique_ptr<FeaturePolicy> feature_policy);
-  void InitializeFeaturePolicy(const ParsedFeaturePolicy& parsed_header,
-                               const ParsedFeaturePolicy& container_policy,
-                               const FeaturePolicy* parent_feature_policy);
+  // Constructs the enforcement FeaturePolicy struct for this security context.
+  // The resulted FeaturePolicy is a combination of:
+  //   * |parsed_header|: from the FeaturePolicy part of the response headers.
+  //   * |container_policy|: from <iframe>'s allow attribute.
+  //   * |parent_feature_policy|: which is the current state of feature policies
+  //     in a parent browsing context (frame).
+  //   * |opener_feature_state|: the current state of the policies in an opener
+  //     if any.
+  // Note that at most one of the |parent_feature_policy| or
+  // |opener_feature_state| should be provided. The |container_policy| is empty
+  // for a top-level security context.
+  void InitializeFeaturePolicy(
+      const ParsedFeaturePolicy& parsed_header,
+      const ParsedFeaturePolicy& container_policy,
+      const FeaturePolicy* parent_feature_policy,
+      const FeaturePolicy::FeatureState* opener_feature_state);
   void AddReportOnlyFeaturePolicy(
       const ParsedFeaturePolicy& parsed_report_only_header,
       const ParsedFeaturePolicy& container_policy,

@@ -30,7 +30,9 @@
 
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
 
-#include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object_snapshot.h"
+#include "third_party/blink/renderer/platform/loader/fetch/fetch_client_settings_object.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher_properties.h"
 #include "third_party/blink/renderer/platform/platform_probe_sink.h"
 #include "third_party/blink/renderer/platform/probe/platform_trace_events_agent.h"
 
@@ -40,16 +42,7 @@ namespace {
 
 class NullFetchContext final : public FetchContext {
  public:
-  explicit NullFetchContext(
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-      : FetchContext(std::move(task_runner),
-                     *MakeGarbageCollected<FetchClientSettingsObjectSnapshot>(
-                         KURL(),
-                         nullptr /* security_origin */,
-                         network::mojom::ReferrerPolicy::kDefault,
-                         String(),
-                         HttpsState::kNone,
-                         AllowedByNosniff::MimeTypeCheck::kStrict)) {}
+  NullFetchContext() = default;
 
   void CountUsage(mojom::WebFeature) const override {}
   void CountDeprecation(mojom::WebFeature) const override {}
@@ -57,32 +50,26 @@ class NullFetchContext final : public FetchContext {
 
 }  // namespace
 
-FetchContext& FetchContext::NullInstance(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  return *(MakeGarbageCollected<NullFetchContext>(std::move(task_runner)));
+FetchContext& FetchContext::NullInstance() {
+  return *MakeGarbageCollected<NullFetchContext>();
 }
 
-FetchContext::FetchContext(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    FetchClientSettingsObject& fetch_client_settings_object)
-    : platform_probe_sink_(MakeGarbageCollected<PlatformProbeSink>()),
-      task_runner_(std::move(task_runner)),
-      fetch_client_settings_object_(&fetch_client_settings_object) {
+FetchContext::FetchContext()
+    : platform_probe_sink_(MakeGarbageCollected<PlatformProbeSink>()) {
   platform_probe_sink_->addPlatformTraceEvents(
       MakeGarbageCollected<PlatformTraceEventsAgent>());
 }
 
 void FetchContext::Trace(blink::Visitor* visitor) {
   visitor->Trace(platform_probe_sink_);
-  visitor->Trace(fetch_client_settings_object_);
+  visitor->Trace(resource_fetcher_properties_);
 }
 
 void FetchContext::DispatchDidChangeResourcePriority(unsigned long,
                                                      ResourceLoadPriority,
                                                      int) {}
 
-void FetchContext::AddAdditionalRequestHeaders(ResourceRequest&,
-                                               FetchResourceType) {}
+void FetchContext::AddAdditionalRequestHeaders(ResourceRequest&) {}
 
 mojom::FetchCacheMode FetchContext::ResourceRequestCachePolicy(
     const ResourceRequest&,
@@ -91,10 +78,14 @@ mojom::FetchCacheMode FetchContext::ResourceRequestCachePolicy(
   return mojom::FetchCacheMode::kDefault;
 }
 
-void FetchContext::PrepareRequest(ResourceRequest&, RedirectType) {}
+void FetchContext::PrepareRequest(ResourceRequest&,
+                                  const FetchInitiatorInfo&,
+                                  WebScopedVirtualTimePauser&,
+                                  RedirectType,
+                                  ResourceType) {}
 
 void FetchContext::DispatchWillSendRequest(unsigned long,
-                                           ResourceRequest&,
+                                           const ResourceRequest&,
                                            const ResourceResponse&,
                                            ResourceType,
                                            const FetchInitiatorInfo&) {}
@@ -105,7 +96,9 @@ void FetchContext::DispatchDidReceiveResponse(unsigned long,
                                               Resource*,
                                               ResourceResponseType) {}
 
-void FetchContext::DispatchDidReceiveData(unsigned long, const char*, size_t) {}
+void FetchContext::DispatchDidReceiveData(unsigned long,
+                                          const char*,
+                                          uint64_t) {}
 
 void FetchContext::DispatchDidReceiveEncodedData(unsigned long, size_t) {}
 
@@ -124,6 +117,10 @@ void FetchContext::DispatchDidFail(const KURL&,
                                    int64_t,
                                    bool) {}
 
+bool FetchContext::ShouldLoadNewResource(ResourceType type) const {
+  return !GetResourceFetcherProperties().ShouldBlockLoadingSubResource();
+}
+
 void FetchContext::RecordLoadingActivity(
     const ResourceRequest&,
     ResourceType,
@@ -134,22 +131,6 @@ void FetchContext::DidLoadResource(Resource*) {}
 void FetchContext::DidObserveLoadingBehavior(WebLoadingBehaviorFlag) {}
 
 void FetchContext::AddResourceTiming(const ResourceTimingInfo&) {}
-
-const SecurityOrigin* FetchContext::GetSecurityOrigin() const {
-  return GetFetchClientSettingsObject()->GetSecurityOrigin();
-}
-
-void FetchContext::SetFetchClientSettingsObject(
-    FetchClientSettingsObject* fetch_client_settings_object) {
-  DCHECK(fetch_client_settings_object);
-  fetch_client_settings_object_ = fetch_client_settings_object;
-}
-
-const FetchClientSettingsObject* FetchContext::GetFetchClientSettingsObject()
-    const {
-  DCHECK(fetch_client_settings_object_);
-  return fetch_client_settings_object_.Get();
-}
 
 void FetchContext::PopulateResourceRequest(
     ResourceType,

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -517,7 +518,7 @@ const char kTestPagePath[] = "/drag_and_drop/page.html";
 class DragAndDropBrowserTest : public InProcessBrowserTest,
                                public testing::WithParamInterface<bool> {
  public:
-  DragAndDropBrowserTest(){};
+  DragAndDropBrowserTest() {}
 
   struct DragImageBetweenFrames_TestState;
   void DragImageBetweenFrames_Step2(DragImageBetweenFrames_TestState*);
@@ -542,7 +543,7 @@ class DragAndDropBrowserTest : public InProcessBrowserTest,
   }
 
   bool use_cross_site_subframe() {
-    // This is controlled by gtest's test param from INSTANTIATE_TEST_CASE_P.
+    // This is controlled by gtest's test param from INSTANTIATE_TEST_SUITE_P.
     return GetParam();
   }
 
@@ -1283,10 +1284,12 @@ void DragAndDropBrowserTest::CrossSiteDrag_Step3(
 // of a drag operation, and cross-site drags should be allowed across a
 // navigation.
 
-INSTANTIATE_TEST_CASE_P(
-    SameSiteSubframe, DragAndDropBrowserTest, ::testing::Values(false));
+INSTANTIATE_TEST_SUITE_P(SameSiteSubframe,
+                         DragAndDropBrowserTest,
+                         ::testing::Values(false));
 
-INSTANTIATE_TEST_CASE_P(
-    CrossSiteSubframe, DragAndDropBrowserTest, ::testing::Values(true));
+INSTANTIATE_TEST_SUITE_P(CrossSiteSubframe,
+                         DragAndDropBrowserTest,
+                         ::testing::Values(true));
 
 }  // namespace chrome

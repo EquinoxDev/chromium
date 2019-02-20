@@ -20,15 +20,12 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStub;
-import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-import org.chromium.base.Log;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.VisibleForTesting;
-import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.compositor.layouts.EmptyOverviewModeObserver;
 import org.chromium.chrome.browser.compositor.layouts.LayoutManager;
@@ -37,7 +34,6 @@ import org.chromium.chrome.browser.compositor.layouts.content.InvalidationAwareT
 import org.chromium.chrome.browser.explore_sites.ExperimentalExploreSitesSection;
 import org.chromium.chrome.browser.explore_sites.ExploreSitesBridge;
 import org.chromium.chrome.browser.explore_sites.ExploreSitesSection;
-import org.chromium.chrome.browser.explore_sites.ExploreSitesVariation;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.native_page.ContextMenuManager;
 import org.chromium.chrome.browser.ntp.NewTabPage.OnSearchBoxScrollListener;
@@ -66,8 +62,6 @@ import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.widget.ViewRectProvider;
-
-import java.util.concurrent.TimeUnit;
 
 /**
  * Layout for the new tab page. This positions the page elements in the correct vertical positions.
@@ -192,9 +186,10 @@ public class NewTabPageLayout extends LinearLayout implements TileGroup.Observer
         mSearchBoxView = findViewById(R.id.search_box);
         insertSiteSectionView();
 
-        if (ExploreSitesBridge.getVariation() == ExploreSitesVariation.ENABLED) {
+        int variation = ExploreSitesBridge.getVariation();
+        if (ExploreSitesBridge.isEnabled(variation)) {
             mExploreSectionView = ((ViewStub) findViewById(R.id.explore_sites_stub)).inflate();
-        } else if (ExploreSitesBridge.getVariation() == ExploreSitesVariation.EXPERIMENT) {
+        } else if (ExploreSitesBridge.isExperimental(variation)) {
             ViewStub exploreStub = findViewById(R.id.explore_sites_stub);
             exploreStub.setLayoutResource(R.layout.experimental_explore_sites_section);
             mExploreSectionView = exploreStub.inflate();
@@ -220,12 +215,11 @@ public class NewTabPageLayout extends LinearLayout implements TileGroup.Observer
      * @param scrollDelegate The delegate used to obtain information about scroll state.
      * @param contextMenuManager The manager for long-press context menus.
      * @param uiConfig UiConfig that provides display information about this view.
-     * @param constructedTimeNs The timestamp at which the new tab page's construction started.
      */
     public void initialize(NewTabPageManager manager, Tab tab, TileGroup.Delegate tileGroupDelegate,
             boolean searchProviderHasLogo, boolean searchProviderIsGoogle,
-            ScrollDelegate scrollDelegate, ContextMenuManager contextMenuManager, UiConfig uiConfig,
-            long constructedTimeNs) {
+            ScrollDelegate scrollDelegate, ContextMenuManager contextMenuManager,
+            UiConfig uiConfig) {
         TraceEvent.begin(TAG + ".initialize()");
         mScrollDelegate = scrollDelegate;
         mTab = tab;
@@ -245,19 +239,12 @@ public class NewTabPageLayout extends LinearLayout implements TileGroup.Observer
         mSiteSectionViewHolder.bindDataSource(mTileGroup, tileRenderer);
 
         int variation = ExploreSitesBridge.getVariation();
-        switch (variation) {
-            case ExploreSitesVariation.ENABLED: // fall-through
-            case ExploreSitesVariation.PERSONALIZED:
-                mExploreSection = new ExploreSitesSection(mExploreSectionView, profile,
-                        mManager.getNavigationDelegate(),
-                        SuggestionsConfig.getTileStyle(mUiConfig));
-                break;
-            case ExploreSitesVariation.EXPERIMENT:
-                mExploreSection = new ExperimentalExploreSitesSection(
-                        mExploreSectionView, profile, mManager.getNavigationDelegate());
-                break;
-            case ExploreSitesVariation.DISABLED: // fall-through
-            default: // do nothing.
+        if (ExploreSitesBridge.isEnabled(variation)) {
+            mExploreSection = new ExploreSitesSection(mExploreSectionView, profile,
+                    mManager.getNavigationDelegate(), SuggestionsConfig.getTileStyle(mUiConfig));
+        } else if (ExploreSitesBridge.isExperimental(variation)) {
+            mExploreSection = new ExperimentalExploreSitesSection(
+                    mExploreSectionView, profile, mManager.getNavigationDelegate());
         }
 
         mSearchProviderLogoView = findViewById(R.id.search_provider_logo);
@@ -298,22 +285,6 @@ public class NewTabPageLayout extends LinearLayout implements TileGroup.Observer
                 chromeLayoutManager.addOverviewModeObserver(mOverviewObserver);
             }
         }
-
-        // Use preDraw instead of draw because api level 25 and earlier doesn't seem to call the
-        // onDraw listener. Also, the onDraw version cannot be removed inside of the notification,
-        // which complicates this.
-        getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override
-            public boolean onPreDraw() {
-                Log.e(TAG, "SKYM onPreDraw()");
-                long timeToFirstDrawMs =
-                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - constructedTimeNs);
-                RecordHistogram.recordTimesHistogram(
-                        "NewTabPage.TimeToFirstDraw", timeToFirstDrawMs, TimeUnit.MILLISECONDS);
-                getViewTreeObserver().removeOnPreDrawListener(this);
-                return true;
-            }
-        });
 
         manager.addDestructionObserver(NewTabPageLayout.this::onDestroy);
 
@@ -478,7 +449,7 @@ public class NewTabPageLayout extends LinearLayout implements TileGroup.Observer
         ViewGroup.LayoutParams layoutParams = mSiteSectionView.getLayoutParams();
         layoutParams.width = ViewGroup.LayoutParams.WRAP_CONTENT;
         // If the explore sites section exists, then space it more closely.
-        if (ExploreSitesBridge.getVariation() == ExploreSitesVariation.ENABLED) {
+        if (ExploreSitesBridge.isEnabled(ExploreSitesBridge.getVariation())) {
             ((MarginLayoutParams) layoutParams).bottomMargin =
                     getResources().getDimensionPixelOffset(
                             R.dimen.tile_grid_layout_vertical_spacing);

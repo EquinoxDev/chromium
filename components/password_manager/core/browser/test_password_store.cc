@@ -212,4 +212,28 @@ std::vector<InteractionsStats> TestPasswordStore::GetAllSiteStatsImpl() {
   return std::vector<InteractionsStats>();
 }
 
+bool TestPasswordStore::BeginTransaction() {
+  return true;
+}
+
+bool TestPasswordStore::CommitTransaction() {
+  return true;
+}
+
+bool TestPasswordStore::ReadAllLogins(PrimaryKeyToFormMap* key_to_form_map) {
+  NOTIMPLEMENTED();
+  return true;
+}
+
+PasswordStoreChangeList TestPasswordStore::RemoveLoginByPrimaryKeySync(
+    int primary_key) {
+  NOTIMPLEMENTED();
+  return PasswordStoreChangeList();
+}
+
+PasswordStoreSync::MetadataStore* TestPasswordStore::GetMetadataStore() {
+  NOTIMPLEMENTED();
+  return nullptr;
+}
+
 }  // namespace password_manager

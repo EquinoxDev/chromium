@@ -100,6 +100,10 @@ ASH_EXPORT void CloseWidgetForWindow(aura::Window* window);
 ASH_EXPORT void InstallResizeHandleWindowTargeterForWindow(
     aura::Window* window);
 
+// Sets up the given window to be draggable via gesture sequences in certain
+// circumstances. See aura::client::kGestureDragFromClientAreaTopMovesWindow.
+ASH_EXPORT void MakeGestureDraggableInImmersiveMode(aura::Window* frame_window);
+
 // Returns true if |window| is currently in tab-dragging process.
 ASH_EXPORT bool IsDraggingTabs(const aura::Window* window);
 
@@ -115,6 +119,13 @@ ASH_EXPORT bool ShouldExcludeForOverview(const aura::Window* window);
 // showing multiple previews for windows linked by transient.
 ASH_EXPORT void RemoveTransientDescendants(
     std::vector<aura::Window*>* out_window_list);
+
+// Hides a list of |windows| without any animations, in case users wants to hide
+// them right away or apply their own animations. Setting |minimize| to true
+// will result in also setting the window states to minimized.
+ASH_EXPORT void HideAndMaybeMinimizeWithoutAnimation(
+    std::vector<aura::Window*> windows,
+    bool minimize);
 
 }  // namespace wm
 }  // namespace ash

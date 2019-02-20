@@ -366,6 +366,27 @@ var GetTableCellColumnHeaders = natives.GetTableCellColumnHeaders;
  */
 var GetTableCellRowHeaders = natives.GetTableCellRowHeaders;
 
+/**
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
+ * @return {number} Column index for this cell.
+ */
+var GetTableCellColumnIndex = natives.GetTableCellColumnIndex;
+
+/**
+ * @param {string} axTreeID The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
+ * @return {number} Row index for this cell.
+ */
+var GetTableCellRowIndex = natives.GetTableCellRowIndex;
+
+/**
+ * @param {string} axTreeId The id of the accessibility tree.
+ * @param {number} nodeID The id of a node.
+ * @return {string} Detected language for this node.
+ */
+var GetDetectedLanguage = natives.GetDetectedLanguage;
+
 var logging = requireNative('logging');
 var utils = require('utils');
 
@@ -550,6 +571,10 @@ AutomationNodeImpl.prototype = {
     return GetLineThrough(this.treeID, this.id);
   },
 
+  get detectedLanguage() {
+    return GetDetectedLanguage(this.treeID, this.id)
+  },
+
   get customActions() {
     return GetCustomActions(this.treeID, this.id);
   },
@@ -580,6 +605,14 @@ AutomationNodeImpl.prototype = {
         result.push(this.rootImpl.get(ids[i]));
       return result;
     }
+  },
+
+  get tableCellColumnIndex() {
+    return GetTableCellColumnIndex(this.treeID, this.id);
+  },
+
+  get tableCellRowIndex() {
+    return GetTableCellRowIndex(this.treeID, this.id);
   },
 
   doDefault: function() {
@@ -981,6 +1014,7 @@ var stringAttributes = [
     'containerLiveStatus',
     'description',
     'display',
+    'fontFamily',
     'htmlTag',
     'imageDataUrl',
     'innerHtml',
@@ -1012,10 +1046,8 @@ var intAttributes = [
     'scrollYMax',
     'scrollYMin',
     'setSize',
-    'tableCellColumnIndex',
     'ariaCellColumnIndex',
     'tableCellColumnSpan',
-    'tableCellRowIndex',
     'ariaCellRowIndex',
     'tableCellRowSpan',
     'tableColumnCount',
@@ -1057,9 +1089,10 @@ var nodeRefListAttributes = [
     ['labelledbyIds', 'labelledBy', 'labelFor']];
 
 var floatAttributes = [
-    'valueForRange',
+    'fontSize',
+    'maxValueForRange',
     'minValueForRange',
-    'maxValueForRange'];
+    'valueForRange'];
 
 var htmlAttributes = [
     ['type', 'inputType']];
@@ -1248,7 +1281,10 @@ utils.defineProperty(AutomationRootNodeImpl, 'getOrCreate', function(treeID) {
 
 utils.defineProperty(
     AutomationRootNodeImpl, 'getNodeFromTree', function(treeId, nodeId) {
-  var impl = privates(AutomationRootNodeImpl.get(treeId)).impl;
+  var tree = AutomationRootNodeImpl.get(treeId);
+  if (!tree)
+    return;
+  var impl = privates(tree).impl;
   if (impl)
     return impl.get(nodeId);
 });
@@ -1528,11 +1564,14 @@ utils.expose(AutomationNode, AutomationNodeImpl, {
         'italic',
         'underline',
         'lineThrough',
+        'detectedLanguage',
         'customActions',
         'standardActions',
         'unclippedLocation',
         'tableCellColumnHeaders',
         'tableCellRowHeaders',
+        'tableCellColumnIndex',
+        'tableCellRowIndex',
       ]),
 });
 

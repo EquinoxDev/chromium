@@ -41,7 +41,7 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     std::unique_ptr<GlobalScopeCreationParams> creation_params,
     const WorkerOptions* options,
     const KURL& script_url,
-    FetchClientSettingsObjectSnapshot* outside_settings_object,
+    const FetchClientSettingsObjectSnapshot& outside_settings_object,
     const v8_inspector::V8StackTraceId& stack_id,
     const String& source_code) {
   DCHECK(IsParentContextThread());
@@ -50,6 +50,9 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
     // created.
     return;
   }
+
+  OffMainThreadWorkerScriptFetchOption off_main_thread_fetch_option =
+      creation_params->off_main_thread_fetch_option;
 
   InitializeWorkerThread(
       std::move(creation_params),
@@ -60,15 +63,20 @@ void DedicatedWorkerMessagingProxy::StartWorkerGlobalScope(
   if (options->type() == "classic") {
     // "classic: Fetch a classic worker script given url, outside settings,
     // destination, and inside settings."
-    if (RuntimeEnabledFeatures::OffMainThreadWorkerScriptFetchEnabled()) {
-      GetWorkerThread()->ImportClassicScript(script_url,
-                                             outside_settings_object, stack_id);
-    } else {
-      // Legacy code path (to be deprecated, see https://crbug.com/835717):
-      GetWorkerThread()->EvaluateClassicScript(
-          script_url, source_code, nullptr /* cached_meta_data */, stack_id);
+    switch (off_main_thread_fetch_option) {
+      case OffMainThreadWorkerScriptFetchOption::kEnabled:
+        GetWorkerThread()->ImportClassicScript(
+            script_url, outside_settings_object, stack_id);
+        break;
+      case OffMainThreadWorkerScriptFetchOption::kDisabled:
+        // Legacy code path (to be deprecated, see https://crbug.com/835717):
+        GetWorkerThread()->EvaluateClassicScript(
+            script_url, source_code, nullptr /* cached_meta_data */, stack_id);
+        break;
     }
   } else if (options->type() == "module") {
+    DCHECK_EQ(off_main_thread_fetch_option,
+              OffMainThreadWorkerScriptFetchOption::kEnabled);
     // "module: Fetch a module worker script graph given url, outside settings,
     // destination, the value of the credentials member of options, and inside
     // settings."
@@ -171,7 +179,7 @@ void DedicatedWorkerMessagingProxy::DispatchErrorEvent(
   // "Thus, error reports propagate up to the chain of dedicated workers up to
   // the original Document, even if some of the workers along this chain have
   // been terminated and garbage collected."
-  // https://html.spec.whatwg.org/multipage/workers.html#runtime-script-errors-2
+  // https://html.spec.whatwg.org/C/#runtime-script-errors-2
   ErrorEvent* event =
       ErrorEvent::Create(error_message, location->Clone(), nullptr);
   if (worker_object_->DispatchEvent(*event) !=
@@ -186,7 +194,7 @@ void DedicatedWorkerMessagingProxy::DispatchErrorEvent(
 
   // The HTML spec requires to queue an error event using the DOM manipulation
   // task source.
-  // https://html.spec.whatwg.org/multipage/workers.html#runtime-script-errors-2
+  // https://html.spec.whatwg.org/C/#runtime-script-errors-2
   PostCrossThreadTask(
       *GetWorkerThread()->GetTaskRunner(TaskType::kDOMManipulation), FROM_HERE,
       CrossThreadBind(&DedicatedWorkerObjectProxy::ProcessUnhandledException,

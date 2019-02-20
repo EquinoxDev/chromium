@@ -271,7 +271,7 @@ void LayoutTable::RemoveColumn(const LayoutTableCol*) {
 }
 
 bool LayoutTable::IsLogicalWidthAuto() const {
-  Length style_logical_width = StyleRef().LogicalWidth();
+  const Length& style_logical_width = StyleRef().LogicalWidth();
   return (!style_logical_width.IsSpecified() ||
           !style_logical_width.IsPositive()) &&
          !style_logical_width.IsIntrinsic();
@@ -314,10 +314,9 @@ void LayoutTable::UpdateLogicalWidth() {
           ? PerpendicularContainingBlockLogicalHeight()
           : available_logical_width;
 
-  Length style_logical_width = StyleRef().LogicalWidth();
   if (!IsLogicalWidthAuto()) {
     SetLogicalWidth(ConvertStyleLogicalWidthToComputedWidth(
-        style_logical_width, container_width_in_inline_direction));
+        StyleRef().LogicalWidth(), container_width_in_inline_direction));
   } else {
     // Subtract out any fixed margins from our available width for auto width
     // tables.
@@ -327,15 +326,22 @@ void LayoutTable::UpdateLogicalWidth() {
         MinimumValueForLength(StyleRef().MarginEnd(), available_logical_width);
     LayoutUnit margin_total = margin_start + margin_end;
 
-    // Subtract out our margins to get the available content width.
-    LayoutUnit available_content_logical_width =
-        (container_width_in_inline_direction - margin_total)
-            .ClampNegativeToZero();
-    if (ShrinkToAvoidFloats() && cb->IsLayoutBlockFlow() &&
-        ToLayoutBlockFlow(cb)->ContainsFloats() &&
-        !has_perpendicular_containing_block)
-      available_content_logical_width = ShrinkLogicalWidthToAvoidFloats(
-          margin_start, margin_end, ToLayoutBlockFlow(cb));
+    LayoutUnit available_content_logical_width;
+    if (HasOverrideAvailableInlineSize()) {
+      available_content_logical_width =
+          (OverrideAvailableInlineSize() - margin_total).ClampNegativeToZero();
+    } else {
+      // Subtract out our margins to get the available content width.
+      available_content_logical_width =
+          (container_width_in_inline_direction - margin_total)
+              .ClampNegativeToZero();
+      if (ShrinkToAvoidFloats() && cb->IsLayoutBlockFlow() &&
+          ToLayoutBlockFlow(cb)->ContainsFloats() &&
+          !has_perpendicular_containing_block) {
+        available_content_logical_width = ShrinkLogicalWidthToAvoidFloats(
+            margin_start, margin_end, ToLayoutBlockFlow(cb));
+      }
+    }
 
     // Ensure we aren't bigger than our available width.
     LayoutUnit max_width = MaxPreferredLogicalWidth();
@@ -351,7 +357,7 @@ void LayoutTable::UpdateLogicalWidth() {
   }
 
   // Ensure we aren't bigger than our max-width style.
-  Length style_max_logical_width = StyleRef().LogicalMaxWidth();
+  const Length& style_max_logical_width = StyleRef().LogicalMaxWidth();
   if ((style_max_logical_width.IsSpecified() &&
        !style_max_logical_width.IsNegative()) ||
       style_max_logical_width.IsIntrinsic()) {
@@ -369,7 +375,7 @@ void LayoutTable::UpdateLogicalWidth() {
       LayoutUnit(std::max(LogicalWidth(), MinPreferredLogicalWidth()).Floor()));
 
   // Ensure we aren't smaller than our min-width style.
-  Length style_min_logical_width = StyleRef().LogicalMinWidth();
+  const Length& style_min_logical_width = StyleRef().LogicalMinWidth();
   if ((style_min_logical_width.IsSpecified() &&
        !style_min_logical_width.IsNegative()) ||
       style_min_logical_width.IsIntrinsic()) {
@@ -513,7 +519,7 @@ void LayoutTable::LayoutSection(
 
 LayoutUnit LayoutTable::LogicalHeightFromStyle() const {
   LayoutUnit computed_logical_height;
-  Length logical_height_length = StyleRef().LogicalHeight();
+  const Length& logical_height_length = StyleRef().LogicalHeight();
   if (logical_height_length.IsIntrinsic() ||
       (logical_height_length.IsSpecified() &&
        logical_height_length.IsPositive())) {
@@ -521,7 +527,7 @@ LayoutUnit LayoutTable::LogicalHeightFromStyle() const {
         ConvertStyleLogicalHeightToComputedHeight(logical_height_length);
   }
 
-  Length logical_max_height_length = StyleRef().LogicalMaxHeight();
+  const Length& logical_max_height_length = StyleRef().LogicalMaxHeight();
   if (logical_max_height_length.IsIntrinsic() ||
       (logical_max_height_length.IsSpecified() &&
        !logical_max_height_length.IsNegative())) {
@@ -531,7 +537,7 @@ LayoutUnit LayoutTable::LogicalHeightFromStyle() const {
         std::min(computed_logical_height, computed_max_logical_height);
   }
 
-  Length logical_min_height_length = StyleRef().LogicalMinHeight();
+  const Length& logical_min_height_length = StyleRef().LogicalMinHeight();
   if (logical_min_height_length.IsIntrinsic() ||
       (logical_min_height_length.IsSpecified() &&
        !logical_min_height_length.IsNegative())) {
@@ -932,10 +938,6 @@ void LayoutTable::ComputeVisualOverflow(bool) {
   AddVisualOverflowFromTheme();
 
   if (VisualOverflowRect() != previous_visual_overflow_rect) {
-    if (Layer()) {
-      Layer()->SetNeedsCompositingInputsUpdate(
-          PaintLayer::DoesNotNeedDescendantDependentUpdate);
-    }
     SetShouldCheckForPaintInvalidation();
     GetFrameView()->SetIntersectionObservationState(LocalFrameView::kDesired);
   }

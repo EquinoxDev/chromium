@@ -45,6 +45,9 @@ const base::Feature kForceEnableResetPasswordWebUI{
 const base::Feature kSuspiciousSiteTriggerQuotaFeature{
     "SafeBrowsingSuspiciousSiteTriggerQuota", base::FEATURE_ENABLED_BY_DEFAULT};
 
+const base::Feature kTelemetryForApkDownloads{
+    "SafeBrowsingTelemetryForApkDownloads", base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kThreatDomDetailsTagAndAttributeFeature{
     "ThreatDomDetailsTagAttributes", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -57,6 +60,9 @@ const base::Feature kUseLocalBlacklistsV2{"SafeBrowsingUseLocalBlacklistsV2",
 
 const base::Feature kInspectRarContentFeature{
     "InspectRarContent", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kUseAPDownloadProtection{"UseAPDownloadProtection",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
 namespace {
 // List of experimental features. Boolean value for each list member should be
@@ -73,9 +79,11 @@ constexpr struct {
     {&kCommittedSBInterstitials, true},
     {&kForceEnableResetPasswordWebUI, true},
     {&kSuspiciousSiteTriggerQuotaFeature, true},
+    {&kTelemetryForApkDownloads, true},
     {&kThreatDomDetailsTagAndAttributeFeature, false},
     {&kTriggerThrottlerDailyQuotaFeature, false},
     {&kUseLocalBlacklistsV2, true},
+    {&kUseAPDownloadProtection, false},
 };
 
 // Adds the name and the enabled/disabled status of a given feature.

@@ -32,6 +32,12 @@ const char kCommands[] = "commands";
 const char kContentCapabilities[] = "content_capabilities";
 const char kContentScripts[] = "content_scripts";
 const char kContentSecurityPolicy[] = "content_security_policy";
+const char kContentSecurityPolicy_ExtensionPagesPath[] =
+    "content_security_policy.extension_pages";
+const char kContentSecurityPolicy_IsolatedWorldPath[] =
+    "content_security_policy.isolated_world";
+const char kContentSecurityPolicy_SandboxedPagesPath[] =
+    "content_security_policy.sandbox";
 const char kConvertedFromUserScript[] = "converted_from_user_script";
 const char kCss[] = "css";
 const char kCtrlKey[] = "ctrlKey";
@@ -353,11 +359,13 @@ const char kInvalidContentScript[] =
     "Invalid value for 'content_scripts[*]'.";
 const char kInvalidContentScriptsList[] =
     "Invalid value for 'content_scripts'.";
-const char kInvalidCSPInsecureValue[] =
-    "Ignored insecure CSP value \"*\" in directive '*'.";
+const char kInvalidCSPInsecureValueIgnored[] =
+    "'*': Ignored insecure CSP value \"*\" in directive '*'.";
+const char kInvalidCSPInsecureValueError[] =
+    "'*': Insecure CSP value \"*\" in directive '*'.";
 const char kInvalidCSPMissingSecureSrc[] =
-    "CSP directive '*' must be specified (either explicitly, or implicitly via"
-    " 'default-src') and must whitelist only secure resources.";
+    "'*': CSP directive '*' must be specified (either explicitly, or "
+    "implicitly via 'default-src') and must whitelist only secure resources.";
 const char kInvalidCss[] =
     "Invalid value for 'content_scripts[*].css[*]'.";
 const char kInvalidCssList[] =
@@ -732,6 +740,9 @@ const char kPluginsRequirementDeprecated[] =
     "The \"plugins\" requirement is deprecated.";
 const char kReservedMessageFound[] =
     "Reserved key * found in message catalog.";
+const char kSandboxPagesCSPKeyNotAllowed[] =
+    "The Content Security Policy for sandboxed pages should be specified in "
+    "'content_security_policy.sandbox'.";
 const char kRulesFileIsInvalid[] =
     "Invalid value for key '*.*': The provided path is invalid.";
 const char kTtsGenderIsDeprecated[] =

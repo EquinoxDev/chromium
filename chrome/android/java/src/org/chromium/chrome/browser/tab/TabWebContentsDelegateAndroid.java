@@ -9,6 +9,7 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Resources;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.media.AudioManager;
@@ -28,19 +29,19 @@ import org.chromium.blink_public.platform.WebDisplayMode;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.AppHooks;
 import org.chromium.chrome.browser.ChromeActivity;
-import org.chromium.chrome.browser.RepostFormWarningDialog;
 import org.chromium.chrome.browser.SwipeRefreshHandler;
 import org.chromium.chrome.browser.document.DocumentUtils;
 import org.chromium.chrome.browser.document.DocumentWebContentsDelegate;
 import org.chromium.chrome.browser.findinpage.FindMatchRectsDetails;
 import org.chromium.chrome.browser.findinpage.FindNotificationDetails;
+import org.chromium.chrome.browser.fullscreen.ChromeFullscreenManager;
 import org.chromium.chrome.browser.fullscreen.FullscreenOptions;
 import org.chromium.chrome.browser.media.MediaCaptureNotificationService;
 import org.chromium.chrome.browser.policy.PolicyAuditor;
 import org.chromium.chrome.browser.policy.PolicyAuditor.AuditEvent;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager.TabCreator;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModel;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModelUtils;
 import org.chromium.chrome.browser.tabmodel.TabWindowManager;
 import org.chromium.components.embedder_support.delegate.WebContentsDelegateAndroid;
@@ -48,6 +49,10 @@ import org.chromium.content_public.browser.GestureListenerManager;
 import org.chromium.content_public.browser.InvalidateTypes;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.common.ResourceRequestBody;
+import org.chromium.ui.modaldialog.DialogDismissalCause;
+import org.chromium.ui.modaldialog.ModalDialogManager;
+import org.chromium.ui.modaldialog.ModalDialogProperties;
+import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.mojom.WindowOpenDisposition;
 
 /**
@@ -220,9 +225,7 @@ public class TabWebContentsDelegateAndroid extends WebContentsDelegateAndroid {
         SwipeRefreshHandler handler = SwipeRefreshHandler.get(mTab);
         if (handler != null) handler.reset();
 
-        if (mTab.getActivity() == null) return;
-        RepostFormWarningDialog warningDialog = new RepostFormWarningDialog(mTab);
-        warningDialog.show(mTab.getActivity().getFragmentManager(), null);
+        new RepostFormWarningHelper().show();
     }
 
     @Override
@@ -363,7 +366,7 @@ public class TabWebContentsDelegateAndroid extends WebContentsDelegateAndroid {
             Log.e(TAG, "Activity not set activateContents().  Bailing out.");
             return;
         }
-        if (activity.isActivityDestroyed()) {
+        if (activity.isActivityFinishingOrDestroyed()) {
             Log.e(TAG, "Activity destroyed before calling activateContents().  Bailing out.");
             return;
         }
@@ -519,19 +522,29 @@ public class TabWebContentsDelegateAndroid extends WebContentsDelegateAndroid {
         mTab.getActivity().setOverlayMode(useOverlayMode);
     }
 
+    private ChromeFullscreenManager getFullscreenManager() {
+        // Following get* methods use this method instead of |Tab.getFullscreenManager|
+        // because the latter can return null if invoked while the tab is in detached state.
+        ChromeActivity activity = mTab.getActivity();
+        return activity != null ? activity.getFullscreenManager() : null;
+    }
+
     @Override
     public int getTopControlsHeight() {
-        return mTab.getTopControlsHeight();
+        ChromeFullscreenManager manager = getFullscreenManager();
+        return manager != null ? manager.getTopControlsHeight() : 0;
     }
 
     @Override
     public int getBottomControlsHeight() {
-        return mTab.getBottomControlsHeight();
+        ChromeFullscreenManager manager = getFullscreenManager();
+        return manager != null ? manager.getBottomControlsHeight() : 0;
     }
 
     @Override
     public boolean controlsResizeView() {
-        return mTab.controlsResizeView();
+        ChromeFullscreenManager manager = getFullscreenManager();
+        return manager != null ? manager.controlsResizeView() : false;
     }
 
     /**
@@ -556,6 +569,72 @@ public class TabWebContentsDelegateAndroid extends WebContentsDelegateAndroid {
 
     public void showFramebustBlockInfobarForTesting(String url) {
         nativeShowFramebustBlockInfoBar(mTab.getWebContents(), url);
+    }
+
+    private class RepostFormWarningHelper extends EmptyTabObserver {
+        private ModalDialogManager mModalDialogManager;
+        private PropertyModel mDialogModel;
+
+        void show() {
+            if (mTab.getActivity() == null) return;
+            mTab.addObserver(this);
+            mModalDialogManager = mTab.getActivity().getModalDialogManager();
+
+            ModalDialogProperties
+                    .Controller dialogController = new ModalDialogProperties.Controller() {
+                @Override
+                public void onClick(PropertyModel model, int buttonType) {
+                    if (buttonType == ModalDialogProperties.ButtonType.POSITIVE) {
+                        mModalDialogManager.dismissDialog(
+                                model, DialogDismissalCause.POSITIVE_BUTTON_CLICKED);
+                    } else if (buttonType == ModalDialogProperties.ButtonType.NEGATIVE) {
+                        mModalDialogManager.dismissDialog(
+                                model, DialogDismissalCause.NEGATIVE_BUTTON_CLICKED);
+                    }
+                }
+
+                @Override
+                public void onDismiss(PropertyModel model, int dismissalCause) {
+                    mTab.removeObserver(RepostFormWarningHelper.this);
+                    if (!mTab.isInitialized()) return;
+                    switch (dismissalCause) {
+                        case DialogDismissalCause.POSITIVE_BUTTON_CLICKED:
+                            mTab.getWebContents().getNavigationController().continuePendingReload();
+                            break;
+                        case DialogDismissalCause.ACTIVITY_DESTROYED:
+                        case DialogDismissalCause.TAB_DESTROYED:
+                            // Intentionally ignored as the tab object is gone.
+                            break;
+                        default:
+                            mTab.getWebContents().getNavigationController().cancelPendingReload();
+                            break;
+                    }
+                }
+            };
+
+            Resources resources = mTab.getActivity().getResources();
+            mDialogModel = new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS)
+                                   .with(ModalDialogProperties.CONTROLLER, dialogController)
+                                   .with(ModalDialogProperties.TITLE, resources,
+                                           R.string.http_post_warning_title)
+                                   .with(ModalDialogProperties.MESSAGE, resources,
+                                           R.string.http_post_warning)
+                                   .with(ModalDialogProperties.POSITIVE_BUTTON_TEXT, resources,
+                                           R.string.http_post_warning_resend)
+                                   .with(ModalDialogProperties.NEGATIVE_BUTTON_TEXT, resources,
+                                           R.string.cancel)
+                                   .with(ModalDialogProperties.CANCEL_ON_TOUCH_OUTSIDE, true)
+                                   .build();
+
+            mModalDialogManager.showDialog(
+                    mDialogModel, ModalDialogManager.ModalDialogType.TAB, true);
+        }
+
+        @Override
+        public void onDestroyed(Tab tab) {
+            super.onDestroyed(tab);
+            mModalDialogManager.dismissDialog(mDialogModel, DialogDismissalCause.TAB_DESTROYED);
+        }
     }
 
     private static native void nativeOnRendererUnresponsive(WebContents webContents);

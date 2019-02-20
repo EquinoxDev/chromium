@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/signin/dice_turn_sync_on_helper.h"
 
+#include <utility>
+
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -20,9 +22,7 @@
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/signin/dice_turn_sync_on_helper_delegate_impl.h"
@@ -33,9 +33,6 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/account_consistency_method.h"
 #include "components/signin/core/browser/account_info.h"
-#include "components/signin/core/browser/account_tracker_service.h"
-#include "components/signin/core/browser/device_id_helper.h"
-#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "components/signin/core/browser/signin_metrics.h"
 #include "components/signin/core/browser/signin_pref_names.h"
 #include "components/sync/base/sync_prefs.h"
@@ -44,6 +41,7 @@
 #include "components/unified_consent/feature.h"
 #include "components/unified_consent/unified_consent_service.h"
 #include "content/public/browser/storage_partition.h"
+#include "services/identity/public/cpp/accounts_mutator.h"
 #include "services/identity/public/cpp/identity_manager.h"
 #include "services/identity/public/cpp/primary_account_mutator.h"
 
@@ -65,9 +63,7 @@ class DiceTurnSyncOnHelperShutdownNotifierFactory
   DiceTurnSyncOnHelperShutdownNotifierFactory()
       : BrowserContextKeyedServiceShutdownNotifierFactory(
             "DiceTurnSyncOnHelperShutdownNotifier") {
-    DependsOn(AccountTrackerServiceFactory::GetInstance());
     DependsOn(IdentityManagerFactory::GetInstance());
-    DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
     DependsOn(ProfileSyncServiceFactory::GetInstance());
     DependsOn(UnifiedConsentServiceFactory::GetInstance());
     DependsOn(policy::UserPolicySigninServiceFactory::GetInstance());
@@ -86,40 +82,39 @@ AccountInfo GetAccountInfo(identity::IdentityManager* identity_manager,
                                         : AccountInfo();
 }
 
-class TokensLoadedCallbackRunner : public OAuth2TokenService::Observer {
+class TokensLoadedCallbackRunner : public identity::IdentityManager::Observer {
  public:
   // Calls |callback| when tokens are loaded.
   static void RunWhenLoaded(Profile* profile,
                             base::OnceCallback<void(Profile*)> callback) {
-    ProfileOAuth2TokenService* token_service =
-        ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
-    if (token_service->AreAllCredentialsLoaded()) {
+    auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
+    if (identity_manager->AreRefreshTokensLoaded()) {
       std::move(callback).Run(profile);
       return;
     }
     // TokensLoadedCallbackRunner deletes itself after running the callback.
     new TokensLoadedCallbackRunner(
-        token_service,
+        identity_manager,
         DiceTurnSyncOnHelperShutdownNotifierFactory::GetInstance()->Get(
             profile),
         base::BindOnce(std::move(callback), profile));
   }
 
  private:
-  TokensLoadedCallbackRunner(ProfileOAuth2TokenService* token_service,
+  TokensLoadedCallbackRunner(identity::IdentityManager* identity_manager,
                              KeyedServiceShutdownNotifier* shutdown_notifier,
                              base::OnceClosure callback)
-      : token_service_(token_service),
-        scoped_token_service_observer_(this),
+      : identity_manager_(identity_manager),
+        scoped_identity_manager_observer_(this),
         callback_(std::move(callback)),
         shutdown_subscription_(shutdown_notifier->Subscribe(
             base::Bind(&TokensLoadedCallbackRunner::OnShutdown,
                        base::Unretained(this)))) {
-    DCHECK(!token_service_->AreAllCredentialsLoaded());
-    scoped_token_service_observer_.Add(token_service_);
+    DCHECK(!identity_manager_->AreRefreshTokensLoaded());
+    scoped_identity_manager_observer_.Add(identity_manager_);
   }
 
-  // OAuth2TokenService::Observer implementation:
+  // identity::IdentityManager::Observer implementation:
   void OnRefreshTokensLoaded() override {
     std::move(callback_).Run();
     delete this;
@@ -127,9 +122,9 @@ class TokensLoadedCallbackRunner : public OAuth2TokenService::Observer {
 
   void OnShutdown() { delete this; }
 
-  ProfileOAuth2TokenService* token_service_;
-  ScopedObserver<OAuth2TokenService, TokensLoadedCallbackRunner>
-      scoped_token_service_observer_;
+  identity::IdentityManager* identity_manager_;
+  ScopedObserver<identity::IdentityManager, TokensLoadedCallbackRunner>
+      scoped_identity_manager_observer_;
   base::OnceClosure callback_;
   std::unique_ptr<KeyedServiceShutdownNotifier::Subscription>
       shutdown_subscription_;
@@ -144,16 +139,17 @@ DiceTurnSyncOnHelper::DiceTurnSyncOnHelper(
     signin_metrics::Reason signin_reason,
     const std::string& account_id,
     SigninAbortedMode signin_aborted_mode,
-    std::unique_ptr<Delegate> delegate)
+    std::unique_ptr<Delegate> delegate,
+    base::OnceClosure callback)
     : delegate_(std::move(delegate)),
       profile_(profile),
       identity_manager_(IdentityManagerFactory::GetForProfile(profile)),
-      token_service_(ProfileOAuth2TokenServiceFactory::GetForProfile(profile)),
       signin_access_point_(signin_access_point),
       signin_promo_action_(signin_promo_action),
       signin_reason_(signin_reason),
       signin_aborted_mode_(signin_aborted_mode),
       account_info_(GetAccountInfo(identity_manager_, account_id)),
+      scoped_callback_runner_(std::move(callback)),
       shutdown_subscription_(
           DiceTurnSyncOnHelperShutdownNotifierFactory::GetInstance()
               ->Get(profile)
@@ -164,9 +160,6 @@ DiceTurnSyncOnHelper::DiceTurnSyncOnHelper(
   DCHECK(profile_);
   // Should not start syncing if the profile is already authenticated
   DCHECK(!identity_manager_->HasPrimaryAccount());
-
-  // Force sign-in uses the modal sign-in flow.
-  DCHECK(!signin_util::IsForceSigninEnabled());
 
   if (account_info_.gaia.empty() || account_info_.email.empty()) {
     LOG(ERROR) << "Cannot turn Sync On for invalid account.";
@@ -217,7 +210,8 @@ DiceTurnSyncOnHelper::DiceTurnSyncOnHelper(
           signin_reason,
           account_id,
           signin_aborted_mode,
-          std::make_unique<DiceTurnSyncOnHelperDelegateImpl>(browser)) {}
+          std::make_unique<DiceTurnSyncOnHelperDelegateImpl>(browser),
+          base::OnceClosure()) {}
 
 DiceTurnSyncOnHelper::~DiceTurnSyncOnHelper() {
 }
@@ -407,23 +401,17 @@ void DiceTurnSyncOnHelper::OnNewProfileCreated(Profile* new_profile,
 
 syncer::SyncService* DiceTurnSyncOnHelper::GetSyncService() {
   return profile_->IsSyncAllowed()
-             ? ProfileSyncServiceFactory::GetSyncServiceForBrowserContext(
-                   profile_)
+             ? ProfileSyncServiceFactory::GetSyncServiceForProfile(profile_)
              : nullptr;
 }
 
 void DiceTurnSyncOnHelper::OnNewProfileTokensLoaded(Profile* new_profile) {
-  AccountTrackerServiceFactory::GetForProfile(new_profile)
-      ->SeedAccountInfo(account_info_);
   // This deletes the token locally, even in KEEP_ACCOUNT mode.
-  token_service_->ExtractCredentials(
-      ProfileOAuth2TokenServiceFactory::GetForProfile(new_profile),
-      account_info_.account_id);
-  // Reset the device ID from the source profile: the exported token is linked
-  // to the device ID of the current profile on the server. Reset the device ID
-  // of the current profile to avoid tying it with the new profile. See
-  // https://crbug.com/813928#c16
-  signin::RecreateSigninScopedDeviceId(profile_->GetPrefs());
+  auto* accounts_mutator = identity_manager_->GetAccountsMutator();
+  auto* new_profile_accounts_mutator =
+      IdentityManagerFactory::GetForProfile(new_profile)->GetAccountsMutator();
+  accounts_mutator->MoveAccount(new_profile_accounts_mutator,
+                                account_info_.account_id);
 
   SwitchToProfile(new_profile);
   DCHECK_EQ(profile_, new_profile);
@@ -502,7 +490,7 @@ void DiceTurnSyncOnHelper::FinishSyncSetupAndDelete(
   switch (result) {
     case LoginUIService::CONFIGURE_SYNC_FIRST:
       if (consent_service)
-        consent_service->EnableGoogleServices();
+        consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(true);
       delegate_->ShowSyncSettings();
       break;
     case LoginUIService::SYNC_WITH_DEFAULT_SETTINGS: {
@@ -510,7 +498,7 @@ void DiceTurnSyncOnHelper::FinishSyncSetupAndDelete(
       if (sync_service)
         sync_service->GetUserSettings()->SetFirstSetupComplete();
       if (consent_service)
-        consent_service->EnableGoogleServices();
+        consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(true);
       break;
     }
     case LoginUIService::ABORT_SIGNIN:
@@ -532,7 +520,6 @@ void DiceTurnSyncOnHelper::SwitchToProfile(Profile* new_profile) {
   DCHECK(!sync_startup_tracker_);
   profile_ = new_profile;
   identity_manager_ = IdentityManagerFactory::GetForProfile(profile_);
-  token_service_ = ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   shutdown_subscription_ =
       DiceTurnSyncOnHelperShutdownNotifierFactory::GetInstance()
           ->Get(profile_)
@@ -548,7 +535,8 @@ void DiceTurnSyncOnHelper::AbortAndDelete() {
   if (signin_aborted_mode_ == SigninAbortedMode::REMOVE_ACCOUNT) {
     // Revoke the token, and the AccountReconcilor and/or the Gaia server will
     // take care of invalidating the cookies.
-    token_service_->RevokeCredentials(
+    auto* accounts_mutator = identity_manager_->GetAccountsMutator();
+    accounts_mutator->RemoveAccount(
         account_info_.account_id,
         signin_metrics::SourceForRefreshTokenOperation::
             kDiceTurnOnSyncHelper_Abort);

@@ -8,6 +8,7 @@
 #include "ash/shelf/shelf_tooltip_bubble.h"
 #include "ash/shelf/shelf_tooltip_preview_bubble.h"
 #include "ash/shelf/shelf_view.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/strings/string16.h"
@@ -24,7 +25,7 @@
 namespace ash {
 namespace {
 
-const int kTooltipAppearanceDelay = 1000;  // msec
+const int kTooltipAppearanceDelay = 250;  // msec
 
 }  // namespace
 
@@ -72,29 +73,21 @@ void ShelfTooltipManager::ShowTooltip(views::View* view) {
   if (!ShouldShowTooltipForView(view))
     return;
 
-  views::BubbleBorder::Arrow arrow = views::BubbleBorder::Arrow::NONE;
-  switch (shelf_view_->shelf()->alignment()) {
-    case SHELF_ALIGNMENT_BOTTOM:
-    case SHELF_ALIGNMENT_BOTTOM_LOCKED:
-      arrow = views::BubbleBorder::BOTTOM_CENTER;
-      break;
-    case SHELF_ALIGNMENT_LEFT:
-      arrow = views::BubbleBorder::LEFT_CENTER;
-      break;
-    case SHELF_ALIGNMENT_RIGHT:
-      arrow = views::BubbleBorder::RIGHT_CENTER;
-      break;
-  }
-
   const std::vector<aura::Window*> open_windows =
       shelf_view_->GetOpenWindowsForShelfView(view);
 
-  const base::string16 text = shelf_view_->GetTitleForView(view);
+  const ShelfAlignment alignment = shelf_view_->shelf()->alignment();
+  const SkColor shelf_background_color =
+      shelf_view_->shelf_widget()->GetShelfBackgroundColor();
   if (chromeos::switches::ShouldShowShelfHoverPreviews() &&
       open_windows.size() > 0) {
-    bubble_ = new ShelfTooltipPreviewBubble(view, arrow, open_windows, this);
+    bubble_ = new ShelfTooltipPreviewBubble(view, open_windows, this, alignment,
+                                            shelf_background_color);
   } else {
-    bubble_ = new ShelfTooltipBubble(view, arrow, text);
+    base::string16 title;
+    view->GetTooltipText(gfx::Point(), &title);
+    bubble_ =
+        new ShelfTooltipBubble(view, alignment, shelf_background_color, title);
   }
 
   aura::Window* window = bubble_->GetWidget()->GetNativeWindow();
@@ -151,6 +144,11 @@ void ShelfTooltipManager::OnMouseEvent(ui::MouseEvent* event) {
 void ShelfTooltipManager::OnTouchEvent(ui::TouchEvent* event) {
   if (bubble_ && event->type() == ui::ET_TOUCH_PRESSED)
     ProcessPressedEvent(*event);
+}
+
+void ShelfTooltipManager::OnKeyEvent(ui::KeyEvent* event) {
+  // Close any currently shown bubble.
+  Close();
 }
 
 void ShelfTooltipManager::WillChangeVisibilityState(

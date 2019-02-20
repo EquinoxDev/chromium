@@ -93,7 +93,7 @@ void LauncherContextMenu::ExecuteCommand(int command_id, int event_flags) {
     case ash::MENU_OPEN_NEW:
       // Use a copy of the id to avoid crashes, as this menu's owner will be
       // destroyed if LaunchApp replaces the ShelfItemDelegate instance.
-      controller_->LaunchApp(ash::ShelfID(item_.id), ash::LAUNCH_FROM_UNKNOWN,
+      controller_->LaunchApp(ash::ShelfID(item_.id), ash::LAUNCH_FROM_SHELF,
                              ui::EF_NONE, display_id_);
       break;
     case ash::MENU_CLOSE:
@@ -215,6 +215,10 @@ const gfx::VectorIcon& LauncherContextMenu::GetCommandIdVectorIcon(
     case ash::NOTIFICATION_CONTAINER:
       NOTREACHED() << "NOTIFICATION_CONTAINER does not have an icon, and it is "
                       "added to the model by NotificationMenuController.";
+      return blank;
+    case ash::STOP_APP:
+      // TODO(crbug.com/930869) This is a placeholder, the real icon has not
+      // been approved yet.
       return blank;
     case ash::LAUNCH_APP_SHORTCUT_FIRST:
     case ash::LAUNCH_APP_SHORTCUT_LAST:

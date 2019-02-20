@@ -14,10 +14,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
-#include "chrome/browser/signin/gaia_cookie_manager_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -25,7 +22,9 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/profiles/incognito_window_count_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/grit/generated_resources.h"
 #include "services/identity/public/cpp/identity_manager.h"
@@ -61,8 +60,7 @@ AvatarToolbarButton::AvatarToolbarButton(Browser* browser)
 #endif  // !defined(OS_CHROMEOS)
       browser_list_observer_(this),
       profile_observer_(this),
-      cookie_manager_service_observer_(this),
-      account_tracker_service_observer_(this) {
+      identity_manager_observer_(this) {
 
   if (IsIncognitoCounterActive())
     browser_list_observer_.Add(BrowserList::GetInstance());
@@ -71,13 +69,9 @@ AvatarToolbarButton::AvatarToolbarButton(Browser* browser)
       &g_browser_process->profile_manager()->GetProfileAttributesStorage());
 
   if (!IsIncognito() && !profile_->IsGuestSession()) {
-    cookie_manager_service_observer_.Add(
-        GaiaCookieManagerServiceFactory::GetForProfile(profile_));
-    account_tracker_service_observer_.Add(
-        AccountTrackerServiceFactory::GetForProfile(profile_));
+    identity_manager_observer_.Add(
+        IdentityManagerFactory::GetForProfile(profile_));
   }
-
-  SetInsets();
 
   // Activate on press for left-mouse-button only to mimic other MenuButtons
   // without drag-drop actions (specifically the adjacent browser menu).
@@ -125,26 +119,40 @@ void AvatarToolbarButton::UpdateText() {
 
   const SyncState sync_state = GetSyncState();
 
-  if (IsIncognitoCounterActive()) {
-    const int incognito_window_count =
+  if (IsIncognito() && GetThemeProvider()) {
+    // Note that this chip does not have a highlight color.
+    const SkColor text_color = GetThemeProvider()->GetColor(
+        ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON);
+    SetEnabledTextColors(text_color);
+    // TODO(pbos): Remove this call once the incognito chip always triggers a
+    // menu.
+    if (!IsIncognitoCounterActive())
+      SetTextColor(STATE_DISABLED, text_color);
+  }
+
+  if (IsIncognito()) {
+    int incognito_window_count =
         BrowserList::GetIncognitoSessionsActiveForProfile(profile_);
-    if (incognito_window_count > 1) {
-      text = base::IntToString16(incognito_window_count);
-      // TODO(http://crbug.com/896235): Update to select from theme colors and
-      // use GetColorWithMinimumContrast to guarantee readability.
-      color = gfx::kGoogleGrey900;
-    }
+    if (!IsIncognitoCounterActive())
+      incognito_window_count = 1;
+    text = l10n_util::GetPluralStringFUTF16(IDS_AVATAR_BUTTON_INCOGNITO,
+                                            incognito_window_count);
   } else if (sync_state == SyncState::kError) {
-    color = gfx::kGoogleRed600;
+    color =
+        AdjustHighlightColorForContrast(gfx::kGoogleRed300, gfx::kGoogleRed600,
+                                        gfx::kGoogleRed050, gfx::kGoogleRed900);
     text = l10n_util::GetStringUTF16(IDS_AVATAR_BUTTON_SYNC_ERROR);
   } else if (sync_state == SyncState::kPaused) {
-    color = gfx::kGoogleBlue600;
+    color = AdjustHighlightColorForContrast(
+        gfx::kGoogleBlue300, gfx::kGoogleBlue600, gfx::kGoogleBlue050,
+        gfx::kGoogleBlue900);
+
     text = l10n_util::GetStringUTF16(IDS_AVATAR_BUTTON_SYNC_PAUSED);
   }
 
+  SetInsets();
   SetHighlightColor(color);
   SetText(text);
-
   SetTooltipText(GetAvatarTooltipText());
 }
 
@@ -154,16 +162,29 @@ void AvatarToolbarButton::NotifyClick(const ui::Event& event) {
   // call ExecuteCommandWithDisposition on their behalf. Unfortunately, it's not
   // possible to plumb IsKeyEvent through, so this has to be a special case.
   if (IsIncognitoCounterActive()) {
-    IncognitoWindowCountView::ShowBubble(
-        this, browser_,
-        BrowserList::GetIncognitoSessionsActiveForProfile(profile_));
+    if (!IncognitoWindowCountView::IsShowing()) {
+      IncognitoWindowCountView::ShowBubble(
+          this, browser_,
+          BrowserList::GetIncognitoSessionsActiveForProfile(profile_));
+    }
   } else {
+    // TODO(https://crbug.com/896235): Call IncognitoWindowCountView::ShowBubble
+    // from this ShowAvatarBubbleFromAvatarButton.
     browser_->window()->ShowAvatarBubbleFromAvatarButton(
         BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
         signin::ManageAccountsParams(),
         signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN,
         event.IsKeyEvent());
   }
+}
+
+void AvatarToolbarButton::OnThemeChanged() {
+  UpdateIcon();
+  UpdateText();
+}
+
+void AvatarToolbarButton::AddedToWidget() {
+  UpdateText();
 }
 
 void AvatarToolbarButton::OnAvatarErrorChanged() {
@@ -211,19 +232,19 @@ void AvatarToolbarButton::OnProfileNameChanged(
   UpdateText();
 }
 
-void AvatarToolbarButton::OnGaiaAccountsInCookieUpdated(
-    const std::vector<gaia::ListedAccount>& accounts,
-    const std::vector<gaia::ListedAccount>& signed_out_accounts,
+void AvatarToolbarButton::OnAccountsInCookieUpdated(
+    const identity::AccountsInCookieJarInfo& accounts_in_cookie_jar_info,
     const GoogleServiceAuthError& error) {
   UpdateIcon();
 }
 
-void AvatarToolbarButton::OnAccountImageUpdated(const std::string& account_id,
-                                                const gfx::Image& image) {
+void AvatarToolbarButton::OnExtendedAccountInfoUpdated(
+    const AccountInfo& info) {
   UpdateIcon();
 }
 
-void AvatarToolbarButton::OnAccountRemoved(const AccountInfo& info) {
+void AvatarToolbarButton::OnExtendedAccountInfoRemoved(
+    const AccountInfo& info) {
   UpdateIcon();
 }
 
@@ -293,15 +314,8 @@ base::string16 AvatarToolbarButton::GetAvatarTooltipText() const {
 gfx::ImageSkia AvatarToolbarButton::GetAvatarIcon() const {
   const int icon_size = ui::MaterialDesignController::touch_ui() ? 24 : 20;
 
-  SkColor icon_color;
-  if (IsIncognitoCounterActive() &&
-      BrowserList::GetIncognitoSessionsActiveForProfile(profile_) > 1) {
-    // TODO(http://crbug.com/896235): Update to select from theme colors.
-    icon_color = gfx::kGoogleGrey900;
-  } else {
-    icon_color = GetThemeProvider()->GetColor(
-        ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON);
-  }
+  SkColor icon_color =
+      GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR_BUTTON_ICON);
 
   if (IsIncognito())
     return gfx::CreateVectorIcon(kIncognitoIcon, icon_size, icon_color);
@@ -352,8 +366,7 @@ gfx::Image AvatarToolbarButton::GetIconImageFromProfile() const {
     std::vector<AccountInfo> promo_accounts =
         signin_ui_util::GetAccountsForDicePromos(profile_);
     if (!promo_accounts.empty()) {
-      return AccountTrackerServiceFactory::GetForProfile(profile_)
-          ->GetAccountImage(promo_accounts[0].account_id);
+      return promo_accounts.front().account_image;
     }
   }
 #endif  // !defined(OS_CHROMEOS)
@@ -373,8 +386,7 @@ AvatarToolbarButton::SyncState AvatarToolbarButton::GetSyncState() const {
     const bool should_show_sync_paused_ui =
         AccountConsistencyModeManager::IsDiceEnabledForProfile(profile_) &&
         sync_ui_util::GetMessagesForAvatarSyncError(
-            profile_, IdentityManagerFactory::GetForProfile(profile_), &unused,
-            &unused) == sync_ui_util::AUTH_ERROR;
+            profile_, &unused, &unused) == sync_ui_util::AUTH_ERROR;
     return should_show_sync_paused_ui ? SyncState::kPaused : SyncState::kError;
   }
 #endif  // !defined(OS_CHROMEOS)
@@ -384,6 +396,37 @@ AvatarToolbarButton::SyncState AvatarToolbarButton::GetSyncState() const {
 void AvatarToolbarButton::SetInsets() {
   // In non-touch mode we use a larger-than-normal icon size for avatars as 16dp
   // is hard to read for user avatars, so we need to set corresponding insets.
-  SetLayoutInsetDelta(
-      gfx::Insets(ui::MaterialDesignController::touch_ui() ? 0 : -2));
+  gfx::Insets layout_insets(ui::MaterialDesignController::touch_ui() ? 0 : -2);
+
+  SetLayoutInsetDelta(layout_insets);
+}
+
+SkColor AvatarToolbarButton::AdjustHighlightColorForContrast(
+    SkColor desired_dark_color,
+    SkColor desired_light_color,
+    SkColor dark_extreme,
+    SkColor light_extreme) const {
+  const ui::ThemeProvider* theme_provider = GetThemeProvider();
+  if (!theme_provider)
+    return desired_light_color;
+  SkColor toolbar_color =
+      GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR);
+  SkColor contrasting_color = color_utils::PickContrastingColor(
+      desired_dark_color, desired_light_color, toolbar_color);
+  SkColor limit =
+      contrasting_color == desired_dark_color ? dark_extreme : light_extreme;
+  // Setting highlight color will set the text to the highlight color, and the
+  // background to the same color with a low alpha. This means that our target
+  // contrast is between the text (the highlight color) and a blend of the
+  // highlight color and the toolbar color.
+  SkColor base_color = color_utils::AlphaBlend(contrasting_color, toolbar_color,
+                                               kToolbarButtonBackgroundAlpha);
+
+  // Add a fudge factor to the minimum contrast ratio since we'll actually be
+  // blending with the adjusted color.
+  SkAlpha blend_alpha = color_utils::GetBlendValueWithMinimumContrast(
+      contrasting_color, limit, base_color,
+      color_utils::kMinimumReadableContrastRatio * 1.05);
+
+  return color_utils::AlphaBlend(limit, contrasting_color, blend_alpha);
 }

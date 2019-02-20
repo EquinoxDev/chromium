@@ -27,14 +27,6 @@ const char kTestCrosGaiaIdMigration[] = "test-cros-gaia-id-migration";
 // all stored user keys will be converted to GaiaId)
 const char kTestCrosGaiaIdMigrationStarted[] = "started";
 
-// Controls whether to enable assistant for locale.
-const base::Feature kAssistantFeatureForLocale{
-    "ChromeOSAssistantForLocale", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Controls whether to enable voice interaction feature.
-const base::Feature kVoiceInteractionFeature{"ChromeOSVoiceInteraction",
-                                             base::FEATURE_DISABLED_BY_DEFAULT};
-
 // Controls whether Instant Tethering supports hosts which use the background
 // advertisement model.
 const base::Feature kInstantTetheringBackgroundAdvertisementSupport{
@@ -56,6 +48,9 @@ const base::Feature kShowLanguageToggleInDemoMode{
 
 const base::Feature kShowPlayInDemoMode{"ShowPlayInDemoMode",
                                         base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kShowSplashScreenInDemoMode{
+    "ShowSplashScreenInDemoMode", base::FEATURE_DISABLED_BY_DEFAULT};
 
 // Please keep the order of these switches synchronized with the header file
 // (i.e. in alphabetical order).
@@ -106,6 +101,11 @@ const char kArcDataCleanupOnStart[] = "arc-data-cleanup-on-start";
 // in autotests to resolve racy conditions.
 const char kArcDisableAppSync[] = "arc-disable-app-sync";
 
+// Flag that disables ARC locale sync with Android container. Used in autotest
+// to prevent conditions when certain apps, including Play Store may get
+// restarted. Restarting Play Store may case random test failures.
+const char kArcDisableLocaleSync[] = "arc-disable-locale-sync";
+
 // Flag that disables ARC Play Auto Install flow that installs set of predefined
 // apps silently. Used in autotests to resolve racy conditions.
 const char kArcDisablePlayAutoInstall[] = "arc-disable-play-auto-install";
@@ -154,9 +154,6 @@ const char kChildWallpaperLarge[] = "child-wallpaper-large";
 // Default small wallpaper to use for kids accounts (as path to trusted,
 // non-user-writable JPEG file).
 const char kChildWallpaperSmall[] = "child-wallpaper-small";
-
-// URL to display within the Contained Shell widget.
-const char kContainedShellUrl[] = "contained-shell-url";
 
 const char kConservativeThreshold[] = "conservative";
 
@@ -245,9 +242,6 @@ const char kDisableMtpWriteSupport[] = "disable-mtp-write-support";
 // Disables the multiple display layout UI.
 const char kDisableMultiDisplayLayout[] = "disable-multi-display-layout";
 
-// Disables the new Korean IME in chrome://settings/languages.
-const char kDisableNewKoreanIme[] = "disable-new-korean-ime";
-
 // Disables the new File System Provider API based ZIP unpacker.
 const char kDisableNewZIPUnpacker[] = "disable-new-zip-unpacker";
 
@@ -309,10 +303,6 @@ const char kEnableCaptivePortalRandomUrl[] = "enable-captive-portal-random-url";
 // Enables the Cast Receiver.
 const char kEnableCastReceiver[] = "enable-cast-receiver";
 
-// Enables the experimental chromevox developer option.
-const char kEnableChromevoxDeveloperOption[] =
-    "enable-chromevox-developer-option";
-
 // Enables consumer kiosk mode for Chrome OS.
 const char kEnableConsumerKiosk[] = "enable-consumer-kiosk";
 
@@ -330,9 +320,6 @@ const char kEnableFirstRunUITransitions[] = "enable-first-run-ui-transitions";
 
 // Enables the marketing opt-in screen in OOBE.
 const char kEnableMarketingOptInScreen[] = "enable-market-opt-in";
-
-// Enables offline demo mode. Demo mode still requires ARC++.
-const char kEnableOfflineDemoMode[] = "enable-offline-demo-mode";
 
 // Enables suggestions while typing on a physical keyboard.
 const char kEnablePhysicalKeyboardAutocorrect[] =
@@ -357,9 +344,6 @@ const char kEnableTouchpadThreeFingerClick[] =
 // Enables the chromecast support for video player app.
 const char kEnableVideoPlayerChromecastSupport[] =
     "enable-video-player-chromecast-support";
-
-// Enables the VoiceInteraction support.
-const char kEnableVoiceInteraction[] = "enable-voice-interaction";
 
 // Disables ARC for managed accounts.
 const char kEnterpriseDisableArc[] = "enterprise-disable-arc";
@@ -475,8 +459,7 @@ const char kLoginManager[] = "login-manager";
 // to pass user_id hash for primary user.
 const char kLoginProfile[] = "login-profile";
 
-// Specifies the user which is already logged in. If kStubCrosSettings is set,
-// this user will also be treated as the owner (see kStubCrosSettings).
+// Specifies the user which is already logged in.
 const char kLoginUser[] = "login-user";
 
 // The memory pressure threshold selection which is used to decide whether and
@@ -529,17 +512,14 @@ const char kShowAndroidFilesInFilesApp[] = "show-android-files-in-files-app";
 // If true, files in Android internal storage will be hidden in Files app.
 const char kHideAndroidFilesInFilesApp[] = "hide-android-files-in-files-app";
 
+// This directory contains per-region subdirectories with regulatory label
+// files. If this is not set, we fall back to the default directory
+// '/usr/share/chromeos-assets/regulatory_labels'
+const char kRegulatoryLabelDir[] = "regulatory-label-dir";
+
 // If true, the developer tool overlay will be shown for the login/lock screen.
 // This makes it easier to test layout logic.
 const char kShowLoginDevOverlay[] = "show-login-dev-overlay";
-
-// Indicates that a stub implementation of CrosSettings that stores settings in
-// memory without signing should be used, treating current user as the owner.
-// The DeviceSettingsProvider class is replaced with StubCrosSettingsProvider
-// for reading the settings from memory, and OwnerSettingsServiceChromeOS is
-// replaced with FakeOwnerSettingsService for writing the settings to memory.
-// This option is for testing the chromeos build of chrome on the desktop only.
-const char kStubCrosSettings[] = "stub-cros-settings";
 
 // Enables testing for encryption migration UI.
 const char kTestEncryptionMigrationUI[] = "test-encryption-migration-ui";
@@ -557,9 +537,6 @@ const char kTetherStub[] = "tether-stub";
 // cases with no preexisting connection. Should be used only for testing.
 const char kTetherHostScansIgnoreWiredConnections[] =
     "tether-host-scans-ignore-wired-connections";
-
-// List of locales supported by voice interaction.
-const char kVoiceInteractionLocales[] = "voice-interaction-supported-locales";
 
 // Used to tell the policy infrastructure to not let profile initialization
 // complete until policy is manually set by a test. This is used to provide
@@ -632,40 +609,6 @@ bool IsCellularFirstDevice() {
   return base::CommandLine::ForCurrentProcess()->HasSwitch(kCellularFirst);
 }
 
-bool IsVoiceInteractionLocalesSupported() {
-  // We use Chromium variations to control locales for which assistant should
-  // be enabled. But we still keep checking the previously hard-coded locales
-  // for compatibility.
-  if (base::FeatureList::IsEnabled(kAssistantFeatureForLocale))
-    return true;
-
-  // TODO(updowndota): Add DCHECK here to make sure the value never changes
-  // after all the use case for this method has been moved into user session.
-
-  // Disable voice interaction for non-supported locales.
-  std::string kLocale = icu::Locale::getDefault().getName();
-  if (kLocale != ULOC_US && kLocale != ULOC_UK && kLocale != ULOC_CANADA &&
-      base::CommandLine::ForCurrentProcess()
-              ->GetSwitchValueASCII(
-                  chromeos::switches::kVoiceInteractionLocales)
-              .find(kLocale) == std::string::npos) {
-    return false;
-  }
-  return true;
-}
-
-bool IsVoiceInteractionFlagsEnabled() {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  return !IsAssistantFlagsEnabled() &&
-         (command_line->HasSwitch(kEnableVoiceInteraction) ||
-          base::FeatureList::IsEnabled(kVoiceInteractionFeature));
-}
-
-bool IsVoiceInteractionEnabled() {
-  return IsVoiceInteractionLocalesSupported() &&
-         IsVoiceInteractionFlagsEnabled();
-}
-
 bool IsAccountManagerEnabled() {
   return base::FeatureList::IsEnabled(kAccountManager);
 }
@@ -704,6 +647,10 @@ bool ShouldTetherHostScansIgnoreWiredConnections() {
 
 bool ShouldShowPlayStoreInDemoMode() {
   return base::FeatureList::IsEnabled(kShowPlayInDemoMode);
+}
+
+bool ShouldSkipOobePostLogin() {
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(kOobeSkipPostLogin);
 }
 
 }  // namespace switches

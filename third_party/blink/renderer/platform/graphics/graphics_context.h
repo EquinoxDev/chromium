@@ -46,7 +46,6 @@
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/skia/include/core/SkClipOp.h"
-#include "third_party/skia/include/core/SkMetaData.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
 class SkPath;
@@ -74,7 +73,7 @@ class PLATFORM_EXPORT GraphicsContext {
 
   explicit GraphicsContext(PaintController&,
                            DisabledMode = kNothingDisabled,
-                           SkMetaData* = nullptr);
+                           printing::MetafileSkia* = nullptr);
 
   ~GraphicsContext();
 
@@ -223,21 +222,12 @@ class PLATFORM_EXPORT GraphicsContext {
       const FloatRect& src_rect,
       SkBlendMode = SkBlendMode::kSrcOver,
       RespectImageOrientationEnum = kDoNotRespectImageOrientation);
-  // Used for background image
-  void DrawTiledImage(Image*,
-                      const FloatSize& unsnapped_subset_size,
-                      const FloatRect& snapped_paint_rect,
-                      const FloatPoint& unsnapped_phase,
-                      const FloatSize& tile_size,
-                      SkBlendMode = SkBlendMode::kSrcOver,
-                      const FloatSize& repeat_spacing = FloatSize());
-  // Used for border image
-  void DrawTiledImage(Image*,
+  void DrawImageTiled(Image* image,
                       const FloatRect& dest_rect,
                       const FloatRect& src_rect,
-                      const FloatSize& tile_scale_factor,
-                      Image::TileRule h_rule = Image::kStretchTile,
-                      Image::TileRule v_rule = Image::kStretchTile,
+                      const FloatSize& scale_src_to_dest,
+                      const FloatPoint& phase,
+                      const FloatSize& repeat_spacing,
                       SkBlendMode = SkBlendMode::kSrcOver);
 
   // These methods write to the canvas.
@@ -338,7 +328,8 @@ class PLATFORM_EXPORT GraphicsContext {
   void DrawFocusRing(const Vector<IntRect>&,
                      float width,
                      int offset,
-                     const Color&);
+                     const Color&,
+                     bool is_outset);
   void DrawFocusRing(const Path&, float width, int offset, const Color&);
 
   enum Edge {
@@ -394,7 +385,7 @@ class PLATFORM_EXPORT GraphicsContext {
                                           FloatPoint& p2,
                                           float stroke_width);
 
-  static int FocusRingOutsetExtent(int offset, int width);
+  static int FocusRingOutsetExtent(int offset, int width, bool is_outset);
 
   void SetInDrawingRecorder(bool);
   bool InDrawingRecorder() const { return in_drawing_recorder_; }
@@ -464,8 +455,6 @@ class PLATFORM_EXPORT GraphicsContext {
                                const FloatRoundedRect& rounded_hole_rect,
                                const Color&);
 
-  const SkMetaData& MetaData() const { return meta_data_; }
-
   class HighContrastFlags;
   bool ShouldApplyHighContrastFilterToImage(Image&);
   Color ApplyHighContrastFilter(const Color& input) const;
@@ -488,7 +477,7 @@ class PLATFORM_EXPORT GraphicsContext {
 
   PaintRecorder paint_recorder_;
 
-  SkMetaData meta_data_;
+  printing::MetafileSkia* metafile_;
 
 #if DCHECK_IS_ON()
   int layer_count_;
@@ -504,7 +493,6 @@ class PLATFORM_EXPORT GraphicsContext {
   HighContrastImageClassifier high_contrast_image_classifier_;
 
   unsigned printing_ : 1;
-  unsigned has_meta_data_ : 1;
   unsigned in_drawing_recorder_ : 1;
 
   DISALLOW_COPY_AND_ASSIGN(GraphicsContext);

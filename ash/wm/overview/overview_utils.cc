@@ -12,9 +12,9 @@
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/shell.h"
 #include "ash/wm/overview/cleanup_animation_observer.h"
+#include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/overview/scoped_overview_animation_settings.h"
 #include "ash/wm/overview/start_animation_observer.h"
-#include "ash/wm/overview/window_selector_controller.h"
 #include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/splitview/split_view_utils.h"
 #include "ash/wm/window_state.h"
@@ -35,8 +35,8 @@ namespace ash {
 
 namespace {
 
-// The transform applied to a window selector item when animating to or from the
-// home launcher.
+// The transform applied to an overview item when animating to or from the home
+// launcher.
 const gfx::Transform& GetShiftTransform() {
   static const base::NoDestructor<gfx::Transform> matrix(1, 0, 0, 1, 0, -100);
   return *matrix;
@@ -142,7 +142,7 @@ void FadeInWidgetAndMaybeSlideOnEnter(views::Widget* widget,
 
     auto start_observer = std::make_unique<StartAnimationObserver>();
     scoped_overview_animation_settings.AddObserver(start_observer.get());
-    Shell::Get()->window_selector_controller()->AddStartAnimationObserver(
+    Shell::Get()->overview_controller()->AddStartAnimationObserver(
         std::move(start_observer));
   }
 }
@@ -150,9 +150,8 @@ void FadeInWidgetAndMaybeSlideOnEnter(views::Widget* widget,
 void FadeOutWidgetAndMaybeSlideOnExit(std::unique_ptr<views::Widget> widget,
                                       OverviewAnimationType animation_type,
                                       bool slide) {
-  // The window selector controller may be nullptr on shutdown.
-  WindowSelectorController* controller =
-      Shell::Get()->window_selector_controller();
+  // The overview controller may be nullptr on shutdown.
+  OverviewController* controller = Shell::Get()->overview_controller();
   if (!controller) {
     widget->SetOpacity(0.f);
     return;
@@ -165,7 +164,7 @@ void FadeOutWidgetAndMaybeSlideOnExit(std::unique_ptr<views::Widget> widget,
                                                      widget->GetNativeWindow());
   // CleanupAnimationObserver will delete itself (and the widget) when the
   // opacity animation is complete. Ownership over the observer is passed to the
-  // window selector controller which has longer lifetime so that animations can
+  // overview controller which has longer lifetime so that animations can
   // continue even after the overview mode is shut down.
   views::Widget* widget_ptr = widget.get();
   auto observer = std::make_unique<CleanupAnimationObserver>(std::move(widget));
@@ -187,7 +186,8 @@ std::unique_ptr<views::Widget> CreateBackgroundWidget(aura::Window* root_window,
                                                       SkColor border_color,
                                                       float initial_opacity,
                                                       aura::Window* parent,
-                                                      bool stack_on_top) {
+                                                      bool stack_on_top,
+                                                      bool accept_events) {
   std::unique_ptr<views::Widget> widget = std::make_unique<views::Widget>();
   views::Widget::InitParams params;
   params.type = views::Widget::InitParams::TYPE_POPUP;
@@ -195,7 +195,7 @@ std::unique_ptr<views::Widget> CreateBackgroundWidget(aura::Window* root_window,
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.layer_type = layer_type;
-  params.accept_events = false;
+  params.accept_events = accept_events;
   widget->set_focus_on_creation(false);
   // Parenting in kShellWindowId_WallpaperContainer allows proper layering of
   // the shield and selection widgets. Since that container is created with
@@ -209,8 +209,6 @@ std::unique_ptr<views::Widget> CreateBackgroundWidget(aura::Window* root_window,
   // Disable the "bounce in" animation when showing the window.
   ::wm::SetWindowVisibilityAnimationTransition(widget_window,
                                                ::wm::ANIMATE_NONE);
-  // The background widget should not activate the shelf when passing under it.
-  wm::GetWindowState(widget_window)->set_ignored_by_shelf(true);
   if (params.layer_type == ui::LAYER_SOLID_COLOR) {
     widget_window->layer()->SetColor(background_color);
   } else if (params.layer_type == ui::LAYER_TEXTURED) {
@@ -234,8 +232,8 @@ gfx::Rect GetTransformedBounds(aura::Window* transformed_window,
                                int top_inset) {
   gfx::Rect bounds;
   for (auto* window : wm::GetTransientTreeIterator(transformed_window)) {
-    // Ignore other window types when computing bounding box of window
-    // selector target item.
+    // Ignore other window types when computing bounding box of overview target
+    // item.
     if (window != transformed_window &&
         window->type() != aura::client::WINDOW_TYPE_NORMAL) {
       continue;
@@ -265,8 +263,8 @@ gfx::Rect GetTransformedBounds(aura::Window* transformed_window,
 gfx::Rect GetTargetBoundsInScreen(aura::Window* window) {
   gfx::Rect bounds;
   for (auto* window_iter : wm::GetTransientTreeIterator(window)) {
-    // Ignore other window types when computing bounding box of window
-    // selector target item.
+    // Ignore other window types when computing bounding box of overview target
+    // item.
     if (window_iter != window &&
         window_iter->type() != aura::client::WINDOW_TYPE_NORMAL) {
       continue;
@@ -293,14 +291,13 @@ void SetTransform(aura::Window* window, const gfx::Transform& transform) {
 }
 
 bool IsSlidingOutOverviewFromShelf() {
-  if (!Shell::Get()->window_selector_controller()->IsSelecting())
+  if (!Shell::Get()->overview_controller()->IsSelecting())
     return false;
 
-  HomeLauncherGestureHandler* home_launcher_gesture_handler =
-      Shell::Get()->app_list_controller()->home_launcher_gesture_handler();
-  if (home_launcher_gesture_handler &&
-      home_launcher_gesture_handler->mode() ==
-          HomeLauncherGestureHandler::Mode::kSlideUpToShow) {
+  if (Shell::Get()
+          ->app_list_controller()
+          ->home_launcher_gesture_handler()
+          ->mode() == HomeLauncherGestureHandler::Mode::kSlideUpToShow) {
     return true;
   }
 

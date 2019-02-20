@@ -19,6 +19,7 @@ Sample usage:
 
 import argparse
 import json
+import logging
 import os
 import sys
 import traceback
@@ -28,6 +29,9 @@ import xcodebuild_runner
 
 
 def main():
+  logging.basicConfig(format='[%(asctime)s:%(levelname)s] %(message)s',
+    level=logging.DEBUG, datefmt='%I:%M:%S')
+
   args, test_args = parse_args()
 
   summary = {}
@@ -278,6 +282,8 @@ def parse_args():
   args.test_cases = args.test_cases or []
   args.test_cases.extend(args_json.get('test_cases', []))
   args.xctest = args_json.get('xctest', args.xctest)
+  args.xcode_parallelization = args_json.get('xcode_parallelization',
+                                             args.xcode_parallelization)
   test_args.extend(args_json.get('test_args', []))
 
   return args, test_args

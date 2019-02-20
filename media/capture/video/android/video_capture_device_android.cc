@@ -10,6 +10,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
+#include "base/bind.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -205,11 +206,18 @@ void VideoCaptureDeviceAndroid::StopAndDeAllocate() {
 
 void VideoCaptureDeviceAndroid::TakePhoto(TakePhotoCallback callback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
+                       "VideoCaptureDeviceAndroid::TakePhoto",
+                       TRACE_EVENT_SCOPE_PROCESS);
   {
     base::AutoLock lock(lock_);
     if (state_ != kConfigured)
       return;
     if (!got_first_frame_) {  // We have to wait until we get the first frame.
+      TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
+                           "VideoCaptureDeviceAndroid::TakePhoto enqueuing to "
+                           "wait for first frame",
+                           TRACE_EVENT_SCOPE_PROCESS);
       photo_requests_queue_.push_back(
           base::Bind(&VideoCaptureDeviceAndroid::DoTakePhoto,
                      weak_ptr_factory_.GetWeakPtr(), base::Passed(&callback)));
@@ -336,7 +344,7 @@ void VideoCaptureDeviceAndroid::OnI420FrameAvailable(JNIEnv* env,
   const int y_plane_length = width * height;
   const int uv_plane_length = y_plane_length / 4;
   const int buffer_length = y_plane_length + uv_plane_length * 2;
-  std::unique_ptr<uint8_t> buffer(new uint8_t[buffer_length]);
+  std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_length]);
 
   libyuv::Android420ToI420(y_src, y_stride, u_src, uv_row_stride, v_src,
                            uv_row_stride, uv_pixel_stride, buffer.get(), width,
@@ -500,6 +508,9 @@ void VideoCaptureDeviceAndroid::OnPhotoTaken(
     jlong callback_id,
     const base::android::JavaParamRef<jbyteArray>& data) {
   DCHECK(callback_id);
+  TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
+                       "VideoCaptureDeviceAndroid::OnPhotoTaken",
+                       TRACE_EVENT_SCOPE_PROCESS);
 
   base::AutoLock lock(photo_callbacks_lock_);
 
@@ -612,6 +623,9 @@ void VideoCaptureDeviceAndroid::SetErrorState(media::VideoCaptureError error,
 
 void VideoCaptureDeviceAndroid::DoTakePhoto(TakePhotoCallback callback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
+  TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("video_and_image_capture"),
+                       "VideoCaptureDeviceAndroid::DoTakePhoto",
+                       TRACE_EVENT_SCOPE_PROCESS);
 #if DCHECK_IS_ON()
   {
     base::AutoLock lock(lock_);

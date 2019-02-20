@@ -9,6 +9,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/bind.h"
 #include "chrome/browser/android/explore_sites/explore_sites_bridge.h"
 #include "chrome/browser/android/explore_sites/explore_sites_feature.h"
 #include "chrome/browser/android/explore_sites/explore_sites_service.h"
@@ -16,7 +17,7 @@
 #include "chrome/browser/android/explore_sites/explore_sites_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_android.h"
-#include "chrome/common/pref_names.h"
+#include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "jni/ExploreSitesBridge_jni.h"
 #include "jni/ExploreSitesCategory_jni.h"
@@ -53,7 +54,8 @@ void CatalogReady(ScopedJavaGlobalRef<jobject>(j_result_obj),
     ScopedJavaLocalRef<jobject> j_category =
         Java_ExploreSitesCategory_createAndAppendToList(
             env, category.category_id, category.category_type,
-            ConvertUTF8ToJavaString(env, category.label), j_result_obj);
+            ConvertUTF8ToJavaString(env, category.label),
+            category.ntp_shown_count, category.interaction_count, j_result_obj);
     for (auto& site : category.sites) {
       Java_ExploreSitesSite_createSiteInCategory(
           env, site.site_id, ConvertUTF8ToJavaString(env, site.title),
@@ -156,7 +158,8 @@ void JNI_ExploreSitesBridge_UpdateCatalogFromNetwork(
   std::string accept_languages;
   PrefService* pref_service = profile->GetPrefs();
   if (pref_service != nullptr) {
-    accept_languages = pref_service->GetString(prefs::kAcceptLanguages);
+    accept_languages =
+        pref_service->GetString(language::prefs::kAcceptLanguages);
   }
 
   service->UpdateCatalogFromNetwork(
@@ -179,6 +182,39 @@ void JNI_ExploreSitesBridge_BlacklistSite(
   }
 
   service->BlacklistSite(url);
+}
+
+void JNI_ExploreSitesBridge_RecordClick(JNIEnv* env,
+                                        const JavaParamRef<jobject>& j_profile,
+                                        const JavaParamRef<jstring>& j_url,
+                                        const jint j_category_type) {
+  Profile* profile = ProfileAndroid::FromProfileAndroid(j_profile);
+  ExploreSitesService* service =
+      ExploreSitesServiceFactory::GetForBrowserContext(profile);
+  if (!service) {
+    DLOG(ERROR) << "Unable to create the ExploreSitesService!";
+    return;
+  }
+
+  std::string url = ConvertJavaStringToUTF8(env, j_url);
+  int category_type = static_cast<int>(j_category_type);
+  service->RecordClick(url, category_type);
+}
+
+void JNI_ExploreSitesBridge_IncrementNtpShownCount(
+    JNIEnv* env,
+    const JavaParamRef<jobject>& j_profile,
+    const jint j_category_id) {
+  Profile* profile = ProfileAndroid::FromProfileAndroid(j_profile);
+  ExploreSitesService* service =
+      ExploreSitesServiceFactory::GetForBrowserContext(profile);
+  if (!service) {
+    DLOG(ERROR) << "Unable to create the ExploreSitesService!";
+    return;
+  }
+
+  int category_id = static_cast<int>(j_category_id);
+  service->IncrementNtpShownCount(category_id);
 }
 
 // static

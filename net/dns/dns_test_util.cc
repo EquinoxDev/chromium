@@ -135,6 +135,50 @@ DnsResourceRecord BuildTextRecord(std::string name,
   return record;
 }
 
+DnsResourceRecord BuildPointerRecord(std::string name,
+                                     std::string pointer_name) {
+  DCHECK(!name.empty());
+  DCHECK(!pointer_name.empty());
+
+  DnsResourceRecord record;
+  record.name = std::move(name);
+  record.type = dns_protocol::kTypePTR;
+  record.klass = dns_protocol::kClassIN;
+  record.ttl = base::TimeDelta::FromDays(1).InSeconds();
+  CHECK(DNSDomainFromDot(pointer_name, &record.owned_rdata));
+  record.rdata = record.owned_rdata;
+
+  return record;
+}
+
+DnsResourceRecord BuildServiceRecord(std::string name,
+                                     TestServiceRecord service) {
+  DCHECK(!name.empty());
+  DCHECK(!service.target.empty());
+
+  DnsResourceRecord record;
+  record.name = std::move(name);
+  record.type = dns_protocol::kTypeSRV;
+  record.klass = dns_protocol::kClassIN;
+  record.ttl = base::TimeDelta::FromHours(5).InSeconds();
+
+  std::string rdata;
+  char num_buffer[2];
+  base::WriteBigEndian(num_buffer, service.priority);
+  rdata.append(num_buffer, 2);
+  base::WriteBigEndian(num_buffer, service.weight);
+  rdata.append(num_buffer, 2);
+  base::WriteBigEndian(num_buffer, service.port);
+  rdata.append(num_buffer, 2);
+  std::string dns_name;
+  CHECK(DNSDomainFromDot(service.target, &dns_name));
+  rdata += dns_name;
+
+  record.SetOwnedRdata(std::move(rdata));
+
+  return record;
+}
+
 // A DnsTransaction which uses MockDnsClientRuleList to determine the response.
 class MockTransaction : public DnsTransaction,
                         public base::SupportsWeakPtr<MockTransaction> {
@@ -224,7 +268,7 @@ class MockTransaction : public DnsTransaction,
       return;
     // Using WeakPtr to cleanly cancel when transaction is destroyed.
     base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::Bind(&MockTransaction::Finish, AsWeakPtr()));
+        FROM_HERE, base::BindOnce(&MockTransaction::Finish, AsWeakPtr()));
   }
 
   void FinishDelayedTransaction() {
@@ -311,7 +355,7 @@ std::unique_ptr<DnsResponse> BuildTestDnsResponse(
     answer_name = name;
 
   std::vector<DnsResourceRecord> answers;
-  for (std::vector<std::string> text_record : text_records) {
+  for (std::vector<std::string>& text_record : text_records) {
     answers.push_back(BuildTextRecord(answer_name, std::move(text_record)));
   }
 
@@ -319,6 +363,53 @@ std::unique_ptr<DnsResponse> BuildTestDnsResponse(
   CHECK(DNSDomainFromDot(name, &dns_name));
   base::Optional<DnsQuery> query(base::in_place, 0, dns_name,
                                  dns_protocol::kTypeTXT);
+
+  return std::make_unique<DnsResponse>(
+      0, false, std::move(answers),
+      std::vector<DnsResourceRecord>() /* authority_records */,
+      std::vector<DnsResourceRecord>() /* additional_records */, query);
+}
+
+std::unique_ptr<DnsResponse> BuildTestDnsPointerResponse(
+    std::string name,
+    std::vector<std::string> pointer_names,
+    std::string answer_name) {
+  if (answer_name.empty())
+    answer_name = name;
+
+  std::vector<DnsResourceRecord> answers;
+  for (std::string& pointer_name : pointer_names) {
+    answers.push_back(BuildPointerRecord(answer_name, std::move(pointer_name)));
+  }
+
+  std::string dns_name;
+  CHECK(DNSDomainFromDot(name, &dns_name));
+  base::Optional<DnsQuery> query(base::in_place, 0, dns_name,
+                                 dns_protocol::kTypePTR);
+
+  return std::make_unique<DnsResponse>(
+      0, false, std::move(answers),
+      std::vector<DnsResourceRecord>() /* authority_records */,
+      std::vector<DnsResourceRecord>() /* additional_records */, query);
+}
+
+std::unique_ptr<DnsResponse> BuildTestDnsResponse(
+    std::string name,
+    std::vector<TestServiceRecord> service_records,
+    std::string answer_name) {
+  if (answer_name.empty())
+    answer_name = name;
+
+  std::vector<DnsResourceRecord> answers;
+  for (TestServiceRecord& service_record : service_records) {
+    answers.push_back(
+        BuildServiceRecord(answer_name, std::move(service_record)));
+  }
+
+  std::string dns_name;
+  CHECK(DNSDomainFromDot(name, &dns_name));
+  base::Optional<DnsQuery> query(base::in_place, 0, dns_name,
+                                 dns_protocol::kTypeSRV);
 
   return std::make_unique<DnsResponse>(
       0, false, std::move(answers),
@@ -350,7 +441,8 @@ class MockDnsClient::MockTransactionFactory : public DnsTransactionFactory {
       const std::string& hostname,
       uint16_t qtype,
       DnsTransactionFactory::CallbackType callback,
-      const NetLogWithSource&) override {
+      const NetLogWithSource&,
+      SecureDnsMode) override {
     std::unique_ptr<MockTransaction> transaction =
         std::make_unique<MockTransaction>(rules_, hostname, qtype,
                                           std::move(callback));

@@ -19,6 +19,7 @@
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/gfx/geometry/rect.h"
@@ -105,7 +106,7 @@ void Shelf::ActivateShelfItemOnDisplay(int item_index, int64_t display_id) {
   ShelfItemDelegate* item_delegate = shelf_model->GetShelfItemDelegate(item.id);
   std::unique_ptr<ui::Event> event = std::make_unique<ui::KeyEvent>(
       ui::ET_KEY_RELEASED, ui::VKEY_UNKNOWN, ui::EF_NONE);
-  item_delegate->ItemSelected(std::move(event), display_id, LAUNCH_FROM_UNKNOWN,
+  item_delegate->ItemSelected(std::move(event), display_id, LAUNCH_FROM_SHELF,
                               base::DoNothing());
 }
 

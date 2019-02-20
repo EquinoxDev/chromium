@@ -67,6 +67,8 @@ suite('ExtensionsActivityLogTest', function() {
     proxyDelegate.testActivities = testActivities;
     document.body.appendChild(activityLog);
 
+    activityLog.fire('view-enter-start');
+
     // Wait until we have finished making the call to fetch the activity log.
     return proxyDelegate.whenCalled('getExtensionActivityLog');
   });
@@ -75,30 +77,11 @@ suite('ExtensionsActivityLogTest', function() {
     activityLog.remove();
   });
 
-  test('activities are present for extension', function() {
-    Polymer.dom.flush();
-
-    testVisible('#no-activities', false);
-    testVisible('#loading-activities', false);
-    testVisible('#activity-list', true);
-
-    const activityLogItems =
-        activityLog.shadowRoot.querySelectorAll('activity-log-item');
-    expectEquals(activityLogItems.length, 2);
-
-    // Test the order of the activity log items here. This test is in this
-    // file because the logic to group activity log items by their API call
-    // is in activity_log.js.
-    expectEquals(
-        activityLogItems[0].$$('#api-call').innerText, 'i18n.getUILanguage');
-    expectEquals(activityLogItems[0].$$('#activity-count').innerText, '40');
-
-    expectEquals(
-        activityLogItems[1].$$('#api-call').innerText, 'Storage.getItem');
-    expectEquals(activityLogItems[1].$$('#activity-count').innerText, '35');
-  });
-
   test('activities shown match search query', function() {
+    const activityLogHistory = activityLog.$$('activity-log-history');
+    testVisible =
+        extension_test_util.testVisible.bind(null, activityLogHistory);
+
     const search = activityLog.$$('cr-search-field');
     assertTrue(!!search);
 
@@ -111,13 +94,14 @@ suite('ExtensionsActivityLogTest', function() {
           Polymer.dom.flush();
 
           const activityLogItems =
-              activityLog.shadowRoot.querySelectorAll('activity-log-item');
+              activityLogHistory.shadowRoot.querySelectorAll(
+                  'activity-log-item');
 
           // Since we searched for an API call, we expect only one match as
           // activity log entries are grouped by their API call.
           expectEquals(activityLogItems.length, 1);
           expectEquals(
-              activityLogItems[0].$$('#api-call').innerText,
+              activityLogItems[0].$$('#activity-key').innerText,
               'i18n.getUILanguage');
 
           // Change search query so no results match.
@@ -134,7 +118,8 @@ suite('ExtensionsActivityLogTest', function() {
           testVisible('#activity-list', false);
 
           expectEquals(
-              activityLog.shadowRoot.querySelectorAll('activity-log-item')
+              activityLogHistory.shadowRoot
+                  .querySelectorAll('activity-log-item')
                   .length,
               0);
 
@@ -149,7 +134,8 @@ suite('ExtensionsActivityLogTest', function() {
           Polymer.dom.flush();
 
           const activityLogItems =
-              activityLog.shadowRoot.querySelectorAll('activity-log-item');
+              activityLogHistory.shadowRoot.querySelectorAll(
+                  'activity-log-item');
           expectEquals(activityLogItems.length, 2);
         });
   });
@@ -160,38 +146,19 @@ suite('ExtensionsActivityLogTest', function() {
     return proxyDelegate.whenCalled('deleteActivitiesFromExtension')
         .then(() => {
           Polymer.dom.flush();
+          const activityLogHistory = activityLog.$$('activity-log-history');
+          testVisible =
+              extension_test_util.testVisible.bind(null, activityLogHistory);
+
           testVisible('#no-activities', true);
           testVisible('#loading-activities', false);
           testVisible('#activity-list', false);
           expectEquals(
-              activityLog.shadowRoot.querySelectorAll('activity-log-item')
+              activityLogHistory.shadowRoot
+                  .querySelectorAll('activity-log-item')
                   .length,
               0);
         });
-  });
-
-  test('message shown when no activities present for extension', function() {
-    // Spoof an API call and pretend that the extension has no activities.
-    activityLog.activityData_ = [];
-
-    Polymer.dom.flush();
-
-    testVisible('#no-activities', true);
-    testVisible('#loading-activities', false);
-    testVisible('#activity-list', false);
-    expectEquals(
-        activityLog.shadowRoot.querySelectorAll('activity-log-item').length, 0);
-  });
-
-  test('message shown when activities are being fetched', function() {
-    // Pretend the activity log is still loading.
-    activityLog.pageState_ = ActivityLogPageState.LOADING;
-
-    Polymer.dom.flush();
-
-    testVisible('#no-activities', false);
-    testVisible('#loading-activities', true);
-    testVisible('#activity-list', false);
   });
 
   test('clicking on back button navigates to the details page', function() {
@@ -202,8 +169,34 @@ suite('ExtensionsActivityLogTest', function() {
       currentPage = newPage;
     });
 
-    activityLog.$$('#close-button').click();
+    activityLog.$$('#closeButton').click();
     expectDeepEquals(
         currentPage, {page: Page.DETAILS, extensionId: EXTENSION_ID});
+  });
+
+  test('tab transitions', function() {
+    Polymer.dom.flush();
+    // Default view should be the history view.
+    testVisible('activity-log-history', true);
+
+    // Navigate to the activity log stream.
+    activityLog.$$('#real-time-tab').click();
+    Polymer.dom.flush();
+    testVisible('activity-log-stream', true);
+
+    const activityLogStream = activityLog.$$('activity-log-stream');
+    assertTrue(activityLogStream.isStreamOnForTest());
+
+    // Navigate back to the activity log history tab.
+    activityLog.$$('#history-tab').click();
+
+    // Expect a refresh of the activity log.
+    proxyDelegate.whenCalled('getExtensionActivityLog').then(() => {
+      Polymer.dom.flush();
+      testVisible('activity-log-history', true);
+
+      // Stream should be turned off.
+      assertFalse(activityLogStream.isStreamOnForTest());
+    });
   });
 });

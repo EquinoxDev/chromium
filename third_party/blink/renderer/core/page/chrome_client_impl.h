@@ -60,13 +60,14 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   // ChromeClient methods:
   void ChromeDestroyed() override;
   void SetWindowRect(const IntRect&, LocalFrame&) override;
-  IntRect RootWindowRect() override;
-  IntRect PageRect() override;
+  IntRect RootWindowRect(LocalFrame&) override;
   void Focus(LocalFrame*) override;
   bool CanTakeFocus(WebFocusType) override;
   void TakeFocus(WebFocusType) override;
   void FocusedNodeChanged(Node* from_node, Node* to_node) override;
   void BeginLifecycleUpdates() override;
+  void StartDeferringCommits() override;
+  void StopDeferringCommits() override;
   bool HadFormInteraction() const override;
   void StartDragging(LocalFrame*,
                      const WebDragData&,
@@ -79,6 +80,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                              const WebWindowFeatures&,
                              NavigationPolicy,
                              SandboxFlags,
+                             const FeaturePolicy::FeatureState&,
                              const SessionStorageNamespaceId&) override;
   void Show(NavigationPolicy) override;
   void DidOverscroll(const FloatSize& overscroll_delta,
@@ -112,7 +114,8 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
                            const LocalFrameView*) const override;
   float WindowToViewportScalar(const float) const override;
   WebScreenInfo GetScreenInfo() const override;
-  base::Optional<IntRect> VisibleContentRectForPainting() const override;
+  void OverrideVisibleRectForMainFrame(LocalFrame& frame,
+                                       IntRect* paint_rect) const override;
   float InputEventsScaleForEmulation() const override;
   void ContentsSizeChanged(LocalFrame*, const IntSize&) const override;
   bool DoubleTapToZoomEnabled() const override;
@@ -150,6 +153,7 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   // appropriate scroll optimizations can be chosen.
   void SetHasScrollEventHandlers(LocalFrame*, bool has_event_handlers) override;
   void SetNeedsLowLatencyInput(LocalFrame*, bool needs_low_latency) override;
+  void SetNeedsUnbufferedInputForDebugger(LocalFrame*, bool immediate) override;
   void RequestUnbufferedInputEvents(LocalFrame*) override;
   void SetTouchAction(LocalFrame*, TouchAction) override;
 
@@ -221,6 +225,8 @@ class CORE_EXPORT ChromeClientImpl final : public ChromeClient {
   void ShowVirtualKeyboardOnElementFocus(LocalFrame&) override;
 
   void RegisterViewportLayers() const override;
+
+  TransformationMatrix GetDeviceEmulationTransform() const override;
 
   void OnMouseDown(Node&) override;
   void DidUpdateBrowserControls() const override;

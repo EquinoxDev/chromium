@@ -5,6 +5,7 @@
 <translation id="1047726139967079566">Bladwijzer instellen voor deze pagina...</translation>
 <translation id="1049743911850919806">Incognito</translation>
 <translation id="1063454504051558093">Ander wachtwoord gebruiken...</translation>
+<translation id="1066060668811609597">Synchronisatie beheren</translation>
 <translation id="1076421457278169141">Code gescand</translation>
 <translation id="1084365883616172403">Facebook-bericht voltooid.</translation>
 <translation id="1104948393051856124">Accepteren en doorgaan</translation>
@@ -19,9 +20,9 @@
 <translation id="1209206284964581585">Voorlopig verbergen</translation>
 <translation id="1219674500290482172">Kan geen verbinding maken met internet.</translation>
 <translation id="122699739164161391">Alle tabbladen sluiten</translation>
+<translation id="1231733316453485619">Synchronisatie inschakelen?</translation>
 <translation id="1254117744268754948">Map kiezen</translation>
 <translation id="1265739287306757398">Meer informatie</translation>
-<translation id="127138278192656016">Synchronisatie en alle services gebruiken</translation>
 <translation id="1272079795634619415">Stop</translation>
 <translation id="1323735185997015385">Verwijderen</translation>
 <translation id="132683371494960526">Dubbeltik om de hoofdmap te wijzigen.</translation>
@@ -46,6 +47,7 @@
 <translation id="1605658421715042784">Afbeelding kopiëren</translation>
 <translation id="1612730193129642006">Tabbladraster weergeven</translation>
 <translation id="1644574205037202324">Geschiedenis</translation>
+<translation id="1650222530560417226">Tik op de knop 'Logboekregistratie starten' om toekomstige logboeken van JavaScript-console en fouten van alle tabbladen te verzamelen. Er worden logboeken verzameld (en alleen opgeslagen in het geheugen) totdat de pagina wordt gesloten of op 'Logboekregistratie stoppen' wordt getikt.</translation>
 <translation id="1657011748321897393">Delen is mislukt omdat je niet verbonden bent met het netwerk.</translation>
 <translation id="165877110639533037">Geen geopende tabbladen</translation>
 <translation id="168715261339224929">Schakel synchronisatie in om al je bladwijzers op al je apparaten te bekijken.</translation>
@@ -54,13 +56,13 @@
 <translation id="1700629756560807968"><ph name="NUMBER_OF_SELECTED_BOOKMARKS" /> geselecteerd</translation>
 <translation id="1740468249224277719">Dubbeltik om te installeren.</translation>
 <translation id="1746815479209538200">Voeg een nieuw tabblad toe als je op het web wilt browsen.</translation>
-<translation id="17513872634828108">Geopende tabbladen</translation>
 <translation id="1752547299766512813">Wachtwoorden opslaan</translation>
 <translation id="1753905327828125965">Meest bezocht</translation>
 <translation id="1809939268435598390">Map verwijderen</translation>
 <translation id="1813414402673211292">Browsegegevens wissen</translation>
 <translation id="1820259098641718022">Toegevoegd aan leeslijst</translation>
 <translation id="1821253160463689938">Maakt gebruik van cookies om je voorkeuren te onthouden, zelfs als je deze pagina's niet bezoekt</translation>
+<translation id="1828824471510190776">Wachtwoord voorstellen...</translation>
 <translation id="1876721852596493031">Gebruiksgegevens verzenden</translation>
 <translation id="1886928167269928266">Het eerste gebruik</translation>
 <translation id="1911619930368729126">Uploaden naar Google Drive</translation>
@@ -72,10 +74,12 @@
 <translation id="2068952045031577364">De afgelopen week</translation>
 <translation id="2079545284768500474">Ongedaan maken</translation>
 <translation id="209018056901015185">Desktopsite opvragen</translation>
+<translation id="2096012225669085171">Synchronisatie en personalisatie op meerdere apparaten</translation>
 <translation id="2103075008456228677">history.google.com openen</translation>
 <translation id="2116625576999540962"><ph name="NUMBER_OF_SELECTED_BOOKMARKS" /> items verplaatst</translation>
 <translation id="213900355088104901">Open een incognitotabblad om privé te browsen</translation>
 <translation id="2149973817440762519">Bladwijzer bewerken</translation>
+<translation id="2198757192731523470">Google kan je geschiedenis gebruiken om Google Zoeken, advertenties en andere Google-services te personaliseren.</translation>
 <translation id="2207590065820824892"><ph name="UNREAD_COUNT" /> ongelezen artikelen op de leeslijst.</translation>
 <translation id="2230173723195178503">Webpagina geladen</translation>
 <translation id="2239626343334228536">Browsegegevens wissen…</translation>
@@ -148,6 +152,7 @@
 <translation id="3329904751041170572">Kan geen verbinding maken met de server.</translation>
 <translation id="3335947283844343239">Open gesloten tabblad opnieuw</translation>
 <translation id="3393920035788932672">Pop-ups toegestaan</translation>
+<translation id="3424059454230285158">Je kunt op elk gewenst moment <ph name="BEGIN_LINK" />deze instellingen aanpassen<ph name="END_LINK" /></translation>
 <translation id="3445288400492335833"><ph name="MINUTES" /> min.</translation>
 <translation id="3448016392200048164">Gesplitste weergave</translation>
 <translation id="345565170154308620">Wachtwoorden beheren…</translation>
@@ -238,13 +243,11 @@ Je gegevens zijn versleuteld met je wachtwoordzin voor synchronisatie. Geef deze
 <translation id="4854345657858711387">Een toegangscode instellen</translation>
 <translation id="4860895144060829044">Bellen</translation>
 <translation id="4881695831933465202">Openen</translation>
-<translation id="4882831918239250449">Beheren hoe je browsegeschiedenis wordt gebruikt om Google Zoeken, advertenties en meer te personaliseren</translation>
 <translation id="4895709476292058519">Accounts wijzigen</translation>
 <translation id="4904877109095351937">Markeren als gelezen</translation>
 <translation id="4930268273022498155">Bestaande gegevens verwijderen. Je kunt ze terugkrijgen door weer over te schakelen naar <ph name="USER_EMAIL1" />.</translation>
 <translation id="4941089862236492464">Er is een probleem opgetreden bij het delen van je item.</translation>
 <translation id="4979397965658815378">Log in met je Google-account om je bladwijzers, wachtwoorden, geschiedenis en andere instellingen op al je apparaten te gebruiken</translation>
-<translation id="5004416275253351869">Google-activiteitsopties</translation>
 <translation id="5005498671520578047">Wachtwoord kopiëren</translation>
 <translation id="5010803260590204777">Open een incognitotabblad om privé op internet te surfen.</translation>
 <translation id="5011684439661633295">Hallo, <ph name="FULL_ACCOUNT_NAME" /></translation>
@@ -253,11 +256,11 @@ Je gegevens zijn versleuteld met je wachtwoordzin voor synchronisatie. Geef deze
 <translation id="5062321486222145940">Google Drive installeren</translation>
 <translation id="5083464117946352670">Kan bestandsgrootte niet bepalen.</translation>
 <translation id="5094827893301452931">Tweet voltooid.</translation>
+<translation id="5132942445612118989">Je wachtwoorden, geschiedenis en meer synchroniseren op al je apparaten</translation>
 <translation id="5181140330217080051">Downloaden</translation>
 <translation id="5186185447130319458">Privé</translation>
 <translation id="5190835502935405962">Bladwijzerbalk</translation>
 <translation id="5197255632782567636">Internet</translation>
-<translation id="5215116848420601511">Betaalmethoden en adressen die Google Pay gebruiken</translation>
 <translation id="5228579091201413441">Synchronisatie inschakelen</translation>
 <translation id="5244474230056479698">Synchroniseren met <ph name="EMAIL" /></translation>
 <translation id="5300589172476337783">Weergeven</translation>
@@ -281,7 +284,6 @@ Handoff moet ook zijn ingeschakeld in het gedeelte 'Algemeen' van 'Instellingen'
 <translation id="5728700505257787410">Er is een probleem opgetreden met het inloggen op je account.</translation>
 <translation id="5737974891429562743">De inloggegevens voor het account zijn verouderd. Voer een update uit om te synchroniseren.</translation>
 <translation id="5738887413654608789">Hiermee kun je relevante webpagina's vinden op basis van je omgeving.</translation>
-<translation id="5771816112378578655">Instellen wordt uitgevoerd...</translation>
 <translation id="5816228676161003208">Hiermee kun je sneller zoeken met je stem.</translation>
 <translation id="5846482154967366008">Zoekmachine</translation>
 <translation id="5854790677617711513">Ouder dan 30 dagen</translation>
@@ -308,6 +310,7 @@ Handoff moet ook zijn ingeschakeld in het gedeelte 'Algemeen' van 'Instellingen'
 <translation id="6042308850641462728">Meer</translation>
 <translation id="605721222689873409">JJ</translation>
 <translation id="6066301408025741299">Tik om te annuleren.</translation>
+<translation id="6108923351542677676">Instellen wordt uitgevoerd...</translation>
 <translation id="6122191549521593678">Online</translation>
 <translation id="6127379762771434464">Item verwijderd</translation>
 <translation id="6136914049981179737">Sec. geleden</translation>
@@ -381,6 +384,7 @@ Je gegevens zijn op <ph name="TIME" /> versleuteld met je wachtwoordzin voor syn
 <translation id="7159472599653637159">Mobiele site opvragen</translation>
 <translation id="7167621057293532233">Gegevenstypen</translation>
 <translation id="7189598951263744875">Delen...</translation>
+<translation id="7192050974311852563">Logboekregistratie starten</translation>
 <translation id="7203585745079012652">Antwoorden uitspreken</translation>
 <translation id="722055596168483966">Google-services personaliseren</translation>
 <translation id="7272437679830969316">Kan je identiteit niet verifiëren. Wachtwoord niet gekopieerd.</translation>
@@ -422,6 +426,7 @@ Je gegevens zijn op <ph name="TIME" /> versleuteld met je wachtwoordzin voor syn
 <translation id="7938254975914653459">FaceTime</translation>
 <translation id="7939128259257418052">Wachtwoorden exporteren...</translation>
 <translation id="7947953824732555851">Accepteren en inloggen</translation>
+<translation id="794799177247607889">Logboekregistratie stoppen</translation>
 <translation id="7961015016161918242">Nooit</translation>
 <translation id="7971521879845308059">Pop-ups blokkeren</translation>
 <translation id="7981313251711023384">Pagina's vooraf laden voor sneller browsen en zoeken</translation>

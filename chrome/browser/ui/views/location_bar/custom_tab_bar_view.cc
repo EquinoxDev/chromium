@@ -23,13 +23,14 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
-#include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/image_button_factory.h"
-#include "ui/views/layout/box_layout.h"
+#include "ui/views/layout/flex_layout.h"
+#include "ui/views/layout/flex_layout_types.h"
 #include "ui/views/style/typography.h"
 #include "ui/views/style/typography_provider.h"
 #include "ui/views/view_properties.h"
@@ -42,6 +43,8 @@
 #endif
 
 namespace {
+
+constexpr SkColor kCustomTabBarViewBackgroundColor = SK_ColorWHITE;
 
 // The frame color is different on ChromeOS and other platforms because Ash
 // specifies its own default frame color, which is not exposed through
@@ -104,34 +107,44 @@ void GoBackToApp(content::WebContents* web_contents) {
 // page.
 class CustomTabBarTitleOriginView : public views::View {
  public:
-  explicit CustomTabBarTitleOriginView(SkColor text_color) {
-    title_label_ = new views::Label(
-        base::string16(), views::style::TextContext::CONTEXT_DIALOG_TITLE);
-    location_label_ = new views::Label(base::string16());
+  explicit CustomTabBarTitleOriginView(SkColor background_color) {
+    title_label_ = new views::Label(base::string16(), CONTEXT_BODY_TEXT_LARGE,
+                                    views::style::TextStyle::STYLE_PRIMARY);
+    location_label_ = new views::Label(
+        base::string16(), CONTEXT_BODY_TEXT_SMALL, STYLE_SECONDARY);
 
-    // We need to disable auto color readability, as we want to match the active
-    // color in the title bar, which is subtly different.
-    // TODO(http://crbug.com/883177): Enable this if we use GetReadableColor(..)
-    // for the app title text instead of GetThemedAssetColor(..).
-    title_label_->SetAutoColorReadabilityEnabled(false);
-    location_label_->SetAutoColorReadabilityEnabled(false);
+    title_label_->SetBackgroundColor(background_color);
+    title_label_->SetElideBehavior(gfx::ElideBehavior::ELIDE_TAIL);
 
-    title_label_->SetEnabledColor(text_color);
-    location_label_->SetEnabledColor(text_color);
+    location_label_->SetBackgroundColor(background_color);
+    location_label_->SetElideBehavior(gfx::ElideBehavior::ELIDE_TAIL);
 
     AddChildView(title_label_);
     AddChildView(location_label_);
 
-    auto layout = std::make_unique<views::BoxLayout>(
-        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 0);
-    layout->set_cross_axis_alignment(
-        views::BoxLayout::CrossAxisAlignment::CROSS_AXIS_ALIGNMENT_START);
+    auto layout = std::make_unique<views::FlexLayout>();
+    layout->SetOrientation(views::LayoutOrientation::kVertical)
+        .SetMainAxisAlignment(views::LayoutAlignment::kCenter)
+        .SetCrossAxisAlignment(views::LayoutAlignment::kStart);
+
     SetLayoutManager(std::move(layout));
   }
 
   void Update(base::string16 title, base::string16 location) {
     title_label_->SetText(title);
     location_label_->SetText(location);
+  }
+
+  // views::View:
+  gfx::Size GetMinimumSize() const override {
+    // As labels are not multi-line, the layout will calculate a minimum size
+    // that would fit the entire text (potentially a long url). Instead, set a
+    // minimum number of characters we want to display and elide the text if it
+    // overflows.
+    constexpr int kMinCharacters = 20;
+    return gfx::Size(
+        title_label_->font_list().GetExpectedTextWidth(kMinCharacters),
+        GetPreferredSize().height());
   }
 
  private:
@@ -153,44 +166,42 @@ CustomTabBarView::CustomTabBarView(BrowserView* browser_view,
 
   // If we have a theme color, use that, otherwise fall back to the default
   // frame color.
-  theme_color_ = optional_theme_color.value_or(GetDefaultFrameColor());
-  SetBackground(views::CreateSolidBackground(theme_color_));
+  title_bar_color_ = optional_theme_color.value_or(GetDefaultFrameColor());
+  SetBackground(views::CreateSolidBackground(kCustomTabBarViewBackgroundColor));
 
-  text_color_ = browser_view->frame()->GetFrameView()->GetFrameForegroundColor(
-      BrowserNonClientFrameView::kActive);
+  const SkColor foreground_color =
+      color_utils::GetColorWithMaxContrast(kCustomTabBarViewBackgroundColor);
 
   const gfx::FontList& font_list = views::style::GetFont(
       CONTEXT_OMNIBOX_PRIMARY, views::style::STYLE_PRIMARY);
 
-  close_button_ = CreateCloseButton(this, text_color_);
+  close_button_ = CreateCloseButton(this, foreground_color);
   AddChildView(close_button_);
 
   location_icon_view_ = new LocationIconView(font_list, this);
   AddChildView(location_icon_view_);
 
-  title_origin_view_ = new CustomTabBarTitleOriginView(text_color_);
+  title_origin_view_ =
+      new CustomTabBarTitleOriginView(kCustomTabBarViewBackgroundColor);
   AddChildView(title_origin_view_);
 
-  int padding = GetLayoutConstant(LayoutConstant::LOCATION_BAR_ELEMENT_PADDING);
-  // The location icon already has some padding, so we subtract it from the
-  // padding we're going to apply.
-  int location_icon_padding =
-      GetLayoutInsets(LayoutInset::LOCATION_BAR_ICON_INTERIOR_PADDING).left();
-  gfx::Insets insets(padding, padding - location_icon_padding, padding,
-                     padding);
-
-  auto layout = std::make_unique<views::BoxLayout>(
-      views::BoxLayout::Orientation::kHorizontal, insets, 0);
-  layout->set_cross_axis_alignment(
-      views::BoxLayout::CrossAxisAlignment::CROSS_AXIS_ALIGNMENT_CENTER);
+  auto layout = std::make_unique<views::FlexLayout>();
+  layout->SetOrientation(views::LayoutOrientation::kHorizontal)
+      .SetMainAxisAlignment(views::LayoutAlignment::kStart)
+      .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
+      .SetInteriorMargin(GetLayoutInsets(LayoutInset::TOOLBAR_INTERIOR_MARGIN));
 
   SetLayoutManager(std::move(layout));
-  SetBorder(views::CreateSolidSidedBorder(0, 0, 1, 0, text_color_));
 
   tab_strip_model_observer_.Add(browser->tab_strip_model());
 }
 
 CustomTabBarView::~CustomTabBarView() {}
+
+gfx::Rect CustomTabBarView::GetAnchorBoundsInScreen() const {
+  return gfx::UnionRects(location_icon_view_->GetAnchorBoundsInScreen(),
+                         title_origin_view_->GetAnchorBoundsInScreen());
+}
 
 void CustomTabBarView::TabChangedAt(content::WebContents* contents,
                                     int index,
@@ -216,6 +227,56 @@ void CustomTabBarView::TabChangedAt(content::WebContents* contents,
   Layout();
 }
 
+gfx::Size CustomTabBarView::CalculatePreferredSize() const {
+  // ToolbarView::GetMinimumSize() uses the preferred size of its children, so
+  // tell it the minimum size this control will fit into (its layout will
+  // automatically have this control fill available space).
+  return gfx::Size(GetInsets().width() +
+                       title_origin_view_->GetMinimumSize().width() +
+                       close_button_->GetPreferredSize().width() +
+                       location_icon_view_->GetPreferredSize().width(),
+                   GetLayoutManager()->GetPreferredSize(this).height());
+}
+
+void CustomTabBarView::OnPaintBackground(gfx::Canvas* canvas) {
+  views::View::OnPaintBackground(canvas);
+
+  constexpr SkColor kSeparatorColor = SK_ColorBLACK;
+  constexpr float kSeparatorOpacity = 0.15f;
+
+  gfx::Rect bounds = GetLocalBounds();
+  const gfx::Size separator_size = gfx::Size(bounds.width(), 1);
+
+  // Inset the bounds by 1 on the bottom, so we draw the bottom border inside
+  // the custom tab bar.
+  bounds.Inset(0, 0, 0, 1);
+
+  // Custom tab/content separator (bottom border).
+  canvas->FillRect(
+      gfx::Rect(bounds.bottom_left(), separator_size),
+      color_utils::AlphaBlend(kSeparatorColor, kCustomTabBarViewBackgroundColor,
+                              kSeparatorOpacity));
+
+  // Don't render the separator if there is already sufficient contrast between
+  // the custom tab bar and the title bar.
+  constexpr float kMaxContrastForSeparator = 1.1f;
+  if (color_utils::GetContrastRatio(kCustomTabBarViewBackgroundColor,
+                                    title_bar_color_) >
+      kMaxContrastForSeparator) {
+    return;
+  }
+
+  // Frame/Custom tab separator (top border).
+  canvas->FillRect(gfx::Rect(bounds.origin(), separator_size),
+                   color_utils::AlphaBlend(kSeparatorColor, title_bar_color_,
+                                           kSeparatorOpacity));
+}
+
+void CustomTabBarView::ChildPreferredSizeChanged(views::View* child) {
+  Layout();
+  SchedulePaint();
+}
+
 content::WebContents* CustomTabBarView::GetWebContents() {
   return delegate_->GetWebContents();
 }
@@ -235,10 +296,7 @@ bool CustomTabBarView::ShowPageInfoDialog() {
 
 SkColor CustomTabBarView::GetSecurityChipColor(
     security_state::SecurityLevel security_level) const {
-  OmniboxTint tint =
-      color_utils::IsDark(text_color_) ? OmniboxTint::LIGHT : OmniboxTint::DARK;
-
-  return GetOmniboxSecurityChipColor(tint, security_level);
+  return GetOmniboxSecurityChipColor(OmniboxTint::LIGHT, security_level);
 }
 
 gfx::ImageSkia CustomTabBarView::GetLocationIcon(

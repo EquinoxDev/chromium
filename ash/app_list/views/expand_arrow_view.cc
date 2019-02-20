@@ -11,7 +11,6 @@
 #include "ash/app_list/views/apps_container_view.h"
 #include "ash/app_list/views/contents_view.h"
 #include "ash/public/cpp/app_list/app_list_config.h"
-#include "ash/public/cpp/app_list/app_list_constants.h"
 #include "ash/public/cpp/app_list/vector_icons/vector_icons.h"
 #include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
@@ -111,9 +110,13 @@ ExpandArrowView::ExpandArrowView(ContentsView* contents_view,
   animation_->SetSlideDuration(kCycleDurationInMs * 2 + kCycleIntervalInMs);
   ResetHintingAnimation();
   // When side shelf or tablet mode is enabled, the peeking launcher won't be
-  // shown, so the hint animation is unnecessary.
-  if (!app_list_view_->is_side_shelf() && !app_list_view_->is_tablet_mode())
+  // shown, so the hint animation is unnecessary. Also, do not run the animation
+  // during test since we are not testing the animation and it might cause msan
+  // crash when spoken feedbacke is enabled (See https://crbug.com/926038).
+  if (!app_list_view_->is_side_shelf() && !app_list_view_->is_tablet_mode() &&
+      !AppListView::ShortAnimationsForTesting()) {
     ScheduleHintingAnimation(true);
+  }
 }
 
 ExpandArrowView::~ExpandArrowView() = default;
@@ -178,7 +181,7 @@ void ExpandArrowView::PaintButtonContents(gfx::Canvas* canvas) {
 
   // Add a clip path so that arrow will only be shown within the circular
   // highlight area.
-  gfx::Path arrow_mask_path;
+  SkPath arrow_mask_path;
   arrow_mask_path.addCircle(circle_center.x(), circle_center.y(),
                             kCircleRadius);
   canvas->ClipPath(arrow_mask_path, true);
@@ -195,7 +198,7 @@ void ExpandArrowView::PaintButtonContents(gfx::Canvas* canvas) {
   arrow_flags.setStrokeJoin(cc::PaintFlags::Join::kRound_Join);
   arrow_flags.setStyle(cc::PaintFlags::kStroke_Style);
 
-  gfx::Path arrow_path;
+  SkPath arrow_path;
   arrow_path.moveTo(arrow_points[0].x(), arrow_points[0].y());
   for (size_t i = 1; i < kPointCount; ++i)
     arrow_path.lineTo(arrow_points[i].x(), arrow_points[i].y());

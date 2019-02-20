@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
@@ -227,19 +228,20 @@ class FakeSchedulerClient : public SchedulerClient,
 
   bool IsInsideBeginImplFrame() const { return inside_begin_impl_frame_; }
 
-  base::Callback<bool(void)> InsideBeginImplFrame(bool state) {
-    return base::Bind(&FakeSchedulerClient::InsideBeginImplFrameCallback,
-                      base::Unretained(this), state);
+  base::RepeatingCallback<bool(void)> InsideBeginImplFrame(bool state) {
+    return base::BindRepeating(
+        &FakeSchedulerClient::InsideBeginImplFrameCallback,
+        base::Unretained(this), state);
   }
 
   bool IsCurrentFrame(int last_frame_number) const {
     return scheduler_->current_frame_number() == last_frame_number;
   }
 
-  base::Callback<bool(void)> FrameHasNotAdvancedCallback() {
-    return base::Bind(&FakeSchedulerClient::IsCurrentFrame,
-                      base::Unretained(this),
-                      scheduler_->current_frame_number());
+  base::RepeatingCallback<bool(void)> FrameHasNotAdvancedCallback() {
+    return base::BindRepeating(&FakeSchedulerClient::IsCurrentFrame,
+                               base::Unretained(this),
+                               scheduler_->current_frame_number());
   }
 
   void PushAction(const char* description) {
@@ -700,7 +702,7 @@ TEST_F(SchedulerTest, RequestCommit) {
 TEST_F(SchedulerTest, RequestCommitAfterSetDeferCommit) {
   SetUpScheduler(EXTERNAL_BFS);
 
-  scheduler_->SetDeferMainFrameUpdate(true);
+  scheduler_->SetDeferBeginMainFrame(true);
 
   scheduler_->SetNeedsBeginMainFrame();
   EXPECT_NO_ACTION();
@@ -712,7 +714,7 @@ TEST_F(SchedulerTest, RequestCommitAfterSetDeferCommit) {
   EXPECT_FALSE(scheduler_->begin_frames_expected());
 
   client_->Reset();
-  scheduler_->SetDeferMainFrameUpdate(false);
+  scheduler_->SetDeferBeginMainFrame(false);
   EXPECT_ACTIONS("AddObserver(this)");
 
   // Start new BeginMainFrame after defer commit is off.
@@ -725,12 +727,12 @@ TEST_F(SchedulerTest, RequestCommitAfterSetDeferCommit) {
 TEST_F(SchedulerTest, DeferCommitWithRedraw) {
   SetUpScheduler(EXTERNAL_BFS);
 
-  scheduler_->SetDeferMainFrameUpdate(true);
+  scheduler_->SetDeferBeginMainFrame(true);
 
   scheduler_->SetNeedsBeginMainFrame();
   EXPECT_NO_ACTION();
 
-  // The SetNeedsRedraw will override the SetDeferMainFrameUpdate(true), to
+  // The SetNeedsRedraw will override the SetDeferBeginMainFrame(true), to
   // allow a begin frame to be needed.
   client_->Reset();
   scheduler_->SetNeedsRedraw();
@@ -4012,7 +4014,7 @@ TEST_F(SchedulerTest, WaitForAllPipelineStagesAlwaysObservesBeginFrames) {
   EXPECT_ACTIONS("ScheduledActionBeginLayerTreeFrameSinkCreation");
   client_->Reset();
   scheduler_->DidCreateAndInitializeLayerTreeFrameSink();
-  scheduler_->SetDeferMainFrameUpdate(true);
+  scheduler_->SetDeferBeginMainFrame(true);
   scheduler_->SetNeedsBeginMainFrame();
   EXPECT_TRUE(scheduler_->begin_frames_expected());
   EXPECT_FALSE(client_->IsInsideBeginImplFrame());

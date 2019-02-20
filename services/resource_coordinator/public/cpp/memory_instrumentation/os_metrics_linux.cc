@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <memory>
@@ -31,7 +32,7 @@ const uint32_t kMaxLineSize = 4096;
 base::ScopedFD OpenStatm(base::ProcessId pid) {
   std::string name =
       "/proc/" +
-      (pid == base::kNullProcessId ? "self" : base::IntToString(pid)) +
+      (pid == base::kNullProcessId ? "self" : base::NumberToString(pid)) +
       "/statm";
   base::ScopedFD fd = base::ScopedFD(open(name.c_str(), O_RDONLY));
   return fd;
@@ -59,7 +60,28 @@ std::unique_ptr<base::ProcessMetrics> CreateProcessMetrics(
   return base::ProcessMetrics::CreateProcessMetrics(pid);
 }
 
-bool ParseSmapsHeader(const char* header_line, VmRegion* region) {
+struct ModuleData {
+  std::string path;
+  std::string build_id;
+};
+
+ModuleData GetMainModuleData() {
+  ModuleData module_data;
+  Dl_info dl_info;
+  if (dladdr(&__ehdr_start, &dl_info)) {
+    base::Optional<std::string> build_id =
+        base::debug::ReadElfBuildId(&__ehdr_start);
+    if (build_id) {
+      module_data.path = dl_info.dli_fname;
+      module_data.build_id = *build_id;
+    }
+  }
+  return module_data;
+}
+
+bool ParseSmapsHeader(const char* header_line,
+                      const ModuleData& main_module_data,
+                      VmRegion* region) {
   // e.g., "00400000-00421000 r-xp 00000000 fc:01 1234  /foo.so\n"
   bool res = true;  // Whether this region should be appended or skipped.
   uint64_t end_addr = 0;
@@ -102,12 +124,11 @@ bool ParseSmapsHeader(const char* header_line, VmRegion* region) {
   // official builds. Build ID is only added for the current library (chrome)
   // since it is racy to read other libraries which can be unmapped any time.
 #if defined(OFFICIAL_BUILD)
-  uintptr_t addr = reinterpret_cast<uintptr_t>(&ParseSmapsHeader);
-  if (addr >= region->start_address && addr < end_addr) {
-    base::Optional<std::string> buildid =
-        base::debug::ReadElfBuildId(&__ehdr_start);
-    if (buildid)
-      region->module_debugid = buildid.value();
+  if (!region->mapped_file.empty() &&
+      base::StartsWith(main_module_data.path, region->mapped_file,
+                       base::CompareCase::SENSITIVE) &&
+      !main_module_data.build_id.empty()) {
+    region->module_debugid = main_module_data.build_id;
   }
 #endif  // defined(OFFICIAL_BUILD)
 
@@ -160,6 +181,7 @@ uint32_t ReadLinuxProcSmapsFile(FILE* smaps_file,
   uint32_t num_valid_regions = 0;
   bool should_add_current_region = false;
   VmRegion region;
+  ModuleData main_module_data = GetMainModuleData();
   for (;;) {
     line[0] = '\0';
     if (fgets(line, kMaxLineSize, smaps_file) == nullptr || !strlen(line))
@@ -167,17 +189,16 @@ uint32_t ReadLinuxProcSmapsFile(FILE* smaps_file,
     if (isxdigit(line[0]) && !isupper(line[0])) {
       region = VmRegion();
       counters_parsed_for_current_region = 0;
-      should_add_current_region = ParseSmapsHeader(line, &region);
-    } else {
+      should_add_current_region =
+          ParseSmapsHeader(line, main_module_data, &region);
+    } else if (should_add_current_region) {
       counters_parsed_for_current_region += ParseSmapsCounter(line, &region);
       DCHECK_LE(counters_parsed_for_current_region,
                 kNumExpectedCountersPerRegion);
       if (counters_parsed_for_current_region == kNumExpectedCountersPerRegion) {
-        if (should_add_current_region) {
-          maps->push_back(VmRegion::New(region));
-          ++num_valid_regions;
-          should_add_current_region = false;
-        }
+        maps->push_back(VmRegion::New(region));
+        ++num_valid_regions;
+        should_add_current_region = false;
       }
     }
   }
@@ -232,7 +253,7 @@ std::vector<VmRegionPtr> OSMetrics::GetProcessMemoryMaps(base::ProcessId pid) {
   } else {
     std::string file_name =
         "/proc/" +
-        (pid == base::kNullProcessId ? "self" : base::IntToString(pid)) +
+        (pid == base::kNullProcessId ? "self" : base::NumberToString(pid)) +
         "/smaps";
     base::ScopedFILE smaps_file(fopen(file_name.c_str(), "r"));
     res = ReadLinuxProcSmapsFile(smaps_file.get(), &maps);

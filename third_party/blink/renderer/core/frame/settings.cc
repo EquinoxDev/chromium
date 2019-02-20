@@ -106,4 +106,17 @@ bool Settings::MockScrollbarsEnabled() {
   return ScrollbarTheme::MockScrollbarsEnabled();
 }
 
+void Settings::SetForceDarkModeEnabled(bool enabled) {
+  if (force_dark_mode_ == enabled)
+    return;
+  force_dark_mode_ = enabled;
+
+  if (force_dark_mode_) {
+    SetHighContrastMode(HighContrastMode::kInvertLightness);
+    SetHighContrastImagePolicy(HighContrastImagePolicy::kFilterSmart);
+  } else {
+    SetHighContrastMode(HighContrastMode::kOff);
+  }
+}
+
 }  // namespace blink

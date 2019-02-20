@@ -5,7 +5,9 @@
 #include "third_party/blink/renderer/core/dom/slot_assignment.h"
 
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
+#include "third_party/blink/renderer/core/dom/flat_tree_traversal_forbidden_scope.h"
 #include "third_party/blink/renderer/core/dom/node.h"
+#include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/node_traversal.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/slot_assignment_engine.h"
@@ -240,6 +242,9 @@ void SlotAssignment::RecalcAssignment() {
   // To detect recursive RecalcAssignment, which shouldn't happen.
   SlotAssignmentRecalcForbiddenScope forbid_slot_recalc(owner_->GetDocument());
 
+  FlatTreeTraversalForbiddenScope forbid_flat_tree_traversal(
+      owner_->GetDocument());
+
   needs_assignment_recalc_ = false;
 
   for (Member<HTMLSlotElement> slot : Slots())
@@ -285,7 +290,7 @@ void SlotAssignment::RecalcAssignment() {
     } else {
       if (RuntimeEnabledFeatures::FastFlatTreeTraversalEnabled())
         child.ClearFlatTreeNodeData();
-      child.LazyReattachIfAttached();
+      child.RemovedFromFlatTree();
     }
   }
 
@@ -361,7 +366,7 @@ HTMLSlotElement* SlotAssignment::GetCachedFirstSlotWithoutAccessingNodeTree(
   return nullptr;
 }
 
-void SlotAssignment::Trace(blink::Visitor* visitor) {
+void SlotAssignment::Trace(Visitor* visitor) {
   visitor->Trace(slots_);
   visitor->Trace(slot_map_);
   visitor->Trace(owner_);

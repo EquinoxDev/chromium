@@ -20,7 +20,7 @@
 #import "ios/chrome/browser/ui/autofill/manual_fill/password_coordinator.h"
 #import "ios/chrome/browser/ui/autofill/manual_fill/password_mediator.h"
 #import "ios/chrome/browser/ui/autofill/manual_fill/password_view_controller.h"
-#import "ios/chrome/browser/ui/settings/passwords_table_view_controller.h"
+#import "ios/chrome/browser/ui/settings/password/passwords_table_view_controller.h"
 #import "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/test/app/chrome_test_util.h"
 #import "ios/chrome/test/earl_grey/chrome_actions.h"
@@ -102,7 +102,7 @@ id<GREYMatcher> PasswordSettingsMatcher() {
 
 // Returns a matcher for the search bar in password settings.
 id<GREYMatcher> PasswordSettingsSearchMatcher() {
-  return grey_accessibilityID(@"SettingsSearchCellTextField");
+  return grey_accessibilityID(kPasswordsSearchBarId);
 }
 
 // Returns a matcher for the PasswordTableView window.

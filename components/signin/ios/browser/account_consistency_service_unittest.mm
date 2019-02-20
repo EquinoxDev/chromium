@@ -15,6 +15,7 @@
 #include "components/signin/core/browser/account_reconcilor_delegate.h"
 #include "components/signin/core/browser/account_tracker_service.h"
 #include "components/signin/core/browser/fake_profile_oauth2_token_service.h"
+#include "components/signin/core/browser/fake_account_fetcher_service.h"
 #include "components/signin/core/browser/fake_signin_manager.h"
 #include "components/signin/core/browser/gaia_cookie_manager_service.h"
 #include "components/signin/core/browser/signin_pref_names.h"
@@ -24,6 +25,8 @@
 #import "ios/web/public/test/fakes/test_web_state.h"
 #include "ios/web/public/test/test_web_thread_bundle.h"
 #include "ios/web/public/web_state/web_state_policy_decider.h"
+#import "services/identity/public/cpp/identity_manager.h"
+#import "services/identity/public/cpp/identity_test_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -59,13 +62,13 @@ class FakeAccountConsistencyService : public AccountConsistencyService {
       scoped_refptr<content_settings::CookieSettings> cookie_settings,
       GaiaCookieManagerService* gaia_cookie_manager_service,
       SigninClient* signin_client,
-      SigninManager* signin_manager)
+      identity::IdentityManager* identity_manager)
       : AccountConsistencyService(browser_state,
                                   account_reconcilor,
                                   cookie_settings,
                                   gaia_cookie_manager_service,
                                   signin_client,
-                                  signin_manager) {}
+                                  identity_manager) {}
 
  private:
   WKWebView* BuildWKWebView() override {
@@ -83,20 +86,28 @@ class MockAccountReconcilor : public AccountReconcilor {
   MockAccountReconcilor(SigninClient* client)
       : AccountReconcilor(
             nullptr,
-            nullptr,
             client,
-            nullptr,
             std::make_unique<signin::AccountReconcilorDelegate>()) {}
   MOCK_METHOD1(OnReceivedManageAccountsResponse, void(signin::GAIAServiceType));
 };
 
-// Mock GaiaCookieManagerService to catch call to ForceOnCookieChangeProcessing
-class MockGaiaCookieManagerService : public GaiaCookieManagerService {
+// Mock GaiaCookieManagerService to catch call to ForceOnCookieChangeProcessing.
+// TODO(https://crbug.com/907782): Update this to use gmock.
+class CustomGaiaCookieManagerService : public GaiaCookieManagerService {
  public:
-  MockGaiaCookieManagerService()
-      : GaiaCookieManagerService(nullptr,
-                                 nullptr) {}
-  MOCK_METHOD0(ForceOnCookieChangeProcessing, void());
+  CustomGaiaCookieManagerService()
+      : GaiaCookieManagerService(nullptr, nullptr),
+        calls_to_force_on_cookie_change_processing_(0) {}
+
+  uint8_t CallsToForceOnCookieChangeProcessing() {
+    return calls_to_force_on_cookie_change_processing_;
+  }
+
+ private:
+  void ForceOnCookieChangeProcessing() override {
+    calls_to_force_on_cookie_change_processing_++;
+  };
+  uint8_t calls_to_force_on_cookie_change_processing_;
 };
 
 // TestWebState that allows control over its policy decider.
@@ -141,20 +152,28 @@ class AccountConsistencyServiceTest : public PlatformTest {
     ActiveStateManager::FromBrowserState(&browser_state_)->SetActive(true);
     AccountConsistencyService::RegisterPrefs(prefs_.registry());
     AccountTrackerService::RegisterPrefs(prefs_.registry());
+    AccountFetcherService::RegisterPrefs(prefs_.registry());
     ProfileOAuth2TokenService::RegisterProfilePrefs(prefs_.registry());
     content_settings::CookieSettings::RegisterProfilePrefs(prefs_.registry());
     HostContentSettingsMap::RegisterProfilePrefs(prefs_.registry());
     SigninManagerBase::RegisterProfilePrefs(prefs_.registry());
 
     web_view_load_expection_count_ = 0;
-    gaia_cookie_manager_service_.reset(new MockGaiaCookieManagerService());
+    gaia_cookie_manager_service_.reset(new CustomGaiaCookieManagerService());
     signin_client_.reset(new TestSigninClient(&prefs_));
     account_tracker_service_.Initialize(&prefs_, base::FilePath());
     token_service_.reset(new FakeProfileOAuth2TokenService(&prefs_));
+    account_fetcher_service_.Initialize(
+        signin_client_.get(), token_service_.get(), &account_tracker_service_,
+        std::make_unique<TestImageDecoder>());
     signin_manager_.reset(
         new FakeSigninManager(signin_client_.get(), token_service_.get(),
                               &account_tracker_service_, nullptr));
     signin_manager_->Initialize(nullptr);
+    identity_test_env_.reset(new identity::IdentityTestEnvironment(
+        &prefs_, &account_tracker_service_, &account_fetcher_service_,
+        token_service_.get(), signin_manager_.get(),
+        gaia_cookie_manager_service_.get()));
     settings_map_ = new HostContentSettingsMap(
         &prefs_, false /* incognito_profile */, false /* guest_profile */,
         false /* store_last_modified */,
@@ -172,6 +191,9 @@ class AccountConsistencyServiceTest : public PlatformTest {
     account_consistency_service_->Shutdown();
     settings_map_->ShutdownOnUIThread();
     ActiveStateManager::FromBrowserState(&browser_state_)->SetActive(false);
+    account_fetcher_service_.Shutdown();
+    account_tracker_service_.Shutdown();
+    identity_test_env_.reset();
     PlatformTest::TearDown();
   }
 
@@ -201,11 +223,11 @@ class AccountConsistencyServiceTest : public PlatformTest {
     account_consistency_service_.reset(new FakeAccountConsistencyService(
         &browser_state_, account_reconcilor_.get(), cookie_settings_,
         gaia_cookie_manager_service_.get(), signin_client_.get(),
-        signin_manager_.get()));
+        identity_test_env_->identity_manager()));
   }
 
   void SignIn() {
-    signin_manager_->SignIn("12345", "user@gmail.com", "password");
+    signin_manager_->SignIn("12345", "user@gmail.com");
     EXPECT_EQ(0, web_view_load_expection_count_);
   }
 
@@ -253,16 +275,18 @@ class AccountConsistencyServiceTest : public PlatformTest {
   // thread.
   web::TestWebThreadBundle thread_bundle_;
   AccountTrackerService account_tracker_service_;
+  FakeAccountFetcherService account_fetcher_service_;
   web::TestBrowserState browser_state_;
   sync_preferences::TestingPrefServiceSyncable prefs_;
   TestWebState web_state_;
+  std::unique_ptr<identity::IdentityTestEnvironment> identity_test_env_;
   // AccountConsistencyService being tested. Actually a
   // FakeAccountConsistencyService to be able to use a mock web view.
   std::unique_ptr<AccountConsistencyService> account_consistency_service_;
   std::unique_ptr<TestSigninClient> signin_client_;
   std::unique_ptr<FakeProfileOAuth2TokenService> token_service_;
   std::unique_ptr<FakeSigninManager> signin_manager_;
-  std::unique_ptr<MockGaiaCookieManagerService> gaia_cookie_manager_service_;
+  std::unique_ptr<CustomGaiaCookieManagerService> gaia_cookie_manager_service_;
   std::unique_ptr<MockAccountReconcilor> account_reconcilor_;
   scoped_refptr<HostContentSettingsMap> settings_map_;
   scoped_refptr<content_settings::CookieSettings> cookie_settings_;
@@ -451,11 +475,11 @@ TEST_F(AccountConsistencyServiceTest, DomainsClearedOnBrowsingDataRemoved) {
       prefs_.GetDictionary(AccountConsistencyService::kDomainsWithCookiePref);
   EXPECT_EQ(2u, dict->size());
 
-  EXPECT_CALL(*gaia_cookie_manager_service_, ForceOnCookieChangeProcessing())
-      .Times(1);
   account_consistency_service_->OnBrowsingDataRemoved();
   dict =
       prefs_.GetDictionary(AccountConsistencyService::kDomainsWithCookiePref);
+  EXPECT_EQ(
+      1u, gaia_cookie_manager_service_->CallsToForceOnCookieChangeProcessing());
   EXPECT_EQ(0u, dict->size());
 }
 
@@ -468,9 +492,9 @@ TEST_F(AccountConsistencyServiceTest, DomainsClearedOnBrowsingDataRemoved2) {
 
   AddPageLoadedExpectation(kGoogleUrl, false /* continue_navigation */);
   SimulateGaiaCookieManagerServiceLogout(false);
-  EXPECT_CALL(*gaia_cookie_manager_service_, ForceOnCookieChangeProcessing())
-      .Times(1);
   account_consistency_service_->OnBrowsingDataRemoved();
+  EXPECT_EQ(
+      1u, gaia_cookie_manager_service_->CallsToForceOnCookieChangeProcessing());
   EXPECT_TRUE(remove_cookie_callback_called_);
 }
 

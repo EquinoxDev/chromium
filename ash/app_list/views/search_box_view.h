@@ -54,6 +54,7 @@ class APP_LIST_EXPORT SearchBoxView : public search_box::SearchBoxViewBase,
   // Overridden from views::View:
   void OnKeyEvent(ui::KeyEvent* event) override;
   bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
 
   // Overridden from views::ButtonListener:
   void ButtonPressed(views::Button* sender, const ui::Event& event) override;
@@ -86,6 +87,9 @@ class APP_LIST_EXPORT SearchBoxView : public search_box::SearchBoxViewBase,
 
   // Sets the autocomplete text if autocomplete conditions are met.
   void ProcessAutocomplete();
+
+  // Updates the search box with |new_query| and starts a new search.
+  void UpdateQuery(const base::string16& new_query);
 
   void set_contents_view(ContentsView* contents_view) {
     contents_view_ = contents_view;

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
@@ -45,6 +46,7 @@
 #include "content/browser/service_worker/service_worker_test_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/browser/web_package/signed_exchange_consts.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -1494,7 +1496,6 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
   EXPECT_EQ(response1->status_code, response2->status_code);
   EXPECT_EQ(response1->status_text, response2->status_text);
   EXPECT_EQ(response1->response_time, response2->response_time);
-  EXPECT_TRUE(response2->is_in_cache_storage);
   EXPECT_EQ("cache_name", *response2->cache_storage_cache_name);
   EXPECT_EQ(network::mojom::FetchResponseSource::kCacheStorage,
             response2->response_source);
@@ -2555,7 +2556,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerNavigationPreloadTest,
       kWorkerUrl, kEnableNavigationPreloadScript + kPreloadResponseTestScript,
       "text/javascript");
 
-  std::unique_ptr<base::Value> result = base::JSONReader::Read(
+  std::unique_ptr<base::Value> result = base::JSONReader::ReadDeprecated(
       LoadNavigationPreloadTestPage(page_url, worker_url, "RESOLVED"));
 
   // The page request must be sent only once, since the worker responded with
@@ -2570,7 +2571,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerNavigationPreloadTest,
   EXPECT_EQ("OK", GetString(*dict, "statusText"));
   EXPECT_TRUE(CheckHeader(*dict, "content-type", "text/html"));
   EXPECT_TRUE(CheckHeader(*dict, "content-length",
-                          base::IntToString(sizeof(kPage) - 1)));
+                          base::NumberToString(sizeof(kPage) - 1)));
 }
 
 IN_PROC_BROWSER_TEST_F(ServiceWorkerNavigationPreloadTest, NotEnabled) {
@@ -2612,7 +2613,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerNavigationPreloadTest,
       kWorkerUrl, kEnableNavigationPreloadScript + kPreloadResponseTestScript,
       "text/javascript");
 
-  std::unique_ptr<base::Value> result = base::JSONReader::Read(
+  std::unique_ptr<base::Value> result = base::JSONReader::ReadDeprecated(
       LoadNavigationPreloadTestPage(page_url, worker_url, "RESOLVED"));
 
   // The page request must be sent only once, since the worker responded with
@@ -3113,7 +3114,7 @@ class ServiceWorkerVersionBrowserV8FullCodeCacheTest
     // OnCachedMetadataUpdated() is called.
     run_loop.Run();
   }
-  size_t metadata_size() { return metadata_size_; };
+  size_t metadata_size() { return metadata_size_; }
 
  protected:
   // ServiceWorkerVersion::Observer overrides
@@ -3152,13 +3153,11 @@ class CacheStorageSideDataSizeChecker
     : public base::RefCountedThreadSafe<CacheStorageSideDataSizeChecker> {
  public:
   static int GetSize(CacheStorageContextImpl* cache_storage_context,
-                     storage::FileSystemContext* file_system_context,
                      const GURL& origin,
                      const std::string& cache_name,
                      const GURL& url) {
     scoped_refptr<CacheStorageSideDataSizeChecker> checker(
-        new CacheStorageSideDataSizeChecker(cache_storage_context,
-                                            file_system_context, origin,
+        new CacheStorageSideDataSizeChecker(cache_storage_context, origin,
                                             cache_name, url));
     return checker->GetSizeImpl();
   }
@@ -3169,12 +3168,10 @@ class CacheStorageSideDataSizeChecker
 
   CacheStorageSideDataSizeChecker(
       CacheStorageContextImpl* cache_storage_context,
-      storage::FileSystemContext* file_system_context,
       const GURL& origin,
       const std::string& cache_name,
       const GURL& url)
       : cache_storage_context_(cache_storage_context),
-        file_system_context_(file_system_context),
         origin_(origin),
         cache_name_(cache_name),
         url_(url) {}
@@ -3216,6 +3213,12 @@ class CacheStorageSideDataSizeChecker
       CacheStorageCacheHandle cache_handle,
       CacheStorageError error,
       blink::mojom::FetchAPIResponsePtr response) {
+    if (error == CacheStorageError::kErrorNotFound) {
+      *result = 0;
+      std::move(continuation).Run();
+      return;
+    }
+
     ASSERT_EQ(CacheStorageError::kSuccess, error);
     ASSERT_TRUE(response->blob);
     blink::mojom::BlobPtr blob_ptr(std::move(response->blob->blob));
@@ -3225,15 +3228,13 @@ class CacheStorageSideDataSizeChecker
         [](scoped_refptr<storage::BlobHandle> blob_handle, int* result,
            base::OnceClosure continuation,
            const base::Optional<std::vector<uint8_t>>& data) {
-          if (data)
-            *result = data->size();
+          *result = data ? data->size() : 0;
           std::move(continuation).Run();
         },
         blob_handle, result, std::move(continuation)));
   }
 
   CacheStorageContextImpl* cache_storage_context_;
-  storage::FileSystemContext* file_system_context_;
   const GURL origin_;
   const std::string cache_name_;
   const GURL url_;
@@ -3299,8 +3300,8 @@ class ServiceWorkerV8CodeCacheForCacheStorageTest
     return CacheStorageSideDataSizeChecker::GetSize(
         static_cast<CacheStorageContextImpl*>(
             partition->GetCacheStorageContext()),
-        partition->GetFileSystemContext(), embedded_test_server()->base_url(),
-        std::string("cache_name"), embedded_test_server()->GetURL(kScriptUrl));
+        embedded_test_server()->base_url(), std::string("cache_name"),
+        embedded_test_server()->GetURL(kScriptUrl));
   }
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerV8CodeCacheForCacheStorageTest);
@@ -3353,6 +3354,171 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerV8CodeCacheForCacheStorageNoneTest,
   // load when --v8-cache-options=none is set.
   NavigateToTestPage();
   WaitUntilSideDataSizeIs(0);
+}
+
+class ServiceWorkerCodeCacheStrategyTestBase : public ServiceWorkerBrowserTest {
+ public:
+  ServiceWorkerCodeCacheStrategyTestBase() = default;
+  ~ServiceWorkerCodeCacheStrategyTestBase() override = default;
+
+ protected:
+  static const char kWorkerUrl[];
+  static const char kPageUrl[];
+  static const char kCachedInInstallEventUrl[];
+  static const char kCachedInFetchEventUrl[];
+  static const char kCachedInMessageEventUrl[];
+
+  void RegisterAndActivateServiceWorker() {
+    auto observer = base::MakeRefCounted<WorkerActivatedObserver>(wrapper());
+    observer->Init();
+    blink::mojom::ServiceWorkerRegistrationOptions options(
+        embedded_test_server()->GetURL(kPageUrl),
+        blink::mojom::ScriptType::kClassic,
+        blink::mojom::ServiceWorkerUpdateViaCache::kImports);
+    public_context()->RegisterServiceWorker(
+        embedded_test_server()->GetURL(kWorkerUrl), options,
+        base::BindOnce(&ExpectResultAndRun, true, base::DoNothing()));
+    observer->Wait();
+  }
+
+  void NavigateToTestPage() {
+    StartServerAndNavigateToSetup();
+    RegisterAndActivateServiceWorker();
+    EXPECT_TRUE(
+        NavigateToURL(shell(), embedded_test_server()->GetURL(kPageUrl)));
+  }
+
+  void InitiateEventsToCacheScript() {
+    // Fetch a test script in the page. The service worker will put the
+    // response into CacheStorage in the fetch event handler.
+    EXPECT_EQ("DONE", EvalJs(shell(),
+                             "fetch_script('code_cache_strategy_test_script.js?"
+                             "cached_in_fetch_event');"));
+    // Post a message to the service worker to put the response of the test
+    // script into CacheStorage in the message event handler.
+    EXPECT_EQ("DONE", EvalJs(shell(),
+                             "post_message('cache_script_in_message_event');"));
+  }
+
+  CacheStorageContextImpl* GetCacheStorageContextImpl() {
+    StoragePartition* partition = BrowserContext::GetDefaultStoragePartition(
+        shell()->web_contents()->GetBrowserContext());
+    return static_cast<CacheStorageContextImpl*>(
+        partition->GetCacheStorageContext());
+  }
+
+  bool HasSideData(const std::string& path) {
+    int size = CacheStorageSideDataSizeChecker::GetSize(
+        GetCacheStorageContextImpl(), embedded_test_server()->base_url(),
+        std::string("cache_name"), embedded_test_server()->GetURL(path));
+    return size > 0;
+  }
+
+  void WaitForSideData(const std::string& path) {
+    while (true) {
+      if (HasSideData(path))
+        return;
+    }
+  }
+
+  base::test::ScopedFeatureList feature_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerCodeCacheStrategyTestBase);
+};
+
+const char ServiceWorkerCodeCacheStrategyTestBase::kPageUrl[] =
+    "/service_worker/code_cache_strategy.html";
+const char ServiceWorkerCodeCacheStrategyTestBase::kWorkerUrl[] =
+    "/service_worker/code_cache_strategy_worker.js";
+const char ServiceWorkerCodeCacheStrategyTestBase::kCachedInInstallEventUrl[] =
+    "/service_worker/"
+    "code_cache_strategy_test_script.js?cached_in_install_event";
+const char ServiceWorkerCodeCacheStrategyTestBase::kCachedInFetchEventUrl[] =
+    "/service_worker/code_cache_strategy_test_script.js?cached_in_fetch_event";
+const char ServiceWorkerCodeCacheStrategyTestBase::kCachedInMessageEventUrl[] =
+    "/service_worker/"
+    "code_cache_strategy_test_script.js?cached_in_message_event";
+
+class ServiceWorkerCodeCacheStrategyDontGenerateTest
+    : public ServiceWorkerCodeCacheStrategyTestBase {
+ public:
+  void SetUp() override {
+    feature_list_.InitAndEnableFeatureWithParameters(
+        blink::features::kServiceWorkerAggressiveCodeCache,
+        {{blink::kServiceWorkerEagerCodeCacheStrategy, "dontgenerate"}});
+    ServiceWorkerCodeCacheStrategyTestBase::SetUp();
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ServiceWorkerCodeCacheStrategyDontGenerateTest,
+                       DontGenerate) {
+  NavigateToTestPage();
+  InitiateEventsToCacheScript();
+  EXPECT_FALSE(HasSideData(kCachedInInstallEventUrl));
+  EXPECT_FALSE(HasSideData(kCachedInFetchEventUrl));
+  EXPECT_FALSE(HasSideData(kCachedInMessageEventUrl));
+}
+
+class ServiceWorkerCodeCacheStrategyInstallEventTest
+    : public ServiceWorkerCodeCacheStrategyTestBase {
+ public:
+  void SetUp() override {
+    feature_list_.InitAndEnableFeatureWithParameters(
+        blink::features::kServiceWorkerAggressiveCodeCache,
+        {{blink::kServiceWorkerEagerCodeCacheStrategy, "installevent"}});
+    ServiceWorkerCodeCacheStrategyTestBase::SetUp();
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ServiceWorkerCodeCacheStrategyInstallEventTest,
+                       GenerateInInstallEvent) {
+  NavigateToTestPage();
+  InitiateEventsToCacheScript();
+  EXPECT_TRUE(HasSideData(kCachedInInstallEventUrl));
+  EXPECT_FALSE(HasSideData(kCachedInFetchEventUrl));
+  EXPECT_FALSE(HasSideData(kCachedInMessageEventUrl));
+}
+
+class ServiceWorkerCodeCacheStrategyIdleTaskTest
+    : public ServiceWorkerCodeCacheStrategyTestBase {
+ public:
+  void SetUp() override {
+    feature_list_.InitAndEnableFeatureWithParameters(
+        blink::features::kServiceWorkerAggressiveCodeCache,
+        {{blink::kServiceWorkerEagerCodeCacheStrategy, "idletask"}});
+    ServiceWorkerCodeCacheStrategyTestBase::SetUp();
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ServiceWorkerCodeCacheStrategyIdleTaskTest,
+                       GenerateInIdleTask) {
+  NavigateToTestPage();
+  InitiateEventsToCacheScript();
+  EXPECT_TRUE(HasSideData(kCachedInInstallEventUrl));
+  // These should not time out.
+  WaitForSideData(kCachedInFetchEventUrl);
+  WaitForSideData(kCachedInMessageEventUrl);
+}
+
+// Test that generating and storing code cache in idle tasks doesn't corrupt
+// cache entry when Cache#put() is called twice asynchronously.
+IN_PROC_BROWSER_TEST_F(ServiceWorkerCodeCacheStrategyIdleTaskTest,
+                       CacheScriptTwice) {
+  const char kCachedTwiceUrl[] =
+      "/service_worker/code_cache_strategy_test_script.js?cached_twice";
+
+  NavigateToTestPage();
+
+  // Ask the service worker to call Cache#put() twice asynchronously.
+  // The first response is a dummy script that contains no function.
+  // The second response is an actual script that contains |test_function()|.
+  EXPECT_EQ("DONE", EvalJs(shell(), "post_message('cache_script_twice');"));
+
+  WaitForSideData(kCachedTwiceUrl);
+
+  // Ask the page to load the test script and execute |test_function()|, which
+  // will return "SUCCESS".
+  EXPECT_EQ("SUCCESS", EvalJs(shell(), "execute_cached_twice_script();"));
 }
 
 // ServiceWorkerDisableWebSecurityTests check the behavior when the web security
@@ -3545,11 +3711,13 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerURLLoaderThrottleTest,
                                "document.body.textContent");
   ASSERT_TRUE(result.error.empty());
   std::unique_ptr<base::DictionaryValue> dict = base::DictionaryValue::From(
-      base::JSONReader::Read(result.ExtractString()));
+      base::JSONReader::ReadDeprecated(result.ExtractString()));
   ASSERT_TRUE(dict);
 
   // Default headers are present.
-  EXPECT_TRUE(CheckHeader(*dict, "accept", network::kFrameAcceptHeader));
+  EXPECT_TRUE(CheckHeader(*dict, "accept",
+                          std::string(network::kFrameAcceptHeader) +
+                              std::string(kAcceptHeaderSignedExchangeSuffix)));
   // Injected headers are present.
   EXPECT_TRUE(CheckHeader(*dict, "x-injected", "injected value"));
 

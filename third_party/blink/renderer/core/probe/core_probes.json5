@@ -20,7 +20,6 @@
       probes: [
         "CallFunction",
         "ExecuteScript",
-        "willSendRequest",
       ]
     },
     InspectorAnimationAgent: {
@@ -100,13 +99,14 @@
         "applyAcceptLanguageOverride",
         "applyUserAgentOverride",
         "frameStartedLoading",
-        "willSendRequest",
+        "prepareRequest",
       ]
     },
     InspectorLayerTreeAgent: {
       probes: [
         "didPaint",
         "layerTreeDidChange",
+        "layerTreePainted",
       ]
     },
     InspectorLogAgent: {
@@ -137,6 +137,7 @@
         "frameClearedScheduledNavigation",
         "frameScheduledNavigation",
         "markResourceAsCached",
+        "prepareRequest",
         "scriptImported",
         "shouldBlockRequest",
         "shouldBypassServiceWorker",
@@ -145,6 +146,7 @@
         "willLoadXHR",
         "willSendEventSourceRequest",
         "willSendRequest",
+        "willSendNavigationRequest",
         "willSendWebSocketHandshakeRequest",
       ]
     },
@@ -207,6 +209,7 @@
         "frameStartedLoading",
         "paintTiming",
         "willSendRequest",
+        "willSendNavigationRequest",
       ]
     },
     DevToolsSession: {

@@ -77,6 +77,7 @@ scoped_refptr<Layer> Layer::Create() {
 
 Layer::Layer()
     : ignore_set_needs_commit_(false),
+      paint_count_(0),
       parent_(nullptr),
       layer_tree_host_(nullptr),
       // Layer IDs start from 1.
@@ -97,7 +98,9 @@ Layer::Layer()
       needs_show_scrollbars_(false),
       has_transform_node_(false),
       subtree_has_copy_request_(false),
-      safe_opaque_background_color_(0) {}
+      safe_opaque_background_color_(0),
+      compositing_reasons_(0),
+      owner_node_id_(0) {}
 
 Layer::~Layer() {
   // Our parent should be holding a reference to us so there should be no
@@ -205,6 +208,9 @@ bool Layer::IsPropertyChangeAllowed() const {
 
   return !layer_tree_host_->in_paint_layer_contents();
 }
+
+void Layer::CaptureContent(const gfx::Rect& rect,
+                           std::vector<NodeHolder>* content) {}
 
 sk_sp<SkPicture> Layer::GetPicture() const {
   return nullptr;
@@ -560,7 +566,7 @@ void Layer::SetBackdropFilters(const FilterOperations& filters) {
   SetNeedsCommit();
 }
 
-void Layer::SetBackdropFilterBounds(const gfx::RectF& backdrop_filter_bounds) {
+void Layer::SetBackdropFilterBounds(const gfx::RRectF& backdrop_filter_bounds) {
   inputs_.backdrop_filter_bounds = backdrop_filter_bounds;
 }
 
@@ -1008,6 +1014,12 @@ void Layer::AddMainThreadScrollingReasons(
     uint32_t main_thread_scrolling_reasons) {
   DCHECK(IsPropertyChangeAllowed());
   DCHECK(main_thread_scrolling_reasons);
+
+  // When layer lists are used, the main thread scrolling reasons should be set
+  // on property tree nodes directly.
+  // TODO(pdr): Uncomment this check when https://crbug.com/919969 is fixed.
+  // DCHECK(!layer_tree_host() || !layer_tree_host()->IsUsingLayerLists());
+
   // Layer should only see non-transient scrolling reasons. Transient scrolling
   // reasons are computed per hit test.
   DCHECK(MainThreadScrollingReason::MainThreadCanSetScrollReasons(
@@ -1193,14 +1205,19 @@ void Layer::SetShouldFlattenTransform(bool should_flatten) {
 std::string Layer::ToString() const {
   return base::StringPrintf(
       "layer_id: %d\n"
-      "  element_id: %s\n"
-      "  bounds: %s\n"
-      "  position: %s\n"
+      "  Bounds: %s\n"
+      "  ElementId: %s\n"
+      "  OffsetToTransformParent: %s\n"
+      "  Position: %s\n"
       "  scrollable: %d\n"
-      "  property tree indices: transform(%d) clip(%d) effect(%d) scroll(%d)\n",
-      id(), element_id().ToString().c_str(), bounds().ToString().c_str(),
-      position().ToString().c_str(), scrollable(), transform_tree_index(),
-      clip_tree_index(), effect_tree_index(), scroll_tree_index());
+      "  clip_tree_index: %d\n"
+      "  effect_tree_index: %d\n"
+      "  scroll_tree_index: %d\n"
+      "  transform_tree_index: %d\n",
+      id(), bounds().ToString().c_str(), element_id().ToString().c_str(),
+      offset_to_transform_parent().ToString().c_str(),
+      position().ToString().c_str(), scrollable(), clip_tree_index(),
+      effect_tree_index(), scroll_tree_index(), transform_tree_index());
 }
 
 void Layer::SetUseParentBackfaceVisibility(bool use) {
@@ -1356,7 +1373,6 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     layer->SetWheelEventHandlerRegion(Region());
   }
   layer->SetContentsOpaque(inputs_.contents_opaque);
-  layer->SetPosition(inputs_.position);
   layer->SetShouldFlattenScreenSpaceTransformFromPropertyTree(
       should_flatten_screen_space_transform_from_property_tree_);
   layer->SetUseParentBackfaceVisibility(inputs_.use_parent_backface_visibility);

@@ -12,6 +12,7 @@ import org.chromium.base.task.SingleThreadTaskRunnerImpl;
 import org.chromium.base.task.TaskExecutor;
 import org.chromium.base.task.TaskRunner;
 import org.chromium.base.task.TaskTraits;
+import org.chromium.content.browser.UiThreadTaskTraitsImpl;
 
 import java.util.WeakHashMap;
 
@@ -46,22 +47,24 @@ public class BrowserTaskExecutor implements TaskExecutor {
             // TODO(alexclarke): ThreadUtils.getUiThreadHandler shouldn't be in base.
             taskRunner =
                     new SingleThreadTaskRunnerImpl(ThreadUtils.getUiThreadHandler(), taskTraits);
+            taskRunner.disableLifetimeCheck();
             mTaskRunners.put(taskTraits, taskRunner);
             return taskRunner;
         }
     }
 
     @Override
-    public void postTask(TaskTraits taskTraits, Runnable task) {
-        createSingleThreadTaskRunner(taskTraits).postTask(task);
+    public void postDelayedTask(TaskTraits taskTraits, Runnable task, long delay) {
+        createSingleThreadTaskRunner(taskTraits).postDelayedTask(task, delay);
     }
 
     public static void register() {
         // In some tests we will get called multiple times.
         if (sRegistered) return;
-
-        PostTask.registerTaskExecutor(UiThreadTaskTraits.EXTENSION_ID, new BrowserTaskExecutor());
         sRegistered = true;
+
+        PostTask.registerTaskExecutor(
+                UiThreadTaskTraitsImpl.DESCRIPTOR.getId(), new BrowserTaskExecutor());
     }
 
     private final WeakHashMap<TaskTraits, SingleThreadTaskRunner> mTaskRunners =

@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_forward.h"
 #include "base/command_line.h"
@@ -15,10 +16,14 @@
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/bind_test_util.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/badging/badge_manager.h"
+#include "chrome/browser/badging/badge_manager_delegate.h"
+#include "chrome/browser/badging/badge_manager_factory.h"
 #include "chrome/browser/banners/app_banner_manager_desktop.h"
 #include "chrome/browser/engagement/site_engagement_service.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
@@ -34,6 +39,7 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/extensions/app_launch_params.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/extensions/hosted_app_browser_controller.h"
@@ -41,6 +47,8 @@
 #include "chrome/browser/ui/page_info/page_info_dialog.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/app_menu_model.h"
+#include "chrome/browser/ui/web_applications/web_app_dialog_utils.h"
+#include "chrome/browser/web_applications/components/web_app_constants.h"
 #include "chrome/browser/web_applications/components/web_app_helpers.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
@@ -59,7 +67,6 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/context_menu_params.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
@@ -73,6 +80,7 @@
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/request_handler_util.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "ui/base/clipboard/clipboard.h"
 
 using content::RenderFrameHost;
@@ -146,7 +154,7 @@ void NavigateToURLAndWait(Browser* browser,
           web_contents->GetInterstitialPage();
       ASSERT_TRUE(interstitial);
       interstitial->GetDelegateForTesting()->CommandReceived(
-          base::IntToString(security_interstitials::CMD_PROCEED));
+          base::NumberToString(security_interstitials::CMD_PROCEED));
     }
     observer.Wait();
   }
@@ -164,12 +172,14 @@ void NavigateAndCheckForToolbar(Browser* browser,
 }
 
 void CheckWebContentsHasAppPrefs(content::WebContents* web_contents) {
-  content::RendererPreferences* prefs = web_contents->GetMutableRendererPrefs();
+  blink::mojom::RendererPreferences* prefs =
+      web_contents->GetMutableRendererPrefs();
   EXPECT_FALSE(prefs->can_accept_load_drops);
 }
 
 void CheckWebContentsDoesNotHaveAppPrefs(content::WebContents* web_contents) {
-  content::RendererPreferences* prefs = web_contents->GetMutableRendererPrefs();
+  blink::mojom::RendererPreferences* prefs =
+      web_contents->GetMutableRendererPrefs();
   EXPECT_TRUE(prefs->can_accept_load_drops);
 }
 
@@ -195,12 +205,8 @@ std::string GetPathWithHostAndPortReplaced(const std::string& original_path,
                                            net::HostPortPair host_port_pair) {
   base::StringPairs replacement_text = {
       {"REPLACE_WITH_HOST_AND_PORT", host_port_pair.ToString()}};
-
-  std::string path_with_replaced_text;
-  net::test_server::GetFilePathWithReplacements(original_path, replacement_text,
-                                                &path_with_replaced_text);
-
-  return path_with_replaced_text;
+  return net::test_server::GetFilePathWithReplacements(original_path,
+                                                       replacement_text);
 }
 
 // Tries to load an image at |image_url| and returns whether or not it loaded
@@ -977,6 +983,148 @@ IN_PROC_BROWSER_TEST_P(HostedAppCustomTabBarOnlyTest,
             app_browser->GetWindowTitleForCurrentTab(false));
 }
 
+#if !defined(OS_ANDROID)
+class HostedAppBadgingTest : public HostedAppTest {
+ public:
+  // Listens to BadgeManager events and forwards them to the test class.
+  class TestBadgeManagerDelegate : public badging::BadgeManagerDelegate {
+   public:
+    using SetBadgeCallback =
+        base::RepeatingCallback<void(const std::string&,
+                                     base::Optional<uint64_t>)>;
+    using ClearBadgeCallback =
+        base::RepeatingCallback<void(const std::string&)>;
+
+    TestBadgeManagerDelegate(Profile* profile,
+                             SetBadgeCallback on_set_badge,
+                             ClearBadgeCallback on_clear_badge)
+        : badging::BadgeManagerDelegate(profile),
+          on_set_badge_(on_set_badge),
+          on_clear_badge_(on_clear_badge) {}
+
+    void OnBadgeSet(const std::string& app_id,
+                    base::Optional<uint64_t> contents) override {
+      on_set_badge_.Run(app_id, contents);
+    }
+
+    void OnBadgeCleared(const std::string& app_id) override {
+      on_clear_badge_.Run(app_id);
+    }
+
+   private:
+    SetBadgeCallback on_set_badge_;
+    ClearBadgeCallback on_clear_badge_;
+  };
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    HostedAppTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitchASCII("enable-blink-features", "Badging");
+  }
+
+  void SetUpOnMainThread() override {
+    HostedAppTest::SetUpOnMainThread();
+
+    ASSERT_TRUE(https_server()->Start());
+    ASSERT_TRUE(embedded_test_server()->Start());
+
+    InstallSecurePWA();
+
+    awaiter_ = std::make_unique<base::RunLoop>();
+
+    Profile* profile = app_browser_->profile();
+    std::unique_ptr<badging::BadgeManagerDelegate> delegate =
+        std::make_unique<TestBadgeManagerDelegate>(
+            profile,
+            base::BindRepeating(&HostedAppBadgingTest::OnBadgeSet,
+                                base::Unretained(this)),
+            base::BindRepeating(&HostedAppBadgingTest::OnBadgeCleared,
+                                base::Unretained(this)));
+    badging::BadgeManagerFactory::GetInstance()
+        ->GetForProfile(profile)
+        ->SetDelegate(std::move(delegate));
+  }
+
+  // BadgeManagerDelegate:
+  void OnBadgeSet(const std::string& app_id,
+                  base::Optional<uint64_t> badge_content) {
+    if (badge_content.has_value())
+      last_badge_content_ = badge_content;
+    else
+      was_flagged_ = true;
+
+    awaiter_->Quit();
+  }
+
+  void OnBadgeCleared(const std::string& app_id) {
+    was_cleared_ = true;
+    awaiter_->Quit();
+  }
+
+ protected:
+  void ExecuteScriptAndWaitForBadgeChange(std::string script) {
+    was_cleared_ = false;
+    was_flagged_ = false;
+    last_badge_content_ = base::nullopt;
+    awaiter_.reset(new base::RunLoop());
+
+    content::WebContents* web_contents =
+        app_browser_->tab_strip_model()->GetActiveWebContents();
+    ASSERT_TRUE(content::ExecuteScript(web_contents, script));
+
+    if (was_cleared_ || was_flagged_ || last_badge_content_ != base::nullopt)
+      return;
+
+    awaiter_->Run();
+  }
+
+  bool was_cleared_ = false;
+  bool was_flagged_ = false;
+  base::Optional<uint64_t> last_badge_content_ = base::nullopt;
+
+ private:
+  std::unique_ptr<base::RunLoop> awaiter_;
+};
+
+// Tests that setting the badge to an integer will be propagated across
+// processes.
+IN_PROC_BROWSER_TEST_P(HostedAppBadgingTest, BadgeCanBeSetToAnInteger) {
+  ExecuteScriptAndWaitForBadgeChange("ExperimentalBadge.set(99)");
+  ASSERT_FALSE(was_cleared_);
+  ASSERT_FALSE(was_flagged_);
+  ASSERT_EQ(base::Optional<uint64_t>(99u), last_badge_content_);
+}
+
+// Tests that calls to |Badge.clear| are propagated across processes.
+IN_PROC_BROWSER_TEST_P(HostedAppBadgingTest, BadgeCanBeClearedWithClearMethod) {
+  ExecuteScriptAndWaitForBadgeChange("ExperimentalBadge.set(55)");
+  ASSERT_FALSE(was_cleared_);
+  ASSERT_FALSE(was_flagged_);
+  ASSERT_EQ(base::Optional<uint64_t>(55u), last_badge_content_);
+
+  ExecuteScriptAndWaitForBadgeChange("ExperimentalBadge.clear()");
+  ASSERT_TRUE(was_cleared_);
+  ASSERT_FALSE(was_flagged_);
+  ASSERT_EQ(base::nullopt, last_badge_content_);
+}
+
+// Tests that calling Badge.set(0) is equivalent to calling |Badge.clear| and
+// that it propagates across processes.
+IN_PROC_BROWSER_TEST_P(HostedAppBadgingTest, BadgeCanBeClearedWithZero) {
+  ExecuteScriptAndWaitForBadgeChange("ExperimentalBadge.set(0)");
+  ASSERT_TRUE(was_cleared_);
+  ASSERT_FALSE(was_flagged_);
+  ASSERT_EQ(base::nullopt, last_badge_content_);
+}
+
+// Tests that setting the badge without content is propagated across processes.
+IN_PROC_BROWSER_TEST_P(HostedAppBadgingTest, BadgeCanBeSetWithoutAValue) {
+  ExecuteScriptAndWaitForBadgeChange("ExperimentalBadge.set()");
+  ASSERT_FALSE(was_cleared_);
+  ASSERT_TRUE(was_flagged_);
+  ASSERT_EQ(base::nullopt, last_badge_content_);
+}
+#endif  // !defined(OS_CHROMEOS)
+
 using HostedAppPWAOnlyTest = HostedAppTest;
 
 // Tests that the command for popping a tab out to a PWA window is disabled in
@@ -1157,14 +1305,30 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, InstallInstallableSite) {
   ASSERT_TRUE(https_server()->Start());
   NavigateToURLAndWait(browser(), GetInstallableAppURL());
 
-  chrome::SetAutoAcceptPWAInstallDialogForTesting(true);
+  chrome::SetAutoAcceptPWAInstallDialogForTesting(/*auto_accept*/ true);
+
+  web_app::AppId app_id;
+
+  base::RunLoop run_loop;
+  web_app::SetInstalledCallbackForTesting(
+      base::BindLambdaForTesting([&](const web_app::AppId& installed_app_id,
+                                     web_app::InstallResultCode code) {
+        EXPECT_EQ(web_app::InstallResultCode::kSuccess, code);
+        app_id = installed_app_id;
+        run_loop.Quit();
+      }));
+
   chrome::ExecuteCommand(browser(), IDC_INSTALL_PWA);
+  run_loop.Run();
+
+  chrome::SetAutoAcceptPWAInstallDialogForTesting(/*auto_accept*/ false);
+
   const extensions::Extension* app =
-      extensions::TestExtensionRegistryObserver(
-          extensions::ExtensionRegistry::Get(browser()->profile()))
-          .WaitForExtensionInstalled();
+      extensions::ExtensionRegistry::Get(browser()->profile())
+          ->enabled_extensions()
+          .GetByID(app_id);
+  ASSERT_TRUE(app);
   EXPECT_EQ(app->name(), GetInstallableAppName());
-  chrome::SetAutoAcceptPWAInstallDialogForTesting(false);
 
   // Installed PWAs should launch in their own window.
   EXPECT_EQ(extensions::GetLaunchContainer(
@@ -1541,6 +1705,9 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, ShouldShowToolbarForSystemApp) {
   NavigateAndCheckForToolbar(app_browser_, app_url, false);
 }
 
+// TODO(loyso): crbug.com/918089. This test is deprecated in favor of
+// BookmarkAppTest.EngagementHistogramForAppInWindow and
+// BookmarkAppTest.EngagementHistogramForAppInTab.
 IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, EngagementHistogram) {
   base::HistogramTester histograms;
   WebApplicationInfo web_app_info;
@@ -1585,6 +1752,9 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, EngagementHistogram) {
                                SiteEngagementService::ENGAGEMENT_MOUSE, 1);
 }
 
+// TODO(loyso): crbug.com/918089. This test is deprecated in favor of
+// BookmarkAppTest.EngagementHistogramAppWithoutScope and
+// BookmarkAppTest.EngagementHistogramRecordedForNonApps.
 IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest,
                        EngagementHistogramNotRecordedIfNoScope) {
   base::HistogramTester histograms;
@@ -1601,6 +1771,8 @@ IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest,
   histograms.ExpectTotalCount(extensions::kPwaWindowEngagementTypeHistogram, 0);
 }
 
+// TODO(loyso): crbug.com/918089. This test is deprecated in favor of
+// BookmarkAppTest.EngagementHistogramTwoApps.
 IN_PROC_BROWSER_TEST_P(HostedAppPWAOnlyTest, EngagementHistogramTwoApps) {
   base::HistogramTester histograms;
   const extensions::Extension *app1, *app2;
@@ -2765,46 +2937,55 @@ IN_PROC_BROWSER_TEST_P(BookmarkAppOnlyTest, ShouldShowToolbarForExtensionPage) {
   NavigateAndCheckForToolbar(app_browser_, popup_url, false);
 }
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        HostedAppTest,
-                        ::testing::Combine(kAppTypeValues,
-                                           ::testing::Bool(),
-                                           ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         HostedAppTest,
+                         ::testing::Combine(kAppTypeValues,
+                                            ::testing::Bool(),
+                                            ::testing::Bool()));
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        HostedAppCustomTabBarOnlyTest,
-                        ::testing::Combine(kAppTypeValues,
-                                           ::testing::Bool(),
-                                           ::testing::Values(true)));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         HostedAppCustomTabBarOnlyTest,
+                         ::testing::Combine(kAppTypeValues,
+                                            ::testing::Bool(),
+                                            ::testing::Values(true)));
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     HostedAppPWAOnlyTest,
     ::testing::Combine(::testing::Values(AppType::BOOKMARK_APP),
                        ::testing::Values(true),
                        ::testing::Bool()));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     BookmarkAppOnlyTest,
     ::testing::Combine(::testing::Values(AppType::BOOKMARK_APP),
                        ::testing::Bool(),
                        ::testing::Bool()));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     HostedAppProcessModelTest,
     ::testing::Combine(::testing::Values(AppType::HOSTED_APP),
                        ::testing::Bool(),
                        ::testing::Bool()));
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     HostedAppIsolatedOriginTest,
     ::testing::Combine(::testing::Values(AppType::HOSTED_APP),
                        ::testing::Bool(),
                        ::testing::Bool()));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     /* no prefix */,
     HostedAppSitePerProcessTest,
     ::testing::Combine(::testing::Values(AppType::HOSTED_APP),
                        ::testing::Bool(),
                        ::testing::Bool()));
+
+#if !defined(OS_CHROMEOS)
+INSTANTIATE_TEST_SUITE_P(
+    /* no prefix */,
+    HostedAppBadgingTest,
+    ::testing::Combine(::testing::Values(AppType::BOOKMARK_APP),
+                       ::testing::Values(true),
+                       ::testing::Bool()));
+#endif  // !defined(OS_CHROMEOS)

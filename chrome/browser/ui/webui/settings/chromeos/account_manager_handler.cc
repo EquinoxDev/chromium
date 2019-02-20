@@ -13,6 +13,7 @@
 #include "base/values.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/chromeos/account_manager_welcome_dialog.h"
 #include "chrome/browser/ui/webui/settings/settings_page_ui_handler.h"
 #include "chrome/browser/ui/webui/signin/inline_login_handler_dialog_chromeos.h"
 #include "chromeos/account_manager/account_manager.h"
@@ -58,14 +59,13 @@ AccountManagerUIHandler::AccountManagerUIHandler(
     AccountTrackerService* account_tracker_service,
     identity::IdentityManager* identity_manager)
     : account_manager_(account_manager),
-      account_tracker_service_(account_tracker_service),
       identity_manager_(identity_manager),
-      account_mapper_util_(account_tracker_service_),
+      account_mapper_util_(account_tracker_service),
       account_manager_observer_(this),
-      account_tracker_service_observer_(this),
+      identity_manager_observer_(this),
       weak_factory_(this) {
   DCHECK(account_manager_);
-  DCHECK(account_tracker_service_);
+  DCHECK(identity_manager_);
 }
 
 AccountManagerUIHandler::~AccountManagerUIHandler() = default;
@@ -87,10 +87,16 @@ void AccountManagerUIHandler::RegisterMessages() {
       "removeAccount",
       base::BindRepeating(&AccountManagerUIHandler::HandleRemoveAccount,
                           weak_factory_.GetWeakPtr()));
+  web_ui()->RegisterMessageCallback(
+      "showWelcomeDialogIfRequired",
+      base::BindRepeating(
+          &AccountManagerUIHandler::HandleShowWelcomeDialogIfRequired,
+          weak_factory_.GetWeakPtr()));
 }
 
 void AccountManagerUIHandler::HandleGetAccounts(const base::ListValue* args) {
   AllowJavascript();
+
   CHECK(!args->GetList().empty());
   base::Value callback_id = args->GetList()[0].Clone();
 
@@ -116,16 +122,6 @@ void AccountManagerUIHandler::GetAccountsCallbackHandler(
         account_manager::AccountType::ACCOUNT_TYPE_GAIA) {
       continue;
     }
-    AccountInfo account_info =
-        account_tracker_service_->FindAccountInfoByGaiaId(account_key.id);
-    DCHECK(!account_info.IsEmpty());
-
-    if (account_manager_->IsTokenAvailable(account_key) &&
-        account_info.full_name.empty()) {
-      // Account info has not been fully fetched yet from GAIA. Ignore this
-      // account.
-      continue;
-    }
 
     base::DictionaryValue account;
     account.SetString("id", account_key.id);
@@ -140,14 +136,19 @@ void AccountManagerUIHandler::GetAccountsCallbackHandler(
             !identity_manager_
                  ->HasAccountWithRefreshTokenInPersistentErrorState(
                      oauth_account_id));
-    account.SetString("fullName", account_info.full_name);
-    account.SetString("email", account_info.email);
-    gfx::Image icon =
-        account_tracker_service_->GetAccountImage(account_info.account_id);
-    if (!icon.IsEmpty()) {
-      account.SetString("pic", webui::GetBitmapDataUrl(icon.AsBitmap()));
+
+    base::Optional<AccountInfo> maybe_account_info =
+        identity_manager_->FindAccountInfoForAccountWithRefreshTokenByGaiaId(
+            account_key.id);
+    DCHECK(maybe_account_info.has_value());
+
+    account.SetString("fullName", maybe_account_info->full_name);
+    account.SetString("email", maybe_account_info->email);
+    if (!maybe_account_info->account_image.IsEmpty()) {
+      account.SetString("pic",
+                        webui::GetBitmapDataUrl(
+                            maybe_account_info->account_image.AsBitmap()));
     } else {
-      // TODO(crbug.com/914751): Badge this icon with an exclamation mark.
       gfx::ImageSkia default_icon =
           *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
               IDR_LOGIN_DEFAULT_USER);
@@ -209,21 +210,25 @@ void AccountManagerUIHandler::HandleRemoveAccount(const base::ListValue* args) {
   account_manager_->RemoveAccount(account_key);
 }
 
+void AccountManagerUIHandler::HandleShowWelcomeDialogIfRequired(
+    const base::ListValue* args) {
+  chromeos::AccountManagerWelcomeDialog::ShowIfRequired();
+}
+
 void AccountManagerUIHandler::OnJavascriptAllowed() {
   account_manager_observer_.Add(account_manager_);
-  account_tracker_service_observer_.Add(account_tracker_service_);
+  identity_manager_observer_.Add(identity_manager_);
 }
 
 void AccountManagerUIHandler::OnJavascriptDisallowed() {
   account_manager_observer_.RemoveAll();
-  account_tracker_service_observer_.RemoveAll();
+  identity_manager_observer_.RemoveAll();
 }
 
-// |AccountManager::Observer| overrides.
-// Note: We need to listen on |AccountManager| in addition to
-// |AccountTrackerService| because there is no guarantee that |AccountManager|
-// (our source of truth) will have a newly added account by the time
-// |AccountTrackerService| has it.
+// |AccountManager::Observer| overrides. Note: We need to listen on
+// |AccountManager| in addition to |IdentityManager| because there is no
+// guarantee that |AccountManager| (our source of truth) will have a newly added
+// account by the time |IdentityManager| has it.
 void AccountManagerUIHandler::OnTokenUpserted(
     const AccountManager::AccountKey& account_key) {
   RefreshUI();
@@ -234,23 +239,15 @@ void AccountManagerUIHandler::OnAccountRemoved(
   RefreshUI();
 }
 
-// |AccountTrackerService::Observer| overrides.
-// For newly added accounts, |AccountTrackerService| may take some time to
-// fetch user's full name and account image. Whenever that is completed, we
-// may need to update the UI with this new set of information.
-// Note that we may be listening to |AccountTrackerService| but we still
-// consider |AccountManager| to be the source of truth for account list.
-void AccountManagerUIHandler::OnAccountUpdated(const AccountInfo& info) {
+// |identity::IdentityManager::Observer| overrides. For newly added accounts,
+// |identity::IdentityManager| may take some time to fetch user's full name and
+// account image. Whenever that is completed, we may need to update the UI with
+// this new set of information. Note that we may be listening to
+// |identity::IdentityManager| but we still consider |AccountManager| to be the
+// source of truth for account list.
+void AccountManagerUIHandler::OnExtendedAccountInfoUpdated(
+    const AccountInfo& info) {
   RefreshUI();
-}
-
-void AccountManagerUIHandler::OnAccountImageUpdated(
-    const std::string& account_id,
-    const gfx::Image& image) {
-  RefreshUI();
-}
-
-void AccountManagerUIHandler::OnAccountRemoved(const AccountInfo& account_key) {
 }
 
 void AccountManagerUIHandler::RefreshUI() {

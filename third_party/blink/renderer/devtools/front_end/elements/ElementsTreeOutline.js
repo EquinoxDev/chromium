@@ -89,6 +89,7 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
 
     this._showHTMLCommentsSetting = Common.moduleSetting('showHTMLComments');
     this._showHTMLCommentsSetting.addChangeListener(this._onShowHTMLCommentsChange.bind(this));
+    this.useLightSelectionColor();
   }
 
   /**
@@ -562,7 +563,6 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
       return;
 
     element.select();
-    event.consume(true);
   }
 
   /**
@@ -599,14 +599,12 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
    */
   _highlightTreeElement(element, showInfo) {
     if (element instanceof Elements.ElementsTreeElement) {
-      element.node().domModel().overlayModel().highlightDOMNodeWithConfig(element.node().id, {mode: 'all', showInfo});
+      element.node().domModel().overlayModel().highlightInOverlay({node: element.node()}, 'all', showInfo);
       return;
     }
 
-    if (element instanceof Elements.ElementsTreeOutline.ShortcutTreeElement) {
-      element.domModel().overlayModel().highlightDOMNodeWithConfig(
-          undefined, {mode: 'all', showInfo}, element.backendNodeId());
-    }
+    if (element instanceof Elements.ElementsTreeOutline.ShortcutTreeElement)
+      element.domModel().overlayModel().highlightInOverlay({deferredNode: element.deferredNode()}, 'all', showInfo);
   }
 
   _onmouseleave(event) {
@@ -1244,7 +1242,7 @@ Elements.ElementsTreeOutline = class extends UI.TreeOutline {
    * @return {boolean}
    */
   _hasVisibleChildren(node) {
-    if (node.isIframe() && Runtime.experiments.isEnabled('oopifInlineDOM'))
+    if (node.isIframe())
       return true;
     if (node.contentDocument())
       return true;
@@ -1642,10 +1640,10 @@ Elements.ElementsTreeOutline.ShortcutTreeElement = class extends UI.TreeElement 
   }
 
   /**
-   * @return {number}
+   * @return {!SDK.DeferredDOMNode}
    */
-  backendNodeId() {
-    return this._nodeShortcut.deferredNode.backendNodeId();
+  deferredNode() {
+    return this._nodeShortcut.deferredNode;
   }
 
   /**

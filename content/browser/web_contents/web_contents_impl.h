@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/observer_list.h"
@@ -42,13 +43,13 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/color_chooser.h"
 #include "content/public/browser/global_routing_id.h"
+#include "content/public/browser/media_stream_request.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_binding_set.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_importance_signals.h"
-#include "content/public/common/renderer_preferences.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/three_d_api_types.h"
 #include "net/base/load_states.h"
@@ -59,6 +60,7 @@
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/blink/public/mojom/color_chooser/color_chooser.mojom.h"
 #include "third_party/blink/public/mojom/page/display_cutout.mojom.h"
+#include "third_party/blink/public/mojom/renderer_preferences.mojom.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "ui/accessibility/ax_mode.h"
 #include "ui/base/page_transition_types.h"
@@ -420,7 +422,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                      base::OnceCallback<void(int64_t)> callback) override;
   const std::string& GetContentsMimeType() override;
   bool WillNotifyDisconnection() override;
-  RendererPreferences* GetMutableRendererPrefs() override;
+  blink::mojom::RendererPreferences* GetMutableRendererPrefs() override;
   void Close() override;
   void SystemDragEnded(RenderWidgetHost* source_rwh) override;
   void NavigatedByUser() override;
@@ -450,6 +452,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool WasEverAudible() override;
   void GetManifest(GetManifestCallback callback) override;
   bool IsFullscreenForCurrentTab() override;
+  bool ShouldShowStaleContentOnEviction() override;
   void ExitFullscreen(bool will_cause_resize) override;
   void ResumeLoadingCreatedWebContents() override;
   void SetIsOverlayContent(bool is_overlay_content) override;
@@ -457,7 +460,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void ClearFocusedElement() override;
   bool IsShowingContextMenu() override;
   void SetShowingContextMenu(bool showing) override;
-  void PausePageScheduledTasks(bool paused) override;
   base::UnguessableToken GetAudioGroupId() override;
   bool CompletedFirstVisuallyNonEmptyPaint() override;
 
@@ -510,6 +512,12 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void DidAccessInitialDocument() override;
   void DidChangeName(RenderFrameHost* render_frame_host,
                      const std::string& name) override;
+  void DidReceiveFirstUserActivation(
+      RenderFrameHost* render_frame_host) override;
+  void DidChangeDisplayState(RenderFrameHost* render_frame_host,
+                             bool is_display_none) override;
+  void FrameSizeChanged(RenderFrameHost* render_frame_host,
+                        const gfx::Size& frame_size) override;
   void DocumentOnLoadCompleted(RenderFrameHost* render_frame_host) override;
   void UpdateStateForFrame(RenderFrameHost* render_frame_host,
                            const PageState& page_state) override;
@@ -564,6 +572,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
       int32_t main_frame_route_id,
       int32_t main_frame_widget_route_id,
       const mojom::CreateNewWindowParams& params,
+      bool has_user_gesture,
       SessionStorageNamespace* session_storage_namespace) override;
   void ShowCreatedWindow(int process_id,
                          int main_frame_widget_route_id,
@@ -623,7 +632,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                               const base::string16& message,
                               int32_t line_no,
                               const base::string16& source_id) override;
-  RendererPreferences GetRendererPrefs(
+  blink::mojom::RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const override;
   void DidReceiveInputEvent(RenderWidgetHostImpl* render_widget_host,
                             const blink::WebInputEvent::Type type) override;
@@ -646,8 +655,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
                                     MediaResponseCallback callback) override;
   bool CheckMediaAccessPermission(RenderFrameHost* render_frame_host,
                                   const url::Origin& security_origin,
-                                  MediaStreamType type) override;
-  std::string GetDefaultMediaDeviceID(MediaStreamType type) override;
+                                  blink::MediaStreamType type) override;
+  std::string GetDefaultMediaDeviceID(blink::MediaStreamType type) override;
   SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance) override;
   SessionStorageNamespaceMap GetSessionStorageNamespaceMap() override;
@@ -660,6 +669,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   RenderFrameHost* GetPendingMainFrame() override;
   void DidFirstVisuallyNonEmptyPaint(RenderViewHostImpl* source) override;
   void DidCommitAndDrawCompositorFrame(RenderViewHostImpl* source) override;
+  bool IsPortal() const override;
 
   // NavigatorDelegate ---------------------------------------------------------
 
@@ -701,8 +711,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   ukm::SourceId GetUkmSourceIdForLastCommittedSource() const override;
   void SetTopControlsShownRatio(RenderWidgetHostImpl* render_widget_host,
                                 float ratio) override;
-  bool DoBrowserControlsShrinkRendererSize() const override;
-  int GetTopControlsHeight() const override;
   void SetTopControlsGestureScrollInProgress(bool in_progress) override;
   void RenderWidgetCreated(RenderWidgetHostImpl* render_widget_host) override;
   void RenderWidgetDeleted(RenderWidgetHostImpl* render_widget_host) override;
@@ -769,7 +777,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   void LostMouseLock(RenderWidgetHostImpl* render_widget_host) override;
   bool HasMouseLock(RenderWidgetHostImpl* render_widget_host) override;
   RenderWidgetHostImpl* GetMouseLockWidget() override;
-  void OnRenderFrameProxyVisibilityChanged(bool visible) override;
+  void OnRenderFrameProxyVisibilityChanged(
+      blink::mojom::FrameVisibility visibility) override;
   void SendScreenRects() override;
   TextInputManager* GetTextInputManager() override;
   bool OnUpdateDragCursor() override;
@@ -812,7 +821,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   NavigationEntry* GetLastCommittedNavigationEntryForRenderManager() override;
   InterstitialPageImpl* GetInterstitialForRenderManager() override;
   bool FocusLocationBarByDefault() override;
-  void SetFocusToLocationBar(bool select_all) override;
+  void SetFocusToLocationBar() override;
   bool IsHidden() override;
   int GetOuterDelegateFrameTreeNodeId() override;
   RenderWidgetHostImpl* GetFullscreenRenderWidgetHost() const override;
@@ -1012,7 +1021,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // then this WebContents is embedded in a portal and its outer WebContents can
   // be found by using GetOuterWebContents().
   void set_portal(Portal* portal) { portal_ = portal; }
-  Portal* portal() { return portal_; }
+  Portal* portal() const { return portal_; }
+
+  // Notifies observers that AppCache was accessed. Public so AppCache code can
+  // call this directly.
+  void OnAppCacheAccessed(const GURL& manifest_url, bool blocked_by_policy);
 
  private:
   friend class WebContentsObserver;
@@ -1244,9 +1257,6 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
 #endif
   void OnDomOperationResponse(RenderFrameHostImpl* source,
                               const std::string& json_string);
-  void OnAppCacheAccessed(RenderViewHostImpl* source,
-                          const GURL& manifest_url,
-                          bool blocked_by_policy);
   void OnUpdatePageImportanceSignals(RenderFrameHostImpl* source,
                                      const PageImportanceSignals& signals);
 #if BUILDFLAG(ENABLE_PLUGINS)
@@ -1310,6 +1320,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // Walks up the outer WebContents chain and focuses the FrameTreeNode where
   // each inner WebContents is attached.
   void FocusOuterAttachmentFrameChain();
+
+  // Convenience method to notify observers that an inner WebContents was
+  // created with |this| WebContents as its owner. This does *not* immediately
+  // guarantee that |inner_web_contents| has been added to the WebContents tree.
+  void InnerWebContentsCreated(WebContents* inner_web_contents);
 
   // Navigation helpers --------------------------------------------------------
   //
@@ -1614,7 +1629,7 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool is_showing_before_unload_dialog_;
 
   // Settings that get passed to the renderer process.
-  RendererPreferences renderer_preferences_;
+  blink::mojom::RendererPreferences renderer_preferences_;
 
   // The time that this WebContents was last made active. The initial value is
   // the WebContents creation time.
@@ -1802,7 +1817,8 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   bool showing_context_menu_;
 
   int currently_playing_video_count_ = 0;
-  VideoSizeMap cached_video_sizes_;
+  base::flat_map<WebContentsObserver::MediaPlayerId, gfx::Size>
+      cached_video_sizes_;
 
   bool has_persistent_video_ = false;
 
@@ -1834,6 +1850,11 @@ class CONTENT_EXPORT WebContentsImpl : public WebContents,
   // If non-null then this WebContents is embedded in a portal and its outer
   // WebContents can be found by using GetOuterWebContents().
   Portal* portal_ = nullptr;
+
+  // TODO(ericrk): Variable to debug https://crbug.com/758186. Remove when
+  // debugging concluded.
+  WebContentsDelegate* web_contents_created_delegate_ = nullptr;
+  bool web_contents_added_to_delegate_ = false;
 
   base::WeakPtrFactory<WebContentsImpl> loading_weak_factory_;
   base::WeakPtrFactory<WebContentsImpl> weak_factory_;

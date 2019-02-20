@@ -117,6 +117,16 @@ Display::Display(
 }
 
 Display::~Display() {
+#if defined(OS_ANDROID)
+  // In certain cases, drivers hang when tearing down the display. Finishing
+  // before teardown appears to address this. As we're during display teardown,
+  // an additional finish should have minimal impact.
+  // TODO(ericrk): Add a more robust workaround. crbug.com/899705
+  if (auto* context = output_surface_->context_provider()) {
+    context->ContextGL()->Finish();
+  }
+#endif
+
   for (auto& observer : observers_)
     observer.OnDisplayDestroyed();
   observers_.Clear();
@@ -135,17 +145,13 @@ Display::~Display() {
     if (scheduler_)
       surface_manager_->RemoveObserver(scheduler_.get());
   }
-  if (aggregator_) {
-    for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
-      Surface* surface = surface_manager_->GetSurfaceForId(id_entry.first);
-      if (surface)
-        surface->RunDrawCallback();
-    }
-  }
+
+  RunDrawCallbacks();
 }
 
 void Display::Initialize(DisplayClient* client,
-                         SurfaceManager* surface_manager) {
+                         SurfaceManager* surface_manager,
+                         bool enable_shared_images) {
   DCHECK(client);
   DCHECK(surface_manager);
   client_ = client;
@@ -157,7 +163,7 @@ void Display::Initialize(DisplayClient* client,
   if (output_surface_->software_device())
     output_surface_->software_device()->BindToClient(this);
 
-  InitializeRenderer();
+  InitializeRenderer(enable_shared_images);
 
   // This depends on assumptions that Display::Initialize will happen on the
   // same callstack as the ContextProvider being created/initialized or else
@@ -269,12 +275,13 @@ void Display::SetOutputIsSecure(bool secure) {
   }
 }
 
-void Display::InitializeRenderer() {
+void Display::InitializeRenderer(bool enable_shared_images) {
   auto mode = output_surface_->context_provider() || skia_output_surface_
                   ? DisplayResourceProvider::kGpu
                   : DisplayResourceProvider::kSoftware;
   resource_provider_ = std::make_unique<DisplayResourceProvider>(
-      mode, output_surface_->context_provider(), bitmap_manager_);
+      mode, output_surface_->context_provider(), bitmap_manager_,
+      enable_shared_images);
 
   if (settings_.use_skia_renderer && mode == DisplayResourceProvider::kGpu) {
     // Default to use DDL if skia_output_surface is not null.
@@ -382,12 +389,7 @@ bool Display::DrawAndSwap() {
                            swapped_trace_id_);
 
   // Run callbacks early to allow pipelining and collect presented callbacks.
-  for (const auto& surface_id : surfaces_to_ack_on_next_draw_) {
-    Surface* surface = surface_manager_->GetSurfaceForId(surface_id);
-    if (surface)
-      surface->RunDrawCallback();
-  }
-  surfaces_to_ack_on_next_draw_.clear();
+  RunDrawCallbacks();
 
   frame.metadata.latency_info.insert(frame.metadata.latency_info.end(),
                                      stored_latency_info_.begin(),
@@ -427,13 +429,11 @@ bool Display::DrawAndSwap() {
     TRACE_EVENT_ASYNC_STEP_INTO0("viz,benchmark",
                                  "Graphics.Pipeline.DrawAndSwap",
                                  swapped_trace_id_, "Draw");
-    if (settings_.enable_draw_occlusion) {
-      base::ElapsedTimer draw_occlusion_timer;
-      RemoveOverdrawQuads(&frame);
-      UMA_HISTOGRAM_COUNTS_1000(
-          "Compositing.Display.Draw.Occlusion.Calculation.Time",
-          draw_occlusion_timer.Elapsed().InMicroseconds());
-    }
+    base::ElapsedTimer draw_occlusion_timer;
+    RemoveOverdrawQuads(&frame);
+    UMA_HISTOGRAM_COUNTS_1000(
+        "Compositing.Display.Draw.Occlusion.Calculation.Time",
+        draw_occlusion_timer.Elapsed().InMicroseconds());
 
     bool disable_image_filtering =
         frame.metadata.is_resourceless_software_draw_with_scroll_or_animation;
@@ -615,7 +615,7 @@ void Display::SurfaceDiscarded(const SurfaceId& surface_id) {
     aggregator_->ReleaseResources(surface_id);
 }
 
-bool Display::SurfaceHasUndrawnFrame(const SurfaceId& surface_id) const {
+bool Display::SurfaceHasUnackedFrame(const SurfaceId& surface_id) const {
   if (!surface_manager_)
     return false;
 
@@ -623,7 +623,7 @@ bool Display::SurfaceHasUndrawnFrame(const SurfaceId& surface_id) const {
   if (!surface)
     return false;
 
-  return surface->HasUndrawnActiveFrame();
+  return surface->HasUnackedActiveFrame();
 }
 
 void Display::DidFinishFrame(const BeginFrameAck& ack) {
@@ -827,6 +827,24 @@ void Display::RemoveOverdrawQuads(CompositorFrame* frame) {
       "Compositing.Display.Draw.Occlusion.Drawing.Area.Saved2",
       static_cast<uint64_t>(total_area_saved_in_px.ValueOrDefault(
           std::numeric_limits<uint64_t>::max())));
+}
+
+void Display::RunDrawCallbacks() {
+  for (const auto& surface_id : surfaces_to_ack_on_next_draw_) {
+    Surface* surface = surface_manager_->GetSurfaceForId(surface_id);
+    if (surface)
+      surface->SendAckToClient();
+  }
+  surfaces_to_ack_on_next_draw_.clear();
+  // |surfaces_to_ack_on_next_draw_| does not cover surfaces that are being
+  // embedded for the first time, so also go through SurfaceAggregator's list.
+  if (aggregator_) {
+    for (const auto& id_entry : aggregator_->previous_contained_surfaces()) {
+      Surface* surface = surface_manager_->GetSurfaceForId(id_entry.first);
+      if (surface)
+        surface->SendAckToClient();
+    }
+  }
 }
 
 }  // namespace viz

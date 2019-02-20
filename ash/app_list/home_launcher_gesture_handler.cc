@@ -11,8 +11,8 @@
 #include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
-#include "ash/wm/overview/window_selector.h"
-#include "ash/wm/overview/window_selector_controller.h"
+#include "ash/wm/overview/overview_controller.h"
+#include "ash/wm/overview/overview_session.h"
 #include "ash/wm/splitview/split_view_controller.h"
 #include "ash/wm/splitview/split_view_divider.h"
 #include "ash/wm/window_state.h"
@@ -21,6 +21,8 @@
 #include "ash/wm/workspace/backdrop_controller.h"
 #include "ash/wm/workspace/workspace_layout_manager.h"
 #include "ash/wm/workspace_controller.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/metrics/user_metrics.h"
 #include "base/numerics/ranges.h"
 #include "ui/aura/client/window_types.h"
@@ -291,6 +293,11 @@ bool HomeLauncherGestureHandler::OnPressEvent(Mode mode,
   mode_ = mode;
   last_event_location_ = base::make_optional(location);
 
+  if (mode != Mode::kNone) {
+    app_list_controller_->NotifyHomeLauncherTargetPositionChanged(
+        mode == Mode::kSlideUpToShow /*showing*/, display_.id());
+  }
+
   UpdateWindows(0.0, /*animate=*/false);
   return true;
 }
@@ -432,13 +439,15 @@ void HomeLauncherGestureHandler::OnTabletModeEnded() {
 void HomeLauncherGestureHandler::OnImplicitAnimationsCompleted() {
   float app_list_opacity = 1.f;
   const bool is_final_state_show = IsFinalStateShow();
-  if (Shell::Get()->window_selector_controller()->IsSelecting()) {
-    if (is_final_state_show) {
+  app_list_controller_->NotifyHomeLauncherAnimationComplete(
+      is_final_state_show /*shown*/, display_.id());
+  if (Shell::Get()->overview_controller()->IsSelecting()) {
+    if (overview_active_on_gesture_start_ && is_final_state_show) {
       // Exit overview if event is released on the top half. This will also
       // end splitview if it is active as SplitViewController observes
       // overview mode ends.
-      Shell::Get()->window_selector_controller()->ToggleOverview(
-          WindowSelector::EnterExitOverviewType::kSwipeFromShelf);
+      Shell::Get()->overview_controller()->ToggleOverview(
+          OverviewSession::EnterExitOverviewType::kSwipeFromShelf);
     } else {
       app_list_opacity = 0.f;
     }
@@ -466,24 +475,23 @@ void HomeLauncherGestureHandler::OnImplicitAnimationsCompleted() {
     window2_->ResetOpacityAndTransform();
 
   if (is_final_state_show) {
-    ScopedAnimationDisabler disable(GetWindow1());
-    GetWindow1()->Hide();
-    wm::GetWindowState(GetWindow1())->Minimize();
+    // Show or hide the expand arrow view.
+    app_list_controller_->UpdateExpandArrowVisibility();
 
-    if (window2_) {
-      ScopedAnimationDisabler disable(GetWindow2());
-      GetWindow2()->Hide();
-      wm::GetWindowState(GetWindow2())->Minimize();
-    }
+    std::vector<aura::Window*> windows_to_hide_minimize;
+    windows_to_hide_minimize.push_back(GetWindow1());
+
+    if (window2_)
+      windows_to_hide_minimize.push_back(GetWindow2());
 
     // Minimize the hidden windows so they can be used normally with alt+tab
     // and overview. Minimize in reverse order to preserve mru ordering.
-    std::reverse(hidden_windows_.begin(), hidden_windows_.end());
-    for (auto* window : hidden_windows_) {
-      ScopedAnimationDisabler disable(window);
-      window->Hide();
-      wm::GetWindowState(window)->Minimize();
-    }
+    windows_to_hide_minimize.resize(windows_to_hide_minimize.size() +
+                                    hidden_windows_.size());
+    std::copy(hidden_windows_.rbegin(), hidden_windows_.rend(),
+              windows_to_hide_minimize.end() - hidden_windows_.size());
+    wm::HideAndMaybeMinimizeWithoutAnimation(windows_to_hide_minimize,
+                                             /*minimize=*/true);
   } else {
     // Reshow all windows previously hidden.
     for (auto* window : hidden_windows_) {
@@ -508,9 +516,13 @@ void HomeLauncherGestureHandler::AnimateToFinalState() {
   UpdateWindows(is_final_state_show ? 1.0 : 0.0, /*animate=*/true);
 
   if (!is_final_state_show && mode_ == Mode::kSlideDownToHide) {
+    app_list_controller_->NotifyHomeLauncherTargetPositionChanged(
+        false /*showing*/, display_.id());
     base::RecordAction(
         base::UserMetricsAction("AppList_HomeLauncherToMRUWindow"));
   } else if (is_final_state_show && mode_ == Mode::kSlideUpToShow) {
+    app_list_controller_->NotifyHomeLauncherTargetPositionChanged(
+        true /*showing*/, display_.id());
     base::RecordAction(
         base::UserMetricsAction("AppList_CurrentWindowToHomeLauncher"));
   }
@@ -545,11 +557,10 @@ void HomeLauncherGestureHandler::UpdateWindows(double progress, bool animate) {
               : base::NullCallback());
 
   // Update the overview grid if needed.
-  WindowSelectorController* controller =
-      Shell::Get()->window_selector_controller();
-  if (controller->IsSelecting()) {
+  OverviewController* controller = Shell::Get()->overview_controller();
+  if (overview_active_on_gesture_start_ && controller->IsSelecting()) {
     DCHECK_EQ(mode_, Mode::kSlideUpToShow);
-    controller->window_selector()->UpdateGridAtLocationYPositionAndOpacity(
+    controller->overview_session()->UpdateGridAtLocationYPositionAndOpacity(
         display_.id(), y_position - work_area.height(), 1.f - opacity,
         work_area,
         animate
@@ -580,10 +591,10 @@ void HomeLauncherGestureHandler::UpdateWindows(double progress, bool animate) {
       // animation end, so only observe one of the animations. If overview
       // is active, observe the shield widget of the grid, else observe
       // |window1_|.
-      UpdateSettings(
-          settings.get(),
-          this->GetWindow1() == window &&
-              !Shell::Get()->window_selector_controller()->IsSelecting());
+      UpdateSettings(settings.get(),
+                     this->GetWindow1() == window &&
+                         !(overview_active_on_gesture_start_ &&
+                           Shell::Get()->overview_controller()->IsSelecting()));
     }
     window->layer()->SetOpacity(opacity);
     window->SetTransform(transform);
@@ -649,11 +660,12 @@ bool HomeLauncherGestureHandler::IsAnimating() {
   if (window2_ && window2_->IsAnimating())
     return true;
 
-  if (Shell::Get()->window_selector_controller()->IsSelecting() &&
+  if (overview_active_on_gesture_start_ &&
+      Shell::Get()->overview_controller()->IsSelecting() &&
       Shell::Get()
-          ->window_selector_controller()
-          ->window_selector()
-          ->IsWindowGridAnimating()) {
+          ->overview_controller()
+          ->overview_session()
+          ->IsOverviewGridAnimating()) {
     return true;
   }
 
@@ -685,12 +697,12 @@ bool HomeLauncherGestureHandler::IsFinalStateShow() {
 bool HomeLauncherGestureHandler::SetUpWindows(Mode mode, aura::Window* window) {
   SplitViewController* split_view_controller =
       Shell::Get()->split_view_controller();
-  const bool overview_active =
-      Shell::Get()->window_selector_controller()->IsSelecting();
+  overview_active_on_gesture_start_ =
+      Shell::Get()->overview_controller()->IsSelecting();
   const bool split_view_active = split_view_controller->IsSplitViewModeActive();
   auto windows = Shell::Get()->mru_window_tracker()->BuildWindowForCycleList();
-  if (window && (mode != Mode::kSlideDownToHide || overview_active ||
-                 split_view_active)) {
+  if (window && (mode != Mode::kSlideDownToHide ||
+                 overview_active_on_gesture_start_ || split_view_active)) {
     window1_.reset();
     return false;
   }
@@ -698,12 +710,16 @@ bool HomeLauncherGestureHandler::SetUpWindows(Mode mode, aura::Window* window) {
   if (window && !windows.empty() && windows[0] != window &&
       windows[0]->IsVisible()) {
     // Do not run slide down animation for the |window| if another active
-    // window in mru list exists.
+    // window in mru list exists. Windows minimized in clamshell mode may
+    // have opacity of 0, so set them to 1 to ensure visibility.
+    if (wm::GetWindowState(window)->IsMinimized())
+      window->layer()->SetOpacity(1.f);
     window1_.reset();
     return false;
   }
 
-  if (IsTabletMode() && overview_active && !split_view_active) {
+  if (IsTabletMode() && overview_active_on_gesture_start_ &&
+      !split_view_active) {
     DCHECK_EQ(Mode::kSlideUpToShow, mode);
     window1_.reset();
     return true;
@@ -811,15 +827,15 @@ bool HomeLauncherGestureHandler::SetUpWindows(Mode mode, aura::Window* window) {
   // scroll, the home launcher will be visible. This is only needed when
   // swiping up, and not when overview mode is active.
   hidden_windows_.clear();
-  if (mode == Mode::kSlideUpToShow && !overview_active) {
+  if (mode == Mode::kSlideUpToShow && !overview_active_on_gesture_start_) {
     for (auto* window : windows) {
       if (window->IsVisible()) {
         hidden_windows_.push_back(window);
         window->AddObserver(this);
-        ScopedAnimationDisabler disable(window);
-        window->Hide();
       }
     }
+    wm::HideAndMaybeMinimizeWithoutAnimation(hidden_windows_,
+                                             /*minimize=*/false);
   }
 
   return true;

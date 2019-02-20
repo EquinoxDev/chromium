@@ -95,6 +95,7 @@ js_library("header") {
 js_library("destination_settings") {
   deps = [
     ":destination_dialog",
+    ":destination_select",
     ":state",
     "../data:destination",
     "../data:destination_store",
@@ -105,10 +106,21 @@ js_library("destination_settings") {
   ]
 }
 
+js_library("destination_select") {
+  deps = [
+    ":select_behavior",
+    "../data:destination",
+    "../data:user_info",
+    "//ui/webui/resources/js:i18n_behavior",
+  ]
+  externs_list = [ "$externs_path/pending.js" ]
+}
+
 js_library("pages_settings") {
   deps = [
     ":input_behavior",
     ":settings_behavior",
+    "..:print_preview_utils",
     "//ui/webui/resources/cr_elements/cr_input:cr_input",
     "//ui/webui/resources/js:load_time_data",
   ]
@@ -242,7 +254,6 @@ js_library("preview_area") {
     ":settings_behavior",
     ":state",
     "..:native_layer",
-    "..:print_preview_utils",
     "../../pdf:pdf_scripting_api",
     "../data:coordinate2d",
     "../data:destination",
@@ -292,6 +303,7 @@ js_library("destination_dialog") {
     ":print_preview_search_box",
     ":provisional_destination_resolver",
     "..:metrics",
+    "..:native_layer",
     "../data:destination",
     "../data:destination_store",
     "../data:invitation",

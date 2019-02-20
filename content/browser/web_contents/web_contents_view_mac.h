@@ -26,9 +26,11 @@
 #include "ui/gfx/geometry/size.h"
 
 @class WebContentsViewCocoa;
+@class WebDragDest;
 
 namespace content {
 class RenderWidgetHostViewMac;
+class WebContentsNSViewBridge;
 class WebContentsImpl;
 class WebContentsViewDelegate;
 class WebContentsViewMac;
@@ -110,21 +112,19 @@ class WebContentsViewMac : public WebContentsView,
   void OnMenuClosed() override;
 
   // ViewsHostableView:
-  void OnViewsHostableAttached(ViewsHostableView::Host* host) override;
-  void OnViewsHostableDetached() override;
-  void OnViewsHostableShow(const gfx::Rect& bounds_in_window) override;
-  void OnViewsHostableHide() override;
-  void OnViewsHostableMakeFirstResponder() override;
+  void ViewsHostableAttach(ViewsHostableView::Host* host) override;
+  void ViewsHostableDetach() override;
+  void ViewsHostableSetBounds(const gfx::Rect& bounds_in_window) override;
+  void ViewsHostableSetVisible(bool visible) override;
+  void ViewsHostableMakeFirstResponder() override;
 
   // A helper method for closing the tab in the
   // CloseTabAfterEventTracking() implementation.
   void CloseTab();
 
-  // Called from Cocoa when window visibility changes.
-  void OnWindowVisibilityChanged(content::Visibility visibility);
-
   WebContentsImpl* web_contents() { return web_contents_; }
   WebContentsViewDelegate* delegate() { return delegate_.get(); }
+  WebDragDest* drag_dest() const { return drag_dest_.get(); }
 
   using RenderWidgetHostViewCreateFunction =
       RenderWidgetHostViewMac* (*)(RenderWidgetHost*, bool);
@@ -134,20 +134,38 @@ class WebContentsViewMac : public WebContentsView,
       RenderWidgetHostViewCreateFunction create_render_widget_host_view);
 
  private:
+  WebContentsViewCocoa* cocoa_view() const;
+
+  // mojom::WebContentsNSViewClient:
+  void OnMouseEvent(bool motion, bool exited) override;
+  void OnBecameFirstResponder(mojom::SelectionDirection direction) override;
+  void OnWindowVisibilityChanged(mojom::Visibility visibility) override;
+  void SetDropData(const DropData& drop_data) override;
+  bool DraggingEntered(mojom::DraggingInfoPtr dragging_info,
+                       uint32_t* out_result) override;
+  void DraggingExited() override;
+  bool DraggingUpdated(mojom::DraggingInfoPtr dragging_info,
+                       uint32_t* out_result) override;
+  bool PerformDragOperation(mojom::DraggingInfoPtr dragging_info,
+                            bool* out_result) override;
+
+  // mojom::WebContentsNSViewClient, synchronous methods:
+  void DraggingEntered(mojom::DraggingInfoPtr dragging_info,
+                       DraggingEnteredCallback callback) override;
+  void DraggingUpdated(mojom::DraggingInfoPtr dragging_info,
+                       DraggingUpdatedCallback callback) override;
+  void PerformDragOperation(mojom::DraggingInfoPtr dragging_info,
+                            PerformDragOperationCallback callback) override;
+
   // Return the list of child RenderWidgetHostViewMacs. This will remove any
   // destroyed instances before returning.
   std::list<RenderWidgetHostViewMac*> GetChildViews();
 
-  // Returns the fullscreen view, if one exists; otherwise, returns the content
-  // native view. This ensures that the view currently attached to a NSWindow is
-  // being used to query or set first responder state.
-  gfx::NativeView GetNativeViewForFocus() const;
-
   // The WebContentsImpl whose contents we display.
   WebContentsImpl* web_contents_;
 
-  // The Cocoa NSView that lives in the view hierarchy.
-  base::scoped_nsobject<WebContentsViewCocoa> cocoa_view_;
+  // Destination for drag-drop.
+  base::scoped_nsobject<WebDragDest> drag_dest_;
 
   // Our optional delegate.
   std::unique_ptr<WebContentsViewDelegate> delegate_;
@@ -166,6 +184,11 @@ class WebContentsViewMac : public WebContentsView,
 
   // The id that may be used to look up this NSView.
   const uint64_t ns_view_id_;
+
+  // The WebContentsViewCocoa that lives in the NSView hierarchy in this
+  // process. This is always non-null, even when the view is being displayed
+  // in another process.
+  std::unique_ptr<WebContentsNSViewBridge> ns_view_bridge_local_;
 
   // Mojo bindings for an out of process instance of this NSView.
   mojom::WebContentsNSViewBridgeAssociatedPtr ns_view_bridge_remote_;

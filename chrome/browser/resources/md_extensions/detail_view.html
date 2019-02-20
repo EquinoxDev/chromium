@@ -24,6 +24,7 @@
 <link rel="import" href="navigation_helper.html">
 <link rel="import" href="runtime_host_permissions.html">
 <link rel="import" href="shared_style.html">
+<link rel="import" href="shared_vars.html">
 <link rel="import" href="strings.html">
 <link rel="import" href="toggle_row.html">
 
@@ -31,7 +32,7 @@
   <template>
     <style include="iron-flex cr-shared-style cr-icons action-link paper-button-style shared-style">
       :host {
-        --iron-icon-fill-color: var(--google-grey-refresh-700);
+        --iron-icon-fill-color: var(--cr-secondary-text-color);
         display: block;
         height: 100%;
       }
@@ -53,6 +54,10 @@
         color: var(--google-blue-500);
       }
 
+      :host-context([dark]) #enable-section .enabled-text {
+        color: var(--google-blue-refresh-300);
+      }
+
       #icon {
         height: 24px;
         margin-inline-end: 12px;
@@ -63,11 +68,6 @@
       #name {
         flex-grow: 1;
         @apply --cr-title-text;
-      }
-
-      #learn-more-link {
-        color: var(--google-blue-700);
-        text-decoration: none;
       }
 
       .section {
@@ -102,27 +102,26 @@
       }
 
       .inspectable-view {
-        color: var(--google-blue-700);
         height: 20px;
         width: auto;  /* override the default button size of 24x24 */
       }
 
-      .warning .action-button {
+      :host-context(html:not([dark])) .warning .action-button {
         background: white;
         color: var(--google-blue-500);
       }
 
-      #reload-button {
+      :host-context(html:not([dark])) #reload-button {
         color: var(--google-blue-500);
       }
 
       .warning span {
-        color: var(--google-red-700);
+        color: var(--error-color);
         flex: 1;
       }
 
       .warning-icon {
-        --iron-icon-fill-color: var(--google-red-700);
+        --iron-icon-fill-color: var(--error-color);
         flex-shrink: 0;
         height: 18px;
         margin-inline-end: 8px;
@@ -141,11 +140,10 @@
       extensions-toggle-row {
         @apply --cr-section;
         box-sizing: border-box;
-        padding-bottom: var(--cr-section-vertical-padding);
         padding-inline-end: 0;
         padding-inline-start: 0;
-        padding-top: var(--cr-section-vertical-padding);
-        --toggle-row-label-padding: var(--cr-section-padding);
+        --toggle-row-label-horizontal-padding: var(--cr-section-padding);
+        --toggle-row-label-vertical-padding: var(--cr-section-vertical-padding);
       }
 
       #load-path {
@@ -180,7 +178,7 @@
           <span id="name">[[data.name]]</span>
         </div>
         <div class="section continuation control-line" id="enable-section">
-          <span class$="{{computeEnabledStyle_(data.state)}}">
+          <span class$="[[computeEnabledStyle_(data.state)]]">
             [[computeEnabledText_(data.state, '$i18nPolymer{itemOn}',
                 '$i18nPolymer{itemOff}')]]
           </span>
@@ -190,6 +188,12 @@
                 icon-class="[[getIndicatorIcon_(data.controlledInfo.type)]]"
                 icon-aria-label="[[data.controlledInfo.type]]">
             </cr-tooltip-icon>
+            <template is="dom-if" if="[[isTerminated_(data.state)]]">
+              <paper-button id="terminated-reload-button" class="action-button"
+                  on-click="onReloadTap_">
+                $i18n{itemReload}
+              </paper-button>
+            </template>
             <cr-toggle id="enable-toggle"
                 aria-label$="[[appOrExtension(
                     data.type,
@@ -198,13 +202,13 @@
                 aria-describedby="name"
                 checked="[[isEnabled_(data.state)]]"
                 on-change="onEnableChange_"
-                disabled="[[!isEnableToggleEnabled_(data.*)]]">
+                disabled="[[!isEnableToggleEnabled_(data.*)]]"
+                hidden$="[[isTerminated_(data.state)]]">
             </cr-toggle>
           </div>
         </div>
         <div id="warnings" hidden$="[[!hasWarnings_(data.*)]]">
-          <div id="runtime-warnings" aria-describedby="a11yAssociation"
-              hidden$="[[!data.runtimeWarnings.length]]"
+          <div id="runtime-warnings" hidden$="[[!data.runtimeWarnings.length]]"
               class="section continuation warning control-line">
             <iron-icon class="warning-icon" icon="cr:error"></iron-icon>
             <span>
@@ -212,18 +216,19 @@
                 [[item]]
               </template>
             </span>
-            <paper-button id="reload-button" class="action-button"
-                on-click="onReloadTap_">
-              $i18n{itemReload}
-            </paper-button>
+            <template is="dom-if" if="[[!isTerminated_(data.state)]]">
+              <paper-button id="warnings-reload-button" class="action-button"
+                  on-click="onReloadTap_">
+                $i18n{itemReload}
+              </paper-button>
+            </template>
           </div>
           <div class="section continuation warning" id="suspicious-warning"
               hidden$="[[!data.disableReasons.suspiciousInstall]]">
             <iron-icon class="warning-icon" icon="cr:warning"></iron-icon>
             <span>
               $i18n{itemSuspiciousInstall}
-              <a target="_blank" id="learn-more-link"
-                  href="$i18n{suspiciousInstallHelpUrl}">
+              <a target="_blank" href="$i18n{suspiciousInstallHelpUrl}">
                 $i18n{learnMore}
               </a>
             </span>
@@ -388,7 +393,7 @@
             on-click="onExtensionOptionsTap_">
         </cr-link-row>
         <cr-link-row class="hr" icon-class="subpage-arrow"
-            id="extensions-activity-log-link" hidden$="[[!showActivityLog]]"
+            id="extensionsActivityLogLink" hidden$="[[!showActivityLog]]"
             label="$i18n{viewActivityLog}" on-click="onActivityLogTap_">
         </cr-link-row>
         <cr-link-row class="hr" hidden="[[!data.manifestHomePageUrl.length]]"

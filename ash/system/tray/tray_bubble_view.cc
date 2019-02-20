@@ -21,7 +21,6 @@
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/layout/box_layout.h"
@@ -164,13 +163,15 @@ void TrayBubbleView::RerouteEventHandler::OnKeyEvent(ui::KeyEvent* event) {
   // Only passes Tab, Shift+Tab, Esc to the widget as it can consume more key
   // events. e.g. Alt+Tab can be consumed as focus traversal by FocusManager.
   ui::KeyboardCode key_code = event->key_code();
-  int flags = event->flags();
+  int flags = event->flags() &
+              (ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN |
+               ui::EF_COMMAND_DOWN | ui::EF_ALTGR_DOWN | ui::EF_MOD3_DOWN);
   if ((key_code == ui::VKEY_TAB && flags == ui::EF_NONE) ||
       (key_code == ui::VKEY_TAB && flags == ui::EF_SHIFT_DOWN) ||
       (key_code == ui::VKEY_ESCAPE && flags == ui::EF_NONE)) {
     // Make TrayBubbleView activatable as the following Widget::OnKeyEvent might
     // try to activate it.
-    tray_bubble_view_->set_can_activate(true);
+    tray_bubble_view_->SetCanActivate(true);
 
     tray_bubble_view_->GetWidget()->OnKeyEvent(event);
 
@@ -216,8 +217,9 @@ TrayBubbleView::TrayBubbleView(const InitParams& init_params)
   bubble_border_->set_use_theme_background_color(!init_params.bg_color);
   if (init_params.corner_radius)
     bubble_border_->SetCornerRadius(init_params.corner_radius.value());
+  bubble_border_->set_avoid_shadow_overlap(true);
   set_parent_window(params_.parent_window);
-  set_can_activate(false);
+  SetCanActivate(false);
   set_notify_enter_exit_on_child(true);
   set_close_on_deactivate(init_params.close_on_deactivate);
   set_margins(gfx::Insets());
@@ -379,7 +381,7 @@ bool TrayBubbleView::WidgetHasHitTestMask() const {
   return true;
 }
 
-void TrayBubbleView::GetWidgetHitTestMask(gfx::Path* mask) const {
+void TrayBubbleView::GetWidgetHitTestMask(SkPath* mask) const {
   DCHECK(mask);
   mask->addRect(gfx::RectToSkRect(GetBubbleFrameView()->GetContentsBounds()));
 }
@@ -479,7 +481,7 @@ void TrayBubbleView::FocusDefaultIfNeeded() {
 
   // No need to explicitly activate the widget. View::RequestFocus will activate
   // it if necessary.
-  set_can_activate(true);
+  SetCanActivate(true);
 
   view->RequestFocus();
 }

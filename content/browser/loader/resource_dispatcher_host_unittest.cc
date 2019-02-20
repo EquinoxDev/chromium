@@ -22,6 +22,7 @@
 #include "base/task/task_traits.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/timer/timer.h"
 #include "base/unguessable_token.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/download/download_manager_impl.h"
@@ -86,6 +87,7 @@
 #include "storage/browser/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/mojom/appcache/appcache.mojom.h"
 
 // TODO(eroman): Write unit tests for SafeBrowsing that exercise
 //               SafeBrowsingResourceHandler.
@@ -107,7 +109,7 @@ static network::ResourceRequest CreateResourceRequest(const char* method,
   request.load_flags = 0;
   request.plugin_child_id = -1;
   request.resource_type = type;
-  request.appcache_host_id = kAppCacheNoHostId;
+  request.appcache_host_id = blink::mojom::kAppCacheNoHostId;
   request.should_reset_appcache = false;
   request.render_frame_id = 0;
   request.is_main_frame = true;
@@ -128,7 +130,7 @@ class TestFilterSpecifyingChild : public ResourceMessageFilter {
             nullptr,
             nullptr,
             nullptr,
-            BrowserContext::GetSharedCorsOriginAccessList(browser_context),
+            browser_context->GetSharedCorsOriginAccessList(),
             base::Bind(&TestFilterSpecifyingChild::GetContexts,
                        base::Unretained(this)),
             base::CreateSingleThreadTaskRunnerWithTraits({BrowserThread::IO})),
@@ -169,7 +171,8 @@ class TestFilter : public TestFilterSpecifyingChild {
       : TestFilterSpecifyingChild(
             browser_context,
             ChildProcessHostImpl::GenerateChildProcessUniqueId()) {
-    ChildProcessSecurityPolicyImpl::GetInstance()->Add(child_id());
+    ChildProcessSecurityPolicyImpl::GetInstance()->Add(child_id(),
+                                                       browser_context);
   }
 
  protected:
@@ -694,7 +697,8 @@ class ResourceDispatcherHostTest : public testing::TestWithParam<TestMode> {
 
   // testing::Test
   void SetUp() override {
-    ChildProcessSecurityPolicyImpl::GetInstance()->Add(0);
+    ChildProcessSecurityPolicyImpl::GetInstance()->Add(0,
+                                                       browser_context_.get());
     HandleScheme("test");
     scoped_refptr<SiteInstance> site_instance =
         SiteInstance::Create(browser_context_.get());
@@ -2548,12 +2552,12 @@ net::URLRequestJob* TestURLRequestJobFactory::MaybeInterceptResponse(
   return nullptr;
 }
 
-INSTANTIATE_TEST_CASE_P(WithoutOutOfBlinkCors,
-                        ResourceDispatcherHostTest,
-                        ::testing::Values(TestMode::kWithoutOutOfBlinkCors));
+INSTANTIATE_TEST_SUITE_P(WithoutOutOfBlinkCors,
+                         ResourceDispatcherHostTest,
+                         ::testing::Values(TestMode::kWithoutOutOfBlinkCors));
 
-INSTANTIATE_TEST_CASE_P(WithOutOfBlinkCors,
-                        ResourceDispatcherHostTest,
-                        ::testing::Values(TestMode::kWithOutOfBlinkCors));
+INSTANTIATE_TEST_SUITE_P(WithOutOfBlinkCors,
+                         ResourceDispatcherHostTest,
+                         ::testing::Values(TestMode::kWithOutOfBlinkCors));
 
 }  // namespace content

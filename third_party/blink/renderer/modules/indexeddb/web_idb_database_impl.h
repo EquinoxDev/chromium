@@ -17,12 +17,12 @@
 #include "third_party/blink/renderer/modules/modules_export.h"
 
 namespace blink {
-class IndexedDBCallbacksImpl;
 class WebIDBCallbacks;
 
 class MODULES_EXPORT WebIDBDatabaseImpl : public WebIDBDatabase {
  public:
-  WebIDBDatabaseImpl(mojom::blink::IDBDatabaseAssociatedPtrInfo database);
+  WebIDBDatabaseImpl(mojom::blink::IDBDatabaseAssociatedPtrInfo database,
+                     scoped_refptr<base::SingleThreadTaskRunner> task_runner);
   ~WebIDBDatabaseImpl() override;
 
   // WebIDBDatabase
@@ -100,6 +100,9 @@ class MODULES_EXPORT WebIDBDatabaseImpl : public WebIDBDatabase {
                    long long object_store_id,
                    const IDBKeyRange*,
                    WebIDBCallbacks*) override;
+  void GetKeyGeneratorCurrentNumber(long long transaction_id,
+                                    long long object_store_id,
+                                    WebIDBCallbacks*) override;
   void Clear(long long transaction_id,
              long long object_store_id,
              WebIDBCallbacks*) override;
@@ -118,11 +121,11 @@ class MODULES_EXPORT WebIDBDatabaseImpl : public WebIDBDatabase {
                    long long index_id,
                    const String& new_name) override;
   void Abort(long long transaction_id) override;
-  void Commit(long long transaction_id) override;
+  void Commit(long long transaction_id, long long num_errors_handled) override;
 
  private:
   mojom::blink::IDBCallbacksAssociatedPtrInfo GetCallbacksProxy(
-      std::unique_ptr<IndexedDBCallbacksImpl> callbacks);
+      std::unique_ptr<WebIDBCallbacks> callbacks);
 
   FRIEND_TEST_ALL_PREFIXES(WebIDBDatabaseImplTest, ValueSizeTest);
   FRIEND_TEST_ALL_PREFIXES(WebIDBDatabaseImplTest, KeyAndValueSizeTest);
@@ -136,6 +139,7 @@ class MODULES_EXPORT WebIDBDatabaseImpl : public WebIDBDatabase {
 
   std::set<int32_t> observer_ids_;
   mojom::blink::IDBDatabaseAssociatedPtr database_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 };
 
 }  // namespace blink

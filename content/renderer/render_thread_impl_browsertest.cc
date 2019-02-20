@@ -10,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
@@ -22,7 +23,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/post_task.h"
 #include "base/task/task_scheduler/task_scheduler.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "content/app/mojo/mojo_init.h"
@@ -55,6 +55,7 @@
 #include "mojo/core/embedder/scoped_ipc_support.h"
 #include "mojo/public/cpp/system/invitation.h"
 #include "services/service_manager/public/cpp/constants.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
@@ -378,7 +379,7 @@ IN_PROC_BROWSER_TEST_P(RenderThreadImplGpuMemoryBufferBrowserTest,
   buffer->Unmap();
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     RenderThreadImplGpuMemoryBufferBrowserTests,
     RenderThreadImplGpuMemoryBufferBrowserTest,
     ::testing::Combine(::testing::Values(kDisableNativeBuffers,

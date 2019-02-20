@@ -323,9 +323,13 @@ enum QuicErrorCode {
   // Error in a received MAX STREAM ID frame -- the stream ID is not
   // consistent with the state of the endpoint.
   QUIC_MAX_STREAM_ID_ERROR = 119,
+  // Error in Http decoder
+  QUIC_HTTP_DECODER_ERROR = 120,
+  // Connection from stale host needs to be cancelled.
+  QUIC_STALE_CONNECTION_CANCELLED = 121,
 
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 120,
+  QUIC_LAST_ERROR = 122,
 };
 // QuicErrorCodes is encoded as a single octet on-the-wire.
 static_assert(static_cast<int>(QUIC_LAST_ERROR) <=

@@ -207,7 +207,7 @@ ResultCode SpawnSandbox(SandboxSetupHooks* setup_hooks, SandboxType type) {
                                           GetCrashReporterIPCPipeName());
 
   sandbox_command_line.AppendSwitchASCII(
-      kSandboxedProcessIdSwitch, base::IntToString(static_cast<int>(type)));
+      kSandboxedProcessIdSwitch, base::NumberToString(static_cast<int>(type)));
 
   return StartSandboxTarget(sandbox_command_line, setup_hooks, type);
 }
@@ -256,7 +256,7 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
           base::WaitableEvent::InitialState::NOT_SIGNALED);
   command_line.AppendSwitchNative(
       chrome_cleaner::kInitDoneNotifierSwitch,
-      base::UintToString16(
+      base::NumberToString16(
           base::win::HandleToUint32(init_done_event->handle())));
   policy->AddHandleToShare(init_done_event->handle());
 
@@ -275,8 +275,8 @@ ResultCode StartSandboxTarget(const base::CommandLine& sandbox_command_line,
             << command_line.GetArgumentsString();
   sandbox::ResultCode sandbox_result = sandbox_broker_services->SpawnTarget(
       command_line.GetProgram().value().c_str(),
-      command_line.GetCommandLineString().c_str(), policy.get(),
-      &last_result_code, &last_win_error, &temp_process_info);
+      command_line.GetCommandLineString().c_str(), policy, &last_result_code,
+      &last_win_error, &temp_process_info);
   if (sandbox_result != sandbox::SBOX_ALL_OK) {
     LOG(DFATAL) << "Failed to spawn sandbox target: " << sandbox_result
                 << " , last sandbox result : " << last_result_code
@@ -408,8 +408,6 @@ ResultCode GetResultCodeForSandboxConnectionError(SandboxType sandbox_type) {
       result_code = RESULT_CODE_ESET_SANDBOX_DISCONNECTED_TOO_SOON;
       break;
     case SandboxType::kParser:
-      // TODO(joenotcharles): This needs to be renamed to
-      // RESULT_CODE_PARSER_SANDBOX_DISCONNECTED_TOO_SOON.
       result_code = RESULT_CODE_PARSER_SANDBOX_DISCONNECTED_TOO_SOON;
       break;
     case SandboxType::kZipArchiver:

@@ -99,7 +99,7 @@ class CachedImageFetcherTest : public testing::TestWithParam<TestType> {
     cached_image_fetcher_.reset();
     database_.reset();
     // We need to run until idle after deleting the database, because
-    // ProtoDatabaseImpl deletes the actual LevelDB asynchronously.
+    // ProtoDatabase deletes the actual LevelDB asynchronously.
     RunUntilIdle();
   }
 
@@ -191,10 +191,10 @@ TEST_P(CachedImageFetcherTest, FetchNonExistingImage) {
   Fetch("", false);
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        CachedImageFetcherTest,
-                        testing::Values(TestType::kImageCallback,
-                                        TestType::kImageDataCallback,
-                                        TestType::kBothCallbacks));
+INSTANTIATE_TEST_SUITE_P(,
+                         CachedImageFetcherTest,
+                         testing::Values(TestType::kImageCallback,
+                                         TestType::kImageDataCallback,
+                                         TestType::kBothCallbacks));
 
 }  // namespace ntp_snippets

@@ -105,6 +105,10 @@ class DatabaseImpl : public blink::mojom::IDBDatabase {
       int64_t object_store_id,
       const IndexedDBKeyRange& key_range,
       blink::mojom::IDBCallbacksAssociatedPtrInfo callbacks) override;
+  void GetKeyGeneratorCurrentNumber(
+      int64_t transaction_id,
+      int64_t object_store_id,
+      blink::mojom::IDBCallbacksAssociatedPtrInfo callbacks) override;
   void Clear(int64_t transaction_id,
              int64_t object_store_id,
              blink::mojom::IDBCallbacksAssociatedPtrInfo callbacks) override;
@@ -123,7 +127,7 @@ class DatabaseImpl : public blink::mojom::IDBDatabase {
                    int64_t index_id,
                    const base::string16& new_name) override;
   void Abort(int64_t transaction_id) override;
-  void Commit(int64_t transaction_id) override;
+  void Commit(int64_t transaction_id, int64_t num_errors_handled) override;
 
  private:
   class IDBSequenceHelper;

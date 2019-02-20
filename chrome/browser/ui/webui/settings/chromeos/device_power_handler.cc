@@ -302,10 +302,10 @@ void PowerHandler::SendBatteryStatus() {
     status_text = l10n_util::GetStringFUTF16(
         charging ? IDS_SETTINGS_BATTERY_STATUS_CHARGING
                  : IDS_SETTINGS_BATTERY_STATUS,
-        base::IntToString16(percent), GetBatteryTimeText(time_left));
+        base::NumberToString16(percent), GetBatteryTimeText(time_left));
   } else {
     status_text = l10n_util::GetStringFUTF16(IDS_SETTINGS_BATTERY_STATUS_SHORT,
-                                             base::IntToString16(percent));
+                                             base::NumberToString16(percent));
   }
 
   base::DictionaryValue battery_dict;
@@ -392,9 +392,7 @@ void PowerHandler::SendPowerManagementSettings(bool force) {
   dict.SetInteger(kLidClosedBehaviorKey, lid_closed_behavior);
   dict.SetBoolean(kLidClosedControlledKey, lid_closed_controlled);
   dict.SetBoolean(kHasLidKey, has_lid);
-  CallJavascriptFunction("cr.webUIListenerCallback",
-                         base::Value(kPowerManagementSettingsChangedName),
-                         dict);
+  FireWebUIListener(kPowerManagementSettingsChangedName, dict);
 
   last_idle_behavior_ = idle_behavior;
   last_idle_controlled_ = idle_controlled;

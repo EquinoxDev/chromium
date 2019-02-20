@@ -160,7 +160,7 @@ class WebUILoginView : public views::View,
       content::MediaResponseCallback callback) override;
   bool CheckMediaAccessPermission(content::RenderFrameHost* render_frame_host,
                                   const GURL& security_origin,
-                                  content::MediaStreamType type) override;
+                                  blink::MediaStreamType type) override;
   bool PreHandleGestureEvent(content::WebContents* source,
                              const blink::WebGestureEvent& event) override;
 
@@ -190,9 +190,6 @@ class WebUILoginView : public views::View,
 
   // WebView for rendering a webpage as a webui login.
   std::unique_ptr<views::WebView> webui_login_;
-
-  // True if the current webview instance (ie, GetWebUI()) has been reused.
-  bool is_reusing_webview_ = false;
 
   // Converts keyboard events on the WebContents to accelerators.
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;

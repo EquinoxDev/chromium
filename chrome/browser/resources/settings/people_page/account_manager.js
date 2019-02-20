@@ -14,6 +14,7 @@ Polymer({
   behaviors: [
     I18nBehavior,
     WebUIListenerBehavior,
+    settings.RouteObserverBehavior,
   ],
 
   properties: {
@@ -50,6 +51,16 @@ Polymer({
   },
 
   /**
+   * @param {!settings.Route} newRoute
+   * @param {settings.Route} oldRoute
+   */
+  currentRouteChanged: function(newRoute, oldRoute) {
+    if (newRoute == settings.routes.ACCOUNT_MANAGER) {
+      this.browserProxy_.showWelcomeDialogIfRequired();
+    }
+  },
+
+  /**
    * @param {string} iconUrl
    * @return {string} A CSS image-set for multiple scale factors.
    * @private
@@ -81,12 +92,11 @@ Polymer({
   },
 
   /**
-   * @param {!Event} event
+   * @param {!CustomEvent<!{model: !{item: !settings.Account}}>} event
    * @private
    */
   onReauthenticationTap_: function(event) {
-    this.browserProxy_.reauthenticateAccount(
-      this.$['account-list'].itemForElement(event.path[0]).email);
+    this.browserProxy_.reauthenticateAccount(event.model.item.email);
   },
 
   /**

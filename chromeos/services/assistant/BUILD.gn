@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//chromeos/assistant/assistant.gni")
-import("//services/service_manager/public/service_manifest.gni")
 
 assert(is_chromeos)
 assert(enable_cros_assistant)
@@ -34,11 +33,14 @@ component("lib") {
   deps = [
     "//base",
     "//build/util:webkit_version",
-    "//chromeos",
     "//chromeos/assistant:buildflags",
+    "//chromeos/audio",
+    "//chromeos/dbus",
+    "//chromeos/dbus:power_manager_proto",
     "//components/account_id",
     "//services/device/public/mojom",
     "//services/identity/public/mojom",
+    "//services/network/public/cpp:cpp",
     "//ui/accessibility:ax_assistant",
   ]
 
@@ -111,22 +113,19 @@ component("lib") {
   }
 }
 
-service_manifest("manifest") {
-  name = "assistant"
-  source = "manifest.json"
-}
-
 source_set("tests") {
   testonly = true
   deps = [
     ":lib",
     "//base",
     "//base/test:test_support",
-    "//chromeos",
+    "//chromeos/dbus:test_support",
     "//chromeos/services/assistant/public/mojom",
     "//mojo/public/cpp/bindings:bindings",
     "//services/device/public/mojom",
     "//services/identity/public/mojom",
+    "//services/network:test_support",
+    "//services/network/public/cpp:cpp",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/cpp/test:test_support",
     "//testing/gmock",

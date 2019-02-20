@@ -5,6 +5,7 @@
 #include "components/exo/keyboard.h"
 
 #include "ash/public/cpp/app_types.h"
+#include "base/bind.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "components/exo/keyboard_delegate.h"
 #include "components/exo/keyboard_device_configuration_delegate.h"
@@ -115,7 +116,10 @@ bool ConsumedByIme(Surface* focus, const ui::KeyEvent* event) {
 
 bool IsVirtualKeyboardEnabled() {
   return keyboard::GetAccessibilityKeyboardEnabled() ||
-         keyboard::GetTouchKeyboardEnabled();
+         keyboard::GetTouchKeyboardEnabled() ||
+         (keyboard::KeyboardController::HasInstance() &&
+          keyboard::KeyboardController::Get()->IsEnableFlagSet(
+              keyboard::mojom::KeyboardEnableFlag::kCommandLineEnabled));
 }
 
 bool IsReservedAccelerator(const ui::KeyEvent* event) {
@@ -371,7 +375,7 @@ void Keyboard::ProcessExpiredPendingKeyAcks() {
   DCHECK(process_expired_pending_key_acks_pending_);
   process_expired_pending_key_acks_pending_ = false;
 
-  // Check pending acks and process them as if it's not handled if
+  // Check pending acks and process them as if it is handled if
   // expiration time passed.
   base::TimeTicks current_time = base::TimeTicks::Now();
 
@@ -382,12 +386,8 @@ void Keyboard::ProcessExpiredPendingKeyAcks() {
     if (it->second.second > current_time)
       break;
 
+    // Expiration time has passed, assume the event was handled.
     pending_key_acks_.erase(it);
-
-    // |pending_key_acks_| may change and an iterator of it become invalid when
-    // |ProcessAccelerator| is called.
-    if (focus_)
-      ProcessAccelerator(focus_, &event);
   }
 
   if (pending_key_acks_.empty())

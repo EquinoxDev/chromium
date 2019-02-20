@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/renderer_host/input/synthetic_gesture_target.h"
@@ -24,7 +25,10 @@ SyntheticGestureController::SyntheticGestureController(
   DCHECK(delegate_);
 }
 
-SyntheticGestureController::~SyntheticGestureController() {}
+SyntheticGestureController::~SyntheticGestureController() {
+  if (!pending_gesture_queue_.IsEmpty())
+    GestureCompleted(SyntheticGesture::GESTURE_FINISHED);
+}
 
 void SyntheticGestureController::QueueSyntheticGesture(
     std::unique_ptr<SyntheticGesture> synthetic_gesture,
@@ -73,15 +77,9 @@ bool SyntheticGestureController::DispatchNextEvent(base::TimeTicks timestamp) {
     return true;
 
   StopGesture(*pending_gesture_queue_.FrontGesture(),
-              pending_gesture_queue_.FrontCallback(),
               pending_gesture_queue_.current_gesture_result());
-  pending_gesture_queue_.Pop();
-  if (pending_gesture_queue_.IsEmpty()) {
-    dispatch_timer_.Stop();
-    return false;
-  }
-  StartGesture(*pending_gesture_queue_.FrontGesture());
-  return true;
+
+  return !pending_gesture_queue_.IsEmpty();
 }
 
 void SyntheticGestureController::StartGesture(const SyntheticGesture& gesture) {
@@ -94,14 +92,36 @@ void SyntheticGestureController::StartGesture(const SyntheticGesture& gesture) {
 
 void SyntheticGestureController::StopGesture(
     const SyntheticGesture& gesture,
-    OnGestureCompleteCallback completion_callback,
     SyntheticGesture::Result result) {
   DCHECK_NE(result, SyntheticGesture::GESTURE_RUNNING);
   TRACE_EVENT_ASYNC_END0("input,benchmark",
                          "SyntheticGestureController::running",
                          &gesture);
 
-  std::move(completion_callback).Run(result);
+  dispatch_timer_.Stop();
+
+  if (result != SyntheticGesture::GESTURE_FINISHED) {
+    GestureCompleted(result);
+    return;
+  }
+
+  // If the gesture finished successfully, wait until all the input has been
+  // propagated throughout the entire input pipeline before we resolve the
+  // completion callback. This ensures all the effects of this gesture are
+  // visible to subsequent input (e.g. OOPIF hit testing).
+  gesture.WaitForTargetAck(
+      base::BindOnce(&SyntheticGestureController::GestureCompleted,
+                     weak_ptr_factory_.GetWeakPtr(),
+                     SyntheticGesture::GESTURE_FINISHED),
+      gesture_target_.get());
+}
+
+void SyntheticGestureController::GestureCompleted(
+    SyntheticGesture::Result result) {
+  pending_gesture_queue_.FrontCallback().Run(result);
+  pending_gesture_queue_.Pop();
+  if (!pending_gesture_queue_.IsEmpty())
+    StartGesture(*pending_gesture_queue_.FrontGesture());
 }
 
 SyntheticGestureController::GestureAndCallbackQueue::GestureAndCallbackQueue() {

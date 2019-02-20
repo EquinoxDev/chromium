@@ -15,6 +15,7 @@
 
 #include "ash/public/cpp/ash_pref_names.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/containers/queue.h"
@@ -449,7 +450,7 @@ ArcBluetoothBridge::ArcBluetoothBridge(content::BrowserContext* context,
 
   if (BluetoothAdapterFactory::IsBluetoothSupported()) {
     VLOG(1) << "Registering bluetooth adapter.";
-    BluetoothAdapterFactory::GetAdapter(base::Bind(
+    BluetoothAdapterFactory::GetAdapter(base::BindOnce(
         &ArcBluetoothBridge::OnAdapterInitialized, weak_factory_.GetWeakPtr()));
   } else {
     VLOG(1) << "Bluetooth not supported.";

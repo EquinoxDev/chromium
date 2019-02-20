@@ -11,8 +11,10 @@
 
 namespace blink {
 
-class V8EmbedderGraphBuilder : public ScriptWrappableVisitor,
-                               public v8::PersistentHandleVisitor {
+class V8EmbedderGraphBuilder
+    : public ScriptWrappableVisitor,
+      public v8::PersistentHandleVisitor,
+      public v8::EmbedderHeapTracer::TracedGlobalHandleVisitor {
  public:
   using Traceable = const void*;
   using Graph = v8::EmbedderGraph;
@@ -28,10 +30,13 @@ class V8EmbedderGraphBuilder : public ScriptWrappableVisitor,
   void VisitPersistentHandle(v8::Persistent<v8::Value>*,
                              uint16_t class_id) override;
 
+  // v8::EmbedderHeapTracer::TracedGlobalHandleVisitor override.
+  void VisitTracedGlobalHandle(
+      const v8::TracedGlobal<v8::Value>& value) override;
+
   // Visitor overrides.
   void Visit(const TraceWrapperV8Reference<v8::Value>&) final;
   void VisitWithWrappers(void*, TraceDescriptor) final;
-  void Visit(DOMWrapperMap<ScriptWrappable>*, const ScriptWrappable*) final;
   void VisitBackingStoreStrongly(void* object,
                                  void** object_slot,
                                  TraceDescriptor desc) final;
@@ -118,6 +123,8 @@ class V8EmbedderGraphBuilder : public ScriptWrappableVisitor,
     Traceable traceable;
     TraceCallback trace_callback;
   };
+
+  void VisitPersistentHandleInternal(v8::Local<v8::Object>, uint16_t);
 
   WorklistItem ToWorklistItem(EmbedderNode*, const TraceDescriptor&) const;
 

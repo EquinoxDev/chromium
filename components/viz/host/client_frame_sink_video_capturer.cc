@@ -6,6 +6,9 @@
 
 #include <utility>
 
+#include "base/bind.h"
+#include "media/capture/mojom/video_capture_types.mojom.h"
+
 namespace viz {
 
 namespace {

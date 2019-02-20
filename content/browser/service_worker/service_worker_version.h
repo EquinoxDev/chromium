@@ -35,6 +35,7 @@
 #include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/browser/service_worker/service_worker_ping_controller.h"
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
+#include "content/browser/service_worker/service_worker_update_checker.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "ipc/ipc_message.h"
@@ -72,19 +73,13 @@ FORWARD_DECLARE_TEST(ServiceWorkerControlleeRequestHandlerTest,
 
 namespace service_worker_version_unittest {
 class ServiceWorkerVersionTest;
-class ServiceWorkerRequestTimeoutTest;
-class ServiceWorkerFailToStartTest;
-FORWARD_DECLARE_TEST(ServiceWorkerFailToStartTest, Timeout);
-FORWARD_DECLARE_TEST(ServiceWorkerRequestTimeoutTest, RequestTimeout);
-FORWARD_DECLARE_TEST(ServiceWorkerStallInStoppingTest, DetachThenRestart);
-FORWARD_DECLARE_TEST(ServiceWorkerStallInStoppingTest,
-                     DetachThenRestartNoCrash);
-FORWARD_DECLARE_TEST(ServiceWorkerStallInStoppingTest, DetachThenStart);
+FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, FailToStart_Timeout);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, IdleTimeout);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, MixedRequestTimeouts);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, RegisterForeignFetchScopes);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, RequestCustomizedTimeout);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, RequestNowTimeout);
+FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, RequestTimeout);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, RestartWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, RequestNowTimeoutKill);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, SetDevToolsAttached);
@@ -93,6 +88,9 @@ FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_FreshWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_NonActiveWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_RunningWorker);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StaleUpdate_StartWorker);
+FORWARD_DECLARE_TEST(ServiceWorkerVersionTest,
+                     StallInStopping_DetachThenRestart);
+FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StallInStopping_DetachThenStart);
 FORWARD_DECLARE_TEST(ServiceWorkerVersionTest, StartRequestWithNullContext);
 }  // namespace service_worker_version_unittest
 
@@ -513,6 +511,21 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void IncrementPendingUpdateHintCount();
   void DecrementPendingUpdateHintCount();
 
+  void set_compared_script_info_map(
+      std::map<GURL, ServiceWorkerUpdateChecker::ComparedScriptInfo>
+          compared_script_info_map);
+  const std::map<GURL, ServiceWorkerUpdateChecker::ComparedScriptInfo>&
+  compared_script_info_map() const;
+
+  // Take the ownership of the PausedState for changed script from the
+  // compared_script_info_map_.
+  std::unique_ptr<ServiceWorkerSingleScriptUpdateChecker::PausedState>
+  TakePausedStateOfChangedScript(const GURL& script_url);
+
+  // Called by the EmbeddedWorkerInstance to determine if its worker process
+  // should be kept at foreground priority.
+  bool ShouldRequireForegroundPriority(int worker_process_id) const;
+
  private:
   friend class base::RefCounted<ServiceWorkerVersion>;
   friend class EmbeddedWorkerInstanceTest;
@@ -560,27 +573,24 @@ class CONTENT_EXPORT ServiceWorkerVersion
       service_worker_version_unittest::ServiceWorkerVersionTest,
       StartRequestWithNullContext);
   FRIEND_TEST_ALL_PREFIXES(
-      service_worker_version_unittest::ServiceWorkerRequestTimeoutTest,
-      RequestTimeout);
-  FRIEND_TEST_ALL_PREFIXES(
-      service_worker_version_unittest::ServiceWorkerFailToStartTest,
-      Timeout);
+      service_worker_version_unittest::ServiceWorkerVersionTest,
+      FailToStart_Timeout);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionBrowserTest,
                            TimeoutStartingWorker);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionBrowserTest,
                            TimeoutWorkerInEvent);
   FRIEND_TEST_ALL_PREFIXES(
-      service_worker_version_unittest::ServiceWorkerStallInStoppingTest,
-      DetachThenStart);
+      service_worker_version_unittest::ServiceWorkerVersionTest,
+      StallInStopping_DetachThenStart);
   FRIEND_TEST_ALL_PREFIXES(
-      service_worker_version_unittest::ServiceWorkerStallInStoppingTest,
-      DetachThenRestart);
-  FRIEND_TEST_ALL_PREFIXES(
-      service_worker_version_unittest::ServiceWorkerStallInStoppingTest,
-      DetachThenRestartNoCrash);
+      service_worker_version_unittest::ServiceWorkerVersionTest,
+      StallInStopping_DetachThenRestart);
   FRIEND_TEST_ALL_PREFIXES(
       service_worker_version_unittest::ServiceWorkerVersionTest,
       RequestNowTimeout);
+  FRIEND_TEST_ALL_PREFIXES(
+      service_worker_version_unittest::ServiceWorkerVersionTest,
+      RequestTimeout);
   FRIEND_TEST_ALL_PREFIXES(
       service_worker_version_unittest::ServiceWorkerVersionTest,
       RestartWorker);
@@ -952,6 +962,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
   std::set<blink::mojom::WebFeature> used_features_;
 
   std::unique_ptr<blink::TrialTokenValidator> validator_;
+
+  // Stores the result of byte-to-byte update check for each script. Used only
+  // when ServiceWorkerImportedScriptUpdateCheck is enabled.
+  std::map<GURL, ServiceWorkerUpdateChecker::ComparedScriptInfo>
+      compared_script_info_map_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

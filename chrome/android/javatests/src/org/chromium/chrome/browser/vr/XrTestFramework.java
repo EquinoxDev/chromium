@@ -15,6 +15,7 @@ import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.UrlConstants;
 import org.chromium.chrome.browser.tab.SadTab;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.test.ChromeActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.content_public.browser.WebContents;
@@ -92,16 +93,6 @@ public abstract class XrTestFramework {
     public static String getFileUrlForHtmlTestFile(String testName) {
         return "file://" + UrlUtils.getIsolatedTestFilePath(TEST_DIR) + "/html/" + testName
                 + ".html";
-    }
-
-    /**
-     * Gets the path to pass to an EmbeddedTestServer.getURL to load the given HTML test file.
-     *
-     * @param testName The name of the test whose file will be retrieved.
-     * @param A path that can be passed to EmbeddedTestServer.getURL to load the test file.
-     */
-    public static String getEmbeddedServerPathForHtmlTestFile(String testName) {
-        return "/" + TEST_DIR + "/html/" + testName + ".html";
     }
 
     /**
@@ -388,6 +379,15 @@ public abstract class XrTestFramework {
     }
 
     /**
+     * Gets the URL that loads the given test file from the embedded test server.
+     *
+     * @param testName The name of the test whose file will be retrieved.
+     */
+    public String getEmbeddedServerUrlForHtmlTestFile(String testName) {
+        return mRule.getTestServer().getURL("/" + TEST_DIR + "/html/" + testName + ".html");
+    }
+
+    /**
      * Loads the given URL with the given timeout then waits for JavaScript to
      * signal that it's ready for testing.
      *
@@ -537,5 +537,13 @@ public abstract class XrTestFramework {
 
         CriteriaHelper.pollUiThread(
                 () -> SadTab.isShowing(tab), "Renderer killed, but sad tab not shown");
+    }
+
+    public void openIncognitoTab(final String url) {
+        ThreadUtils.runOnUiThreadBlocking(() -> {
+            mRule.getActivity()
+                    .getTabCreator(true /* incognito */)
+                    .launchUrl(url, TabLaunchType.FROM_LINK);
+        });
     }
 }

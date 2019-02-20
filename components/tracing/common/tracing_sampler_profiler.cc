@@ -18,6 +18,10 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 
+#if defined(OS_ANDROID)
+#include "base/android/reached_code_profiler.h"
+#endif
+
 #if defined(OS_ANDROID) && BUILDFLAG(CAN_UNWIND_WITH_CFI_TABLE) && \
     defined(OFFICIAL_BUILD)
 #include <dlfcn.h>
@@ -41,6 +45,8 @@ class TracingProfileBuilder
  public:
   TracingProfileBuilder(base::PlatformThreadId sampled_thread_id)
       : sampled_thread_id_(sampled_thread_id) {}
+
+  base::ModuleCache* GetModuleCache() override { return &module_cache_; }
 
   void OnSampleCompleted(
       std::vector<base::StackSamplingProfiler::Frame> frames) override {
@@ -121,6 +127,7 @@ class TracingProfileBuilder
                           base::TimeDelta sampling_period) override {}
 
  private:
+  base::ModuleCache module_cache_;
   base::PlatformThreadId sampled_thread_id_;
 };
 
@@ -149,9 +156,6 @@ TracingSamplerProfiler::TracingSamplerProfiler(
     : sampled_thread_id_(sampled_thread_id) {
   DCHECK_NE(sampled_thread_id_, base::kInvalidThreadId);
 
-  // Make sure tracing system notices profiler category.
-  TRACE_EVENT_WARMUP_CATEGORY(TRACE_DISABLED_BY_DEFAULT("cpu_profiler"));
-
   // If tracing was enabled before initializing this class, we missed the
   // OnTraceLogEnabled() event. Synthesize it so we can late-join the party.
   // If the observer is added after the calling |OnTraceLogEnabled|, there is
@@ -177,6 +181,13 @@ void TracingSamplerProfiler::OnTraceLogEnabled() {
                                      &enabled);
   if (!enabled)
     return;
+
+#if defined(OS_ANDROID)
+  // The sampler profiler would conflict with the reached code profiler if they
+  // run at the same time because they use the same signal to suspend threads.
+  if (base::android::IsReachedCodeProfilerEnabled())
+    return;
+#endif
 
   base::StackSamplingProfiler::SamplingParams params;
   params.samples_per_profile = std::numeric_limits<int>::max();

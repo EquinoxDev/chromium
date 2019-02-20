@@ -29,6 +29,19 @@ class RandomTreeTest : public testing::TestWithParam<LearningTask::Ordering> {
     }
   }
 
+  std::unique_ptr<Model> Train(const LearningTask& task,
+                               const TrainingData& data) {
+    std::unique_ptr<Model> model;
+    trainer_.Train(
+        task_, data,
+        base::BindOnce(
+            [](std::unique_ptr<Model>* model_out,
+               std::unique_ptr<Model> model) { *model_out = std::move(model); },
+            &model));
+    scoped_task_environment_.RunUntilIdle();
+    return model;
+  }
+
   base::test::ScopedTaskEnvironment scoped_task_environment_;
 
   TestRandomNumberGenerator rng_;
@@ -40,20 +53,20 @@ class RandomTreeTest : public testing::TestWithParam<LearningTask::Ordering> {
 
 TEST_P(RandomTreeTest, EmptyTrainingDataWorks) {
   TrainingData empty;
-  std::unique_ptr<Model> model = trainer_.Train(task_, empty);
+  std::unique_ptr<Model> model = Train(task_, empty);
   EXPECT_NE(model.get(), nullptr);
   EXPECT_EQ(model->PredictDistribution(FeatureVector()), TargetDistribution());
 }
 
 TEST_P(RandomTreeTest, UniformTrainingDataWorks) {
   SetupFeatures(2);
-  TrainingExample example({FeatureValue(123), FeatureValue(456)},
+  LabelledExample example({FeatureValue(123), FeatureValue(456)},
                           TargetValue(789));
   TrainingData training_data;
   const size_t n_examples = 10;
   for (size_t i = 0; i < n_examples; i++)
     training_data.push_back(example);
-  std::unique_ptr<Model> model = trainer_.Train(task_, training_data);
+  std::unique_ptr<Model> model = Train(task_, training_data);
 
   // The tree should produce a distribution for one value (our target), which
   // has |n_examples| counts.
@@ -63,42 +76,14 @@ TEST_P(RandomTreeTest, UniformTrainingDataWorks) {
   EXPECT_EQ(distribution[example.target_value], n_examples);
 }
 
-TEST_P(RandomTreeTest, UniformTrainingDataWorksWithCallback) {
-  SetupFeatures(2);
-  TrainingExample example({FeatureValue(123), FeatureValue(456)},
-                          TargetValue(789));
-  TrainingData training_data;
-  const size_t n_examples = 10;
-  for (size_t i = 0; i < n_examples; i++)
-    training_data.push_back(example);
-
-  // Construct a TrainedModelCB that will store the model locally.
-  std::unique_ptr<Model> model;
-  TrainedModelCB model_cb = base::BindOnce(
-      [](std::unique_ptr<Model>* model_out, std::unique_ptr<Model> model) {
-        *model_out = std::move(model);
-      },
-      &model);
-
-  // Run the trainer.
-  RandomTreeTrainer::GetTrainingAlgorithmCB(task_).Run(training_data,
-                                                       std::move(model_cb));
-  base::RunLoop().RunUntilIdle();
-
-  TargetDistribution distribution =
-      model->PredictDistribution(example.features);
-  EXPECT_EQ(distribution.size(), 1u);
-  EXPECT_EQ(distribution[example.target_value], n_examples);
-}
-
 TEST_P(RandomTreeTest, SimpleSeparableTrainingData) {
   SetupFeatures(1);
   TrainingData training_data;
-  TrainingExample example_1({FeatureValue(123)}, TargetValue(1));
-  TrainingExample example_2({FeatureValue(456)}, TargetValue(2));
+  LabelledExample example_1({FeatureValue(123)}, TargetValue(1));
+  LabelledExample example_2({FeatureValue(456)}, TargetValue(2));
   training_data.push_back(example_1);
   training_data.push_back(example_2);
-  std::unique_ptr<Model> model = trainer_.Train(task_, training_data);
+  std::unique_ptr<Model> model = Train(task_, training_data);
 
   // Each value should have a distribution with one target value with one count.
   TargetDistribution distribution =
@@ -127,7 +112,7 @@ TEST_P(RandomTreeTest, ComplexSeparableTrainingData) {
     for (int f2 = 0; f2 < 2; f2++) {
       for (int f3 = 0; f3 < 2; f3++) {
         for (int f4 = 0; f4 < 2; f4++) {
-          TrainingExample example(
+          LabelledExample example(
               {FeatureValue(f1), FeatureValue(f2), FeatureValue(f3),
                FeatureValue(f4)},
               TargetValue(f1 * 1 + f2 * 2 + f3 * 4 + f4 * 8));
@@ -139,11 +124,11 @@ TEST_P(RandomTreeTest, ComplexSeparableTrainingData) {
     }
   }
 
-  std::unique_ptr<Model> model = trainer_.Train(task_, training_data);
+  std::unique_ptr<Model> model = Train(task_, training_data);
   EXPECT_NE(model.get(), nullptr);
 
   // Each example should have a distribution that selects the right value.
-  for (const TrainingExample& example : training_data) {
+  for (const LabelledExample& example : training_data) {
     TargetDistribution distribution =
         model->PredictDistribution(example.features);
     TargetValue singular_max;
@@ -155,11 +140,11 @@ TEST_P(RandomTreeTest, ComplexSeparableTrainingData) {
 TEST_P(RandomTreeTest, UnseparableTrainingData) {
   SetupFeatures(1);
   TrainingData training_data;
-  TrainingExample example_1({FeatureValue(123)}, TargetValue(1));
-  TrainingExample example_2({FeatureValue(123)}, TargetValue(2));
+  LabelledExample example_1({FeatureValue(123)}, TargetValue(1));
+  LabelledExample example_2({FeatureValue(123)}, TargetValue(2));
   training_data.push_back(example_1);
   training_data.push_back(example_2);
-  std::unique_ptr<Model> model = trainer_.Train(task_, training_data);
+  std::unique_ptr<Model> model = Train(task_, training_data);
   EXPECT_NE(model.get(), nullptr);
 
   // Each value should have a distribution with two targets with one count each.
@@ -179,14 +164,14 @@ TEST_P(RandomTreeTest, UnknownFeatureValueHandling) {
   // Verify how a previously unseen feature value is handled.
   SetupFeatures(1);
   TrainingData training_data;
-  TrainingExample example_1({FeatureValue(123)}, TargetValue(1));
-  TrainingExample example_2({FeatureValue(456)}, TargetValue(2));
+  LabelledExample example_1({FeatureValue(123)}, TargetValue(1));
+  LabelledExample example_2({FeatureValue(456)}, TargetValue(2));
   training_data.push_back(example_1);
   training_data.push_back(example_2);
 
   task_.rt_unknown_value_handling =
       LearningTask::RTUnknownValueHandling::kEmptyDistribution;
-  std::unique_ptr<Model> model = trainer_.Train(task_, training_data);
+  std::unique_ptr<Model> model = Train(task_, training_data);
   TargetDistribution distribution =
       model->PredictDistribution(FeatureVector({FeatureValue(789)}));
   if (ordering_ == LearningTask::Ordering::kUnordered) {
@@ -201,7 +186,7 @@ TEST_P(RandomTreeTest, UnknownFeatureValueHandling) {
 
   task_.rt_unknown_value_handling =
       LearningTask::RTUnknownValueHandling::kUseAllSplits;
-  model = trainer_.Train(task_, training_data);
+  model = Train(task_, training_data);
   distribution = model->PredictDistribution(FeatureVector({FeatureValue(789)}));
   if (ordering_ == LearningTask::Ordering::kUnordered) {
     // OOV data should return with the sum of all splits.
@@ -223,13 +208,13 @@ TEST_P(RandomTreeTest, NumericFeaturesSplitMultipleTimes) {
   TrainingData training_data;
   const int feature_mult = 10;
   for (size_t i = 0; i < 4; i++) {
-    TrainingExample example({FeatureValue(i * feature_mult)}, TargetValue(i));
+    LabelledExample example({FeatureValue(i * feature_mult)}, TargetValue(i));
     training_data.push_back(example);
   }
 
   task_.rt_unknown_value_handling =
       LearningTask::RTUnknownValueHandling::kEmptyDistribution;
-  std::unique_ptr<Model> model = trainer_.Train(task_, training_data);
+  std::unique_ptr<Model> model = Train(task_, training_data);
   for (size_t i = 0; i < 4; i++) {
     // Get a prediction for the |i|-th feature value.
     TargetDistribution distribution = model->PredictDistribution(
@@ -242,10 +227,10 @@ TEST_P(RandomTreeTest, NumericFeaturesSplitMultipleTimes) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(RandomTreeTest,
-                        RandomTreeTest,
-                        testing::ValuesIn({LearningTask::Ordering::kUnordered,
-                                           LearningTask::Ordering::kNumeric}));
+INSTANTIATE_TEST_SUITE_P(RandomTreeTest,
+                         RandomTreeTest,
+                         testing::ValuesIn({LearningTask::Ordering::kUnordered,
+                                            LearningTask::Ordering::kNumeric}));
 
 }  // namespace learning
 }  // namespace media

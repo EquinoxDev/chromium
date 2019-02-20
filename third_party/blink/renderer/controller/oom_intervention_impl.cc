@@ -4,15 +4,17 @@
 
 #include "third_party/blink/renderer/controller/oom_intervention_impl.h"
 
+#include "base/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "mojo/public/cpp/bindings/strong_binding.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_gc_for_context_dispose.h"
 #include "third_party/blink/renderer/controller/crash_memory_metrics_reporter_impl.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/page/page.h"
-#include "third_party/blink/renderer/platform/wtf/allocator/partitions.h"
+#include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 
 namespace blink {
 
@@ -23,41 +25,45 @@ void OomInterventionImpl::Create(mojom::blink::OomInterventionRequest request) {
 }
 
 OomInterventionImpl::OomInterventionImpl()
-    : timer_(Thread::MainThread()->GetTaskRunner(),
-             this,
-             &OomInterventionImpl::Check),
-      delayed_report_timer_(Thread::MainThread()->GetTaskRunner(),
+    : delayed_report_timer_(Thread::MainThread()->GetTaskRunner(),
                             this,
                             &OomInterventionImpl::TimerFiredUMAReport) {}
 
-OomInterventionImpl::~OomInterventionImpl() {}
+OomInterventionImpl::~OomInterventionImpl() {
+  MemoryUsageMonitorInstance().RemoveObserver(this);
+}
 
 void OomInterventionImpl::StartDetection(
     mojom::blink::OomInterventionHostPtr host,
     mojom::blink::DetectionArgsPtr detection_args,
     bool renderer_pause_enabled,
-    bool navigate_ads_enabled) {
+    bool navigate_ads_enabled,
+    bool purge_v8_memory_enabled) {
   host_ = std::move(host);
-
-  // Disable intervention if we cannot get memory details of current process.
-  if (CrashMemoryMetricsReporterImpl::Instance().ResetFileDiscriptors())
-    return;
 
   detection_args_ = std::move(detection_args);
   renderer_pause_enabled_ = renderer_pause_enabled;
   navigate_ads_enabled_ = navigate_ads_enabled;
+  purge_v8_memory_enabled_ = purge_v8_memory_enabled;
 
-  timer_.Start(TimeDelta(), TimeDelta::FromSeconds(1), FROM_HERE);
+  MemoryUsageMonitorInstance().AddObserver(this);
 }
 
-OomInterventionMetrics OomInterventionImpl::GetCurrentMemoryMetrics() {
-  return CrashMemoryMetricsReporterImpl::Instance().GetCurrentMemoryMetrics();
+MemoryUsageMonitor& OomInterventionImpl::MemoryUsageMonitorInstance() {
+  return MemoryUsageMonitor::Instance();
 }
 
-void OomInterventionImpl::Check(TimerBase*) {
+void OomInterventionImpl::OnMemoryPing(MemoryUsage usage) {
+  // Ignore pings without process memory usage information.
+  if (std::isnan(usage.private_footprint_bytes) ||
+      std::isnan(usage.swap_bytes) || std::isnan(usage.vm_size_bytes))
+    return;
+  Check(CrashMemoryMetricsReporterImpl::MemoryUsageToMetrics(usage));
+}
+
+void OomInterventionImpl::Check(OomInterventionMetrics current_memory) {
   DCHECK(host_);
 
-  OomInterventionMetrics current_memory = GetCurrentMemoryMetrics();
   bool oom_detected = false;
 
   oom_detected |= detection_args_->blink_workload_threshold > 0 &&
@@ -77,12 +83,17 @@ void OomInterventionImpl::Check(TimerBase*) {
   ReportMemoryStats(current_memory);
 
   if (oom_detected) {
-    if (navigate_ads_enabled_) {
+    if (navigate_ads_enabled_ || purge_v8_memory_enabled_) {
       for (const auto& page : Page::OrdinaryPages()) {
-        if (page->MainFrame()->IsLocalFrame()) {
-          ToLocalFrame(page->MainFrame())
-              ->GetDocument()
-              ->NavigateLocalAdsFrames();
+        for (Frame* frame = page->MainFrame(); frame;
+             frame = frame->Tree().TraverseNext()) {
+          if (!frame->IsLocalFrame())
+            continue;
+          LocalFrame* local_frame = ToLocalFrame(frame);
+          if (navigate_ads_enabled_)
+            local_frame->GetDocument()->NavigateLocalAdsFrames();
+          if (purge_v8_memory_enabled_)
+            local_frame->ForciblyPurgeV8Memory();
         }
       }
     }
@@ -92,8 +103,12 @@ void OomInterventionImpl::Check(TimerBase*) {
       // mojo strong binding is disconnected.
       pauser_.reset(new ScopedPagePauser);
     }
+
     host_->OnHighMemoryUsage();
-    timer_.Stop();
+    MemoryUsageMonitorInstance().RemoveObserver(this);
+    // Send memory pressure notification to trigger GC.
+    Thread::MainThread()->GetTaskRunner()->PostTask(FROM_HERE,
+                                                    base::BindOnce(&TriggerGC));
     // Notify V8GCForContextDispose that page navigation gc is needed when
     // intervention runs, as it indicates that memory usage is high.
     V8GCForContextDispose::Instance().SetForcePageNavigationGC();
@@ -124,13 +139,11 @@ void OomInterventionImpl::ReportMemoryStats(
       "Memory.Experimental.OomIntervention.RendererVmSize",
       base::saturated_cast<base::Histogram::Sample>(
           current_memory.current_vm_size_kb / 1024));
-
-  CrashMemoryMetricsReporterImpl::Instance().WriteIntoSharedMemory(
-      current_memory);
 }
 
 void OomInterventionImpl::TimerFiredUMAReport(TimerBase*) {
-  OomInterventionMetrics current_memory = GetCurrentMemoryMetrics();
+  OomInterventionMetrics current_memory =
+      CrashMemoryMetricsReporterImpl::Instance().GetCurrentMemoryMetrics();
   switch (number_of_report_needed_--) {
     case 3:
       base::UmaHistogramSparse(
@@ -170,6 +183,11 @@ void OomInterventionImpl::TimerFiredUMAReport(TimerBase*) {
       delayed_report_timer_.Stop();
       break;
   }
+}
+
+void OomInterventionImpl::TriggerGC() {
+  V8PerIsolateData::MainThreadIsolate()->MemoryPressureNotification(
+      v8::MemoryPressureLevel::kCritical);
 }
 
 }  // namespace blink

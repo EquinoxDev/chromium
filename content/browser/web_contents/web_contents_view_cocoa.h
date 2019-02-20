@@ -15,9 +15,11 @@ struct DropData;
 class RenderWidgetHostImpl;
 class WebContentsImpl;
 class WebContentsViewMac;
+namespace mojom {
+class WebContentsNSViewClient;
+}  // namespace mojom
 }  // namespace content
 
-@class WebDragDest;
 @class WebDragSource;
 
 CONTENT_EXPORT
@@ -27,11 +29,14 @@ CONTENT_EXPORT
   // is possible for an instance to outlive its webContentsView_. The
   // webContentsView_ must call -clearWebContentsView in its destructor.
   content::WebContentsViewMac* webContentsView_;
+  content::mojom::WebContentsNSViewClient* client_;
   base::scoped_nsobject<WebDragSource> dragSource_;
-  base::scoped_nsobject<WebDragDest> dragDest_;
   base::scoped_nsobject<id> accessibilityParent_;
   BOOL mouseDownCanMoveWindow_;
 }
+
+// The mojo interface through which to communicate with the browser process.
+@property(nonatomic, assign) content::mojom::WebContentsNSViewClient* client;
 
 - (void)setMouseDownCanMoveWindow:(BOOL)canMove;
 
@@ -50,8 +55,6 @@ CONTENT_EXPORT
 // TODO(ccameron): Document these functions.
 - (id)initWithWebContentsViewMac:(content::WebContentsViewMac*)w;
 - (void)registerDragTypes;
-- (void)setCurrentDragOperation:(NSDragOperation)operation;
-- (content::DropData*)dropData;
 - (void)startDragWithDropData:(const content::DropData&)dropData
                     sourceRWH:(content::RenderWidgetHostImpl*)sourceRWH
             dragOperationMask:(NSDragOperation)operationMask

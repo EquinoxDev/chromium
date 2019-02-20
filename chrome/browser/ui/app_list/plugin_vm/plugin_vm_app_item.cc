@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/app_list/plugin_vm/plugin_vm_app_item.h"
 
+#include "chrome/browser/chromeos/plugin_vm/plugin_vm_util.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -34,8 +35,12 @@ const char* PluginVmAppItem::GetItemType() const {
 }
 
 void PluginVmAppItem::Activate(int event_flags) {
-  // TODO (aoldemeier, http://crbug.com/904848, http://crbug.com/904853)
-  // Manually close app_list view because focus is not changed on PluginVm app
-  // start, and current view remains active.
-  GetController()->DismissView();
+  if (plugin_vm::IsPluginVmConfigured(profile())) {
+    // TODO(http://crbug.com/904853): Start PluginVm.
+    // Manually close app_list view because focus is not changed on PluginVm app
+    // start, and current view remains active.
+    GetController()->DismissView();
+  } else {
+    plugin_vm::ShowPluginVmLauncherView(profile());
+  }
 }

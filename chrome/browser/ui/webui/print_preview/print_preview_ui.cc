@@ -9,12 +9,14 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/containers/id_map.h"
 #include "base/feature_list.h"
 #include "base/lazy_instance.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -62,7 +64,7 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #elif defined(OS_WIN)
-#include "base/win/win_util.h"
+#include "base/enterprise_util.h"
 #endif
 
 using content::WebContents;
@@ -129,44 +131,20 @@ base::LazyInstance<PrintPreviewRequestIdMapWithLock>::DestructorAtExit
 base::LazyInstance<base::IDMap<PrintPreviewUI*>>::DestructorAtExit
     g_print_preview_ui_id_map = LAZY_INSTANCE_INITIALIZER;
 
-// PrintPreviewUI serves data for chrome://print requests.
-//
-// The format for requesting PDF data is as follows:
-// chrome://print/<PrintPreviewUIID>/<PageIndex>/print.pdf
-//
-// Parameters (< > required):
-//    <PrintPreviewUIID> = PrintPreview UI ID
-//    <PageIndex> = Page index is zero-based or
-//                  |COMPLETE_PREVIEW_DOCUMENT_INDEX| to represent
-//                  a print ready PDF.
-//
-// Example:
-//    chrome://print/123/10/print.pdf
-//
-// Requests to chrome://print with paths not ending in /print.pdf are used
-// to return the markup or other resources for the print preview page itself.
+// Get markup or other resources for the print preview page.
 bool HandleRequestCallback(
     const std::string& path,
     const content::WebUIDataSource::GotDataCallback& callback) {
   // ChromeWebUIDataSource handles most requests except for the print preview
   // data.
-  std::string file_path = path.substr(0, path.find_first_of('?'));
-  if (!base::EndsWith(file_path, "/print.pdf", base::CompareCase::SENSITIVE))
+  int preview_ui_id;
+  int page_index;
+  if (!PrintPreviewUI::ParseDataPath(path, &preview_ui_id, &page_index))
     return false;
 
-  // Print Preview data.
   scoped_refptr<base::RefCountedMemory> data;
-  std::vector<std::string> url_substr = base::SplitString(
-      path, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  int preview_ui_id = -1;
-  int page_index = 0;
-  if (url_substr.size() == 3 &&
-      base::StringToInt(url_substr[0], &preview_ui_id),
-      base::StringToInt(url_substr[1], &page_index) &&
-      preview_ui_id >= 0) {
-    PrintPreviewDataService::GetInstance()->GetDataEntry(
-        preview_ui_id, page_index, &data);
-  }
+  PrintPreviewDataService::GetInstance()->GetDataEntry(preview_ui_id,
+                                                       page_index, &data);
   if (data.get()) {
     callback.Run(data.get());
     return true;
@@ -191,14 +169,12 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
      IDS_PRINT_PREVIEW_ADVANCED_SETTINGS_SEARCH_BOX_PLACEHOLDER},
     {"bottom", IDS_PRINT_PREVIEW_BOTTOM_MARGIN_LABEL},
     {"cancel", IDS_CANCEL},
-    {"changeDestination", IDS_PRINT_PREVIEW_CHANGE_DESTINATION},
     {"cloudPrintPromotion", IDS_PRINT_PREVIEW_CLOUD_PRINT_PROMOTION},
     {"copiesInstruction", IDS_PRINT_PREVIEW_COPIES_INSTRUCTION},
     {"copiesLabel", IDS_PRINT_PREVIEW_COPIES_LABEL},
     {"couldNotPrint", IDS_PRINT_PREVIEW_COULD_NOT_PRINT},
     {"customMargins", IDS_PRINT_PREVIEW_CUSTOM_MARGINS},
     {"defaultMargins", IDS_PRINT_PREVIEW_DEFAULT_MARGINS},
-    {"destinationCount", IDS_PRINT_PREVIEW_DESTINATION_COUNT},
     {"destinationLabel", IDS_PRINT_PREVIEW_DESTINATION_LABEL},
     {"destinationSearchTitle", IDS_PRINT_PREVIEW_DESTINATION_SEARCH_TITLE},
     {"dpiItemLabel", IDS_PRINT_PREVIEW_DPI_ITEM_LABEL},
@@ -214,7 +190,7 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
     {"left", IDS_PRINT_PREVIEW_LEFT_MARGIN_LABEL},
     {"loading", IDS_PRINT_PREVIEW_LOADING},
     {"manage", IDS_PRINT_PREVIEW_MANAGE},
-    {"managedOption", IDS_PRINT_PREVIEW_MANAGED_OPTION_TEXT},
+    {"managedSettings", IDS_PRINT_PREVIEW_MANAGED_SETTINGS_TEXT},
     {"marginsLabel", IDS_PRINT_PREVIEW_MARGINS_LABEL},
     {"mediaSizeLabel", IDS_PRINT_PREVIEW_MEDIA_SIZE_LABEL},
     {"minimumMargins", IDS_PRINT_PREVIEW_MINIMUM_MARGINS},
@@ -241,6 +217,8 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
     {"optionCollate", IDS_PRINT_PREVIEW_OPTION_COLLATE},
     {"optionColor", IDS_PRINT_PREVIEW_OPTION_COLOR},
     {"optionCustomPages", IDS_PRINT_PREVIEW_OPTION_CUSTOM_PAGES},
+    {"optionCustomScaling", IDS_PRINT_PREVIEW_OPTION_CUSTOM_SCALING},
+    {"optionDefaultScaling", IDS_PRINT_PREVIEW_OPTION_DEFAULT_SCALING},
     {"optionFitToPage", IDS_PRINT_PREVIEW_OPTION_FIT_TO_PAGE},
     {"optionHeaderFooter", IDS_PRINT_PREVIEW_OPTION_HEADER_FOOTER},
     {"optionLandscape", IDS_PRINT_PREVIEW_OPTION_LANDSCAPE},
@@ -265,6 +243,7 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
     {"printPreviewSheetsLabelSingular",
      IDS_PRINT_PREVIEW_SHEETS_LABEL_SINGULAR},
     {"printPreviewSummaryFormatShort", IDS_PRINT_PREVIEW_SUMMARY_FORMAT_SHORT},
+    {"printToGoogleDrive", IDS_PRINT_PREVIEW_PRINT_TO_GOOGLE_DRIVE},
     {"printToPDF", IDS_PRINT_PREVIEW_PRINT_TO_PDF},
     {"printerSharingInviteText", IDS_PRINT_PREVIEW_INVITE_TEXT},
     {"printing", IDS_PRINT_PREVIEW_PRINTING},
@@ -285,6 +264,8 @@ void AddPrintPreviewStrings(content::WebUIDataSource* source) {
     {"scalingLabel", IDS_PRINT_PREVIEW_SCALING_LABEL},
     {"searchBoxPlaceholder", IDS_PRINT_PREVIEW_SEARCH_BOX_PLACEHOLDER},
     {"selectButton", IDS_PRINT_PREVIEW_BUTTON_SELECT},
+    {"seeMore", IDS_PRINT_PREVIEW_SEE_MORE},
+    {"seeMoreDestinationsLabel", IDS_PRINT_PREVIEW_SEE_MORE_DESTINATIONS_LABEL},
     {"title", IDS_PRINT_PREVIEW_TITLE},
     {"top", IDS_PRINT_PREVIEW_TOP_MARGIN_LABEL},
     {"unsupportedCloudPrinter", IDS_PRINT_PREVIEW_UNSUPPORTED_CLOUD_PRINTER},
@@ -329,7 +310,7 @@ void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
   enterprise_managed = connector->IsEnterpriseManaged();
 #elif defined(OS_WIN)
-  enterprise_managed = base::win::IsEnterpriseManaged();
+  enterprise_managed = base::IsMachineExternallyManaged();
 #endif
   source->AddBoolean("isEnterpriseManaged", enterprise_managed);
 
@@ -343,7 +324,8 @@ void AddPrintPreviewFlags(content::WebUIDataSource* source, Profile* profile) {
                      cloud_printer_handler_enabled);
 }
 
-void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
+std::vector<std::string> SetupPrintPreviewPlugin(
+    content::WebUIDataSource* source) {
   static constexpr struct {
     const char* path;
     int id;
@@ -385,6 +367,12 @@ void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
      IDR_PDF_VIEWER_PDF_TOOLBAR_HTML},
     {"pdf/elements/viewer-pdf-toolbar/viewer-pdf-toolbar.js",
      IDR_PDF_VIEWER_PDF_TOOLBAR_JS},
+#if defined(OS_CHROMEOS)
+    {"pdf/elements/viewer-pen-options/viewer-pen-options.html",
+     IDR_PDF_VIEWER_PEN_OPTIONS_HTML},
+    {"pdf/elements/viewer-pen-options/viewer-pen-options.js",
+     IDR_PDF_VIEWER_PEN_OPTIONS_JS},
+#endif
     {"pdf/elements/viewer-toolbar-dropdown/viewer-toolbar-dropdown.html",
      IDR_PDF_VIEWER_TOOLBAR_DROPDOWN_HTML},
     {"pdf/elements/viewer-toolbar-dropdown/viewer-toolbar-dropdown.js",
@@ -408,17 +396,23 @@ void SetupPrintPreviewPlugin(content::WebUIDataSource* source) {
     {"pdf/pdf_scripting_api.js", IDR_PDF_PDF_SCRIPTING_API_JS},
     {"pdf/pdf_viewer.js", IDR_PDF_PDF_VIEWER_JS},
     {"pdf/toolbar_manager.js", IDR_PDF_TOOLBAR_MANAGER_JS},
+    {"pdf/viewport_interface.js", IDR_PDF_VIEWPORT_INTERFACE_JS},
     {"pdf/viewport.js", IDR_PDF_VIEWPORT_JS},
     {"pdf/viewport_scroller.js", IDR_PDF_VIEWPORT_SCROLLER_JS},
     {"pdf/zoom_manager.js", IDR_PDF_ZOOM_MANAGER_JS},
   };
-  for (const auto& resource : kPdfResources)
+  std::vector<std::string> excluded_paths;
+  for (const auto& resource : kPdfResources) {
+    excluded_paths.emplace_back(resource.path);
     source->AddResourcePath(resource.path, resource.id);
+  }
 
   source->SetRequestFilter(base::BindRepeating(&HandleRequestCallback));
   source->OverrideContentSecurityPolicyChildSrc("child-src 'self';");
   source->DisableDenyXFrameOptions();
   source->OverrideContentSecurityPolicyObjectSrc("object-src 'self';");
+
+  return excluded_paths;
 }
 
 content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
@@ -433,14 +427,22 @@ content::WebUIDataSource* CreatePrintPreviewUISource(Profile* profile) {
       base::FeatureList::IsEnabled(features::kWebUIPolymer2) ?
           IDR_PRINT_PREVIEW_VULCANIZED_P2_HTML :
           IDR_PRINT_PREVIEW_VULCANIZED_HTML);
+  std::vector<std::string> exclude_from_gzip = SetupPrintPreviewPlugin(source);
+  source->UseGzip(base::BindRepeating(
+      [](const std::vector<std::string>& excluded_paths,
+         const std::string& path) {
+        return !base::ContainsValue(excluded_paths, path) &&
+               !PrintPreviewUI::ParseDataPath(path, nullptr, nullptr);
+      },
+      std::move(exclude_from_gzip)));
 #else
   for (size_t i = 0; i < kPrintPreviewResourcesSize; ++i) {
     source->AddResourcePath(kPrintPreviewResources[i].name,
                             kPrintPreviewResources[i].value);
   }
   source->SetDefaultResource(IDR_PRINT_PREVIEW_NEW_HTML);
-#endif
   SetupPrintPreviewPlugin(source);
+#endif
   AddPrintPreviewFlags(source, profile);
   return source;
 }
@@ -502,6 +504,34 @@ void PrintPreviewUI::SetPrintPreviewDataForIndex(
     scoped_refptr<base::RefCountedMemory> data) {
   PrintPreviewDataService::GetInstance()->SetDataEntry(*id_, index,
                                                        std::move(data));
+}
+
+// static
+bool PrintPreviewUI::ParseDataPath(const std::string& path,
+                                   int* ui_id,
+                                   int* page_index) {
+  std::string file_path = path.substr(0, path.find_first_of('?'));
+  if (!base::EndsWith(file_path, "/print.pdf", base::CompareCase::SENSITIVE))
+    return false;
+
+  std::vector<std::string> url_substr =
+      base::SplitString(path, "/", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+  if (url_substr.size() != 3)
+    return false;
+
+  int preview_ui_id = -1;
+  if (!base::StringToInt(url_substr[0], &preview_ui_id) || preview_ui_id < 0)
+    return false;
+
+  int preview_page_index = 0;
+  if (!base::StringToInt(url_substr[1], &preview_page_index))
+    return false;
+
+  if (ui_id)
+    *ui_id = preview_ui_id;
+  if (page_index)
+    *page_index = preview_page_index;
+  return true;
 }
 
 void PrintPreviewUI::ClearAllPreviewData() {

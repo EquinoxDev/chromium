@@ -13,6 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#include "content/shell/test_runner/test_runner_export.h"
 #include "v8/include/v8.h"
 
 class GURL;
@@ -42,7 +43,7 @@ class WebViewTestProxy;
 // - testRunner.capturePixelsAsyncThen
 // - testRunner.setPageVisibility
 // Note that "global" bindings are handled by TestRunner class.
-class TestRunnerForSpecificView {
+class TEST_RUNNER_EXPORT TestRunnerForSpecificView {
  public:
   explicit TestRunnerForSpecificView(WebViewTestProxy* web_view_test_proxy);
   ~TestRunnerForSpecificView();
@@ -79,12 +80,9 @@ class TestRunnerForSpecificView {
   void UpdateAllLifecyclePhasesAndCompositeThen(
       v8::Local<v8::Function> callback);
 
-  void LayoutAndPaintAsync();
-  void LayoutAndPaintAsyncThen(v8::Local<v8::Function> callback);
-
-  // Similar to LayoutAndPaintAsyncThen(), but pass parameters of the captured
-  // snapshot (width, height, snapshot) to the callback. The snapshot is in
-  // uint8_t RGBA format.
+  // The callback will be called after the next full frame update and raster,
+  // with the captured snapshot as the parameters (width, height, snapshot).
+  // The snapshot is in uint8_t RGBA format.
   void CapturePixelsAsyncThen(v8::Local<v8::Function> callback);
   void CapturePixelsCallback(v8::UniquePersistent<v8::Function> callback,
                              const SkBitmap& snapshot);
@@ -178,6 +176,8 @@ class TestRunnerForSpecificView {
   void AddWebPageOverlay();
   void RemoveWebPageOverlay();
 
+  void SetHighlightAds(bool);
+
   // Sets a flag causing the next call to WebGLRenderingContext::create to fail.
   void ForceNextWebGLContextCreationToFail();
 
@@ -209,10 +209,9 @@ class TestRunnerForSpecificView {
       int world_id,
       const std::string& script);
   void EvaluateScriptInIsolatedWorld(int world_id, const std::string& script);
-  void SetIsolatedWorldSecurityOrigin(int world_id,
-                                      v8::Local<v8::Value> origin);
-  void SetIsolatedWorldContentSecurityPolicy(int world_id,
-                                             const std::string& policy);
+  void SetIsolatedWorldInfo(int world_id,
+                            v8::Local<v8::Value> security_origin,
+                            v8::Local<v8::Value> content_security_policy);
   bool FindString(const std::string& search_text,
                   const std::vector<std::string>& options_array);
   std::string SelectionAsMarkup();

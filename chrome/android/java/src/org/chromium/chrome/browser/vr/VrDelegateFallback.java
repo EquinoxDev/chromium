@@ -14,22 +14,30 @@ import org.chromium.base.ActivityState;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
-import org.chromium.base.ThreadUtils;
 import org.chromium.base.compat.ApiHelperForN;
 import org.chromium.base.library_loader.LibraryLoader;
+import org.chromium.base.metrics.CachedMetrics;
+import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeActivity;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.ui.widget.Toast;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Fallback {@link VrDelegate} implementation if the VR module is not available.
  */
 /* package */ class VrDelegateFallback extends VrDelegate {
+    /* package */ static final CachedMetrics
+            .BooleanHistogramSample ENTER_VR_BROWSER_WITHOUT_FEATURE_MODULE_METRIC =
+            new CachedMetrics.BooleanHistogramSample("VR.EnterVrBrowserWithoutFeatureModule");
     private static final String TAG = "VrDelegateFallback";
     private static final boolean DEBUG_LOGS = false;
     private static final String DEFAULT_VR_MODE_PACKAGE = "com.google.vr.vrcore";
     private static final String DEFAULT_VR_MODE_CLASS =
             "com.google.vr.vrcore.common.VrCoreListenerService";
+    private static final int WAITING_FOR_MODULE_TIMEOUT_MS = 1500;
 
     @Override
     public void forceExitVrImmediately() {}
@@ -125,6 +133,20 @@ import org.chromium.ui.widget.Toast;
         // more details in {VrShellDelegate#maybeHandleVrIntentPreNative}.
         addBlackOverlayViewForActivity(activity);
         setSystemUiVisibilityForVr(activity);
+
+        // Flag whether enter VR flow is handled already.
+        AtomicBoolean enterVrHandled = new AtomicBoolean(false);
+
+        VrModuleProvider.installModule((success) -> {
+            if (enterVrHandled.getAndSet(true)) return;
+            onVrModuleInstallFinished(success);
+        });
+
+        PostTask.postDelayedTask(UiThreadTaskTraits.DEFAULT, () -> {
+            if (enterVrHandled.getAndSet(true)) return;
+            assert !VrModuleProvider.isModuleInstalled();
+            onVrModuleInstallFailure(activity);
+        }, WAITING_FOR_MODULE_TIMEOUT_MS);
     }
 
     @Override
@@ -141,13 +163,6 @@ import org.chromium.ui.widget.Toast;
             activity.finish();
             return;
         }
-
-        VrModuleProvider.installModule(this::onVrModuleInstallFinished);
-
-        ThreadUtils.postOnUiThreadDelayed(() -> {
-            if (VrModuleProvider.isModuleInstalled()) return;
-            onVrModuleInstallFailure(activity);
-        }, 2000);
     }
 
     @Override
@@ -162,14 +177,17 @@ import org.chromium.ui.widget.Toast;
     }
 
     @Override
-    public boolean willChangeDensityInVr(ChromeActivity activity) {
-        // TODO(tiborg): Handle density changes if VR module not installed.
-        assert false;
+    public void onSaveInstanceState(Bundle outState) {}
+
+    @Override
+    protected boolean expectedDensityChange() {
         return false;
     }
 
     @Override
-    public void onSaveInstanceState(Bundle outState) {}
+    public void initAfterModuleInstall() {
+        assert false;
+    }
 
     private void onVrModuleInstallFinished(boolean success) {
         Activity activity = ApplicationStatus.getLastTrackedFocusedActivity();
@@ -181,21 +199,23 @@ import org.chromium.ui.widget.Toast;
         }
         assert VrModuleProvider.isModuleInstalled();
 
-        VrDelegate delegate = VrModuleProvider.getDelegate();
-        if (LibraryLoader.getInstance().isInitialized()) {
-            delegate.onNativeLibraryAvailable();
-        }
+        ENTER_VR_BROWSER_WITHOUT_FEATURE_MODULE_METRIC.record(true);
+
+        // We need native to enter VR. Enter VR flow will automatically continue once native is
+        // loaded.
+        if (!LibraryLoader.getInstance().isInitialized()) return;
 
         boolean shouldEnterVr =
                 ApplicationStatus.getStateForActivity(activity) == ActivityState.RESUMED;
         if (shouldEnterVr) {
-            delegate.enterVrIfNecessary();
-        } else {
-            delegate.maybeRegisterVrEntryHook((ChromeActivity) activity);
+            // Invoke the delegate with actual VR implementation.
+            VrModuleProvider.getDelegate().enterVrIfNecessary();
         }
     }
 
     private void onVrModuleInstallFailure(Activity activity) {
+        ENTER_VR_BROWSER_WITHOUT_FEATURE_MODULE_METRIC.record(false);
+
         // For SVR close Chrome. For standalones launch into 2D-in-VR (if that fails, close Chrome).
         if (bootsToVr()) {
             if (!setVrMode(activity, false)) {
@@ -208,6 +228,9 @@ import org.chromium.ui.widget.Toast;
                          R.string.vr_preparing_vr_toast_standalone_text, Toast.LENGTH_SHORT)
                     .show();
         } else {
+            // Create immersive notification to inform user that Chrome's VR browser cannot be
+            // accessed yet.
+            VrFallbackUtils.showFailureNotification(activity);
             activity.finish();
         }
     }

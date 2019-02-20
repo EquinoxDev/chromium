@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
@@ -105,10 +106,10 @@ class AutofillCapturedSitesInteractiveTest
       public ::testing::WithParamInterface<std::string> {
  public:
   // TestRecipeReplayChromeFeatureActionExecutor
-  bool AutofillForm(content::RenderFrameHost* frame,
-                    const std::string& focus_element_css_selector,
-                    const int attempts = 1,
-                    const gfx::Point& offset = gfx::Point(0, 0)) override {
+  bool AutofillForm(const std::string& focus_element_css_selector,
+                    const std::vector<std::string> iframe_path,
+                    const int attempts,
+                    content::RenderFrameHost* frame) override {
     content::WebContents* web_contents =
         content::WebContents::FromRenderFrameHost(frame);
     AutofillManager* autofill_manager =
@@ -122,7 +123,8 @@ class AutofillCapturedSitesInteractiveTest
       tries++;
       autofill_manager->client()->HideAutofillPopup();
 
-      if (!ShowAutofillSuggestion(frame, focus_element_css_selector, offset)) {
+      if (!ShowAutofillSuggestion(focus_element_css_selector, iframe_path,
+                                  frame)) {
         LOG(WARNING) << "Failed to bring up the autofill suggestion drop down.";
         continue;
       }
@@ -232,6 +234,8 @@ class AutofillCapturedSitesInteractiveTest
     feature_list_.InitWithFeatures({features::kAutofillShowTypePredictions},
                                    {features::kAutofillCacheQueryResponses});
     command_line->AppendSwitch(switches::kShowAutofillTypePredictions);
+    command_line->AppendSwitchASCII(::switches::kForceFieldTrials,
+                                    "AutofillFieldMetadata/Enabled/");
     captured_sites_test_utils::TestRecipeReplayer::SetUpCommandLine(
         command_line);
   }
@@ -245,27 +249,25 @@ class AutofillCapturedSitesInteractiveTest
   const AutofillProfile profile() { return profile_; }
 
  private:
-  bool ShowAutofillSuggestion(content::RenderFrameHost* frame,
-                              const std::string& target_element_xpath,
-                              const gfx::Point& offset = gfx::Point(0, 0)) {
+  bool ShowAutofillSuggestion(const std::string& target_element_xpath,
+                              const std::vector<std::string> iframe_path,
+                              content::RenderFrameHost* frame) {
     // First, automation should focus on the frame containg the autofill form.
     // Doing so ensures that Chrome scrolls the element into view if the
     // element is off the page.
     if (!captured_sites_test_utils::TestRecipeReplayer::PlaceFocusOnElement(
-            frame, target_element_xpath, offset))
+            target_element_xpath, iframe_path, frame))
       return false;
 
-    int x, y;
+    gfx::Rect rect;
     if (!captured_sites_test_utils::TestRecipeReplayer::
-            GetCenterCoordinateOfTargetElement(frame, target_element_xpath, x,
-                                               y))
+            GetBoundingRectOfTargetElement(target_element_xpath, iframe_path,
+                                           frame, &rect))
       return false;
-    x += offset.x();
-    y += offset.y();
 
     test_delegate()->Reset();
     if (!captured_sites_test_utils::TestRecipeReplayer::
-            SimulateLeftMouseClickAt(frame, gfx::Point(x, y)))
+            SimulateLeftMouseClickAt(rect.CenterPoint(), frame))
       return false;
 
     return test_delegate()->Wait({ObservedUiEvents::kSuggestionShown},
@@ -306,8 +308,8 @@ IN_PROC_BROWSER_TEST_P(AutofillCapturedSitesInteractiveTest, Recipe) {
       recipe_replayer()->ReplayTest(capture_file_path, recipe_file_path));
 }
 
-INSTANTIATE_TEST_CASE_P(,
-                        AutofillCapturedSitesInteractiveTest,
-                        testing::ValuesIn(GetCapturedSites()),
-                        GetParamAsString());
+INSTANTIATE_TEST_SUITE_P(,
+                         AutofillCapturedSitesInteractiveTest,
+                         testing::ValuesIn(GetCapturedSites()),
+                         GetParamAsString());
 }  // namespace autofill

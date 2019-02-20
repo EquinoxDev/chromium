@@ -78,6 +78,17 @@ void DeferredTaskHandler::BreakConnections() {
   DCHECK(IsAudioThread());
   AssertGraphOwner();
 
+  // Remove any finished handlers from the active handlers list and break the
+  // connection.
+  wtf_size_t size = finished_source_handlers_.size();
+  if (size > 0) {
+    for (auto* finished : finished_source_handlers_) {
+      active_source_handlers_.erase(finished);
+      finished->BreakConnectionWithLock();
+    }
+    finished_source_handlers_.clear();
+  }
+
   for (unsigned i = 0; i < deferred_break_connection_list_.size(); ++i)
     deferred_break_connection_list_[i]->BreakConnectionWithLock();
   deferred_break_connection_list_.clear();
@@ -346,6 +357,7 @@ void DeferredTaskHandler::ClearHandlersToBeDeleted() {
   deletable_orphan_handlers_.clear();
   automatic_pull_handlers_.clear();
   rendering_automatic_pull_handlers_.clear();
+  active_source_handlers_.clear();
 }
 
 void DeferredTaskHandler::SetAudioThreadToCurrentThread() {

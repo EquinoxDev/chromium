@@ -9,6 +9,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -171,7 +172,7 @@ void ComponentCloudPolicyStore::Load() {
 
     // The protobuf looks good; load the policy data.
     std::string data;
-    if (!cache_->Load(domain_constants_->data_cache_key, id, &data)) {
+    if (cache_->Load(domain_constants_->data_cache_key, id, &data).empty()) {
       LOG(ERROR) << "Failed to load the cached policy data.";
       Delete(ns);
       continue;
@@ -390,9 +391,10 @@ bool ComponentCloudPolicyStore::ValidateData(const std::string& data,
 bool ComponentCloudPolicyStore::ParsePolicy(const std::string& data,
                                             PolicyMap* policy) {
   std::string json_reader_error_message;
-  std::unique_ptr<base::Value> json = base::JSONReader::ReadAndReturnError(
-      data, base::JSON_PARSE_RFC, nullptr /* error_code_out */,
-      &json_reader_error_message);
+  std::unique_ptr<base::Value> json =
+      base::JSONReader::ReadAndReturnErrorDeprecated(
+          data, base::JSON_PARSE_RFC, nullptr /* error_code_out */,
+          &json_reader_error_message);
   base::DictionaryValue* dict = nullptr;
   if (!json) {
     LOG(ERROR) << "Invalid JSON blob: " << json_reader_error_message;

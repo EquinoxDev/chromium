@@ -13,7 +13,6 @@
 #include "third_party/blink/renderer/core/layout/layout_table.h"
 #include "third_party/blink/renderer/core/layout/layout_table_section.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/layout/ng/geometry/ng_physical_offset_rect.h"
 #include "third_party/blink/renderer/core/layout/ng/legacy_layout_tree_walking.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
 #include "third_party/blink/renderer/core/paint/clip_path_clipper.h"
@@ -51,7 +50,7 @@ void PaintInvalidator::ExcludeCompositedLayerSubpixelAccumulation(
     return;
 
   if (object != context.paint_invalidation_container &&
-      context.paint_invalidation_container->FirstFragment()
+      &context.paint_invalidation_container->FirstFragment()
               .PostScrollTranslation() !=
           context.tree_builder_context_->current.transform) {
     // Subpixel accumulation doesn't propagate through non-translation
@@ -158,32 +157,6 @@ LayoutRect PaintInvalidator::ComputeVisualRect(
   LayoutRect local_rect = object.LocalVisualRect();
   return MapLocalRectToVisualRect<LayoutRect, LayoutPoint>(object, local_rect,
                                                            context);
-}
-
-static LayoutRect ComputeFragmentLocalSelectionRect(
-    const NGPaintFragment& fragment) {
-  if (!fragment.PhysicalFragment().IsText())
-    return LayoutRect();
-  const FrameSelection& frame_selection =
-      fragment.GetLayoutObject()->GetFrame()->Selection();
-  const LayoutSelectionStatus status =
-      frame_selection.ComputeLayoutSelectionStatus(fragment);
-  if (status.start == status.end)
-    return LayoutRect();
-  return fragment.ComputeLocalSelectionRectForText(status).ToLayoutRect();
-}
-
-LayoutRect PaintInvalidator::MapFragmentLocalRectToVisualRect(
-    const LayoutRect& local_rect,
-    const LayoutObject& object,
-    const NGPaintFragment& fragment,
-    const PaintInvalidatorContext& context) {
-  LayoutRect rect = local_rect;
-  if (!object.IsBox())
-    rect.Move(fragment.InlineOffsetToContainerBox().ToLayoutSize());
-  bool disable_flip = true;
-  return MapLocalRectToVisualRect<LayoutRect, LayoutPoint>(
-      object, rect, context, disable_flip);
 }
 
 void PaintInvalidator::UpdatePaintingLayer(const LayoutObject& object,
@@ -322,50 +295,6 @@ void PaintInvalidator::UpdateVisualRect(const LayoutObject& object,
   if (new_visual_rect.IsEmpty())
     new_visual_rect.SetLocation(fragment_data.PaintOffset());
   fragment_data.SetVisualRect(new_visual_rect);
-
-  // For LayoutNG, update NGPaintFragments.
-  if (!RuntimeEnabledFeatures::LayoutNGEnabled())
-    return;
-
-  // TODO(kojii): multi-col needs additional logic. What's needed is to be
-  // figured out.
-  if (object.IsLayoutNGMixin()) {
-    if (NGPaintFragment* fragment = ToLayoutBlockFlow(object).PaintFragment())
-      fragment->SetVisualRect(new_visual_rect);
-
-    // Also check IsInline below. Inline block is LayoutBlockFlow but is also in
-    // an inline formatting context.
-  }
-
-  if (object.IsInline()) {
-    // An inline LayoutObject can produce multiple NGPaintFragment. Compute
-    // VisualRect for each fragment from |new_visual_rect|.
-    auto fragments = NGPaintFragment::InlineFragmentsFor(&object);
-    if (fragments.IsInLayoutNGInlineFormattingContext()) {
-      for (NGPaintFragment* fragment : fragments) {
-        LayoutRect local_selection_rect =
-            ComputeFragmentLocalSelectionRect(*fragment);
-        LayoutRect local_visual_rect =
-            UnionRect(fragment->SelfInkOverflow(), local_selection_rect);
-        fragment->SetVisualRect(MapFragmentLocalRectToVisualRect(
-            local_visual_rect, object, *fragment, context));
-
-        LayoutRect selection_visual_rect = MapFragmentLocalRectToVisualRect(
-            local_selection_rect, object, *fragment, context);
-        const bool should_invalidate =
-            object.ShouldInvalidateSelection() ||
-            selection_visual_rect != fragment->SelectionVisualRect();
-        const bool rect_exists = !selection_visual_rect.IsEmpty() ||
-                                 !fragment->SelectionVisualRect().IsEmpty();
-        if (should_invalidate && rect_exists) {
-          context.painting_layer->SetNeedsRepaint();
-          ObjectPaintInvalidator(object).InvalidateDisplayItemClient(
-              *fragment, PaintInvalidationReason::kSelection);
-          fragment->SetSelectionVisualRect(selection_visual_rect);
-        }
-      }
-    }
-  }
 }
 
 void PaintInvalidator::UpdateEmptyVisualRectFlag(

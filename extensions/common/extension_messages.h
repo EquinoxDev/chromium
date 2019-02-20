@@ -18,6 +18,7 @@
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/socket_permission_request.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_endpoint.h"
 #include "extensions/common/api/messaging/port_id.h"
 #include "extensions/common/common_param_traits.h"
 #include "extensions/common/constants.h"
@@ -50,6 +51,9 @@ IPC_ENUM_TRAITS_MAX_VALUE(extensions::UserScript::InjectionType,
 
 IPC_ENUM_TRAITS_MAX_VALUE(extensions::UserScript::RunLocation,
                           extensions::UserScript::RUN_LOCATION_LAST - 1)
+
+IPC_ENUM_TRAITS_MAX_VALUE(extensions::MessagingEndpoint::Type,
+                          extensions::MessagingEndpoint::Type::kLast)
 
 IPC_ENUM_TRAITS_MAX_VALUE(HostID::HostType, HostID::HOST_TYPE_LAST)
 
@@ -211,15 +215,19 @@ IPC_STRUCT_BEGIN(ExtensionMsg_TabTargetConnectionInfo)
   IPC_STRUCT_MEMBER(int, frame_id)
 IPC_STRUCT_END()
 
+IPC_STRUCT_TRAITS_BEGIN(extensions::MessagingEndpoint)
+  IPC_STRUCT_TRAITS_MEMBER(type)
+  IPC_STRUCT_TRAITS_MEMBER(extension_id)
+IPC_STRUCT_TRAITS_END()
+
 // Struct containing the data for external connections to extensions. Used to
 // handle the IPCs initiated by both connect() and onConnect().
 IPC_STRUCT_BEGIN(ExtensionMsg_ExternalConnectionInfo)
   // The ID of the extension that is the target of the request.
   IPC_STRUCT_MEMBER(std::string, target_id)
 
-  // The ID of the extension that initiated the request. May be empty if it
-  // wasn't initiated by an extension.
-  IPC_STRUCT_MEMBER(std::string, source_id)
+  // Specifies the type and the ID of the endpoint that initiated the request.
+  IPC_STRUCT_MEMBER(extensions::MessagingEndpoint, source_endpoint)
 
   // The URL of the frame that initiated the request.
   IPC_STRUCT_MEMBER(GURL, source_url)
@@ -646,12 +654,11 @@ IPC_MESSAGE_ROUTED1(ExtensionMsg_ValidateMessagePort,
                     extensions::PortId /* port_id */)
 
 // Dispatch the Port.onConnect event for message channels.
-IPC_MESSAGE_ROUTED5(ExtensionMsg_DispatchOnConnect,
+IPC_MESSAGE_ROUTED4(ExtensionMsg_DispatchOnConnect,
                     extensions::PortId /* target_port_id */,
                     std::string /* channel_name */,
                     ExtensionMsg_TabConnectionInfo /* source */,
-                    ExtensionMsg_ExternalConnectionInfo,
-                    std::string /* tls_channel_id */)
+                    ExtensionMsg_ExternalConnectionInfo)
 
 // Deliver a message sent with ExtensionHostMsg_PostMessage.
 IPC_MESSAGE_ROUTED2(ExtensionMsg_DeliverMessage,
@@ -782,11 +789,10 @@ IPC_MESSAGE_ROUTED1(ExtensionHostMsg_EventAck, int /* message_id */)
 // Open a channel to all listening contexts owned by the extension with
 // the given ID. This responds asynchronously with ExtensionMsg_AssignPortId.
 // If an error occurred, the opener will be notified asynchronously.
-IPC_MESSAGE_CONTROL5(ExtensionHostMsg_OpenChannelToExtension,
+IPC_MESSAGE_CONTROL4(ExtensionHostMsg_OpenChannelToExtension,
                      int /* frame_routing_id */,
                      ExtensionMsg_ExternalConnectionInfo,
                      std::string /* channel_name */,
-                     bool /* include_tls_channel_id */,
                      extensions::PortId /* port_id */)
 
 IPC_MESSAGE_CONTROL3(ExtensionHostMsg_OpenChannelToNativeApp,
@@ -818,9 +824,9 @@ IPC_MESSAGE_CONTROL3(ExtensionHostMsg_CloseMessagePort,
 
 // Send a message to an extension process.  The handle is the value returned
 // by ExtensionHostMsg_OpenChannelTo*.
-IPC_MESSAGE_ROUTED2(ExtensionHostMsg_PostMessage,
-                    extensions::PortId /* port_id */,
-                    extensions::Message)
+IPC_MESSAGE_CONTROL2(ExtensionHostMsg_PostMessage,
+                     extensions::PortId /* port_id */,
+                     extensions::Message)
 
 // Used to get the extension message bundle.
 IPC_SYNC_MESSAGE_CONTROL1_1(ExtensionHostMsg_GetMessageBundle,

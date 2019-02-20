@@ -31,8 +31,8 @@ void GatherInlineContainerFragmentsFromLinebox(
     if (!descendant.fragment->IsBox())
       continue;
     LayoutObject* key = descendant.fragment->GetLayoutObject();
-    // TODO(atotic) Is traversing continuations the right thing to do?
-    if (key->IsLayoutInline())  // key for inlines is continuation root.
+    // Key for inline is continuation root if it exists.
+    if (key->IsLayoutInline() && key->GetNode())
       key = key->GetNode()->GetLayoutObject();
     auto it = inline_containing_block_map->find(key);
     if (it == inline_containing_block_map->end()) {
@@ -81,6 +81,7 @@ void NGBoxFragmentBuilder::RemoveChildren() {
 
 NGBoxFragmentBuilder& NGBoxFragmentBuilder::AddBreakBeforeChild(
     NGLayoutInputNode child) {
+  DCHECK(has_block_fragmentation_);
   if (child.IsInline()) {
     if (inline_break_tokens_.IsEmpty()) {
       // In some cases we may want to break before the first line, as a last
@@ -89,7 +90,8 @@ NGBoxFragmentBuilder& NGBoxFragmentBuilder::AddBreakBeforeChild(
       // formatting context, rather than concluding that we're done with the
       // whole thing.
       inline_break_tokens_.push_back(NGInlineBreakToken::Create(
-          ToNGInlineNode(child), nullptr, 0, 0, NGInlineBreakToken::kDefault));
+          ToNGInlineNode(child), /* style */ nullptr, /* item_index */ 0,
+          /* text_offset */ 0, NGInlineBreakToken::kDefault));
     }
     return *this;
   }
@@ -100,6 +102,7 @@ NGBoxFragmentBuilder& NGBoxFragmentBuilder::AddBreakBeforeChild(
 
 NGBoxFragmentBuilder& NGBoxFragmentBuilder::AddBreakBeforeLine(
     int line_number) {
+  DCHECK(has_block_fragmentation_);
   DCHECK_GT(line_number, 0);
   DCHECK_LE(unsigned(line_number), inline_break_tokens_.size());
   int lines_to_remove = inline_break_tokens_.size() - line_number;
@@ -133,6 +136,8 @@ NGBoxFragmentBuilder& NGBoxFragmentBuilder::AddBreakBeforeLine(
 
 NGBoxFragmentBuilder& NGBoxFragmentBuilder::PropagateBreak(
     const NGLayoutResult& child_layout_result) {
+  if (!has_block_fragmentation_)
+    return *this;
   if (!did_break_)
     PropagateBreak(*child_layout_result.PhysicalFragment());
   if (child_layout_result.HasForcedBreak())
@@ -144,6 +149,7 @@ NGBoxFragmentBuilder& NGBoxFragmentBuilder::PropagateBreak(
 
 NGBoxFragmentBuilder& NGBoxFragmentBuilder::PropagateBreak(
     const NGPhysicalFragment& child_fragment) {
+  DCHECK(has_block_fragmentation_);
   if (!did_break_) {
     const auto* token = child_fragment.BreakToken();
     did_break_ = token && !token->IsFinished();
@@ -227,7 +233,7 @@ EBreakBetween NGBoxFragmentBuilder::JoinedBreakBetweenValue(
 
 scoped_refptr<NGLayoutResult> NGBoxFragmentBuilder::ToBoxFragment(
     WritingMode block_or_line_writing_mode) {
-  if (node_) {
+  if (node_ && has_block_fragmentation_) {
     if (!inline_break_tokens_.IsEmpty()) {
       if (auto token = inline_break_tokens_.back()) {
         if (!token->IsFinished())
@@ -237,7 +243,7 @@ scoped_refptr<NGLayoutResult> NGBoxFragmentBuilder::ToBoxFragment(
     if (did_break_) {
       break_token_ = NGBlockBreakToken::Create(
           node_, used_block_size_, child_break_tokens_, has_last_resort_break_);
-    } else if (needs_finished_break_token_) {
+    } else {
       break_token_ = NGBlockBreakToken::Create(node_, used_block_size_,
                                                has_last_resort_break_);
     }

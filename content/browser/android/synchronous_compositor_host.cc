@@ -7,8 +7,8 @@
 #include <atomic>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
-#include "base/containers/hash_tables.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/shared_memory.h"
 #include "base/task/post_task.h"

@@ -116,6 +116,7 @@ Network.NetworkLogView = class extends UI.VBox {
     this._dataURLFilterUI = new UI.CheckboxFilterUI(
         'hide-data-url', Common.UIString('Hide data URLs'), true, this._networkHideDataURLSetting);
     this._dataURLFilterUI.addEventListener(UI.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
+    this._dataURLFilterUI.element().title = ls`Hides data: and blob: URLs`;
     filterBar.addFilter(this._dataURLFilterUI);
 
     const filterItems =
@@ -618,6 +619,10 @@ Network.NetworkLogView = class extends UI.VBox {
         hintText.appendChild(UI.formatLocalized('Record (%s) to display network activity.', [recordNode]));
       }
     }
+    hintText.createChild('br');
+    hintText.appendChild(UI.XLink.create(
+        'https://developers.google.com/web/tools/chrome-devtools/network/?utm_source=devtools&utm_campaign=2019Q1',
+        'Learn more'));
   }
 
   _hideRecordingHint() {
@@ -1351,7 +1356,7 @@ Network.NetworkLogView = class extends UI.VBox {
     const categoryName = request.resourceType().category().title;
     if (!this._resourceCategoryFilterUI.accept(categoryName))
       return false;
-    if (this._dataURLFilterUI.checked() && request.parsedURL.isDataURL())
+    if (this._dataURLFilterUI.checked() && (request.parsedURL.isDataURL() || request.parsedURL.isBlobURL()))
       return false;
     if (request.statusText === 'Service Worker Fallback Required')
       return false;
@@ -1673,14 +1678,14 @@ Network.NetworkLogView = class extends UI.VBox {
         return code < 16 ? '\\u0' + code.toString(16) : '\\u' + code.toString(16);
       }
 
-      if (/[\u0000-\u001f\u007f-\u009f]|\'/.test(str)) {
+      if (/[\u0000-\u001f\u007f-\u009f!]|\'/.test(str)) {
         // Use ANSI-C quoting syntax.
         return '$\'' +
             str.replace(/\\/g, '\\\\')
                 .replace(/\'/g, '\\\'')
                 .replace(/\n/g, '\\n')
                 .replace(/\r/g, '\\r')
-                .replace(/[\u0000-\u001f\u007f-\u009f]/g, escapeCharacter) +
+                .replace(/[\u0000-\u001f\u007f-\u009f!]/g, escapeCharacter) +
             '\'';
       } else {
         // Use single quote syntax.

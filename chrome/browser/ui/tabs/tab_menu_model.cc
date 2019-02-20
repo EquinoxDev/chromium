@@ -5,12 +5,15 @@
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
 
 #include "base/command_line.h"
+#include "chrome/browser/browser_features.h"
+#include "chrome/browser/send_tab_to_self/send_tab_to_self_util.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/tabs/existing_tab_group_sub_menu_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/sync/driver/sync_driver_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 
 TabMenuModel::TabMenuModel(ui::SimpleMenuModel::Delegate* delegate,
@@ -20,6 +23,8 @@ TabMenuModel::TabMenuModel(ui::SimpleMenuModel::Delegate* delegate,
   Build(tab_strip, index);
 }
 
+TabMenuModel::~TabMenuModel() {}
+
 void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
   std::vector<int> affected_indices =
       tab_strip->IsTabSelected(index)
@@ -27,6 +32,27 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
           : std::vector<int>{index};
   int num_affected_tabs = affected_indices.size();
   AddItemWithStringId(TabStripModel::CommandNewTab, IDS_TAB_CXMENU_NEWTAB);
+  if (base::FeatureList::IsEnabled(features::kTabGroups)) {
+    AddItemWithStringId(TabStripModel::CommandAddToNewGroup,
+                        IDS_TAB_CXMENU_ADD_TAB_TO_NEW_GROUP);
+
+    // Create submenu with existing groups
+    if (ExistingTabGroupSubMenuModel::ShouldShowSubmenu(tab_strip, index)) {
+      add_to_existing_group_submenu_ =
+          std::make_unique<ExistingTabGroupSubMenuModel>(tab_strip, index);
+      AddSubMenuWithStringId(TabStripModel::CommandAddToExistingGroup,
+                             IDS_TAB_CXMENU_ADD_TAB_TO_EXISTING_GROUP,
+                             add_to_existing_group_submenu_.get());
+    }
+
+    for (size_t index = 0; index < affected_indices.size(); index++) {
+      if (tab_strip->GetTabGroupForTab(affected_indices[index]) != nullptr) {
+        AddItemWithStringId(TabStripModel::CommandRemoveFromGroup,
+                            IDS_TAB_CXMENU_REMOVE_TAB_FROM_GROUP);
+        break;
+      }
+    }
+  }
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(TabStripModel::CommandReload, IDS_TAB_CXMENU_RELOAD);
   AddItemWithStringId(TabStripModel::CommandDuplicate,
@@ -56,7 +82,10 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
                 : l10n_util::GetPluralStringFUTF16(
                       IDS_TAB_CXMENU_AUDIO_UNMUTE_TAB, num_affected_tabs));
   }
-  if (base::FeatureList::IsEnabled(switches::kSyncSendTabToSelf)) {
+
+  Browser* browser =
+      chrome::FindBrowserWithWebContents(tab_strip->GetWebContentsAt(index));
+  if (send_tab_to_self::ShouldOfferFeature(browser)) {
     AddItemWithStringId(TabStripModel::CommandSendToMyDevices,
                         IDS_TAB_CXMENU_SEND_TO_MY_DEVICES);
   }
@@ -69,6 +98,7 @@ void TabMenuModel::Build(TabStripModel* tab_strip, int index) {
   AddItemWithStringId(TabStripModel::CommandCloseTabsToRight,
                       IDS_TAB_CXMENU_CLOSETABSTORIGHT);
   AddSeparator(ui::NORMAL_SEPARATOR);
+
   const bool is_window = tab_strip->delegate()->GetRestoreTabType() ==
       TabStripModelDelegate::RESTORE_WINDOW;
   AddItemWithStringId(TabStripModel::CommandRestoreTab,

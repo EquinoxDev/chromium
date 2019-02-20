@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_worklet_thread.h"
 
 #include <memory>
+#include "base/synchronization/waitable_event.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_url_request.h"
@@ -29,7 +30,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
-#include "third_party/blink/renderer/platform/waitable_event.h"
 #include "third_party/blink/renderer/platform/web_thread_supporting_gc.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
 
@@ -52,11 +52,13 @@ class AudioWorkletThreadTest : public PageTestBase {
     Document* document = &GetDocument();
     thread->Start(
         std::make_unique<GlobalScopeCreationParams>(
-            document->Url(), mojom::ScriptType::kModule, document->UserAgent(),
-            nullptr /* web_worker_fetch_context */, Vector<CSPHeaderAndType>(),
-            document->GetReferrerPolicy(), document->GetSecurityOrigin(),
-            document->IsSecureContext(), document->GetHttpsState(),
-            nullptr /* worker_clients */, document->AddressSpace(),
+            document->Url(), mojom::ScriptType::kModule,
+            OffMainThreadWorkerScriptFetchOption::kEnabled,
+            document->UserAgent(), nullptr /* web_worker_fetch_context */,
+            Vector<CSPHeaderAndType>(), document->GetReferrerPolicy(),
+            document->GetSecurityOrigin(), document->IsSecureContext(),
+            document->GetHttpsState(), nullptr /* worker_clients */,
+            document->AddressSpace(),
             OriginTrialContext::GetTokens(document).get(),
             base::UnguessableToken::Create(), nullptr /* worker_settings */,
             kV8CacheOptionsDefault,
@@ -68,7 +70,7 @@ class AudioWorkletThreadTest : public PageTestBase {
 
   // Attempts to run some simple script for |thread|.
   void CheckWorkletCanExecuteScript(WorkerThread* thread) {
-    WaitableEvent wait_event;
+    base::WaitableEvent wait_event;
     thread->GetWorkerBackingThread().BackingThread().PostTask(
         FROM_HERE,
         CrossThreadBind(&AudioWorkletThreadTest::ExecuteScriptInWorklet,
@@ -79,7 +81,8 @@ class AudioWorkletThreadTest : public PageTestBase {
   }
 
  private:
-  void ExecuteScriptInWorklet(WorkerThread* thread, WaitableEvent* wait_event) {
+  void ExecuteScriptInWorklet(WorkerThread* thread,
+                              base::WaitableEvent* wait_event) {
     ScriptState* script_state =
         thread->GlobalScope()->ScriptController()->GetScriptState();
     EXPECT_TRUE(script_state);

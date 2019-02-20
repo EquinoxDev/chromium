@@ -68,6 +68,9 @@
   <message name="IDS_FILE_BROWSER_MY_FILES_ROOT_LABEL" desc="A label for the 'My files' root which is parent of Downloads, Linux and Android files. Use sentence case.">
     My files
   </message>
+  <message name="IDS_FILE_BROWSER_EXTERNAL_STORAGE_ROOT_LABEL" desc="A label for external USB storage. Use sentence case.">
+    External storage
+  </message>
   <message name="IDS_FILE_BROWSER_MEDIA_VIEW_IMAGES_ROOT_LABEL" desc="A label for the 'Images' root of media views.">
     Images
   </message>
@@ -241,6 +244,9 @@
   </message>
   <message name="IDS_FILE_BROWSER_CLOSE_VOLUME_BUTTON_LABEL" desc="Title of the action for closing either an archive volume or a volume provided by an extension.">
     Close
+  </message>
+  <message name="IDS_FILE_BROWSER_SEND_FEEDBACK_BUTTON_LABEL" desc="Title for the action of sending user feedback.">
+    Send feedback
   </message>
   <message name="IDS_FILE_BROWSER_ADD_NEW_SERVICES_BUTTON_LABEL" desc="Title of the button in the left nav to add new services (file systems) to the Files app.">
     Add new service
@@ -416,6 +422,9 @@
   </message>
   <message name="IDS_FILE_BROWSER_GALLERY_OVERWRITE_BUBBLE" desc="In the Gallery, text in the bubble informing user about saving and overwriting original file.">
     Your edits are saved automatically.<ph name="BREAKS">&lt;br&gt;&lt;br&gt;<ex>&lt;br&gt;&lt;br&gt;</ex></ph>To keep a copy of the original image, uncheck "Overwrite original"
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_OVERWRITE_BUBBLE_CLOSE" desc="In the Gallery, close button on the bubble notifying user of overwriting original file.">
+    Close
   </message>
   <message name="IDS_FILE_BROWSER_GALLERY_READONLY_AND_NON_WRITABLE_FORMAT_WARNING" desc="In the Gallery, message informing that all edits will be saved to Downloads directory since the directory is readonly and the file is non-writable format of Gallery.">
     Cannot save to <ph name="FOLDER_NAME">$1<ex>readonly-dir</ex></ph>. All edits will be saved to <ph name="DOWNLOADS_FOLDER">$2<ex>Downloads/fallbackdir</ex></ph> in the Downloads folder.
@@ -1021,9 +1030,6 @@
   <message name="IDS_FILE_BROWSER_DRIVE_WELCOME_TITLE" desc="In the Welcome to Google Drive banner, title of banner.">
     Welcome to Google Drive!
   </message>
-  <message name="IDS_FILE_BROWSER_DRIVE_WELCOME_TITLE_ALTERNATIVE" desc="In the Welcome to Google Drive banner, title of the alternative banner offering 100GB free storage.">
-    Get 100 GB free with Google Drive
-  </message>
   <message name="IDS_FILE_BROWSER_DRIVE_WELCOME_TEXT_SHORT" desc="In the Welcome to Google Drive banner, text of the welcome message, short version.">
     All files saved in this folder are backed up online automatically
   </message>
@@ -1035,9 +1041,6 @@
     <ph name="MARKUP_7">&lt;p&gt;&lt;strong&gt;<ex>&lt;strong&gt;</ex></ph>Share, create and collaborate<ph name="MARKUP_8">&lt;/strong&gt;<ex>&lt;/strong&gt;</ex></ph>
     on files with others all in one place.<ph name="MARKUP_9">&lt;/p&gt;<ex>&lt;/p&gt;</ex></ph>
   </message>
-  <message name="IDS_FILE_BROWSER_DRIVE_WELCOME_CHECK_ELIGIBILITY" desc="In the Welcome to Google Drive banner, a text on the button to check promo eligibility.">
-    Check eligibility
-  </message>
   <message name="IDS_FILE_BROWSER_DRIVE_WELCOME_DISMISS" desc="In the Welcome to Google Drive banner, a text on the button to dismiss the banner.">
     Dismiss
   </message>
@@ -1046,7 +1049,7 @@
     <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_TASK_FOR_EXECUTABLE" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
-    This file is designed for a PC using Windows software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+    This file is designed for a PC using Windows software. This is not compatible with your device which runs Chrome OS. <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_TASK_FOR_DMG" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
     This file is designed for a computer using Macintosh software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>

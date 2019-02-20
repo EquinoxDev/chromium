@@ -29,6 +29,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "content/public/common/resource_load_info.mojom.h"
 #include "net/base/net_errors.h"
 #include "services/network/public/cpp/features.h"
 #include "ui/base/page_transition_types.h"
@@ -55,9 +56,7 @@ UserInitiatedInfo CreateUserInitiatedInfo(
 
   return UserInitiatedInfo::RenderInitiated(
       navigation_handle->HasUserGesture(),
-      committed_load &&
-          committed_load->input_tracker()->FindAndConsumeInputEventsBefore(
-              navigation_handle->NavigationStart()));
+      !navigation_handle->NavigationInputStart().is_null());
 }
 
 }  // namespace
@@ -292,6 +291,7 @@ PageLoadTracker* MetricsWebContentsObserver::GetTrackerOrNullForRequest(
   }
   return nullptr;
 }
+
 void MetricsWebContentsObserver::ResourceLoadComplete(
     content::RenderFrameHost* render_frame_host,
     const content::GlobalRequestID& request_id,
@@ -328,6 +328,27 @@ void MetricsWebContentsObserver::ResourceLoadComplete(
             resource_load_info.load_timing_info));
     tracker->OnLoadedResource(extra_request_complete_info);
   }
+}
+
+void MetricsWebContentsObserver::FrameReceivedFirstUserActivation(
+    content::RenderFrameHost* render_frame_host) {
+  if (committed_load_)
+    committed_load_->FrameReceivedFirstUserActivation(render_frame_host);
+}
+
+void MetricsWebContentsObserver::FrameDisplayStateChanged(
+    content::RenderFrameHost* render_frame_host,
+    bool is_display_none) {
+  if (committed_load_)
+    committed_load_->FrameDisplayStateChanged(render_frame_host,
+                                              is_display_none);
+}
+
+void MetricsWebContentsObserver::FrameSizeChanged(
+    content::RenderFrameHost* render_frame_host,
+    const gfx::Size& frame_size) {
+  if (committed_load_)
+    committed_load_->FrameSizeChanged(render_frame_host, frame_size);
 }
 
 void MetricsWebContentsObserver::OnRequestComplete(
@@ -367,6 +388,12 @@ const PageLoadExtraInfo
 MetricsWebContentsObserver::GetPageLoadExtraInfoForCommittedLoad() {
   DCHECK(committed_load_);
   return committed_load_->ComputePageLoadExtraInfo();
+}
+
+void MetricsWebContentsObserver::ReadyToCommitNavigation(
+    content::NavigationHandle* navigation_handle) {
+  if (committed_load_)
+    committed_load_->ReadyToCommitNavigation(navigation_handle);
 }
 
 void MetricsWebContentsObserver::DidFinishNavigation(
@@ -535,9 +562,8 @@ void MetricsWebContentsObserver::OnVisibilityChanged(
   if (web_contents_will_soon_be_destroyed_)
     return;
 
-  // TODO(bmcquade): Consider handling an OCCLUDED tab as not in foreground.
   bool was_in_foreground = in_foreground_;
-  in_foreground_ = visibility != content::Visibility::HIDDEN;
+  in_foreground_ = visibility == content::Visibility::VISIBLE;
   if (in_foreground_ == was_in_foreground)
     return;
 

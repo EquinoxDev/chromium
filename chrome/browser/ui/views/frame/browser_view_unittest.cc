@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 
 #include "base/macros.h"
+#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -295,7 +296,9 @@ TEST_F(BrowserViewTest, TitleAudioIndicators) {
 
 class BrowserViewHostedAppTest : public TestWithBrowserView {
  public:
-  BrowserViewHostedAppTest() : TestWithBrowserView(Browser::TYPE_POPUP, true) {}
+  BrowserViewHostedAppTest()
+      : TestWithBrowserView(Browser::TYPE_POPUP,
+                            BrowserWithTestWindowTest::HostedApp()) {}
   ~BrowserViewHostedAppTest() override {}
 
  private:

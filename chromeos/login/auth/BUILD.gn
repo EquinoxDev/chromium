@@ -2,13 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//build/config/chromeos/rules.gni")
 import("//testing/test.gni")
 import("//third_party/protobuf/proto_library.gni")
 
 assert(is_chromeos, "Non-Chrome-OS builds must not depend on //chromeos")
 
-source_set("auth") {
+component("auth") {
   defines = [ "IS_CHROMEOS_LOGIN_AUTH_IMPL" ]
   public_deps = [
     ":challenge_response_key",
@@ -16,11 +15,11 @@ source_set("auth") {
   deps = [
     "//base",
     "//base:i18n",
-    "//chromeos:authpolicy_proto",
     "//chromeos:chromeos_constants",
-    "//chromeos:cryptohome_proto",
     "//chromeos/cryptohome",
     "//chromeos/dbus",
+    "//chromeos/dbus:authpolicy_proto",
+    "//chromeos/dbus:cryptohome_proto",
     "//chromeos/login/login_state",
     "//components/account_id",
     "//components/device_event_log",
@@ -111,9 +110,9 @@ source_set("unit_tests") {
     ":auth",
     "//base",
     "//base:i18n",
-    "//chromeos:authpolicy_proto",
     "//chromeos:chromeos_constants",
-    "//chromeos/dbus",
+    "//chromeos/dbus:authpolicy_proto",
+    "//chromeos/dbus:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/icu",

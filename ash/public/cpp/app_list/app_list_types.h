@@ -22,7 +22,7 @@ enum class AppListState {
   kStateApps = 0,
   kStateSearchResults,
   kStateStart,
-  kStateCustomLauncherPageDeprecated,  // Don't use over IPC
+  kStateEmbeddedAssistant,
   // Add new values here.
 
   kInvalidState,               // Don't use over IPC
@@ -47,6 +47,7 @@ enum class SearchResultType {
   kOmnibox,         // Results from Omnibox.
   kLauncher,        // Results from launcher search (currently only from Files).
   kAnswerCard,      // WebContents based answer card.
+  kPlayStoreReinstallApp,  // Reinstall recommendations from PlayStore.
   // Add new values here.
 };
 
@@ -62,6 +63,20 @@ enum SearchResultDisplayType {
 
   kLast,  // Don't use over IPC
 };
+
+// Actions for OmniBox zero state suggestion.
+enum OmniBoxZeroStateAction {
+  // Removes the zero state suggestion.
+  kRemoveSuggestion = 0,
+  // Appends the suggestion to search box query.
+  kAppendSuggestion,
+  // kZeroStateActionMax is always last.
+  kZeroStateActionMax
+};
+
+// Returns OmniBoxZeroStateAction mapped for |button_index|.
+ASH_PUBLIC_EXPORT OmniBoxZeroStateAction
+GetOmniBoxZeroStateAction(int button_index);
 
 // A tagged range in search result text.
 struct ASH_PUBLIC_EXPORT SearchResultTag {
@@ -88,20 +103,16 @@ using SearchResultTags = std::vector<SearchResultTag>;
 // button with the label text will be used.
 struct ASH_PUBLIC_EXPORT SearchResultAction {
   SearchResultAction();
-  SearchResultAction(const gfx::ImageSkia& base_image,
-                     const gfx::ImageSkia& hover_image,
-                     const gfx::ImageSkia& pressed_image,
-                     const base::string16& tooltip_text);
-  SearchResultAction(const base::string16& label_text,
-                     const base::string16& tooltip_text);
+  SearchResultAction(const gfx::ImageSkia& image,
+                     const base::string16& tooltip_text,
+                     bool visible_on_hover);
   SearchResultAction(const SearchResultAction& other);
   ~SearchResultAction();
 
-  gfx::ImageSkia base_image;
-  gfx::ImageSkia hover_image;
-  gfx::ImageSkia pressed_image;
+  gfx::ImageSkia image;
   base::string16 tooltip_text;
-  base::string16 label_text;
+  // Visible when button or its parent row in hover state.
+  bool visible_on_hover;
 };
 using SearchResultActions = std::vector<SearchResultAction>;
 

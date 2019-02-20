@@ -38,7 +38,6 @@ component("gamepad") {
     "gamepad_export.h",
     "gamepad_haptics_manager.cc",
     "gamepad_haptics_manager.h",
-    "gamepad_id.h",
     "gamepad_id_list.cc",
     "gamepad_id_list.h",
     "gamepad_monitor.cc",
@@ -132,6 +131,15 @@ component("gamepad") {
 
   if (is_android) {
     deps += [ ":jni_headers" ]
+  }
+
+  if (!is_android && !is_fuchsia) {
+    sources += [
+      "nintendo_controller.cc",
+      "nintendo_controller.h",
+      "nintendo_data_fetcher.cc",
+      "nintendo_data_fetcher.h",
+    ]
   }
 
   if (is_mac) {

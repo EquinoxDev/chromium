@@ -34,50 +34,51 @@ using testing::InSequence;
 using testing::Invoke;
 using testing::Return;
 using testing::StrictMock;
+using testing::ValuesIn;
 
 namespace quic {
 namespace test {
 
-size_t kFakeFrameLen = 60;
+const size_t kFakeFrameLen = 60;
+const size_t kErrorLength = strlen(QuicSimpleServerStream::kErrorResponseBody);
+const size_t kDataFrameHeaderLength = 2;
 
-class QuicSimpleServerStreamPeer : public QuicSimpleServerStream {
+class TestStream : public QuicSimpleServerStream {
  public:
-  QuicSimpleServerStreamPeer(
-      QuicStreamId stream_id,
-      QuicSpdySession* session,
-      StreamType type,
-      QuicSimpleServerBackend* quic_simple_server_backend)
+  TestStream(QuicStreamId stream_id,
+             QuicSpdySession* session,
+             StreamType type,
+             QuicSimpleServerBackend* quic_simple_server_backend)
       : QuicSimpleServerStream(stream_id,
                                session,
                                type,
                                quic_simple_server_backend) {}
 
-  ~QuicSimpleServerStreamPeer() override = default;
+  ~TestStream() override = default;
 
-  using QuicSimpleServerStream::SendErrorResponse;
-  using QuicSimpleServerStream::SendResponse;
+  MOCK_METHOD1(WriteHeadersMock, void(bool fin));
+
+  size_t WriteHeaders(spdy::SpdyHeaderBlock header_block,
+                      bool fin,
+                      QuicReferenceCountedPointer<QuicAckListenerInterface>
+                          ack_listener) override {
+    WriteHeadersMock(fin);
+    return 0;
+  }
+
+  // Expose protected QuicSimpleServerStream methods.
+  void DoSendResponse() { SendResponse(); }
+  void DoSendErrorResponse() { SendErrorResponse(); }
 
   spdy::SpdyHeaderBlock* mutable_headers() { return &request_headers_; }
   void set_body(QuicString body) { body_ = std::move(body); }
+  const QuicString& body() const { return body_; }
+  int content_length() const { return content_length_; }
 
-  static void SendResponse(QuicSimpleServerStream* stream) {
-    stream->SendResponse();
-  }
-
-  static void SendErrorResponse(QuicSimpleServerStream* stream) {
-    stream->SendErrorResponse();
-  }
-
-  static const QuicString& body(QuicSimpleServerStream* stream) {
-    return stream->body_;
-  }
-
-  static int content_length(QuicSimpleServerStream* stream) {
-    return stream->content_length_;
-  }
-
-  static spdy::SpdyHeaderBlock& headers(QuicSimpleServerStream* stream) {
-    return stream->request_headers_;
+  QuicStringPiece GetHeader(QuicStringPiece key) const {
+    auto it = request_headers_.find(key);
+    DCHECK(it != request_headers_.end());
+    return it->second;
   }
 };
 
@@ -87,7 +88,7 @@ class MockQuicSimpleServerSession : public QuicSimpleServerSession {
  public:
   const size_t kMaxStreamsForTest = 100;
 
-  explicit MockQuicSimpleServerSession(
+  MockQuicSimpleServerSession(
       QuicConnection* connection,
       MockQuicSessionVisitor* owner,
       MockQuicCryptoServerStreamHelper* helper,
@@ -105,7 +106,7 @@ class MockQuicSimpleServerSession : public QuicSimpleServerSession {
     QuicSessionPeer::SetMaxOpenIncomingStreams(this, kMaxStreamsForTest);
     QuicSessionPeer::SetMaxOpenOutgoingStreams(this, kMaxStreamsForTest);
     ON_CALL(*this, WritevData(_, _, _, _, _))
-        .WillByDefault(testing::Return(QuicConsumedData(0, false)));
+        .WillByDefault(Invoke(MockQuicSession::ConsumeData));
   }
 
   MockQuicSimpleServerSession(const MockQuicSimpleServerSession&) = delete;
@@ -131,30 +132,12 @@ class MockQuicSimpleServerSession : public QuicSimpleServerSession {
                     const QuicHeaderList& header_list));
   MOCK_METHOD2(OnStreamHeadersPriority,
                void(QuicStreamId stream_id, spdy::SpdyPriority priority));
-  // Methods taking non-copyable types like spdy::SpdyHeaderBlock by value
-  // cannot be mocked directly.
-  size_t WriteHeaders(QuicStreamId id,
-                      spdy::SpdyHeaderBlock headers,
-                      bool fin,
-                      spdy::SpdyPriority priority,
-                      QuicReferenceCountedPointer<QuicAckListenerInterface>
-                          ack_listener) override {
-    return WriteHeadersMock(id, headers, fin, priority, ack_listener);
-  }
-  MOCK_METHOD5(
-      WriteHeadersMock,
-      size_t(QuicStreamId id,
-             const spdy::SpdyHeaderBlock& headers,
-             bool fin,
-             spdy::SpdyPriority priority,
-             const QuicReferenceCountedPointer<QuicAckListenerInterface>&
-                 ack_listener));
   MOCK_METHOD3(SendRstStream,
                void(QuicStreamId stream_id,
                     QuicRstStreamErrorCode error,
                     QuicStreamOffset bytes_written));
   MOCK_METHOD1(OnHeadersHeadOfLineBlocking, void(QuicTime::Delta delta));
-  // Matchers cannot be used on non-copyable types like spdy::SpdyHeaderBlock.
+  // Matchers cannot be used on non-copyable types like SpdyHeaderBlock.
   void PromisePushResources(
       const QuicString& request_url,
       const std::list<QuicBackendResponse::ServerPushInfo>& resources,
@@ -171,6 +154,8 @@ class MockQuicSimpleServerSession : public QuicSimpleServerSession {
                     const spdy::SpdyHeaderBlock&));
 
   using QuicSession::ActivateStream;
+
+  MOCK_METHOD1(OnStopSendingReceived, void(const QuicStopSendingFrame& frame));
 
   spdy::SpdyHeaderBlock original_request_headers_;
 };
@@ -199,12 +184,14 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
                  &memory_cache_backend_),
         quic_response_(new QuicBackendResponse),
         body_("hello world") {
+    connection_->set_visitor(&session_);
     header_list_.OnHeaderBlockStart();
     header_list_.OnHeader(":authority", "www.google.com");
     header_list_.OnHeader(":path", "/");
     header_list_.OnHeader(":method", "POST");
     header_list_.OnHeader(":version", "HTTP/1.1");
     header_list_.OnHeader("content-length", "11");
+
     header_list_.OnHeaderBlockEnd(128, 128);
 
     // New streams rely on having the peer's flow control receive window
@@ -213,7 +200,7 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
         kInitialStreamFlowControlWindowForTest);
     session_.config()->SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
-    stream_ = new QuicSimpleServerStreamPeer(
+    stream_ = new StrictMock<TestStream>(
         QuicSpdySessionPeer::GetNthClientInitiatedBidirectionalStreamId(
             session_, 0),
         &session_, BIDIRECTIONAL, &memory_cache_backend_);
@@ -222,12 +209,14 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
   }
 
-  const QuicString& StreamBody() {
-    return QuicSimpleServerStreamPeer::body(stream_);
-  }
+  const QuicString& StreamBody() { return stream_->body(); }
 
   QuicString StreamHeadersValue(const QuicString& key) {
     return (*stream_->mutable_headers())[key].as_string();
+  }
+
+  bool IsVersion99() const {
+    return connection_->transport_version() == QUIC_VERSION_99;
   }
 
   spdy::SpdyHeaderBlock response_headers_;
@@ -240,23 +229,28 @@ class QuicSimpleServerStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
   QuicCompressedCertsCache compressed_certs_cache_;
   QuicMemoryCacheBackend memory_cache_backend_;
   StrictMock<MockQuicSimpleServerSession> session_;
-  QuicSimpleServerStreamPeer* stream_;  // Owned by session_.
+  StrictMock<TestStream>* stream_;  // Owned by session_.
   std::unique_ptr<QuicBackendResponse> quic_response_;
   QuicString body_;
   QuicHeaderList header_list_;
+  HttpEncoder encoder_;
 };
 
-INSTANTIATE_TEST_CASE_P(Tests,
-                        QuicSimpleServerStreamTest,
-                        ::testing::ValuesIn(AllSupportedVersions()));
+INSTANTIATE_TEST_SUITE_P(Tests,
+                         QuicSimpleServerStreamTest,
+                         ValuesIn(AllSupportedVersions()));
 
 TEST_P(QuicSimpleServerStreamTest, TestFraming) {
   EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(AnyNumber())
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body_.length(), &buffer);
+  QuicString header = QuicString(buffer.get(), header_length);
+  QuicString data = IsVersion99() ? header + body_ : body_;
   stream_->OnStreamFrame(
-      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, body_));
+      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, data));
   EXPECT_EQ("11", StreamHeadersValue("content-length"));
   EXPECT_EQ("/", StreamHeadersValue(":path"));
   EXPECT_EQ("POST", StreamHeadersValue(":method"));
@@ -265,12 +259,16 @@ TEST_P(QuicSimpleServerStreamTest, TestFraming) {
 
 TEST_P(QuicSimpleServerStreamTest, TestFramingOnePacket) {
   EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(AnyNumber())
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
 
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body_.length(), &buffer);
+  QuicString header = QuicString(buffer.get(), header_length);
+  QuicString data = IsVersion99() ? header + body_ : body_;
   stream_->OnStreamFrame(
-      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, body_));
+      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, data));
   EXPECT_EQ("11", StreamHeadersValue("content-length"));
   EXPECT_EQ("/", StreamHeadersValue(":path"));
   EXPECT_EQ("POST", StreamHeadersValue(":method"));
@@ -279,7 +277,6 @@ TEST_P(QuicSimpleServerStreamTest, TestFramingOnePacket) {
 
 TEST_P(QuicSimpleServerStreamTest, SendQuicRstStreamNoErrorInStopReading) {
   EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(AnyNumber())
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
 
   EXPECT_FALSE(stream_->fin_received());
@@ -293,21 +290,35 @@ TEST_P(QuicSimpleServerStreamTest, SendQuicRstStreamNoErrorInStopReading) {
 }
 
 TEST_P(QuicSimpleServerStreamTest, TestFramingExtraData) {
+  InSequence seq;
   QuicString large_body = "hello world!!!!!!";
 
   // We'll automatically write out an error (headers + body)
-  EXPECT_CALL(session_, WriteHeadersMock(_, _, _, _, _));
-  EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .WillOnce(Invoke(MockQuicSession::ConsumeData));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, _, kDataFrameHeaderLength, _, NO_FIN));
+  }
+  EXPECT_CALL(session_, WritevData(_, _, kErrorLength, _, FIN));
+
   EXPECT_CALL(session_, SendRstStream(_, QUIC_STREAM_NO_ERROR, _)).Times(0);
 
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body_.length(), &buffer);
+  QuicString header = QuicString(buffer.get(), header_length);
+  QuicString data = IsVersion99() ? header + body_ : body_;
+
   stream_->OnStreamFrame(
-      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, body_));
+      QuicStreamFrame(stream_->id(), /*fin=*/false, /*offset=*/0, data));
   // Content length is still 11.  This will register as an error and we won't
   // accept the bytes.
+  header_length =
+      encoder_.SerializeDataFrameHeader(large_body.length(), &buffer);
+  header = QuicString(buffer.get(), header_length);
+  QuicString data2 = IsVersion99() ? header + large_body : large_body;
   stream_->OnStreamFrame(
-      QuicStreamFrame(stream_->id(), /*fin=*/true, body_.size(), large_body));
+      QuicStreamFrame(stream_->id(), /*fin=*/true, data.size(), data2));
   EXPECT_EQ("11", StreamHeadersValue("content-length"));
   EXPECT_EQ("/", StreamHeadersValue(":path"));
   EXPECT_EQ("POST", StreamHeadersValue(":method"));
@@ -326,19 +337,23 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithIllegalResponseStatus) {
   response_headers_[":status"] = "200 OK";
   response_headers_["content-length"] = "5";
   QuicString body = "Yummm";
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
 
   stream_->set_fin_received(true);
 
   InSequence s;
-  EXPECT_CALL(session_, WriteHeadersMock(stream_->id(), _, false, _, _));
-  EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(1)
-      .WillOnce(Return(QuicConsumedData(
-          strlen(QuicSimpleServerStream::kErrorResponseBody), true)));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, _, header_length, _, NO_FIN));
+  }
+  EXPECT_CALL(session_, WritevData(_, _, kErrorLength, _, FIN));
 
-  QuicSimpleServerStreamPeer::SendResponse(stream_);
+  stream_->DoSendResponse();
   EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
   EXPECT_TRUE(stream_->write_side_closed());
 }
@@ -356,26 +371,31 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithIllegalResponseStatus2) {
   response_headers_[":status"] = "+200";
   response_headers_["content-length"] = "5";
   QuicString body = "Yummm";
+
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
 
   stream_->set_fin_received(true);
 
   InSequence s;
-  EXPECT_CALL(session_, WriteHeadersMock(stream_->id(), _, false, _, _));
-  EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(1)
-      .WillOnce(Return(QuicConsumedData(
-          strlen(QuicSimpleServerStream::kErrorResponseBody), true)));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, _, header_length, _, NO_FIN));
+  }
+  EXPECT_CALL(session_, WritevData(_, _, kErrorLength, _, FIN));
 
-  QuicSimpleServerStreamPeer::SendResponse(stream_);
+  stream_->DoSendResponse();
   EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
   EXPECT_TRUE(stream_->write_side_closed());
 }
 
 TEST_P(QuicSimpleServerStreamTest, SendPushResponseWith404Response) {
   // Create a new promised stream with even id().
-  QuicSimpleServerStreamPeer* promised_stream = new QuicSimpleServerStreamPeer(
+  auto promised_stream = new StrictMock<TestStream>(
       QuicSpdySessionPeer::GetNthServerInitiatedUnidirectionalStreamId(session_,
                                                                        0),
       &session_, WRITE_UNIDIRECTIONAL, &memory_cache_backend_);
@@ -393,6 +413,7 @@ TEST_P(QuicSimpleServerStreamTest, SendPushResponseWith404Response) {
   response_headers_[":status"] = "404";
   response_headers_["content-length"] = "8";
   QuicString body = "NotFound";
+
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
 
@@ -400,7 +421,7 @@ TEST_P(QuicSimpleServerStreamTest, SendPushResponseWith404Response) {
   EXPECT_CALL(session_,
               SendRstStream(promised_stream->id(), QUIC_STREAM_CANCELLED, 0));
 
-  QuicSimpleServerStreamPeer::SendResponse(promised_stream);
+  promised_stream->DoSendResponse();
 }
 
 TEST_P(QuicSimpleServerStreamTest, SendResponseWithValidHeaders) {
@@ -415,29 +436,38 @@ TEST_P(QuicSimpleServerStreamTest, SendResponseWithValidHeaders) {
   response_headers_[":status"] = "200";
   response_headers_["content-length"] = "5";
   QuicString body = "Yummm";
+
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
+
   memory_cache_backend_.AddResponse("www.google.com", "/bar",
                                     std::move(response_headers_), body);
   stream_->set_fin_received(true);
 
   InSequence s;
-  EXPECT_CALL(session_, WriteHeadersMock(stream_->id(), _, false, _, _));
-  EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(1)
-      .WillOnce(Return(QuicConsumedData(body.length(), true)));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, _, header_length, _, NO_FIN));
+  }
+  EXPECT_CALL(session_, WritevData(_, _, body.length(), _, FIN));
 
-  QuicSimpleServerStreamPeer::SendResponse(stream_);
+  stream_->DoSendResponse();
   EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
   EXPECT_TRUE(stream_->write_side_closed());
 }
 
-TEST_P(QuicSimpleServerStreamTest, SendReponseWithPushResources) {
-  // Tests that if a reponse has push resources to be send, SendResponse() will
+TEST_P(QuicSimpleServerStreamTest, SendResponseWithPushResources) {
+  // Tests that if a response has push resources to be send, SendResponse() will
   // call PromisePushResources() to handle these resources.
 
   // Add a request and response with valid headers into cache.
   QuicString host = "www.google.com";
   QuicString request_path = "/foo";
   QuicString body = "Yummm";
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(body.length(), &buffer);
   QuicBackendResponse::ServerPushInfo push_info(
       QuicUrl(host, "/bar"), spdy::SpdyHeaderBlock(),
       QuicStream::kDefaultPriority, "Push body");
@@ -461,11 +491,12 @@ TEST_P(QuicSimpleServerStreamTest, SendReponseWithPushResources) {
           QuicSpdySessionPeer::GetNthClientInitiatedBidirectionalStreamId(
               session_, 0),
           _));
-  EXPECT_CALL(session_, WriteHeadersMock(stream_->id(), _, false, _, _));
-  EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(1)
-      .WillOnce(Return(QuicConsumedData(body.length(), true)));
-  QuicSimpleServerStreamPeer::SendResponse(stream_);
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, _, header_length, _, NO_FIN));
+  }
+  EXPECT_CALL(session_, WritevData(_, _, body.length(), _, FIN));
+  stream_->DoSendResponse();
   EXPECT_EQ(*request_headers, session_.original_request_headers_);
 }
 
@@ -491,10 +522,9 @@ TEST_P(QuicSimpleServerStreamTest, PushResponseOnServerInitiatedStream) {
       QuicSpdySessionPeer::GetNthServerInitiatedUnidirectionalStreamId(session_,
                                                                        0);
   // Create a server initiated stream and pass it to session_.
-  QuicSimpleServerStreamPeer* server_initiated_stream =
-      new QuicSimpleServerStreamPeer(kServerInitiatedStreamId, &session_,
-                                     WRITE_UNIDIRECTIONAL,
-                                     &memory_cache_backend_);
+  auto server_initiated_stream =
+      new StrictMock<TestStream>(kServerInitiatedStreamId, &session_,
+                                 WRITE_UNIDIRECTIONAL, &memory_cache_backend_);
   session_.ActivateStream(QuicWrapUnique(server_initiated_stream));
 
   const QuicString kHost = "www.foo.com";
@@ -509,24 +539,26 @@ TEST_P(QuicSimpleServerStreamTest, PushResponseOnServerInitiatedStream) {
   response_headers_[":status"] = "200";
   response_headers_["content-length"] = "5";
   const QuicString kBody = "Hello";
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount header_length =
+      encoder_.SerializeDataFrameHeader(kBody.length(), &buffer);
   memory_cache_backend_.AddResponse(kHost, kPath, std::move(response_headers_),
                                     kBody);
 
   // Call PushResponse() should trigger stream to fetch response from cache
   // and send it back.
+  InSequence s;
+  EXPECT_CALL(*server_initiated_stream, WriteHeadersMock(false));
+
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, kServerInitiatedStreamId, header_length,
+                                     _, NO_FIN));
+  }
   EXPECT_CALL(session_,
-              WriteHeadersMock(kServerInitiatedStreamId, _, false,
-                               server_initiated_stream->priority(), _));
-  EXPECT_CALL(session_, WritevData(_, kServerInitiatedStreamId, _, _, _))
-      .Times(1)
-      .WillOnce(Return(QuicConsumedData(kBody.size(), true)));
+              WritevData(_, kServerInitiatedStreamId, kBody.size(), _, FIN));
   server_initiated_stream->PushResponse(std::move(headers));
-  EXPECT_EQ(kPath, QuicSimpleServerStreamPeer::headers(
-                       server_initiated_stream)[":path"]
-                       .as_string());
-  EXPECT_EQ("GET", QuicSimpleServerStreamPeer::headers(
-                       server_initiated_stream)[":method"]
-                       .as_string());
+  EXPECT_EQ(kPath, server_initiated_stream->GetHeader(":path"));
+  EXPECT_EQ("GET", server_initiated_stream->GetHeader(":method"));
 }
 
 TEST_P(QuicSimpleServerStreamTest, TestSendErrorResponse) {
@@ -535,12 +567,13 @@ TEST_P(QuicSimpleServerStreamTest, TestSendErrorResponse) {
   stream_->set_fin_received(true);
 
   InSequence s;
-  EXPECT_CALL(session_, WriteHeadersMock(_, _, _, _, _));
-  EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(1)
-      .WillOnce(Return(QuicConsumedData(3, true)));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
+  if (IsVersion99()) {
+    EXPECT_CALL(session_, WritevData(_, _, kDataFrameHeaderLength, _, NO_FIN));
+  }
+  EXPECT_CALL(session_, WritevData(_, _, kErrorLength, _, FIN));
 
-  QuicSimpleServerStreamPeer::SendErrorResponse(stream_);
+  stream_->DoSendErrorResponse();
   EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
   EXPECT_TRUE(stream_->write_side_closed());
 }
@@ -552,9 +585,8 @@ TEST_P(QuicSimpleServerStreamTest, InvalidMultipleContentLength) {
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", QuicStringPiece("11\00012", 5));
 
-  EXPECT_CALL(session_, WriteHeadersMock(_, _, _, _, _));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
   EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(AnyNumber())
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
   stream_->OnStreamHeaderList(true, kFakeFrameLen, header_list_);
 
@@ -570,9 +602,8 @@ TEST_P(QuicSimpleServerStreamTest, InvalidLeadingNullContentLength) {
   // \000 is a way to write the null byte when followed by a literal digit.
   header_list_.OnHeader("content-length", QuicStringPiece("\00012", 3));
 
-  EXPECT_CALL(session_, WriteHeadersMock(_, _, _, _, _));
+  EXPECT_CALL(*stream_, WriteHeadersMock(false));
   EXPECT_CALL(session_, WritevData(_, _, _, _, _))
-      .Times(AnyNumber())
       .WillRepeatedly(Invoke(MockQuicSession::ConsumeData));
   stream_->OnStreamHeaderList(true, kFakeFrameLen, header_list_);
 
@@ -588,7 +619,7 @@ TEST_P(QuicSimpleServerStreamTest, ValidMultipleContentLength) {
 
   stream_->OnStreamHeaderList(false, kFakeFrameLen, header_list_);
 
-  EXPECT_EQ(11, QuicSimpleServerStreamPeer::content_length(stream_));
+  EXPECT_EQ(11, stream_->content_length());
   EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
   EXPECT_FALSE(stream_->reading_stopped());
   EXPECT_FALSE(stream_->write_side_closed());
@@ -604,7 +635,12 @@ TEST_P(QuicSimpleServerStreamTest,
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream_->id(),
                                QUIC_STREAM_CANCELLED, 1234);
   stream_->OnStreamReset(rst_frame);
-
+  if (connection_->transport_version() == QUIC_VERSION_99) {
+    // For V99 receiving a RST_STREAM causes a 1-way close; the test requires
+    // a full close. A CloseWriteSide closes the other half of the stream.
+    // Everything should then work properly.
+    stream_->CloseWriteSide();
+  }
   EXPECT_TRUE(stream_->reading_stopped());
   EXPECT_TRUE(stream_->write_side_closed());
 }

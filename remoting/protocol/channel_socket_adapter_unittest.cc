@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "net/base/io_buffer.h"
@@ -16,7 +17,7 @@
 #include "net/socket/socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/webrtc/p2p/base/mockicetransport.h"
+#include "third_party/webrtc/p2p/base/mock_ice_transport.h"
 
 using net::IOBuffer;
 

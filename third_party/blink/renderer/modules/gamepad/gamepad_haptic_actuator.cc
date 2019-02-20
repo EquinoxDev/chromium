@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/gamepad/gamepad_haptic_actuator.h"
 
+#include "base/bind_helpers.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/modules/gamepad/gamepad_dispatcher.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
@@ -128,12 +129,23 @@ void GamepadHapticActuator::OnPlayEffectCompleted(
     return;
   } else if (result == GamepadHapticsResult::GamepadHapticsResultComplete) {
     should_reset_ = true;
-    GetExecutionContext()
-        ->GetTaskRunner(TaskType::kMiscPlatformAPI)
-        ->PostTask(
-            FROM_HERE,
-            WTF::Bind(&GamepadHapticActuator::ResetVibrationIfNotPreempted,
-                      WrapPersistent(this)));
+    ExecutionContext* context = GetExecutionContext();
+    if (context) {
+      // Post a delayed task to stop vibration. The task will be run after all
+      // callbacks have run for the effect Promise, and may be ignored by
+      // setting |should_reset_| to false. The intention is to only stop
+      // vibration if the user did not chain another vibration effect in the
+      // Promise callback.
+      context->GetTaskRunner(TaskType::kMiscPlatformAPI)
+          ->PostTask(
+              FROM_HERE,
+              WTF::Bind(&GamepadHapticActuator::ResetVibrationIfNotPreempted,
+                        WrapPersistent(this)));
+    } else {
+      // The execution context is gone, meaning no new effects can be issued by
+      // the page. Stop vibration without waiting for Promise callbacks.
+      ResetVibrationIfNotPreempted();
+    }
   }
   resolver->Resolve(ResultToString(result));
 }

@@ -12,6 +12,7 @@
 #include "ash/app_list/app_list_view_delegate.h"
 #include "ash/app_list/model/search/search_result.h"
 #include "ash/app_list/views/app_list_main_view.h"
+#include "ash/app_list/views/search_box_view.h"
 #include "ash/app_list/views/search_result_view.h"
 #include "base/bind.h"
 #include "base/time/time.h"
@@ -19,6 +20,7 @@
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/views/background.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/box_layout.h"
 
 namespace {
@@ -41,6 +43,7 @@ SearchResultListView::SearchResultListView(AppListMainView* main_view,
     search_result_views_.emplace_back(
         new SearchResultView(this, view_delegate_));
     results_container_->AddChildView(search_result_views_.back());
+    AddObservedResultView(search_result_views_.back());
   }
   AddChildView(results_container_);
 }
@@ -55,7 +58,7 @@ SearchResultView* SearchResultListView::GetResultViewAt(size_t index) {
 void SearchResultListView::ListItemsRemoved(size_t start, size_t count) {
   size_t last = std::min(start + count, search_result_views_.size());
   for (size_t i = start; i < last; ++i)
-    GetResultViewAt(i)->ClearResultNoRepaint();
+    GetResultViewAt(i)->ClearResult();
 
   SearchResultContainerView::ListItemsRemoved(start, count);
 }
@@ -128,14 +131,55 @@ void SearchResultListView::SearchResultActionActivated(SearchResultView* view,
                                                        size_t action_index,
                                                        int event_flags) {
   if (view_delegate_ && view->result()) {
-    view_delegate_->InvokeSearchResultAction(view->result()->id(), action_index,
-                                             event_flags);
+    ash::OmniBoxZeroStateAction action =
+        ash::GetOmniBoxZeroStateAction(action_index);
+    if (action == ash::OmniBoxZeroStateAction::kRemoveSuggestion) {
+      view_delegate_->InvokeSearchResultAction(view->result()->id(),
+                                               action_index, event_flags);
+    } else if (action == ash::OmniBoxZeroStateAction::kAppendSuggestion) {
+      main_view_->search_box_view()->UpdateQuery(view->result()->title());
+    }
   }
 }
 
 void SearchResultListView::OnSearchResultInstalled(SearchResultView* view) {
   if (main_view_ && view->result())
     main_view_->OnResultInstalled(view->result());
+}
+
+bool SearchResultListView::HandleVerticalFocusMovement(SearchResultView* view,
+                                                       bool arrow_up) {
+  int view_index = -1;
+  for (int i = 0; i < num_results(); ++i) {
+    if (view == search_result_views_[i]) {
+      view_index = i;
+      break;
+    }
+  }
+
+  if (view_index == -1) {
+    // Not found in the result list.
+    NOTREACHED();
+    return false;
+  }
+
+  if (arrow_up) {  // VKEY_UP
+    if (view_index > 0) {
+      // Move to the previous result if the current one is not the first result.
+      search_result_views_[view_index - 1]->RequestFocus();
+      return true;
+    }
+  } else {  // VKEY_DOWN
+    // Move down to the next result if the currernt one is not the last result;
+    // otherwise, move focus to search box.
+    if (view_index == num_results() - 1)
+      main_view_->search_box_view()->search_box()->RequestFocus();
+    else
+      search_result_views_[view_index + 1]->RequestFocus();
+    return true;
+  }
+
+  return false;
 }
 
 }  // namespace app_list

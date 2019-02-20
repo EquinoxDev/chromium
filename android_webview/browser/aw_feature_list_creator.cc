@@ -16,6 +16,7 @@
 #include "android_webview/browser/aw_variations_seed_bridge.h"
 #include "android_webview/browser/net/aw_url_request_context_getter.h"
 #include "base/base_switches.h"
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
@@ -169,6 +170,7 @@ void AwFeatureListCreator::SetUpFieldTrials() {
   // of permanent-consistency support in WebView.
   // TODO(crbug/917537): Remove this after m73.
   base::FieldTrialList::FindFullName("AndroidWebViewConsistencyTest");
+  base::FieldTrialList::FindFullName("AndroidWebViewSessionConsistencyTest");
 }
 
 void AwFeatureListCreator::CreateFeatureListAndFieldTrials() {

@@ -66,6 +66,7 @@
 #include "third_party/blink/renderer/platform/bindings/v8_private_property.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/scheduler/public/cooperative_scheduling_manager.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -131,13 +132,6 @@ size_t NearHeapLimitCallbackOnMainThread(void* data,
                                          size_t current_heap_limit,
                                          size_t initial_heap_limit) {
   v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(data);
-  V8PerIsolateData* per_isolate_data = V8PerIsolateData::From(isolate);
-  if (per_isolate_data->IsNearV8HeapLimitHandled()) {
-    // Ignore all calls after the first one.
-    return current_heap_limit;
-  }
-  per_isolate_data->HandledNearV8HeapLimit();
-
   // Find the main document for UKM recording.
   Document* document = nullptr;
   int pages = 0;
@@ -174,12 +168,6 @@ size_t NearHeapLimitCallbackOnWorkerThread(void* data,
                                            size_t current_heap_limit,
                                            size_t initial_heap_limit) {
   v8::Isolate* isolate = reinterpret_cast<v8::Isolate*>(data);
-  V8PerIsolateData* per_isolate_data = V8PerIsolateData::From(isolate);
-  if (per_isolate_data->IsNearV8HeapLimitHandled()) {
-    // Ignore all calls after the first one.
-    return current_heap_limit;
-  }
-  per_isolate_data->HandledNearV8HeapLimit();
   // Do not record UKM on worker thread.
   Record(NearV8HeapLimitHandling::kIgnoredDueToWorker, isolate,
          current_heap_limit, nullptr, 0);
@@ -597,7 +585,7 @@ static v8::MaybeLocal<v8::Promise> HostImportModuleDynamically(
   return v8::Local<v8::Promise>::Cast(promise.V8Value());
 }
 
-// https://html.spec.whatwg.org/#hostgetimportmetaproperties
+// https://html.spec.whatwg.org/C/#hostgetimportmetaproperties
 static void HostGetImportMetaProperties(v8::Local<v8::Context> context,
                                         v8::Local<v8::Module> module,
                                         v8::Local<v8::Object> meta) {
@@ -691,12 +679,8 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
   WTF::ArrayBufferContents::Initialize(AdjustAmountOfExternalAllocatedMemory);
 
   DEFINE_STATIC_LOCAL(ArrayBufferAllocator, array_buffer_allocator, ());
-  auto v8_extras_mode = RuntimeEnabledFeatures::ExperimentalV8ExtrasEnabled()
-                            ? gin::IsolateHolder::kStableAndExperimentalV8Extras
-                            : gin::IsolateHolder::kStableV8Extras;
   gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode,
-                                 v8_extras_mode, &array_buffer_allocator,
-                                 reference_table);
+                                 &array_buffer_allocator, reference_table);
 
   ThreadScheduler* scheduler = ThreadScheduler::Current();
 
@@ -735,6 +719,7 @@ void V8Initializer::InitializeMainThread(const intptr_t* reference_table) {
     DCHECK(g_near_heap_limit_on_main_thread_callback_);
     isolate->AddNearHeapLimitCallback(NearHeapLimitCallbackOnMainThread,
                                       isolate);
+    isolate->AutomaticallyRestoreInitialHeapLimit();
   }
   isolate->SetFatalErrorHandler(ReportFatalErrorInMainThread);
   isolate->AddMessageListenerWithErrorLevel(

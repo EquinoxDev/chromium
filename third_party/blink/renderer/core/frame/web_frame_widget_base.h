@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/platform/heap/member.h"
 
 namespace cc {
+class AnimationHost;
 class Layer;
 }
 
@@ -27,7 +28,6 @@ class Point;
 
 namespace blink {
 class AnimationWorkletMutatorDispatcherImpl;
-class CompositorAnimationHost;
 class GraphicsLayer;
 class HitTestResult;
 class PageWidgetEventHandler;
@@ -53,8 +53,6 @@ class CORE_EXPORT WebFrameWidgetBase
 
   void BindLocalRoot(WebLocalFrame&);
 
-  // Called once the local root is bound via |BindLocalRoot()|.
-  virtual void Initialize() = 0;
   virtual bool ForSubframe() const = 0;
   virtual void IntrinsicSizingInfoChanged(const IntrinsicSizingInfo&) {}
   virtual base::WeakPtr<AnimationWorkletMutatorDispatcherImpl>
@@ -70,7 +68,7 @@ class CORE_EXPORT WebFrameWidgetBase
   virtual void SetRootLayer(scoped_refptr<cc::Layer> layer) = 0;
 
   virtual WebLayerTreeView* GetLayerTreeView() const = 0;
-  virtual CompositorAnimationHost* AnimationHost() const = 0;
+  virtual cc::AnimationHost* AnimationHost() const = 0;
 
   virtual HitTestResult CoreHitTestResultAt(const gfx::Point&) = 0;
 
@@ -97,6 +95,11 @@ class CORE_EXPORT WebFrameWidgetBase
                          const WebFloatPoint& screen_point,
                          WebDragOperation) override;
   void DragSourceSystemDragEnded() override;
+  void SendOverscrollEventFromImplSide(
+      const gfx::Vector2dF& overscroll_delta,
+      cc::ElementId scroll_latched_element_id) override;
+  void SendScrollEndEventFromImplSide(
+      cc::ElementId scroll_latched_element_id) override;
 
   WebLocalFrame* FocusedWebLocalFrameInWidget() const override;
 

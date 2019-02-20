@@ -168,12 +168,10 @@ class VaapiVideoDecodeAcceleratorTest : public TestWithParam<TestParams>,
     // TODO(crbug.com/917999): add IMPORT mode to test variations.
     vda_.output_mode_ = VideoDecodeAccelerator::Config::OutputMode::ALLOCATE;
 
-    vda_.decode_using_client_picture_buffers_ =
-        GetParam().decode_using_client_picture_buffers;
-    vda_.use_reduced_number_of_allocations_ =
-        !vda_.decode_using_client_picture_buffers_ &&
-        vda_.output_mode_ ==
-            VideoDecodeAccelerator::Config::OutputMode::ALLOCATE;
+    vda_.buffer_allocation_mode_ =
+        GetParam().decode_using_client_picture_buffers
+            ? VaapiVideoDecodeAccelerator::BufferAllocationMode::kNone
+            : VaapiVideoDecodeAccelerator::BufferAllocationMode::kSuperReduced;
 
     vda_.state_ = VaapiVideoDecodeAccelerator::kIdle;
   }
@@ -239,7 +237,8 @@ class VaapiVideoDecodeAcceleratorTest : public TestWithParam<TestParams>,
     }
 
     const size_t expected_num_picture_buffers_requested =
-        vda_.use_reduced_number_of_allocations_
+        vda_.buffer_allocation_mode_ ==
+                VaapiVideoDecodeAccelerator::BufferAllocationMode::kSuperReduced
             ? num_pictures - kNumReferenceFrames
             : num_pictures;
 
@@ -279,7 +278,10 @@ class VaapiVideoDecodeAcceleratorTest : public TestWithParam<TestParams>,
           MockCreateVaapiPicture(mock_vaapi_wrapper_.get(), picture_size))
           .Times(num_pictures);
     } else {
-      const size_t kNumReferenceFrames = num_pictures / 2;
+      EXPECT_EQ(
+          vda_.buffer_allocation_mode_,
+          VaapiVideoDecodeAccelerator::BufferAllocationMode::kSuperReduced);
+      const size_t kNumReferenceFrames = 1 + num_pictures / 2;
       EXPECT_CALL(
           *mock_vaapi_wrapper_,
           CreateContextAndSurfaces(_, picture_size, kNumReferenceFrames, _))
@@ -464,8 +466,8 @@ constexpr TestParams kTestCases[] = {
     {VP9PROFILE_MIN, false /* decode_using_client_picture_buffers */},
     {VP9PROFILE_MIN, true /* decode_using_client_picture_buffers */}};
 
-INSTANTIATE_TEST_CASE_P(/* No prefix. */,
-                        VaapiVideoDecodeAcceleratorTest,
-                        ValuesIn(kTestCases));
+INSTANTIATE_TEST_SUITE_P(/* No prefix. */,
+                         VaapiVideoDecodeAcceleratorTest,
+                         ValuesIn(kTestCases));
 
 }  // namespace media

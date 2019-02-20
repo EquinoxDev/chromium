@@ -260,7 +260,7 @@ Polymer({
       this.appList_.forEach(app => this.updateBookmark_(app));
     } else {
       this.appProxy.getAppList().then(list => {
-        this.appList_ = list;
+        this.appList_ = /** @type(!Array<!nux.AppItem>) */ (list);
         this.appList_.forEach((app, index) => {
           if (this.singleSelect) {
             // Default select the first item.
@@ -312,4 +312,14 @@ Polymer({
       this.bookmarkBarManager_.setShown(this.wasBookmarkBarShownOnInit_);
     }
   },
+
+  /**
+   * Converts a boolean to a string because aria-pressed needs a string value.
+   * @param {boolean} value
+   * @return {string}
+   * @private
+   */
+  getAriaPressed_: function(value) {
+    return value ? 'true' : 'false';
+  }
 });

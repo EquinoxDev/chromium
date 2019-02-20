@@ -13,16 +13,18 @@
 #include "third_party/blink/renderer/platform/wtf/time.h"
 
 namespace blink {
-class PaintLayer;
 class LayoutObject;
 class TracedValue;
 class LocalFrameView;
+class PropertyTreeState;
 
 struct TextRecord {
   DOMNodeId node_id = kInvalidDOMNodeId;
   uint64_t first_size = 0;
   base::TimeTicks first_paint_time = base::TimeTicks();
+#ifndef NDEBUG
   String text = "";
+#endif
 };
 
 // TextPaintTimingDetector contains Largest Text Paint and Last Text Paint.
@@ -51,18 +53,26 @@ class CORE_EXPORT TextPaintTimingDetector final
   using ReportTimeCallback =
       WTF::CrossThreadFunction<void(WebLayerTreeView::SwapResult,
                                     base::TimeTicks)>;
+  using TextRecordHeapComparator = bool (*)(const std::unique_ptr<TextRecord>&,
+                                            const std::unique_ptr<TextRecord>&);
+  using TextRecordHeap =
+      std::priority_queue<std::unique_ptr<TextRecord>,
+                          std::vector<std::unique_ptr<TextRecord>>,
+                          TextRecordHeapComparator>;
   friend class TextPaintTimingDetectorTest;
 
  public:
   TextPaintTimingDetector(LocalFrameView* frame_view);
-  void RecordText(const LayoutObject& object, const PaintLayer& painting_layer);
+  void RecordText(const LayoutObject& object, const PropertyTreeState&);
   TextRecord* FindLargestPaintCandidate();
   TextRecord* FindLastPaintCandidate();
-  void OnPrePaintFinished();
+  void OnPaintFinished();
   void NotifyNodeRemoved(DOMNodeId);
   void Dispose() { timer_.Stop(); }
   base::TimeTicks LargestTextPaint() const { return largest_text_paint_; }
+  uint64_t LargestTextPaintSize() const { return largest_text_paint_size_; }
   base::TimeTicks LastTextPaint() const { return last_text_paint_; }
+  uint64_t LastTextPaintSize() const { return last_text_paint_size_; }
   void StopRecordEntries();
   bool IsRecording() const { return is_recording_; }
   void Trace(blink::Visitor*);
@@ -77,21 +87,14 @@ class CORE_EXPORT TextPaintTimingDetector final
   void ReportSwapTime(WebLayerTreeView::SwapResult result,
                       base::TimeTicks timestamp);
   void RegisterNotifySwapTime(ReportTimeCallback callback);
+  TextRecord* FindCandidate(TextRecordHeap& heap);
   void OnLargestTextDetected(const TextRecord&);
   void OnLastTextDetected(const TextRecord&);
 
   HashSet<DOMNodeId> recorded_text_node_ids_;
   HashSet<DOMNodeId> size_zero_node_ids_;
-  std::priority_queue<std::unique_ptr<TextRecord>,
-                      std::vector<std::unique_ptr<TextRecord>>,
-                      bool (*)(const std::unique_ptr<TextRecord>&,
-                               const std::unique_ptr<TextRecord>&)>
-      largest_text_heap_;
-  std::priority_queue<std::unique_ptr<TextRecord>,
-                      std::vector<std::unique_ptr<TextRecord>>,
-                      bool (*)(const std::unique_ptr<TextRecord>&,
-                               const std::unique_ptr<TextRecord>&)>
-      latest_text_heap_;
+  TextRecordHeap largest_text_heap_;
+  TextRecordHeap latest_text_heap_;
   std::vector<TextRecord> texts_to_record_swap_time_;
 
   // Make sure that at most one swap promise is ongoing.
@@ -101,7 +104,9 @@ class CORE_EXPORT TextPaintTimingDetector final
   bool is_recording_ = true;
 
   base::TimeTicks largest_text_paint_;
+  uint64_t largest_text_paint_size_ = 0;
   base::TimeTicks last_text_paint_;
+  uint64_t last_text_paint_size_ = 0;
   TaskRunnerTimer<TextPaintTimingDetector> timer_;
   Member<LocalFrameView> frame_view_;
 };

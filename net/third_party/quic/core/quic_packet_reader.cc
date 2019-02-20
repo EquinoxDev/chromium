@@ -19,6 +19,7 @@
 #include "net/third_party/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quic/platform/api/quic_flags.h"
 #include "net/third_party/quic/platform/api/quic_logging.h"
+#include "net/third_party/quic/platform/api/quic_server_stats.h"
 #include "net/third_party/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quic/platform/impl/quic_socket_utils.h"
 
@@ -114,20 +115,22 @@ bool QuicPacketReader::ReadAndDispatchManyPackets(
     }
 
     if (QUIC_PREDICT_FALSE(mmsg_hdr_[i].msg_hdr.msg_flags & MSG_TRUNC)) {
-      QUIC_LOG_FIRST_N(ERROR, 10)
+      QUIC_LOG_FIRST_N(WARNING, 100)
           << "Dropping truncated QUIC packet: buffer size:"
           << packets_[i].iov.iov_len << " packet size:" << mmsg_hdr_[i].msg_len;
+      QUIC_SERVER_HISTOGRAM_COUNTS(
+          "QuicPacketReader.DroppedPacketSize", mmsg_hdr_[i].msg_len, 1, 10000,
+          20, "In QuicPacketReader, the size of big packets that are dropped.");
       continue;
     }
 
-    QuicSocketAddress client_address =
-        QuicSocketAddress(packets_[i].raw_address);
-    QuicIpAddress server_ip;
+    QuicSocketAddress peer_address(packets_[i].raw_address);
+    QuicIpAddress self_ip;
     QuicWallTime packet_walltimestamp = QuicWallTime::Zero();
     QuicSocketUtils::GetAddressAndTimestampFromMsghdr(
-        &mmsg_hdr_[i].msg_hdr, &server_ip, &packet_walltimestamp);
-    if (!server_ip.IsInitialized()) {
-      QUIC_BUG << "Unable to get server address.";
+        &mmsg_hdr_[i].msg_hdr, &self_ip, &packet_walltimestamp);
+    if (!self_ip.IsInitialized()) {
+      QUIC_BUG << "Unable to get self IP address.";
       continue;
     }
 
@@ -167,8 +170,8 @@ bool QuicPacketReader::ReadAndDispatchManyPackets(
     QuicReceivedPacket packet(reinterpret_cast<char*>(packets_[i].iov.iov_base),
                               mmsg_hdr_[i].msg_len, timestamp, false, ttl,
                               has_ttl, headers, headers_length, false);
-    QuicSocketAddress server_address(server_ip, port);
-    processor->ProcessPacket(server_address, client_address, packet);
+    QuicSocketAddress self_address(self_ip, port);
+    processor->ProcessPacket(self_address, peer_address, packet);
   }
 
   if (packets_dropped != nullptr) {
@@ -193,18 +196,18 @@ bool QuicPacketReader::ReadAndDispatchSinglePacket(
     QuicPacketCount* packets_dropped) {
   char buf[kMaxV4PacketSize];
 
-  QuicSocketAddress client_address;
-  QuicIpAddress server_ip;
+  QuicSocketAddress peer_address;
+  QuicIpAddress self_ip;
   QuicWallTime walltimestamp = QuicWallTime::Zero();
   int bytes_read =
       QuicSocketUtils::ReadPacket(fd, buf, QUIC_ARRAYSIZE(buf), packets_dropped,
-                                  &server_ip, &walltimestamp, &client_address);
+                                  &self_ip, &walltimestamp, &peer_address);
   if (bytes_read < 0) {
     return false;  // ReadPacket failed.
   }
 
-  if (!server_ip.IsInitialized()) {
-    QUIC_BUG << "Unable to get server address.";
+  if (!self_ip.IsInitialized()) {
+    QUIC_BUG << "Unable to get self IP address.";
     return false;
   }
   // This isn't particularly desirable, but not all platforms support socket
@@ -215,8 +218,8 @@ bool QuicPacketReader::ReadAndDispatchSinglePacket(
   QuicTime timestamp = clock.ConvertWallTimeToQuicTime(walltimestamp);
 
   QuicReceivedPacket packet(buf, bytes_read, timestamp, false);
-  QuicSocketAddress server_address(server_ip, port);
-  processor->ProcessPacket(server_address, client_address, packet);
+  QuicSocketAddress self_address(self_ip, port);
+  processor->ProcessPacket(self_address, peer_address, packet);
 
   // The socket read was successful, so return true even if packet dispatch
   // failed.

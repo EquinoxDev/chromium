@@ -27,6 +27,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_WEBORIGIN_KURL_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_WEBORIGIN_KURL_H_
 
+#include <iosfwd>
 #include <memory>
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator.h"
@@ -276,6 +277,10 @@ PLATFORM_EXPORT bool operator!=(const KURL&, const KURL&);
 PLATFORM_EXPORT bool operator!=(const KURL&, const String&);
 PLATFORM_EXPORT bool operator!=(const String&, const KURL&);
 
+// Pretty printer for gtest and base/logging.*.  It prepends and appends
+// double-quotes, and escapes characters other than ASCII printables.
+PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const KURL&);
+
 PLATFORM_EXPORT bool EqualIgnoringFragmentIdentifier(const KURL&, const KURL&);
 
 PLATFORM_EXPORT const KURL& BlankURL();
@@ -308,32 +313,6 @@ PLATFORM_EXPORT String DecodeURLEscapeSequences(const String&,
                                                 DecodeURLMode mode);
 
 PLATFORM_EXPORT String EncodeWithURLEscapeSequences(const String&);
-
-// Inlines.
-
-inline bool operator==(const KURL& a, const KURL& b) {
-  return a.GetString() == b.GetString();
-}
-
-inline bool operator==(const KURL& a, const String& b) {
-  return a.GetString() == b;
-}
-
-inline bool operator==(const String& a, const KURL& b) {
-  return a == b.GetString();
-}
-
-inline bool operator!=(const KURL& a, const KURL& b) {
-  return a.GetString() != b.GetString();
-}
-
-inline bool operator!=(const KURL& a, const String& b) {
-  return a.GetString() != b;
-}
-
-inline bool operator!=(const String& a, const KURL& b) {
-  return a != b.GetString();
-}
 
 }  // namespace blink
 

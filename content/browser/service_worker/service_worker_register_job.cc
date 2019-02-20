@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -299,8 +301,12 @@ void ServiceWorkerRegisterJob::ContinueWithUpdate(
         registration()->GetNewestVersion();
     std::vector<ServiceWorkerDatabase::ResourceRecord> resources;
     version_to_update->script_cache_map()->GetResources(&resources);
+    int64_t script_resource_id =
+        version_to_update->script_cache_map()->LookupResourceId(script_url_);
+    DCHECK_NE(kInvalidServiceWorkerResourceId, script_resource_id);
     update_checker_ = std::make_unique<ServiceWorkerUpdateChecker>(
-        resources, version_to_update,
+        std::move(resources), script_url_, script_resource_id,
+        version_to_update,
         context_->loader_factory_getter()->GetNetworkFactory());
     update_checker_->Start(
         base::BindOnce(&ServiceWorkerRegisterJob::OnUpdateCheckFinished,
@@ -329,6 +335,8 @@ void ServiceWorkerRegisterJob::OnUpdateCheckFinished(bool script_changed) {
     return;
   }
 
+  compared_script_info_map_ = update_checker_->TakeComparedResults();
+  update_checker_.reset();
   UpdateAndContinue();
 }
 
@@ -426,6 +434,12 @@ void ServiceWorkerRegisterJob::UpdateAndContinue() {
         base::BindOnce(&ServiceWorkerRegisterJob::OnPausedAfterDownload,
                        weak_factory_.GetWeakPtr()));
   }
+
+  if (!compared_script_info_map_.empty()) {
+    new_version()->set_compared_script_info_map(
+        std::move(compared_script_info_map_));
+  }
+
   new_version()->StartWorker(
       ServiceWorkerMetrics::EventType::INSTALL,
       base::BindOnce(&ServiceWorkerRegisterJob::OnStartWorkerFinished,

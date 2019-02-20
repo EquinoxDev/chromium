@@ -6,6 +6,7 @@ package org.chromium.chrome.browser.download;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -24,6 +25,7 @@ import org.chromium.base.ContextUtils;
 import org.chromium.base.FileUtils;
 import org.chromium.base.Log;
 import org.chromium.base.StrictModeContext;
+import org.chromium.base.TimeUtils;
 import org.chromium.base.VisibleForTesting;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.library_loader.LibraryProcessType;
@@ -42,6 +44,7 @@ import org.chromium.chrome.browser.download.ui.DownloadHistoryItemWrapper;
 import org.chromium.chrome.browser.download.ui.DownloadHistoryItemWrapper.OfflineItemWrapper;
 import org.chromium.chrome.browser.feature_engagement.ScreenshotTabObserver;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
+import org.chromium.chrome.browser.init.ServiceManagerStartupUtils;
 import org.chromium.chrome.browser.media.MediaViewerUtils;
 import org.chromium.chrome.browser.offlinepages.DownloadUiActionFlags;
 import org.chromium.chrome.browser.offlinepages.OfflinePageBridge;
@@ -50,7 +53,7 @@ import org.chromium.chrome.browser.offlinepages.OfflinePageUtils;
 import org.chromium.chrome.browser.offlinepages.downloads.OfflinePageDownloadBridge;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.document.TabDelegate;
 import org.chromium.chrome.browser.util.ConversionUtils;
 import org.chromium.chrome.browser.util.IntentUtils;
@@ -81,10 +84,11 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
 
 /**
  * A class containing some utility static methods.
@@ -116,13 +120,6 @@ public class DownloadUtils {
             "org.chromium.chrome.browser.download.IS_OFF_THE_RECORD";
     public static final String EXTRA_SHOW_PREFETCHED_CONTENT =
             "org.chromium.chrome.browser.download.SHOW_PREFETCHED_CONTENT";
-
-    @VisibleForTesting
-    static final long SECONDS_PER_MINUTE = TimeUnit.MINUTES.toSeconds(1);
-    @VisibleForTesting
-    static final long SECONDS_PER_HOUR = TimeUnit.HOURS.toSeconds(1);
-    @VisibleForTesting
-    static final long SECONDS_PER_DAY = TimeUnit.DAYS.toSeconds(1);
 
     @VisibleForTesting
     static final String ELLIPSIS = "\u2026";
@@ -380,7 +377,7 @@ public class DownloadUtils {
                 }
             } else {
                 // If not sharing an offline page, generate the URI for the file being shared.
-                itemUris.add(getUriForItem(wrappedItem.getFile()));
+                itemUris.add(getUriForItem(wrappedItem.getFilePath()));
             }
 
             if (selectedItemsFilterType != wrappedItem.getFilterType()) {
@@ -467,9 +464,6 @@ public class DownloadUtils {
      */
     private static Uri getUriToShareOfflinePage(
             OfflineItemWrapper wrappedOfflineItem, Map<String, String> newOfflineFilePathMap) {
-        if (!OfflinePageBridge.isPageSharingEnabled()) {
-            return null;
-        }
         String newFilePath = wrappedOfflineItem.getFilePath();
 
         if (wrappedOfflineItem.isSuggested()) {
@@ -486,13 +480,13 @@ public class DownloadUtils {
 
         if (newOfflineFilePathMap == null) {
             // If the file was already in the public directory, use the existing file path.
-            return getUriForItem(wrappedOfflineItem.getFile());
+            return getUriForItem(wrappedOfflineItem.getFilePath());
         }
 
         String publishedFilePath = newOfflineFilePathMap.get(wrappedOfflineItem.getId());
         if (!TextUtils.isEmpty(publishedFilePath)) {
             // If we moved the file to publish it, use the new path.
-            return getUriForItem(new File(publishedFilePath));
+            return getUriForItem(publishedFilePath);
         }
 
         // If publishing failed, return null, and we will share by original URL.
@@ -510,8 +504,6 @@ public class DownloadUtils {
      */
     public static boolean prepareForSharing(
             List<DownloadHistoryItemWrapper> items, Callback<Map<String, String>> callback) {
-        if (!OfflinePageBridge.isPageSharingEnabled()) return true;
-
         OfflinePageBridge offlinePageBridge =
                 OfflinePageBridge.getForProfile(Profile.getLastUsedProfile().getOriginalProfile());
 
@@ -574,10 +566,12 @@ public class DownloadUtils {
 
     /**
      * Returns a URI that points at the file.
-     * @param file File to get a URI for.
+     * @param filePath File path to get a URI for.
      * @return URI that points at that file, either as a content:// URI or a file:// URI.
      */
-    public static Uri getUriForItem(File file) {
+    public static Uri getUriForItem(String filePath) {
+        if (isContentUri(filePath)) return Uri.parse(filePath);
+
         Uri uri = null;
 
         // FileUtils.getUriForFile() causes a disk read when it calls into
@@ -586,7 +580,7 @@ public class DownloadUtils {
         // method on a background thread we would have to wait. As it depends on user-selected
         // items, we cannot know/preload which URIs we need until the user presses share.
         StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
-        uri = FileUtils.getUriForFile(file);
+        uri = FileUtils.getUriForFile(new File(filePath));
         StrictMode.setThreadPolicy(oldPolicy);
 
         return uri;
@@ -594,10 +588,8 @@ public class DownloadUtils {
 
     @CalledByNative
     private static String getUriStringForPath(String filePath) {
-        Uri uri = null;
-        File file = new File(filePath);
-        uri = getUriForItem(file);
-
+        if (isContentUri(filePath)) return filePath;
+        Uri uri = getUriForItem(filePath);
         return uri != null ? uri.toString() : new String();
     }
 
@@ -619,7 +611,7 @@ public class DownloadUtils {
 
     /**
      * Opens a file in Chrome or in another app if appropriate.
-     * @param file path to the file to open.
+     * @param filePath Path to the file to open, can be a content Uri.
      * @param mimeType mime type of the file.
      * @param downloadGuid The associated download GUID.
      * @param isOffTheRecord whether we are in an off the record context.
@@ -628,19 +620,23 @@ public class DownloadUtils {
      * @param source The source that tries to open the download file.
      * @return whether the file could successfully be opened.
      */
-    public static boolean openFile(File file, String mimeType, String downloadGuid,
+    public static boolean openFile(String filePath, String mimeType, String downloadGuid,
             boolean isOffTheRecord, String originalUrl, String referrer,
             @DownloadMetrics.DownloadOpenSource int source) {
         DownloadMetrics.recordDownloadOpen(source, mimeType);
         Context context = ContextUtils.getApplicationContext();
         DownloadManagerService service = DownloadManagerService.getDownloadManagerService();
+        Uri contentUri = getUriForItem(filePath);
 
         // Check if Chrome should open the file itself.
         if (service.isDownloadOpenableInBrowser(isOffTheRecord, mimeType)) {
             // Share URIs use the content:// scheme when able, which looks bad when displayed
             // in the URL bar.
-            Uri fileUri = Uri.fromFile(file);
-            Uri contentUri = getUriForItem(file);
+            Uri fileUri = contentUri;
+            if (!isContentUri(filePath)) {
+                File file = new File(filePath);
+                fileUri = Uri.fromFile(file);
+            }
             String normalizedMimeType = Intent.normalizeMimeType(mimeType);
 
             Intent intent = MediaViewerUtils.getMediaViewerIntent(
@@ -654,7 +650,9 @@ public class DownloadUtils {
         try {
             // TODO(qinmin): Move this to an AsyncTask so we don't need to temper with strict mode.
             StrictMode.ThreadPolicy oldPolicy = StrictMode.allowThreadDiskReads();
-            Uri uri = ApiCompatibilityUtils.getUriForDownloadedFile(file);
+            Uri uri = isContentUri(filePath)
+                    ? contentUri
+                    : ApiCompatibilityUtils.getUriForDownloadedFile(new File(filePath));
             StrictMode.setThreadPolicy(oldPolicy);
             Intent viewIntent =
                     MediaViewerUtils.createViewIntentForUri(uri, mimeType, originalUrl, referrer);
@@ -798,17 +796,17 @@ public class DownloadUtils {
         int days = 0;
         int hours = 0;
         int minutes = 0;
-        if (secondsLong >= SECONDS_PER_DAY) {
-            days = (int) (secondsLong / SECONDS_PER_DAY);
-            secondsLong -= days * SECONDS_PER_DAY;
+        if (secondsLong >= TimeUtils.SECONDS_PER_DAY) {
+            days = (int) (secondsLong / TimeUtils.SECONDS_PER_DAY);
+            secondsLong -= days * TimeUtils.SECONDS_PER_DAY;
         }
-        if (secondsLong >= SECONDS_PER_HOUR) {
-            hours = (int) (secondsLong / SECONDS_PER_HOUR);
-            secondsLong -= hours * SECONDS_PER_HOUR;
+        if (secondsLong >= TimeUtils.SECONDS_PER_HOUR) {
+            hours = (int) (secondsLong / TimeUtils.SECONDS_PER_HOUR);
+            secondsLong -= hours * TimeUtils.SECONDS_PER_HOUR;
         }
-        if (secondsLong >= SECONDS_PER_MINUTE) {
-            minutes = (int) (secondsLong / SECONDS_PER_MINUTE);
-            secondsLong -= minutes * SECONDS_PER_MINUTE;
+        if (secondsLong >= TimeUtils.SECONDS_PER_MINUTE) {
+            minutes = (int) (secondsLong / TimeUtils.SECONDS_PER_MINUTE);
+            secondsLong -= minutes * TimeUtils.SECONDS_PER_MINUTE;
         }
         int seconds = (int) secondsLong;
 
@@ -999,6 +997,14 @@ public class DownloadUtils {
                 && entry.isAutoResumable;
     }
 
+    /** @return Whether we should start service manager only, based off the features enabled. */
+    public static boolean shouldStartServiceManagerOnly() {
+        Set<String> features = new HashSet<String>();
+        features.add(ChromeFeatureList.SERVICE_MANAGER_FOR_DOWNLOAD);
+        features.add(ChromeFeatureList.NETWORK_SERVICE);
+        return ServiceManagerStartupUtils.canStartServiceManager(features);
+    }
+
     /**
      * Format the number of bytes into KB, or MB, or GB and return the corresponding string
      * resource. Uses default download-related set of strings.
@@ -1184,6 +1190,34 @@ public class DownloadUtils {
         if (primaryDir == null || path == null) return false;
         String primaryPath = primaryDir.getAbsolutePath();
         return primaryPath == null ? false : path.contains(primaryPath);
+    }
+
+    /**
+     * Parses an originating URL string and returns a valid Uri that can be inserted into
+     * DownloadProvider. The returned Uri has to be null or non-empty http(s) scheme.
+     * @param originalUrl String representation of the originating URL.
+     * @return A valid Uri that can be accepted by DownloadProvider.
+     */
+    public static Uri parseOriginalUrl(String originalUrl) {
+        Uri originalUri = TextUtils.isEmpty(originalUrl) ? null : Uri.parse(originalUrl);
+        if (originalUri != null) {
+            String scheme = originalUri.normalizeScheme().getScheme();
+            if (scheme == null
+                    || (!scheme.equals(UrlConstants.HTTPS_SCHEME)
+                            && !scheme.equals(UrlConstants.HTTP_SCHEME))) {
+                originalUri = null;
+            }
+        }
+        return originalUri;
+    }
+
+    /**
+     * @return whether a Uri has content scheme.
+     */
+    public static boolean isContentUri(String uri) {
+        if (uri == null) return false;
+        Uri parsedUri = Uri.parse(uri);
+        return parsedUri != null && ContentResolver.SCHEME_CONTENT.equals(parsedUri.getScheme());
     }
 
     private static native String nativeGetFailStateMessage(@FailState int failState);

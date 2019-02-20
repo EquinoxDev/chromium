@@ -54,22 +54,20 @@ class TestAdTracker : public AdTracker {
     return execution_context_;
   }
 
-  void WillSendRequest(ExecutionContext* execution_context,
-                       unsigned long identifier,
-                       DocumentLoader* document_loader,
-                       ResourceRequest& resource_request,
-                       const ResourceResponse& redirect_response,
-                       const FetchInitiatorInfo& fetch_initiator_info,
-                       ResourceType resource_type) override {
+  bool CalculateIfAdSubresource(ExecutionContext* execution_context,
+                                const ResourceRequest& resource_request,
+                                ResourceType resource_type,
+                                bool ad_request) override {
     if (!ad_suffix_.IsEmpty() &&
         resource_request.Url().GetString().EndsWith(ad_suffix_)) {
-      resource_request.SetIsAdResource();
+      ad_request = true;
     }
-    AdTracker::WillSendRequest(execution_context, identifier, document_loader,
-                               resource_request, redirect_response,
-                               fetch_initiator_info, resource_type);
-    is_ad_.insert(resource_request.Url().GetString(),
-                  resource_request.IsAdResource());
+
+    ad_request = AdTracker::CalculateIfAdSubresource(
+        execution_context, resource_request, resource_type, ad_request);
+
+    is_ad_.insert(resource_request.Url().GetString(), ad_request);
+    return ad_request;
   }
 
  private:
@@ -271,6 +269,26 @@ TEST_F(AdTrackerSimTest, ScriptDetectedByContext) {
   EXPECT_TRUE(ad_tracker_->IsAdScriptInStack());
 }
 
+TEST_F(AdTrackerSimTest, RedirectToAdUrl) {
+  SimSubresourceRequest redirect_script(
+      "https://example.com/redirect_script.js",
+      "https://example.com/ad_script.js", "text/javascript");
+  SimSubresourceRequest ad_script("https://example.com/ad_script.js",
+                                  "text/javascript");
+
+  ad_tracker_->SetAdSuffix("ad_script.js");
+
+  main_resource_->Complete(
+      "<body><script src='redirect_script.js'></script></body>");
+
+  ad_script.Complete("");
+
+  EXPECT_FALSE(ad_tracker_->RequestWithUrlTaggedAsAd(
+      "https://example.com/redirect_script.js"));
+  EXPECT_TRUE(ad_tracker_->RequestWithUrlTaggedAsAd(
+      "https://example.com/ad_script.js"));
+}
+
 TEST_F(AdTrackerSimTest, AdResourceDetectedByContext) {
   SimSubresourceRequest ad_script("https://example.com/ad_script.js",
                                   "text/javascript");
@@ -365,8 +383,10 @@ TEST_F(AdTrackerSimTest, ImageLoadedWhileExecutingAdScript) {
 TEST_F(AdTrackerSimTest, FrameLoadedWhileExecutingAdScript) {
   const char kAdUrl[] = "https://example.com/ad_script.js";
   const char kVanillaUrl[] = "https://example.com/vanilla_page.html";
+  const char kVanillaImgUrl[] = "https://example.com/vanilla_img.jpg";
   SimSubresourceRequest ad_resource(kAdUrl, "text/javascript");
-  SimSubresourceRequest vanilla_page(kVanillaUrl, "text/html");
+  SimRequest vanilla_page(kVanillaUrl, "text/html");
+  SimSubresourceRequest vanilla_image(kVanillaImgUrl, "image/jpeg");
 
   ad_tracker_->SetAdSuffix("ad_script.js");
 
@@ -377,11 +397,14 @@ TEST_F(AdTrackerSimTest, FrameLoadedWhileExecutingAdScript) {
     iframe.src = "vanilla_page.html";
     document.body.appendChild(iframe);
     )SCRIPT");
-  vanilla_page.Complete("");
+  vanilla_page.Complete("<img src=vanilla_img.jpg></img>");
+  vanilla_image.Complete("");
 
   EXPECT_TRUE(IsKnownAdScript(&GetDocument(), kAdUrl));
   EXPECT_TRUE(ad_tracker_->RequestWithUrlTaggedAsAd(kAdUrl));
-  EXPECT_TRUE(ad_tracker_->RequestWithUrlTaggedAsAd(kVanillaUrl));
+  Frame* child_frame = GetDocument().GetFrame()->Tree().FirstChild();
+  EXPECT_TRUE(ToLocalFrame(child_frame)->IsAdSubframe());
+  EXPECT_TRUE(ad_tracker_->RequestWithUrlTaggedAsAd(kVanillaImgUrl));
 }
 
 // A script tagged as an ad in one frame shouldn't cause it to be considered

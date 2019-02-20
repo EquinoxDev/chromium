@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/stringprintf.h"
@@ -88,14 +89,29 @@ class InterceptAndCancelDidCommitProvisionalLoad
     return intercepted_requests_;
   }
 
+  std::vector<blink::mojom::DocumentInterfaceBrokerRequest>&
+  intercepted_broker_content_requests() {
+    return intercepted_broker_content_requests_;
+  }
+
+  std::vector<blink::mojom::DocumentInterfaceBrokerRequest>&
+  intercepted_broker_blink_requests() {
+    return intercepted_broker_blink_requests_;
+  }
+
  protected:
   bool WillDispatchDidCommitProvisionalLoad(
       RenderFrameHost* render_frame_host,
       ::FrameHostMsg_DidCommitProvisionalLoad_Params* params,
-      service_manager::mojom::InterfaceProviderRequest*
-          interface_provider_request) override {
+      mojom::DidCommitProvisionalLoadInterfaceParamsPtr& interface_params)
+      override {
     intercepted_messages_.push_back(*params);
-    intercepted_requests_.push_back(std::move(*interface_provider_request));
+    intercepted_requests_.push_back(
+        std::move(interface_params->interface_provider_request));
+    intercepted_broker_content_requests_.push_back(
+        std::move(interface_params->document_interface_broker_content_request));
+    intercepted_broker_blink_requests_.push_back(
+        std::move(interface_params->document_interface_broker_blink_request));
     if (loop_)
       loop_->Quit();
     // Do not send the message to the RenderFrameHostImpl.
@@ -106,6 +122,10 @@ class InterceptAndCancelDidCommitProvisionalLoad
       intercepted_messages_;
   std::vector<::service_manager::mojom::InterfaceProviderRequest>
       intercepted_requests_;
+  std::vector<blink::mojom::DocumentInterfaceBrokerRequest>
+      intercepted_broker_content_requests_;
+  std::vector<blink::mojom::DocumentInterfaceBrokerRequest>
+      intercepted_broker_blink_requests_;
   std::unique_ptr<base::RunLoop> loop_;
 };
 
@@ -545,7 +565,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, PostUploadIllegalFilePath) {
       "document.getElementById('file-form').submit();",
       &result));
   EXPECT_TRUE(result);
-  EXPECT_EQ(bad_message::RFH_ILLEGAL_UPLOAD_PARAMS, process_kill_waiter.Wait());
+  EXPECT_EQ(bad_message::ILLEGAL_UPLOAD_PARAMS, process_kill_waiter.Wait());
 }
 
 // Test case to verify that redirects to data: URLs are properly disallowed,
@@ -1193,7 +1213,10 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   render_frame_host->DidCommitProvisionalLoadForTesting(
       std::make_unique<::FrameHostMsg_DidCommitProvisionalLoad_Params>(
           interceptor.intercepted_messages()[0]),
-      std::move(interceptor.intercepted_requests()[0]));
+      mojom::DidCommitProvisionalLoadInterfaceParams::New(
+          std::move(interceptor.intercepted_requests()[0]),
+          std::move(interceptor.intercepted_broker_content_requests()[0]),
+          std::move(interceptor.intercepted_broker_blink_requests()[0])));
   recorder.WaitForEvents(5);
   EXPECT_EQ(5u, recorder.records().size());
   EXPECT_STREQ("did-commit /infinite_load_1.html",
@@ -1206,7 +1229,10 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   render_frame_host->DidCommitProvisionalLoadForTesting(
       std::make_unique<::FrameHostMsg_DidCommitProvisionalLoad_Params>(
           interceptor.intercepted_messages()[1]),
-      std::move(interceptor.intercepted_requests()[1]));
+      mojom::DidCommitProvisionalLoadInterfaceParams::New(
+          std::move(interceptor.intercepted_requests()[1]),
+          std::move(interceptor.intercepted_broker_content_requests()[1]),
+          std::move(interceptor.intercepted_broker_blink_requests()[1])));
   recorder.WaitForEvents(6);
   EXPECT_EQ(6u, recorder.records().size());
   EXPECT_STREQ("did-commit /infinite_load_2.html",
@@ -1530,9 +1556,6 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, OpenerNavigation_DownloadPolicy) {
 
 // A variation of the OpenerNavigation_DownloadPolicy test above, but uses a
 // cross-origin URL for the popup window.
-// TODO(csharrison): currently opener checks for DownloadPolicy has a bug when
-// the opener is cross-process. For now the test uses a.com and bar.a.com to get
-// cross-origin behavior but still same process.
 IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
                        CrossOriginOpenerNavigation_DownloadPolicy) {
   base::ScopedAllowBlockingForTesting allow_blocking;
@@ -1553,7 +1576,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   ShellAddedObserver shell_observer;
   EXPECT_TRUE(EvalJs(opener, JsReplace("!!window.open($1);",
                                        embedded_test_server()->GetURL(
-                                           "bar.a.com", "/title1.html")))
+                                           "bar.com", "/title1.html")))
                   .ExtractBool());
   Shell* new_shell = shell_observer.GetShell();
   EXPECT_EQ(2u, Shell::windows().size());
@@ -1615,6 +1638,132 @@ IN_PROC_BROWSER_TEST_F(NavigationDownloadBrowserTest,
   )"));
 
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+}
+
+// Add header on redirect.
+IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest, AddRequestHeaderOnRedirect) {
+  net::test_server::ControllableHttpResponse response_1(embedded_test_server(),
+                                                        "", true);
+  net::test_server::ControllableHttpResponse response_2(embedded_test_server(),
+                                                        "", true);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  content::TestNavigationThrottleInserter throttle_inserter(
+      shell()->web_contents(),
+      base::BindLambdaForTesting(
+          [](NavigationHandle* handle) -> std::unique_ptr<NavigationThrottle> {
+            auto throttle = std::make_unique<TestNavigationThrottle>(handle);
+            NavigationHandleImpl* handle_impl =
+                static_cast<NavigationHandleImpl*>(handle);
+            throttle->SetCallback(TestNavigationThrottle::WILL_REDIRECT_REQUEST,
+                                  base::BindLambdaForTesting([handle_impl]() {
+                                    handle_impl->SetRequestHeader(
+                                        "header_name", "header_value");
+                                  }));
+            return throttle;
+          }));
+
+  // 1) There is no "header_name" header in the initial request.
+  shell()->LoadURL(embedded_test_server()->GetURL("/doc"));
+  response_1.WaitForRequest();
+  EXPECT_FALSE(
+      base::ContainsKey(response_1.http_request()->headers, "header_name"));
+  response_1.Send(
+      "HTTP/1.1 302 Moved Temporarily\r\nLocation: /new_doc\r\n\r\n");
+  response_1.Done();
+
+  // 2) The header is added to the second request after the redirect.
+  response_2.WaitForRequest();
+  EXPECT_EQ("header_value",
+            response_2.http_request()->headers.at("header_name"));
+}
+
+// Add header on request start, modify it on redirect.
+IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest,
+                       AddRequestHeaderModifyOnRedirect) {
+  net::test_server::ControllableHttpResponse response_1(embedded_test_server(),
+                                                        "", true);
+  net::test_server::ControllableHttpResponse response_2(embedded_test_server(),
+                                                        "", true);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  content::TestNavigationThrottleInserter throttle_inserter(
+      shell()->web_contents(),
+      base::BindLambdaForTesting(
+          [](NavigationHandle* handle) -> std::unique_ptr<NavigationThrottle> {
+            auto throttle = std::make_unique<TestNavigationThrottle>(handle);
+            NavigationHandleImpl* handle_impl =
+                static_cast<NavigationHandleImpl*>(handle);
+            throttle->SetCallback(TestNavigationThrottle::WILL_START_REQUEST,
+                                  base::BindLambdaForTesting([handle_impl]() {
+                                    handle_impl->SetRequestHeader(
+                                        "header_name", "header_value");
+                                  }));
+            throttle->SetCallback(TestNavigationThrottle::WILL_REDIRECT_REQUEST,
+                                  base::BindLambdaForTesting([handle_impl]() {
+                                    handle_impl->SetRequestHeader(
+                                        "header_name", "other_value");
+                                  }));
+            return throttle;
+          }));
+
+  // 1) The header is added to the initial request.
+  shell()->LoadURL(embedded_test_server()->GetURL("/doc"));
+  response_1.WaitForRequest();
+  EXPECT_EQ("header_value",
+            response_1.http_request()->headers.at("header_name"));
+  response_1.Send(
+      "HTTP/1.1 302 Moved Temporarily\r\nLocation: /new_doc\r\n\r\n");
+  response_1.Done();
+
+  // 2) The header is modified in the second request after the redirect.
+  response_2.WaitForRequest();
+  EXPECT_EQ("other_value",
+            response_2.http_request()->headers.at("header_name"));
+}
+
+// Add header on request start, remove it on redirect.
+IN_PROC_BROWSER_TEST_F(NavigationBaseBrowserTest,
+                       AddRequestHeaderRemoveOnRedirect) {
+  net::test_server::ControllableHttpResponse response_1(embedded_test_server(),
+                                                        "", true);
+  net::test_server::ControllableHttpResponse response_2(embedded_test_server(),
+                                                        "", true);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  content::TestNavigationThrottleInserter throttle_inserter(
+      shell()->web_contents(),
+      base::BindLambdaForTesting(
+          [](NavigationHandle* handle) -> std::unique_ptr<NavigationThrottle> {
+            NavigationHandleImpl* handle_impl =
+                static_cast<NavigationHandleImpl*>(handle);
+            auto throttle = std::make_unique<TestNavigationThrottle>(handle);
+            throttle->SetCallback(TestNavigationThrottle::WILL_START_REQUEST,
+                                  base::BindLambdaForTesting([handle_impl]() {
+                                    handle_impl->SetRequestHeader(
+                                        "header_name", "header_value");
+                                  }));
+            throttle->SetCallback(
+                TestNavigationThrottle::WILL_REDIRECT_REQUEST,
+                base::BindLambdaForTesting([handle_impl]() {
+                  handle_impl->RemoveRequestHeader("header_name");
+                }));
+            return throttle;
+          }));
+
+  // 1) The header is added to the initial request.
+  shell()->LoadURL(embedded_test_server()->GetURL("/doc"));
+  response_1.WaitForRequest();
+  EXPECT_EQ("header_value",
+            response_1.http_request()->headers.at("header_name"));
+  response_1.Send(
+      "HTTP/1.1 302 Moved Temporarily\r\nLocation: /new_doc\r\n\r\n");
+  response_1.Done();
+
+  // 2) The header is removed from the second request after the redirect.
+  response_2.WaitForRequest();
+  EXPECT_FALSE(
+      base::ContainsKey(response_2.http_request()->headers, "header_name"));
 }
 
 }  // namespace content

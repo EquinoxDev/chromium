@@ -6,6 +6,7 @@
 
 #include <memory>
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/platform/web_color_scheme.h"
 #include "third_party/blink/public/platform/web_float_rect.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/css/css_font_selector.h"
@@ -41,6 +42,7 @@ using namespace css_test_helpers;
 class StyleEngineTest : public testing::Test {
  protected:
   void SetUp() override;
+  void TearDown() override;
 
   Document& GetDocument() { return dummy_page_holder_->GetDocument(); }
   StyleEngine& GetStyleEngine() { return GetDocument().GetStyleEngine(); }
@@ -64,10 +66,15 @@ class StyleEngineTest : public testing::Test {
 
  private:
   std::unique_ptr<DummyPageHolder> dummy_page_holder_;
+  RuntimeEnabledFeatures::Backup features_backup_;
 };
 
 void StyleEngineTest::SetUp() {
   dummy_page_holder_ = DummyPageHolder::Create(IntSize(800, 600));
+}
+
+void StyleEngineTest::TearDown() {
+  features_backup_.Restore();
 }
 
 StyleEngineTest::RuleSetInvalidation
@@ -1209,12 +1216,11 @@ class StyleEngineClient : public frame_test_helpers::TestWebWidgetClient {
 
 TEST_F(StyleEngineTest, ViewportDescriptionForZoomDSF) {
   StyleEngineClient client;
-  frame_test_helpers::TestWebViewClient view_client(&client);
   client.set_device_scale_factor(1.f);
 
   frame_test_helpers::WebViewHelper web_view_helper;
   WebViewImpl* web_view_impl =
-      web_view_helper.Initialize(nullptr, &view_client);
+      web_view_helper.Initialize(nullptr, nullptr, &client);
   web_view_impl->MainFrameWidget()->UpdateAllLifecyclePhases(
       WebWidget::LifecycleUpdateReason::kTest);
 
@@ -1478,6 +1484,54 @@ TEST_F(StyleEngineTest, MediaQueriesChangeDefaultFontSize) {
                 GetCSSPropertyColor()));
 }
 
+TEST_F(StyleEngineTest, MediaQueriesChangeColorScheme) {
+  RuntimeEnabledFeatures::SetMediaQueryPrefersColorSchemeEnabled(true);
+
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+      body { color: red }
+      @media (prefers-color-scheme: dark) {
+        body { color: green }
+      }
+    </style>
+    <body></body>
+  )HTML");
+
+  UpdateAllLifecyclePhases();
+  EXPECT_EQ(MakeRGB(255, 0, 0),
+            GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
+                GetCSSPropertyColor()));
+
+  GetDocument().GetSettings()->SetPreferredColorScheme(WebColorScheme::kDark);
+  UpdateAllLifecyclePhases();
+  EXPECT_EQ(MakeRGB(0, 128, 0),
+            GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
+                GetCSSPropertyColor()));
+}
+
+TEST_F(StyleEngineTest, MediaQueriesChangePrefersReducedMotion) {
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <style>
+      body { color: red }
+      @media (prefers-reduced-motion: reduce) {
+        body { color: green }
+      }
+    </style>
+    <body></body>
+  )HTML");
+
+  UpdateAllLifecyclePhases();
+  EXPECT_EQ(MakeRGB(255, 0, 0),
+            GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
+                GetCSSPropertyColor()));
+
+  GetDocument().GetSettings()->SetPrefersReducedMotion(true);
+  UpdateAllLifecyclePhases();
+  EXPECT_EQ(MakeRGB(0, 128, 0),
+            GetDocument().body()->GetComputedStyle()->VisitedDependentColor(
+                GetCSSPropertyColor()));
+}
+
 TEST_F(StyleEngineTest, ShadowRootStyleRecalcCrash) {
   GetDocument().body()->SetInnerHTMLFromString("<div id=host></div>");
   HTMLElement* host = ToHTMLElement(GetDocument().getElementById("host"));
@@ -1538,7 +1592,7 @@ TEST_F(StyleEngineTest, RejectSelectorForPseudoElement) {
   div->SetInlineStyleProperty(CSSPropertyColor, "green");
 
   GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kInStyleRecalc);
-  GetStyleEngine().RecalcStyle(kNoChange);
+  GetStyleEngine().RecalcStyle({});
 
   // Should fast reject ".not-in-filter div::before {}" for both the div and its
   // ::before pseudo element.
@@ -1716,6 +1770,95 @@ TEST_F(StyleEngineTest, CSSSelectorEmptyWhitespaceOnlyFail) {
   EXPECT_FALSE(is_counted(div_elements->item(2)));
   EXPECT_FALSE(is_counted(div_elements->item(3)));
   EXPECT_TRUE(is_counted(div_elements->item(4)));
+}
+
+TEST_F(StyleEngineTest, EnsuredComputedStyleRecalc) {
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <div style="display:none">
+      <div>
+        <div id="computed">
+          <span id="span"><span>XXX</span></span>
+        </div>
+      </div>
+    </div>
+  )HTML");
+  UpdateAllLifecyclePhases();
+
+  Element* computed = GetDocument().getElementById("computed");
+  Element* span_outer = GetDocument().getElementById("span");
+  Node* span_inner = span_outer->firstChild();
+
+  // Initially all null in display:none subtree.
+  EXPECT_FALSE(computed->GetComputedStyle());
+  EXPECT_FALSE(span_outer->GetComputedStyle());
+  EXPECT_FALSE(span_inner->GetComputedStyle());
+
+  // Force computed style down to #computed.
+  computed->EnsureComputedStyle();
+  UpdateAllLifecyclePhases();
+  EXPECT_TRUE(computed->GetComputedStyle());
+  EXPECT_FALSE(span_outer->GetComputedStyle());
+  EXPECT_FALSE(span_inner->GetComputedStyle());
+
+  // Setting span color should not create ComputedStyles during style recalc.
+  span_outer->SetInlineStyleProperty(CSSPropertyColor, "blue");
+  EXPECT_TRUE(span_outer->NeedsStyleRecalc());
+  GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kInStyleRecalc);
+  GetStyleEngine().RecalcStyle({});
+  GetDocument().Lifecycle().AdvanceTo(DocumentLifecycle::kStyleClean);
+
+  EXPECT_FALSE(span_outer->NeedsStyleRecalc());
+  EXPECT_FALSE(span_outer->GetComputedStyle());
+  EXPECT_FALSE(span_inner->GetComputedStyle());
+  // #computed still non-null because #span_outer is the recalc root.
+  EXPECT_TRUE(computed->GetComputedStyle());
+
+  // Triggering style recalc which propagates the color down the tree should
+  // clear ComputedStyle objects in the display:none subtree.
+  GetDocument().body()->SetInlineStyleProperty(CSSPropertyColor, "pink");
+  UpdateAllLifecyclePhases();
+
+  EXPECT_FALSE(computed->GetComputedStyle());
+  EXPECT_FALSE(span_outer->GetComputedStyle());
+  EXPECT_FALSE(span_inner->GetComputedStyle());
+}
+
+TEST_F(StyleEngineTest, EnsureCustomComputedStyle) {
+  GetDocument().body()->SetInnerHTMLFromString("");
+  GetDocument().body()->SetInnerHTMLFromString(R"HTML(
+    <div id=div>
+      <progress id=progress>
+    </div>
+  )HTML");
+  UpdateAllLifecyclePhases();
+
+  // Note: <progress> is chosen because it creates ProgressShadowElement
+  // instances, which override CustomStyleForLayoutObject with
+  // display:none.
+  Element* div = GetDocument().getElementById("div");
+  Element* progress = GetDocument().getElementById("progress");
+  ASSERT_TRUE(div);
+  ASSERT_TRUE(progress);
+
+  // This causes ProgressShadowElements to get ComputedStyles with
+  // IsEnsuredInDisplayNone==true.
+  for (Node* node = progress; node;
+       node = FlatTreeTraversal::Next(*node, progress)) {
+    node->EnsureComputedStyle();
+  }
+
+  // This triggers layout tree building.
+  div->SetInlineStyleProperty(CSSPropertyDisplay, "inline");
+  UpdateAllLifecyclePhases();
+
+  // We must not create LayoutObjects for Nodes with
+  // IsEnsuredInDisplayNone==true
+  for (Node* node = progress; node;
+       node = FlatTreeTraversal::Next(*node, progress)) {
+    ASSERT_TRUE(!node->GetComputedStyle() ||
+                !node->ComputedStyleRef().IsEnsuredInDisplayNone() ||
+                !node->GetLayoutObject());
+  }
 }
 
 }  // namespace blink

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/crostini/crostini_installer_view.h"
 
+#include "base/bind.h"
 #include "base/metrics/histogram_base.h"
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -22,8 +23,6 @@
 #include "chromeos/dbus/fake_cros_disks_client.h"
 #include "chromeos/disks/disk_mount_manager.h"
 #include "components/crx_file/id_util.h"
-#include "net/base/mock_network_change_notifier.h"
-#include "net/base/network_change_notifier_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/window/dialog_client_view.h"
@@ -170,7 +169,7 @@ IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow) {
 
 IN_PROC_BROWSER_TEST_F(CrostiniInstallerViewBrowserTest, InstallFlow_Offline) {
   base::HistogramTester histogram_tester;
-  SetConnectionType(net::NetworkChangeNotifier::CONNECTION_NONE);
+  SetConnectionType(network::mojom::ConnectionType::CONNECTION_NONE);
 
   ShowUi("default");
   EXPECT_NE(nullptr, ActiveView());

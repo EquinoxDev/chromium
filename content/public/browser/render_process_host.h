@@ -24,10 +24,10 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "media/media_buildflags.h"
-#include "services/network/public/mojom/network_context.mojom.h"
-#include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom.h"
-#include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
+#include "services/network/public/mojom/network_context.mojom-forward.h"
+#include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
+#include "third_party/blink/public/mojom/cache_storage/cache_storage.mojom-forward.h"
+#include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-forward.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_ANDROID)
@@ -46,13 +46,14 @@ namespace service_manager {
 class Identity;
 }
 
-namespace resource_coordinator {
-class ProcessResourceCoordinator;
+namespace url {
+class Origin;
 }
 
 namespace content {
 class BrowserContext;
 class BrowserMessageFilter;
+class IsolationContext;
 class RenderProcessHostObserver;
 class RendererAudioOutputStreamFactoryContext;
 class StoragePartition;
@@ -164,6 +165,12 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // and used to determine if the process should be backgrounded or not.
   virtual void OnMediaStreamAdded() = 0;
   virtual void OnMediaStreamRemoved() = 0;
+
+  // Called when a service worker is executing in the process and may need
+  // to respond to events from other processes in a timely manner.  This is
+  // used to determine if the process should be backgrounded or not.
+  virtual void OnForegroundServiceWorkerAdded() = 0;
+  virtual void OnForegroundServiceWorkerRemoved() = 0;
 
   // Indicates whether the current RenderProcessHost is exclusively hosting
   // guest RenderFrames. Not all guest RenderFrames are created equal.  A guest,
@@ -402,10 +409,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // MockRenderProcessHost usage in tests.
   virtual mojom::Renderer* GetRendererInterface() = 0;
 
-  // Acquires the interface to the Global Resource Coordinator for this process.
-  virtual resource_coordinator::ProcessResourceCoordinator*
-  GetProcessResourceCoordinator() = 0;
-
   // Create an URLLoaderFactory that can be used by |origin| being hosted in
   // |this| process.
   //
@@ -457,7 +460,8 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
   // MockRenderProcessHost. It isn't meant to be called outside of content.
   // TODO(creis): Rename LockToOrigin to LockToPrincipal. See
   // https://crbug.com/846155.
-  virtual void LockToOrigin(const GURL& lock_url) = 0;
+  virtual void LockToOrigin(const IsolationContext& isolation_context,
+                            const GURL& lock_url) = 0;
 
   // Binds |request| to the CacheStorageDispatcherHost instance. The binding is
   // sent to the IO thread. This is for internal use only, and is only exposed

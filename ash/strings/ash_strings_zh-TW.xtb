@@ -14,6 +14,7 @@
 <translation id="1153356358378277386">配對裝置</translation>
 <translation id="1195412055398077112">遮視區域</translation>
 <translation id="119944043368869598">全部清除</translation>
+<translation id="123828989343052515">新工作檯</translation>
 <translation id="1247372569136754018">麥克風 (內部)</translation>
 <translation id="1252999807265626933">正在使用「<ph name="POWER_SOURCE" />」充電</translation>
 <translation id="1255033239764210633">天氣如何？</translation>
@@ -68,10 +69,12 @@
 <translation id="1969011864782743497"><ph name="DEVICE_NAME" /> (USB)</translation>
 <translation id="1993072747612765854">進一步瞭解最新的 <ph name="SYSTEM_APP_NAME" />更新內容</translation>
 <translation id="1995660704900986789">關閉</translation>
+<translation id="1999763610967697511">拖曳</translation>
 <translation id="2012624427112548395">Ctrl 鍵 + 搜尋鍵 + H 鍵</translation>
 <translation id="2016340657076538683">輸入訊息</translation>
 <translation id="2050339315714019657">縱向</translation>
 <translation id="2067602449040652523">鍵盤亮度</translation>
+<translation id="209965399369889474">未連上網路</translation>
 <translation id="2127372758936585790">低功率充電器</translation>
 <translation id="2135456203358955318">停駐放大鏡</translation>
 <translation id="2144487987174258011">重新啟動以便更新 Adobe Flash Player</translation>
@@ -94,6 +97,7 @@
 <translation id="2412593942846481727">有可用的更新</translation>
 <translation id="2413728805700750528">「<ph name="DISPLAY_NAME" />」是由 <ph name="DOMAIN" /> 管理的工作階段</translation>
 <translation id="2416346634399901812">已連線至<ph name="NETWORK_NAME" /></translation>
+<translation id="2427507373259914951">按左鍵</translation>
 <translation id="2429753432712299108">藍牙裝置「<ph name="DEVICE_NAME" />」要求配對權限。接受要求前，請確認裝置顯示以下密碼金鑰：<ph name="PASSKEY" /></translation>
 <translation id="2482878487686419369">通知</translation>
 <translation id="2484513351006226581">按下 <ph name="KEYBOARD_SHORTCUT" />可切換鍵盤配置。</translation>
@@ -132,6 +136,7 @@
 <translation id="3000461861112256445">單聲道音訊</translation>
 <translation id="3009178788565917040">輸出</translation>
 <translation id="3019353588588144572">電池剩餘充電時間：<ph name="TIME_REMAINING" /></translation>
+<translation id="3051128274746680507">系統即將移除你的受監管使用者個人資料。登入即可瞭解詳情。</translation>
 <translation id="3055162170959710888">你今天的裝置使用時間：<ph name="USED_TIME" /></translation>
 <translation id="3077734595579995578">Shift</translation>
 <translation id="3081696990447829002">展開選單</translation>
@@ -143,10 +148,10 @@
 <translation id="3153444934357957346">使用多帳戶登入功能時，一次最多只能登入 <ph name="MULTI_PROFILE_USER_LIMIT" /> 個帳戶。</translation>
 <translation id="3154351730702813399">裝置管理員可能會監控你的瀏覽活動。</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{已連線至一部裝置}other{已連線至 # 部裝置}}</translation>
-<translation id="32244657276328332">未連上網路</translation>
 <translation id="3236488194889173876">沒有可用的行動網路</translation>
 <translation id="3255483164551725916">你會做些什麼？</translation>
 <translation id="3294437725009624529">訪客</translation>
+<translation id="3308453408813785101"><ph name="USER_EMAIL_ADDRESS" /> 日後仍可登入。</translation>
 <translation id="332587331255250389">請更換電池</translation>
 <translation id="3351879221545518001">你目前正在投放畫面。</translation>
 <translation id="3364721542077212959">觸控筆工具</translation>
@@ -193,6 +198,7 @@
 <translation id="4072264167173457037">訊號中等</translation>
 <translation id="4146833061457621061">播放音樂</translation>
 <translation id="4181841719683918333">語言</translation>
+<translation id="4195877955194704651">自動點擊按鈕</translation>
 <translation id="4217571870635786043">語音輸入</translation>
 <translation id="4261870227682513959">顯示通知設定。已關閉所有通知</translation>
 <translation id="4269883910223712419">這部裝置的管理員擁有下列權限：</translation>
@@ -230,6 +236,7 @@
 <translation id="479989351350248267">search</translation>
 <translation id="4804818685124855865">中斷連線</translation>
 <translation id="4849058404725798627">醒目顯示鍵盤焦點所在物件</translation>
+<translation id="485592688953820832">不執行任何動作 (暫停)</translation>
 <translation id="4872237917498892622">Alt + 搜尋鍵或 Shift 鍵</translation>
 <translation id="4890187583552566966">你的管理員停用了 Google 助理。</translation>
 <translation id="4895488851634969361">電池電量已滿。</translation>
@@ -256,6 +263,7 @@
 <translation id="5430931332414098647">即時網路共用</translation>
 <translation id="5431825016875453137">OpenVPN/L2TP</translation>
 <translation id="544691375626129091">現有使用者已全部加入這個工作階段。</translation>
+<translation id="5465662442746197494">需要協助嗎？</translation>
 <translation id="5496819745535887422">你的管理員正在復原你的裝置。重新啟動後，裝置上的資料將全數刪除。</translation>
 <translation id="553675580533261935">結束工作階段</translation>
 <translation id="5537725057119320332">投放</translation>
@@ -264,7 +272,6 @@
 <translation id="5571066253365925590">藍牙已啟用</translation>
 <translation id="5597451508971090205"><ph name="DATE" /><ph name="SHORT_WEEKDAY" /></translation>
 <translation id="5600837773213129531">按下 Ctrl + Alt + Z 鍵即可停用互動朗讀功能。</translation>
-<translation id="5626283214046138476">你的受監管使用者帳戶即將失效。</translation>
 <translation id="5648021990716966815">麥克風插孔</translation>
 <translation id="5669267381087807207">啟用中</translation>
 <translation id="5673434351075758678">同步處理設定後，「<ph name="FROM_LOCALE" />」已變更為「<ph name="TO_LOCALE" />」。</translation>
@@ -368,6 +375,7 @@
 <translation id="7348093485538360975">螢幕小鍵盤</translation>
 <translation id="735745346212279324">已中斷 VPN 連線</translation>
 <translation id="7377169924702866686">大寫鍵已啟用。</translation>
+<translation id="7384299914270925461"><ph name="SIGN" /><ph name="MINUTES_REMAINING" />：<ph name="SECONDS_REMAINING" /> 秒</translation>
 <translation id="7398254312354928459">已切換網路連線</translation>
 <translation id="742594950370306541">攝影機正在使用中。</translation>
 <translation id="743058460480092004">攝影機和麥克風正在使用中。</translation>
@@ -419,13 +427,17 @@
 <translation id="8113423164597455979">開啟，所有應用程式</translation>
 <translation id="8132793192354020517">已連線至 <ph name="NAME" /></translation>
 <translation id="813913629614996137">正在初始化...</translation>
+<translation id="8142441511840089262">按兩下</translation>
 <translation id="8142699993796781067">私人網路</translation>
+<translation id="8167567890448493835">使用<ph name="LOCALE_NAME" /></translation>
 <translation id="8190698733819146287">自訂語言與輸入法...</translation>
 <translation id="8192202700944119416">已隱藏通知。</translation>
+<translation id="8203795194971602413">按右鍵</translation>
 <translation id="8236042855478648955">休息時間到了</translation>
 <translation id="8261506727792406068">刪除</translation>
 <translation id="8297006494302853456">弱</translation>
 <translation id="8308637677604853869">前一個選單</translation>
+<translation id="8332664326438198339">返回啟動器</translation>
 <translation id="8341451174107936385"><ph name="UNLOCK_MORE_FEATURES" />  <ph name="GET_STARTED" /></translation>
 <translation id="8351131234907093545">寫筆記</translation>
 <translation id="8375916635258623388">這部 <ph name="DEVICE_NAME" /> 會自動連結到你的手機</translation>
@@ -441,7 +453,6 @@
 <translation id="8454013096329229812">Wi-Fi 已開啟。</translation>
 <translation id="847056008324733326">顯示比例設定</translation>
 <translation id="8477270416194247200">按下 Alt + 搜尋鍵或 Shift 鍵即可取消。</translation>
-<translation id="8484916590211895857"><ph name="NAME" />：正在重新連線...</translation>
 <translation id="8513108775083588393">自動旋轉</translation>
 <translation id="8517041960877371778"><ph name="DEVICE_TYPE" /> 在開啟時可能無法充電。</translation>
 <translation id="8627191004499078455">已連線至<ph name="DEVICE_NAME" /></translation>
@@ -456,9 +467,7 @@
 <translation id="8734991477317290293">你的按鍵行為可能會遭到側錄</translation>
 <translation id="8735953464173050365">顯示鍵盤設定。已選取<ph name="KEYBOARD_NAME" /></translation>
 <translation id="875593634123171288">顯示 VPN 設定</translation>
-<translation id="8809737090443522491">輸入應用程式或文件名稱</translation>
 <translation id="8814190375133053267">Wi-Fi</translation>
-<translation id="8825534185036233643">鏡像處理作業最多支援兩部顯示器。</translation>
 <translation id="8828714802988429505">90 度</translation>
 <translation id="8843682306134542540">切換旋轉鎖定。<ph name="STATE_TEXT" /></translation>
 <translation id="8850991929411075241">搜尋鍵 + Esc 鍵</translation>
@@ -466,7 +475,7 @@
 <translation id="8874184842967597500">未連線</translation>
 <translation id="8877788021141246043">設定提醒</translation>
 <translation id="8878886163241303700">延伸螢幕</translation>
-<translation id="8898978413391960553">00:00 秒</translation>
+<translation id="890616557918890486">變更來源</translation>
 <translation id="8921624153894383499">Google 助理不支援這個語言。</translation>
 <translation id="8938800817013097409">USB-C 裝置 (背面右側連接埠)</translation>
 <translation id="8940956008527784070">電池電量不足 (<ph name="PERCENTAGE" />%)</translation>

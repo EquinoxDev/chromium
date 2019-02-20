@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -61,7 +62,6 @@
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
-#include "services/media_session/public/cpp/switches.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/compositor_switches.h"
@@ -78,9 +78,11 @@
 #include "components/crash/content/browser/child_exit_observer_android.h"
 #include "components/crash/content/browser/child_process_crash_observer_android.h"
 #include "net/android/network_change_notifier_factory_android.h"
-#else
+#elif defined(OS_FUCHSIA)
+#include "chromecast/net/network_change_notifier_factory_fuchsia.h"
+#else  // defined(OS_FUCHSIA)
 #include "chromecast/net/network_change_notifier_factory_cast.h"
-#endif
+#endif  // !(defined(OS_ANDROID) || defined(OS_FUCHSIA))
 
 #if defined(OS_FUCHSIA)
 #include "chromecast/net/fake_connectivity_checker.h"
@@ -233,8 +235,6 @@ const DefaultCommandLineSwitch kDefaultSwitches[] = {
 #if !defined(OS_ANDROID)
     // GPU shader disk cache disabling is largely to conserve disk space.
     {switches::kDisableGpuShaderDiskCache, ""},
-    // Enable media sessions by default (even on non-Android platforms).
-    {media_session::switches::kEnableInternalMediaSession, ""},
 #endif
 #if BUILDFLAG(IS_CAST_AUDIO_ONLY)
     {switches::kDisableGpu, ""},
@@ -379,10 +379,13 @@ void CastBrowserMainParts::PreMainMessageLoopStart() {
 #if defined(OS_ANDROID)
   net::NetworkChangeNotifier::SetFactory(
       new net::NetworkChangeNotifierFactoryAndroid());
-#elif !defined(OS_FUCHSIA)
+#elif defined(OS_FUCHSIA)
+  net::NetworkChangeNotifier::SetFactory(
+      new NetworkChangeNotifierFactoryFuchsia());
+#else   // defined(OS_FUCHSIA)
   net::NetworkChangeNotifier::SetFactory(
       new NetworkChangeNotifierFactoryCast());
-#endif  // !defined(OS_FUCHSIA)
+#endif  // !(defined(OS_ANDROID) || defined(OS_FUCHSIA))
 }
 
 void CastBrowserMainParts::PostMainMessageLoopStart() {
@@ -403,12 +406,15 @@ void CastBrowserMainParts::ToolkitInitialized() {
   // the background (resources have not yet been granted to cast) since it
   // prevents the long delay the user would have seen on first rendering. Note
   // that future calls to FcInit() are safe no-ops per the FontConfig interface.
-  FcChar8 bundle_dir[] = "/chrome/fonts/";
+  base::FilePath dir_module;
+  base::PathService::Get(base::DIR_MODULE, &dir_module);
+  base::FilePath dir_font = dir_module.Append("fonts");
 
   FcInit();
 
-  if (FcConfigAppFontAddDir(nullptr, bundle_dir) == FcFalse) {
-    LOG(ERROR) << "Cannot load fonts from " << bundle_dir;
+  const FcChar8 *dir_font_char8 = reinterpret_cast<const FcChar8*>(dir_font.value().data());
+  if (FcConfigAppFontAddDir(nullptr, dir_font_char8) == FcFalse) {
+    LOG(ERROR) << "Cannot load fonts from " << dir_font_char8;
   }
 #endif
 }
@@ -463,17 +469,10 @@ void CastBrowserMainParts::PreMainMessageLoopRun() {
   cast_browser_process_->SetNetLog(net_log_.get());
   url_request_context_factory_->InitializeOnUIThread(net_log_.get());
 
-#if defined(OS_FUCHSIA)
-  // TODO(777973): Switch to using the real ConnectivityChecker once setup works
-  // properly.
-  LOG(WARNING) << "Using FakeConnectivityChecker.";
-  cast_browser_process_->SetConnectivityChecker(new FakeConnectivityChecker());
-#else
   cast_browser_process_->SetConnectivityChecker(ConnectivityChecker::Create(
       base::CreateSingleThreadTaskRunnerWithTraits(
           {content::BrowserThread::IO}),
       url_request_context_factory_->GetSystemGetter()));
-#endif  // defined(OS_FUCHSIA)
 
   cast_browser_process_->SetBrowserContext(
       std::make_unique<CastBrowserContext>(url_request_context_factory_));

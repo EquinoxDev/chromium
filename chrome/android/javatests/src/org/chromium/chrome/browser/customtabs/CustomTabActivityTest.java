@@ -68,10 +68,12 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.LibraryProcessType;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.task.PostTask;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.base.test.util.RetryOnFailure;
 import org.chromium.chrome.R;
@@ -101,7 +103,7 @@ import org.chromium.chrome.browser.tab.Tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.browser.tab.TabTestUtils;
 import org.chromium.chrome.browser.tabmodel.EmptyTabModelObserver;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.test.ScreenShooter;
 import org.chromium.chrome.browser.toolbar.top.CustomTabToolbar;
@@ -114,6 +116,7 @@ import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.chrome.test.util.browser.LocationSettingsTestUtil;
 import org.chromium.chrome.test.util.browser.contextmenu.ContextMenuUtils;
 import org.chromium.content_public.browser.LoadUrlParams;
+import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.content_public.browser.test.util.Criteria;
 import org.chromium.content_public.browser.test.util.CriteriaHelper;
@@ -1255,7 +1258,7 @@ public class CustomTabActivityTest {
         connection.newSession(token);
         connection.overridePackageNameForSessionForTesting(token, "app1");
         ThreadUtils.runOnUiThreadBlocking(
-                () -> OriginVerifier.addVerifiedOriginForPackage("app1", new Origin(referrer),
+                () -> OriginVerifier.addVerificationOverride("app1", new Origin(referrer),
                         CustomTabsService.RELATION_USE_AS_ORIGIN));
 
         final CustomTabsSessionToken session = warmUpAndLaunchUrlWithSession(intent);
@@ -1319,6 +1322,7 @@ public class CustomTabActivityTest {
     @Test
     @SmallTest
     @RetryOnFailure
+    @MinAndroidSdkLevel(Build.VERSION_CODES.LOLLIPOP) // Details in https://crbug.com/709681.
     public void testPageLoadMetricsAreSent() throws Exception {
         checkPageLoadMetrics(true);
     }
@@ -1471,7 +1475,7 @@ public class CustomTabActivityTest {
             @Override
             public boolean isSatisfied() {
                 final Tab currentTab = mCustomTabActivityTestRule.getActivity().getActivityTab();
-                return currentTab.isLoadingAndRenderingDone();
+                return ChromeTabUtils.isLoadingAndRenderingDone(currentTab);
             }
         });
         Assert.assertTrue(connection.postMessage(token, "Message", null)
@@ -1511,7 +1515,7 @@ public class CustomTabActivityTest {
                 renderProcessCallback.notifyCalled();
             }
         };
-        ThreadUtils.postOnUiThread(() -> {
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
             WebContentsUtils.simulateRendererKilled(
                     mCustomTabActivityTestRule.getActivity().getActivityTab().getWebContents(),
                     false);
@@ -1621,6 +1625,7 @@ public class CustomTabActivityTest {
     @Test
     @SmallTest
     @RetryOnFailure
+    @MinAndroidSdkLevel(Build.VERSION_CODES.LOLLIPOP) // Details in https://crbug.com/709681.
     public void testPostMessageReceivedFromPageWithLateRequest() throws Exception {
         final CallbackHelper messageChannelHelper = new CallbackHelper();
         final CallbackHelper onPostMessageHelper = new CallbackHelper();
@@ -1944,7 +1949,7 @@ public class CustomTabActivityTest {
         Assert.assertTrue(connection.newSession(token));
         connection.mClientManager.setAllowParallelRequestForSession(token, true);
         ThreadUtils.runOnUiThreadBlocking(() -> {
-            OriginVerifier.addVerifiedOriginForPackage(
+            OriginVerifier.addVerificationOverride(
                     context.getPackageName(), origin, CustomTabsService.RELATION_USE_AS_ORIGIN);
         });
 
@@ -2343,7 +2348,28 @@ public class CustomTabActivityTest {
     @CommandLineFlags.Add("enable-spdy-proxy-auth")
     @DisableFeatures("DataReductionProxyDecidesTransform")
     @RetryOnFailure
-    public void testLaunchWebLiteURLNoPreviews() throws Exception {
+    public void testLaunchWebLiteURLDRPDecidesTransformDisabled() throws Exception {
+        final String testUrl = WEBLITE_PREFIX + mTestPage;
+        mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
+                CustomTabsTestUtils.createMinimalCustomTabIntent(
+                        InstrumentationRegistry.getTargetContext(), testUrl));
+        Tab tab = mCustomTabActivityTestRule.getActivity().getActivityTab();
+        Assert.assertEquals(testUrl, tab.getUrl());
+    }
+
+    /**
+     * Tests that a Weblite URL from an external app does not use the lite_url param when Previews
+     * are not being used.
+     */
+    @Test
+    @SmallTest
+    @CommandLineFlags.Add("enable-spdy-proxy-auth")
+    @EnableFeatures(
+            {"DataReductionProxyDecidesTransform", "DataReductionProxyEnabledWithNetworkService"})
+    @DisableFeatures("Previews")
+    @RetryOnFailure
+    public void
+    testLaunchWebLiteURLNoPreviews() throws Exception {
         final String testUrl = WEBLITE_PREFIX + mTestPage;
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
                 CustomTabsTestUtils.createMinimalCustomTabIntent(
@@ -2358,28 +2384,12 @@ public class CustomTabActivityTest {
      */
     @Test
     @SmallTest
-    @EnableFeatures("DataReductionProxyDecidesTransform")
+    @EnableFeatures(
+            {"DataReductionProxyDecidesTransform", "DataReductionProxyEnabledWithNetworkService"})
     @RetryOnFailure
-    public void testLaunchWebLiteURLNoDataReductionProxy() throws Exception {
+    public void
+    testLaunchWebLiteURLNoDataReductionProxy() throws Exception {
         final String testUrl = WEBLITE_PREFIX + mTestPage;
-        mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
-                CustomTabsTestUtils.createMinimalCustomTabIntent(
-                        InstrumentationRegistry.getTargetContext(), testUrl));
-        Tab tab = mCustomTabActivityTestRule.getActivity().getActivityTab();
-        Assert.assertEquals(testUrl, tab.getUrl());
-    }
-
-    /**
-     * Tests that a Weblite URL from an external app does not use the lite_url param when the param
-     * is an https URL.
-     */
-    @Test
-    @SmallTest
-    @CommandLineFlags.Add("enable-spdy-proxy-auth")
-    @EnableFeatures("DataReductionProxyDecidesTransform")
-    @RetryOnFailure
-    public void testLaunchHttpsWebLiteURL() throws Exception {
-        final String testUrl = WEBLITE_PREFIX + mTestPage.replaceFirst("http", "https");
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
                 CustomTabsTestUtils.createMinimalCustomTabIntent(
                         InstrumentationRegistry.getTargetContext(), testUrl));
@@ -2531,7 +2541,7 @@ public class CustomTabActivityTest {
             }
         };
         tabToBeReparented.addObserver(observer);
-        ThreadUtils.postOnUiThread(() -> {
+        PostTask.postTask(UiThreadTaskTraits.DEFAULT, () -> {
             getActivity().openCurrentUrlInBrowser(true);
             Assert.assertNull(getActivity().getActivityTab());
         });

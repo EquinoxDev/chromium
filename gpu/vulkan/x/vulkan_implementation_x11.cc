@@ -36,10 +36,8 @@ bool VulkanImplementationX11::InitializeVulkanInstance() {
   if (!vulkan_function_pointers->vulkan_loader_library_)
     return false;
 
-  if (!vulkan_instance_.Initialize(required_extensions, {})) {
-    vulkan_instance_.Destroy();
+  if (!vulkan_instance_.Initialize(required_extensions, {}))
     return false;
-  }
 
   // Initialize platform function pointers
   vkGetPhysicalDeviceXlibPresentationSupportKHR_ =
@@ -49,7 +47,6 @@ bool VulkanImplementationX11::InitializeVulkanInstance() {
               "vkGetPhysicalDeviceXlibPresentationSupportKHR"));
   if (!vkGetPhysicalDeviceXlibPresentationSupportKHR_) {
     LOG(ERROR) << "vkGetPhysicalDeviceXlibPresentationSupportKHR not found";
-    vulkan_instance_.Destroy();
     return false;
   }
 
@@ -58,15 +55,14 @@ bool VulkanImplementationX11::InitializeVulkanInstance() {
           vulkan_instance_.vk_instance(), "vkCreateXlibSurfaceKHR"));
   if (!vkCreateXlibSurfaceKHR_) {
     LOG(ERROR) << "vkCreateXlibSurfaceKHR not found";
-    vulkan_instance_.Destroy();
     return false;
   }
 
   return true;
 }
 
-VkInstance VulkanImplementationX11::GetVulkanInstance() {
-  return vulkan_instance_.vk_instance();
+VulkanInstance* VulkanImplementationX11::GetVulkanInstance() {
+  return &vulkan_instance_;
 }
 
 std::unique_ptr<VulkanSurface> VulkanImplementationX11::CreateViewSurface(
@@ -77,13 +73,14 @@ std::unique_ptr<VulkanSurface> VulkanImplementationX11::CreateViewSurface(
   surface_create_info.dpy = x_display_;
   surface_create_info.window = window;
   VkResult result = vkCreateXlibSurfaceKHR_(
-      GetVulkanInstance(), &surface_create_info, nullptr, &surface);
+      vulkan_instance_.vk_instance(), &surface_create_info, nullptr, &surface);
   if (VK_SUCCESS != result) {
     DLOG(ERROR) << "vkCreateXlibSurfaceKHR() failed: " << result;
     return nullptr;
   }
 
-  return std::make_unique<VulkanSurface>(GetVulkanInstance(), surface);
+  return std::make_unique<VulkanSurface>(vulkan_instance_.vk_instance(),
+                                         surface);
 }
 
 bool VulkanImplementationX11::GetPhysicalDevicePresentationSupport(
@@ -98,7 +95,9 @@ bool VulkanImplementationX11::GetPhysicalDevicePresentationSupport(
 
 std::vector<const char*>
 VulkanImplementationX11::GetRequiredDeviceExtensions() {
-  return {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+  return {VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+          VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+          VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
 }
 
 VkFence VulkanImplementationX11::CreateVkFenceForGpuFence(VkDevice vk_device) {

@@ -8,6 +8,7 @@
 
 #include "base/android/jni_string.h"
 #include "base/android/path_utils.h"
+#include "base/bind.h"
 #include "base/location.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/single_thread_task_runner.h"
@@ -16,6 +17,9 @@
 #include "base/time/time.h"
 #include "chrome/browser/android/chrome_feature_list.h"
 #include "chrome/browser/android/download/download_controller.h"
+#include "chrome/browser/android/download/download_utils.h"
+#include "chrome/browser/android/download/service/download_task_scheduler.h"
+#include "chrome/browser/android/feature_utilities.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/download/download_core_service.h"
 #include "chrome/browser/download/download_core_service_factory.h"
@@ -23,9 +27,12 @@
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
+#include "components/download/network/android/network_status_listener_android.h"
+#include "components/download/public/common/auto_resumption_handler.h"
 #include "components/download/public/common/download_item.h"
 #include "components/download/public/common/download_item_impl.h"
 #include "components/download/public/common/download_url_loader_factory_getter_impl.h"
+#include "components/download/public/task/task_manager_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/download_item_utils.h"
 #include "content/public/browser/download_request_utils.h"
@@ -65,7 +72,30 @@ ScopedJavaLocalRef<jobject> JNI_DownloadManagerService_CreateJavaDownloadItem(
       item->GetFileExternallyRemoved());
 }
 
+// For download that doesn't require full browser process, origin security check
+// is skipped as the download is either resumption or from a secure source.
+bool IgnoreOriginSecurityCheck(const GURL& url) {
+  return true;
+}
+
 }  // namespace
+
+// static
+void DownloadManagerService::CreateAutoResumptionHandler() {
+  auto network_listener =
+      std::make_unique<download::NetworkStatusListenerAndroid>();
+  auto task_scheduler =
+      std::make_unique<download::android::DownloadTaskScheduler>();
+  auto task_manager =
+      std::make_unique<download::TaskManagerImpl>(std::move(task_scheduler));
+  auto config = std::make_unique<download::AutoResumptionHandler::Config>();
+  config->auto_resumption_size_limit =
+      DownloadUtils::GetAutoResumptionSizeLimit();
+  config->is_auto_resumption_enabled_in_native =
+      chrome::android::IsDownloadAutoResumptionEnabledInNative();
+  download::AutoResumptionHandler::Create(
+      std::move(network_listener), std::move(task_manager), std::move(config));
+}
 
 // static
 void DownloadManagerService::OnDownloadCanceled(
@@ -117,10 +147,13 @@ ScopedJavaLocalRef<jobject> DownloadManagerService::CreateJavaDownloadInfo(
       ? std::string() : item->GetOriginalUrl().spec();
   content::BrowserContext* browser_context =
       content::DownloadItemUtils::GetBrowserContext(item);
+  base::FilePath display_path = item->GetFullPath().IsContentUri()
+                                    ? item->GetFullPath()
+                                    : item->GetTargetFilePath();
   return Java_DownloadInfo_createDownloadInfo(
       env, ConvertUTF8ToJavaString(env, item->GetGuid()),
       ConvertUTF8ToJavaString(env, item->GetFileNameToReportUser().value()),
-      ConvertUTF8ToJavaString(env, item->GetTargetFilePath().value()),
+      ConvertUTF8ToJavaString(env, display_path.value()),
       ConvertUTF8ToJavaString(env, item->GetTabUrl().spec()),
       ConvertUTF8ToJavaString(env, item->GetMimeType()),
       item->GetReceivedBytes(), item->GetTotalBytes(),
@@ -269,9 +302,9 @@ void DownloadManagerService::ResumeDownload(
     bool is_off_the_record,
     bool has_user_gesture) {
   std::string download_guid = ConvertJavaStringToUTF8(env, jdownload_guid);
-  if (is_pending_downloads_loaded_ || is_off_the_record)
+  if (is_pending_downloads_loaded_ || is_off_the_record) {
     ResumeDownloadInternal(download_guid, is_off_the_record, has_user_gesture);
-  else {
+  } else {
     EnqueueDownloadAction(download_guid,
                           DownloadActionParams(RESUME, has_user_gesture));
   }
@@ -591,8 +624,9 @@ void DownloadManagerService::EnqueueDownloadAction(
 void DownloadManagerService::OnResumptionFailed(
     const std::string& download_guid) {
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&DownloadManagerService::OnResumptionFailedInternal,
-                            base::Unretained(this), download_guid));
+      FROM_HERE,
+      base::BindOnce(&DownloadManagerService::OnResumptionFailedInternal,
+                     base::Unretained(this), download_guid));
   DownloadController::RecordDownloadCancelReason(
       DownloadController::CANCEL_REASON_NOT_CANCELED);
 }
@@ -628,7 +662,7 @@ void DownloadManagerService::CreateInProgressDownloadManager() {
   base::android::GetDataDirectory(&data_dir);
   in_progress_manager_ = std::make_unique<download::InProgressDownloadManager>(
       nullptr, data_dir.Append(chrome::kInitialProfile),
-      download::InProgressDownloadManager::IsOriginSecureCallback(),
+      base::BindRepeating(&IgnoreOriginSecurityCheck),
       base::BindRepeating(&content::DownloadRequestUtils::IsURLSafe));
   content::GetNetworkServiceFromConnector(service_binding_.GetConnector());
   scoped_refptr<network::SharedURLLoaderFactory> factory =
@@ -649,6 +683,22 @@ void DownloadManagerService::OnPendingDownloadsLoaded() {
   if (!in_progress_manager_ && !is_history_query_complete_)
     return;
   is_pending_downloads_loaded_ = true;
+
+  // Kick-off the auto-resumption handler.
+  content::DownloadManager::DownloadVector all_items;
+  if (in_progress_manager_) {
+    in_progress_manager_->GetAllDownloads(&all_items);
+  } else {
+    content::DownloadManager* manager = GetDownloadManager(false);
+    if (manager)
+      manager->GetAllDownloads(&all_items);
+  }
+
+  if (!download::AutoResumptionHandler::Get())
+    CreateAutoResumptionHandler();
+
+  download::AutoResumptionHandler::Get()->SetResumableDownloads(all_items);
+
   for (auto iter = pending_actions_.begin(); iter != pending_actions_.end();
        ++iter) {
     DownloadActionParams params = iter->second;

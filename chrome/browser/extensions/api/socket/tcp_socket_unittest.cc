@@ -125,9 +125,9 @@ class TCPSocketUnitTest : public TCPSocketUnitTestBase,
   net::MockClientSocketFactory mock_client_socket_factory_;
 };
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        TCPSocketUnitTest,
-                        testing::Values(net::SYNCHRONOUS, net::ASYNC));
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         TCPSocketUnitTest,
+                         testing::Values(net::SYNCHRONOUS, net::ASYNC));
 
 TEST_F(TCPSocketUnitTest, SocketConnectError) {
   net::IPEndPoint ip_end_point(net::IPAddress::IPv4Localhost(), 1234);
@@ -518,20 +518,44 @@ class TestSocketFactory : public net::ClientSocketFactory {
     NOTIMPLEMENTED();
     return std::unique_ptr<net::SSLClientSocket>();
   }
+  std::unique_ptr<net::SSLClientSocket> CreateSSLClientSocket(
+      std::unique_ptr<net::StreamSocket>,
+      const net::HostPortPair&,
+      const net::SSLConfig&,
+      const net::SSLClientSocketContext&) override {
+    NOTIMPLEMENTED();
+    return std::unique_ptr<net::SSLClientSocket>();
+  }
   std::unique_ptr<net::ProxyClientSocket> CreateProxyClientSocket(
       std::unique_ptr<net::ClientSocketHandle> transport_socket,
       const std::string& user_agent,
       const net::HostPortPair& endpoint,
+      const net::ProxyServer& proxy_server,
       net::HttpAuthController* http_auth_controller,
       bool tunnel,
       bool using_spdy,
       net::NextProto negotiated_protocol,
+      net::ProxyDelegate* proxy_delegate,
       bool is_https_proxy,
       const net::NetworkTrafficAnnotationTag& traffic_annotation) override {
     NOTIMPLEMENTED();
     return nullptr;
   }
-  void ClearSSLSessionCache() override { NOTIMPLEMENTED(); }
+  std::unique_ptr<net::ProxyClientSocket> CreateProxyClientSocket(
+      std::unique_ptr<net::StreamSocket> stream_socket,
+      const std::string& user_agent,
+      const net::HostPortPair& endpoint,
+      const net::ProxyServer& proxy_server,
+      net::HttpAuthController* http_auth_controller,
+      bool tunnel,
+      bool using_spdy,
+      net::NextProto negotiated_protocol,
+      net::ProxyDelegate* proxy_delegate,
+      bool is_https_proxy,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation) override {
+    NOTIMPLEMENTED();
+    return nullptr;
+  }
 
  private:
   std::vector<std::unique_ptr<net::StaticSocketDataProvider>> providers_;
@@ -558,9 +582,9 @@ class TCPSocketSettingsTest : public TCPSocketUnitTestBase,
   TestSocketFactory client_socket_factory_;
 };
 
-INSTANTIATE_TEST_CASE_P(/* no prefix */,
-                        TCPSocketSettingsTest,
-                        testing::Bool());
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         TCPSocketSettingsTest,
+                         testing::Bool());
 
 TEST_P(TCPSocketSettingsTest, SetNoDelay) {
   std::unique_ptr<TCPSocket> socket = CreateAndConnectSocket();

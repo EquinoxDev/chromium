@@ -21,16 +21,21 @@ class AwGLSurface : public gl::GLSurface {
   void Destroy() override;
   bool IsOffscreen() override;
   unsigned int GetBackingFramebufferObject() override;
-  gfx::SwapResult SwapBuffers(const PresentationCallback& callback) override;
+  gfx::SwapResult SwapBuffers(PresentationCallback callback) override;
   gfx::Size GetSize() override;
   void* GetHandle() override;
   void* GetDisplay() override;
   gl::GLSurfaceFormat GetFormat() override;
+  bool Resize(const gfx::Size& size,
+              float scale_factor,
+              ColorSpace color_space,
+              bool has_alpha) override;
 
  protected:
   ~AwGLSurface() override;
 
  private:
+  gfx::Size size_;
   DISALLOW_COPY_AND_ASSIGN(AwGLSurface);
 };
 

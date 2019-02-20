@@ -124,9 +124,9 @@ class WebkitTextStrokeColor;
 //
 // In addition to storing the computed value of every CSS property,
 // ComputedStyle also contains various internal style information. Examples
-// include cached_pseudo_styles_ (for storing pseudo element styles), unique_
-// (for style caching) and has_simple_underline_ (cached indicator flag of
-// text-decoration). These are stored on ComputedStyle for two reasons:
+// include cached_pseudo_styles_ (for storing pseudo element styles) and
+// has_simple_underline_ (cached indicator flag of text-decoration). These are
+// stored on ComputedStyle for two reasons:
 //
 //  1) They share the same lifetime as ComputedStyle, so it is convenient to
 //  store them in the same object rather than a separate object that have to be
@@ -253,9 +253,41 @@ class ComputedStyle : public ComputedStyleBase,
   static const ComputedStyle& InitialStyle() { return MutableInitialStyle(); }
   static void InvalidateInitialStyle();
 
-  // Computes how the style change should be propagated down the tree.
-  static StyleRecalcChange StylePropagationDiff(const ComputedStyle* old_style,
-                                                const ComputedStyle* new_style);
+  // Find out how two ComputedStyles differ. Used for figuring out if style
+  // recalc needs to propagate style changes down the tree. The constants are
+  // listed in increasing severity. E.g. kInherited also means we need to update
+  // pseudo elements (kPseudoStyle).
+  enum class Difference {
+    // The ComputedStyle objects have the same computed style. The might have
+    // some different extra flags which means we still need to replace the old
+    // with the new instance.
+    kEqual,
+    // Non-inherited properties differ which means we need to apply visual
+    // difference changes to the layout tree through LayoutObject::SetStyle().
+    kNonInherited,
+    // Pseudo element style is different which means we have to update pseudo
+    // element existence and computed style.
+    kPseudoStyle,
+    // Inherited properties are different which means we need to recalc style
+    // for children. Only independent properties changed which means we can
+    // inherit by cloning the exiting ComputedStyle for children an set modified
+    // properties directly without re-matching rules.
+    kIndependentInherited,
+    // Inherited properties are different which means we need to recalc style
+    // for children.
+    kInherited,
+    // Display type changes for flex/grid/custom layout affects computed style
+    // adjustments for descendants. For instance flex/grid items are blockified
+    // at computed style time and such items can be arbitrarily deep down the
+    // flat tree in the presence of display:contents.
+    kDisplayAffectingDescendantStyles,
+  };
+  static Difference ComputeDifference(const ComputedStyle* old_style,
+                                      const ComputedStyle* new_style);
+
+  // Returns true if the ComputedStyle change requires a LayoutObject re-attach.
+  static bool NeedsReattachLayoutTree(const ComputedStyle* old_style,
+                                      const ComputedStyle* new_style);
 
   // Copies the values of any independent inherited properties from the parent
   // that are not explicitly set in this style.
@@ -297,7 +329,6 @@ class ComputedStyle : public ComputedStyleBase,
 
   const ComputedStyle* GetCachedPseudoStyle(PseudoId) const;
   const ComputedStyle* AddCachedPseudoStyle(scoped_refptr<ComputedStyle>);
-  void RemoveCachedPseudoStyle(PseudoId);
 
   /**
    * ComputedStyle properties
@@ -1460,10 +1491,10 @@ class ComputedStyle : public ComputedStyleBase,
            !PaddingTop().IsZero() || !PaddingBottom().IsZero();
   }
   void ResetPadding() {
-    SetPaddingTop(Length(kFixed));
-    SetPaddingBottom(Length(kFixed));
-    SetPaddingLeft(Length(kFixed));
-    SetPaddingRight(Length(kFixed));
+    SetPaddingTop(Length::Fixed());
+    SetPaddingBottom(Length::Fixed());
+    SetPaddingLeft(Length::Fixed());
+    SetPaddingRight(Length::Fixed());
   }
   void SetPadding(const LengthBox& b) {
     SetPaddingTop(b.top_);
@@ -1755,7 +1786,7 @@ class ComputedStyle : public ComputedStyleBase,
   }
   void SetBorderRadius(const IntSize& s) {
     SetBorderRadius(
-        LengthSize(Length(s.Width(), kFixed), Length(s.Height(), kFixed)));
+        LengthSize(Length::Fixed(s.Width()), Length::Fixed(s.Height())));
   }
 
   FloatRoundedRect GetRoundedBorderFor(
@@ -2130,9 +2161,13 @@ class ComputedStyle : public ComputedStyleBase,
   }
 
   // Whitespace utility functions.
+  static bool Is(EWhiteSpace a, EWhiteSpace b) {
+    return static_cast<unsigned>(a) & static_cast<unsigned>(b);
+  }
+  static bool IsNot(EWhiteSpace a, EWhiteSpace b) { return !Is(a, b); }
   static bool AutoWrap(EWhiteSpace ws) {
     // Nowrap and pre don't automatically wrap.
-    return ws != EWhiteSpace::kNowrap && ws != EWhiteSpace::kPre;
+    return IsNot(ws, EWhiteSpace::kNowrap | EWhiteSpace::kPre);
   }
 
   bool AutoWrap() const { return AutoWrap(WhiteSpace()); }
@@ -2150,7 +2185,8 @@ class ComputedStyle : public ComputedStyleBase,
 
   static bool CollapseWhiteSpace(EWhiteSpace ws) {
     // Pre and prewrap do not collapse whitespace.
-    return ws != EWhiteSpace::kPre && ws != EWhiteSpace::kPreWrap;
+    return IsNot(ws, EWhiteSpace::kPre | EWhiteSpace::kPreWrap |
+                         EWhiteSpace::kBreakSpaces);
   }
 
   bool CollapseWhiteSpace() const { return CollapseWhiteSpace(WhiteSpace()); }
@@ -2166,15 +2202,15 @@ class ComputedStyle : public ComputedStyleBase,
     return false;
   }
   bool BreakOnlyAfterWhiteSpace() const {
-    return WhiteSpace() == EWhiteSpace::kPreWrap ||
+    return Is(WhiteSpace(),
+              EWhiteSpace::kPreWrap | EWhiteSpace::kBreakSpaces) ||
            GetLineBreak() == LineBreak::kAfterWhiteSpace;
   }
 
   bool BreakWords() const {
     return (WordBreak() == EWordBreak::kBreakWord ||
             OverflowWrap() == EOverflowWrap::kBreakWord) &&
-           WhiteSpace() != EWhiteSpace::kPre &&
-           WhiteSpace() != EWhiteSpace::kNowrap;
+           IsNot(WhiteSpace(), EWhiteSpace::kPre | EWhiteSpace::kNowrap);
   }
 
   // Text direction utility functions.

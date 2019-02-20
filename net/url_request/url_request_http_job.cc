@@ -430,8 +430,6 @@ void URLRequestHttpJob::Start() {
                                           referrer.spec());
   }
 
-  // This should be kept in sync with the corresponding code in
-  // URLRequest::GetUserAgent.
   request_info_.extra_headers.SetHeaderIfMissing(
       HttpRequestHeaders::kUserAgent,
       http_user_agent_settings_ ?
@@ -561,9 +559,9 @@ void URLRequestHttpJob::MaybeStartTransactionInternal(int result) {
     // Don't call back synchronously to the delegate.
     base::ThreadTaskRunnerHandle::Get()->PostTask(
         FROM_HERE,
-        base::Bind(&URLRequestHttpJob::NotifyStartError,
-                   weak_factory_.GetWeakPtr(),
-                   URLRequestStatus(URLRequestStatus::FAILED, result)));
+        base::BindOnce(&URLRequestHttpJob::NotifyStartError,
+                       weak_factory_.GetWeakPtr(),
+                       URLRequestStatus(URLRequestStatus::FAILED, result)));
   }
 }
 
@@ -639,8 +637,8 @@ void URLRequestHttpJob::StartTransactionInternal() {
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                            weak_factory_.GetWeakPtr(), rv));
+      FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
+                                weak_factory_.GetWeakPtr(), rv));
 }
 
 void URLRequestHttpJob::AddExtraHeaders() {
@@ -742,7 +740,9 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
   }
 }
 
-void URLRequestHttpJob::SetCookieHeaderAndStart(const CookieList& cookie_list) {
+void URLRequestHttpJob::SetCookieHeaderAndStart(
+    const CookieList& cookie_list,
+    const CookieStatusList& excluded_list) {
   if (!cookie_list.empty() && CanGetCookies(cookie_list)) {
     LogCookieUMA(cookie_list, *request_, request_info_);
 
@@ -1233,8 +1233,8 @@ void URLRequestHttpJob::CancelAuth() {
   // We have to do this via InvokeLater to avoid "recursing" the consumer.
   //
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                            weak_factory_.GetWeakPtr(), OK));
+      FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
+                                weak_factory_.GetWeakPtr(), OK));
 }
 
 void URLRequestHttpJob::ContinueWithCertificate(
@@ -1257,8 +1257,8 @@ void URLRequestHttpJob::ContinueWithCertificate(
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                            weak_factory_.GetWeakPtr(), rv));
+      FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
+                                weak_factory_.GetWeakPtr(), rv));
 }
 
 void URLRequestHttpJob::ContinueDespiteLastError() {
@@ -1280,8 +1280,8 @@ void URLRequestHttpJob::ContinueDespiteLastError() {
   // The transaction started synchronously, but we need to notify the
   // URLRequest delegate via the message loop.
   base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::Bind(&URLRequestHttpJob::OnStartCompleted,
-                            weak_factory_.GetWeakPtr(), rv));
+      FROM_HERE, base::BindOnce(&URLRequestHttpJob::OnStartCompleted,
+                                weak_factory_.GetWeakPtr(), rv));
 }
 
 bool URLRequestHttpJob::ShouldFixMismatchedContentLength(int rv) const {

@@ -86,7 +86,7 @@ enum class SendPasswordFormToBrowserProcess {
 // credentials after being instructed to do so by the browser process.
 enum class FillingResult {
   kSuccess = 0,
-  // The password element to be filled could not be found.
+  // The password element to be filled has not been found.
   kNoPasswordElement = 1,
   // Filling only happens in iframes, if all parent frames PSL match the
   // security origin of the iframe containing the password field.
@@ -108,7 +108,7 @@ enum class FillingResult {
   // credential. This happens for example if the session is an incognito
   // session, the credendial's URL matches the mainframe only via the PSL, the
   // site is on HTTP, or the form has no current password field.
-  // TODO(crbug.com/918846): Record root causes in a separate histogram.
+  // PasswordManager.FirstWaitForUsernameReason records the root causes.
   kWaitForUsername = 6,
   // No fillable elements were found, only possible for old form parser.
   kNoFillableElementsFound = 7,
@@ -466,7 +466,8 @@ class PasswordAutofillAgent : public content::RenderFrameObserver,
   // The logging is a bit conservative: It is possible that user-perceived
   // navigations (via dynamic HTML sites) not trigger any actual navigations
   // and therefore, the |recorded_first_filling_result_| never gets reset.
-  void LogFirstFillingResult(FillingResult result);
+  void LogFirstFillingResult(const PasswordFormFillData& form_data,
+                             FillingResult result);
 
   // Extracts information about form structure.
   static FormStructureInfo ExtractFormStructureInfo(const FormData& form_data);

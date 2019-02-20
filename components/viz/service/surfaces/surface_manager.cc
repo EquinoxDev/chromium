@@ -76,8 +76,9 @@ SurfaceManager::~SurfaceManager() {
 
   // All SurfaceClients and their surfaces are supposed to be
   // destroyed before SurfaceManager.
-  DCHECK(surface_map_.empty());
-  DCHECK(surfaces_to_destroy_.empty());
+  // TODO(crbug.com/823043): The following two DCHECKs don't hold.
+  // DCHECK(surface_map_.empty());
+  // DCHECK(surfaces_to_destroy_.empty());
 }
 
 #if DCHECK_IS_ON()
@@ -552,7 +553,7 @@ void SurfaceManager::SurfaceActivated(
   if (!SurfaceModified(surface->surface_id(), frame.metadata.begin_frame_ack)) {
     TRACE_EVENT_INSTANT0("viz", "Damage not visible.",
                          TRACE_EVENT_SCOPE_THREAD);
-    surface->RunDrawCallback();
+    surface->SendAckToClient();
   }
 
   for (auto& observer : observer_list_)

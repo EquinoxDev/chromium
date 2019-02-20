@@ -29,6 +29,7 @@
 #include "base/optional.h"
 #include "cc/input/event_listener_properties.h"
 #include "third_party/blink/public/common/dom_storage/session_storage_namespace_id.h"
+#include "third_party/blink/public/common/feature_policy/feature_policy.h"
 #include "third_party/blink/public/platform/blame_context.h"
 #include "third_party/blink/public/platform/web_drag_operation.h"
 #include "third_party/blink/public/platform/web_focus_type.h"
@@ -46,6 +47,7 @@
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/scroll/scroll_types.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
+#include "third_party/blink/renderer/platform/transforms/transformation_matrix.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
 // To avoid conflicts with the CreateWindow macro from the Windows SDK...
@@ -109,7 +111,8 @@ class CORE_EXPORT ChromeClient
 
   virtual void ChromeDestroyed() = 0;
 
-  // Requests the host invalidate the contents.
+  // For non-composited WebViews that exist to contribute to a "parent" WebView
+  // painting. This informs the client of the area that needs to be redrawn.
   virtual void InvalidateRect(const IntRect& update_rect) = 0;
 
   // Converts the rect from the viewport coordinates to screen coordinates.
@@ -121,9 +124,10 @@ class CORE_EXPORT ChromeClient
   // The specified rectangle is adjusted for the minimum window size and the
   // screen, then setWindowRect with the adjusted rectangle is called.
   void SetWindowRectWithAdjustment(const IntRect&, LocalFrame&);
-  virtual IntRect RootWindowRect() = 0;
 
-  virtual IntRect PageRect() = 0;
+  // This gives the rect of the top level window that the given LocalFrame is a
+  // part of.
+  virtual IntRect RootWindowRect(LocalFrame&) = 0;
 
   virtual void Focus(LocalFrame*) = 0;
 
@@ -135,6 +139,8 @@ class CORE_EXPORT ChromeClient
   virtual bool HadFormInteraction() const = 0;
 
   virtual void BeginLifecycleUpdates() = 0;
+  virtual void StartDeferringCommits() = 0;
+  virtual void StopDeferringCommits() = 0;
 
   // Start a system drag and drop operation.
   virtual void StartDragging(LocalFrame*,
@@ -155,6 +161,7 @@ class CORE_EXPORT ChromeClient
                      const WebWindowFeatures&,
                      NavigationPolicy,
                      SandboxFlags,
+                     const FeaturePolicy::FeatureState&,
                      const SessionStorageNamespaceId&);
   virtual void Show(NavigationPolicy) = 0;
 
@@ -211,10 +218,10 @@ class CORE_EXPORT ChromeClient
 
   virtual void SetCursorForPlugin(const WebCursorInfo&, LocalFrame*) = 0;
 
-  // Returns a custom visible content rect if a viewport override is active.
-  virtual base::Optional<IntRect> VisibleContentRectForPainting() const {
-    return base::nullopt;
-  }
+  // Returns a custom visible rect if a viewport override is active. Requires
+  // the |frame| being painted, but only supports being used for the main frame.
+  virtual void OverrideVisibleRectForMainFrame(LocalFrame& frame,
+                                               IntRect* paint_rect) const {}
 
   // Returns the scale used to convert incoming input events while emulating
   // device metics.
@@ -294,6 +301,7 @@ class CORE_EXPORT ChromeClient
       cc::EventListenerClass) const = 0;
   virtual void SetHasScrollEventHandlers(LocalFrame*, bool) = 0;
   virtual void SetNeedsLowLatencyInput(LocalFrame*, bool) = 0;
+  virtual void SetNeedsUnbufferedInputForDebugger(LocalFrame*, bool) = 0;
   virtual void RequestUnbufferedInputEvents(LocalFrame*) = 0;
   virtual void SetTouchAction(LocalFrame*, TouchAction) = 0;
 
@@ -306,8 +314,8 @@ class CORE_EXPORT ChromeClient
 
   virtual void SetBrowserControlsState(float top_height,
                                        float bottom_height,
-                                       bool shrinks_layout){};
-  virtual void SetBrowserControlsShownRatio(float){};
+                                       bool shrinks_layout) {}
+  virtual void SetBrowserControlsShownRatio(float) {}
 
   virtual String AcceptLanguages() = 0;
 
@@ -349,6 +357,10 @@ class CORE_EXPORT ChromeClient
   virtual void ShowVirtualKeyboardOnElementFocus(LocalFrame&) {}
 
   virtual void RegisterViewportLayers() const {}
+
+  virtual TransformationMatrix GetDeviceEmulationTransform() const {
+    return TransformationMatrix();
+  }
 
   virtual void OnMouseDown(Node&) {}
 
@@ -393,6 +405,7 @@ class CORE_EXPORT ChromeClient
                                      const WebWindowFeatures&,
                                      NavigationPolicy,
                                      SandboxFlags,
+                                     const FeaturePolicy::FeatureState&,
                                      const SessionStorageNamespaceId&) = 0;
 
  private:

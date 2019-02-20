@@ -79,7 +79,8 @@ class RestrictedCookieManager::Listener : public base::LinkNode<Listener> {
   void OnCookieChange(const net::CanonicalCookie& cookie,
                       net::CookieChangeCause cause) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    if (!cookie.IncludeForRequestURL(url_, options_))
+    if (cookie.IncludeForRequestURL(url_, options_) !=
+        net::CanonicalCookie::CookieInclusionStatus::INCLUDE)
       return;
     mojo_listener_->OnCookieChange(cookie, ToCookieChangeCause(cause));
   }
@@ -154,7 +155,8 @@ void RestrictedCookieManager::CookieListToGetAllForUrlCallback(
     const GURL& site_for_cookies,
     mojom::CookieManagerGetOptionsPtr options,
     GetAllForUrlCallback callback,
-    const net::CookieList& cookie_list) {
+    const net::CookieList& cookie_list,
+    const net::CookieStatusList& excluded_cookies) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // TODO(pwnall): Call NetworkDelegate::CanGetCookies() on a NetworkDelegate

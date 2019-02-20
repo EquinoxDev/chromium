@@ -43,6 +43,7 @@
 .project
 .pydevproject
 .checkstyle
+compile_commands.json
 cscope.*
 GPATH
 GRTAGS
@@ -64,7 +65,7 @@ vs-chromium-project.txt
 /ash/ash_unittests_run.xml
 /base/base_unittests_run.xml
 # See build/.gitignore for entries covering src/build.
-/buildtools
+
 # The Chrome OS build creates a /c symlink due to http://crbug.com/54866.
 /c
 /cdm
@@ -76,7 +77,6 @@ vs-chromium-project.txt
 /chrome/build/chrome.x86.orderfile
 /chrome/build/chrome_child.x64.orderfile
 /chrome/build/chrome_child.x86.orderfile
-/chrome/content_gl_tests_run.xml
 /chrome/gl_tests_run.xml
 /chrome/gles2_conform_test_run.xml
 /chrome/tab_capture_performance_tests_run.xml
@@ -131,6 +131,7 @@ vs-chromium-project.txt
 /chrome/test/chromeos/autotest/files/client/deps/perf_data_dep/test_src/
 /chrome/test/chromeos/autotest/files/client/deps/pyauto_dep/test_src/
 /chrome/test/chromeos/autotest/files/client/deps/telemetry_dep/test_src/
+/chrome/test/data/autofill/captured_sites
 /chrome/test/data/extensions/api_test/permissions/nacl_enabled/bin
 /chrome/test/data/firefox2_profile/searchplugins
 /chrome/test/data/firefox2_searchplugins
@@ -171,6 +172,7 @@ vs-chromium-project.txt
 /components/resources/default_100_percent/google_chrome
 /components/resources/default_200_percent/google_chrome
 /components/search_engines/prepopulated_engines.xml
+/components/test/data/language/
 /components/suggestions.xml
 /components/variations.xml
 /components/zucchini/testdata/*.exe
@@ -207,6 +209,7 @@ vs-chromium-project.txt
 /ios/third_party/motion_interchange_objc/src
 /ios/third_party/motion_transitioning_objc/src
 /ios/third_party/ochamcrest/src
+/ios/third_party/webkit/src
 /ios_internal
 /libassistant
 /libinteraction
@@ -256,6 +259,7 @@ vs-chromium-project.txt
 /sql/sql_unittests_run.xml
 /sync/sync.xml
 /sync_testserver.log
+/testing/libfuzzer/fuzzer_corpus_for_bots/
 /testserver.log
 # See third_party/.gitignore for entries covering src/third_party.
 /tools/.bisect-builds-cache.json
@@ -270,6 +274,7 @@ vs-chromium-project.txt
 /tools/metrics/histograms/histograms.before.pretty-print.xml
 /tools/metrics/histograms/enums.before.pretty-print.xml
 /tools/page_cycler/acid3
+/tools/skia_goldctl/
 /tools/swarming_client
 /tools/tryserver
 /tools/win/link_limiter/build
@@ -283,3 +288,6 @@ vs-chromium-project.txt
 /webpagereplay_logs/
 /x86-generic_out/
 /xcodebuild
+
+# Ignore any Android RenderTest goldens
+**/render_tests/*.png

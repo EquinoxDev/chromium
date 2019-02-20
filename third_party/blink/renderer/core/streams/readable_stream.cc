@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_writable_stream.h"
 #include "third_party/blink/renderer/core/streams/readable_stream_operations.h"
 #include "third_party/blink/renderer/core/streams/retain_wrapper_during_construction.h"
+#include "third_party/blink/renderer/core/streams/writable_stream_wrapper.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
 
@@ -20,7 +21,8 @@ class ReadableStream::NoopFunction : public ScriptFunction {
     auto* self = MakeGarbageCollected<NoopFunction>(script_state);
     return self->BindToV8Function();
   }
-  NoopFunction(ScriptState* script_state) : ScriptFunction(script_state) {}
+  explicit NoopFunction(ScriptState* script_state)
+      : ScriptFunction(script_state) {}
   ScriptValue Call(ScriptValue value) override { return value; }
 };
 
@@ -317,6 +319,19 @@ ScriptValue ReadableStream::pipeThrough(ScriptState* script_state,
     return ScriptValue();
   }
 
+  if (RuntimeEnabledFeatures::StreamsNativeEnabled()) {
+    // TODO(ricea): Replace this with a DCHECK once ReadableStreamNative is
+    // implemented.
+    exception_state.ThrowTypeError(
+        "pipeThrough disabled because StreamsNative feature is enabled");
+    return ScriptValue();
+  }
+
+  // This cast is safe because the following code will only be run when the
+  // native version of WritableStream is not in use.
+  WritableStreamWrapper* writable_wrapper =
+      static_cast<WritableStreamWrapper*>(dom_writable);
+
   // 8. Let _promise_ be ! ReadableStreamPipeTo(*this*, _writable_,
   //    _preventClose_, _preventAbort_, _preventCancel_,
   //   _signal_).
@@ -326,7 +341,8 @@ ScriptValue ReadableStream::pipeThrough(ScriptState* script_state,
   // standard?
   ScriptPromise promise = ReadableStreamOperations::PipeTo(
       script_state, GetInternalStream(script_state),
-      dom_writable->GetInternalStream(script_state), options, exception_state);
+      writable_wrapper->GetInternalStream(script_state), options,
+      exception_state);
   if (exception_state.HadException()) {
     return ScriptValue();
   }
@@ -373,9 +389,23 @@ ScriptPromise ReadableStream::pipeTo(ScriptState* script_state,
   if (exception_state.HadException())
     return ScriptPromise();
 
+  if (RuntimeEnabledFeatures::StreamsNativeEnabled()) {
+    // TODO(ricea): Replace this with a DCHECK once ReadableStreamNative is
+    // implemented.
+    exception_state.ThrowTypeError(
+        "pipeTo disabled because StreamsNative feature is enabled");
+    return ScriptPromise();
+  }
+
+  // This cast is safe because the following code will only be run when the
+  // native version of WritableStream is not in use.
+  WritableStreamWrapper* destination_wrapper =
+      static_cast<WritableStreamWrapper*>(destination);
+
   return ReadableStreamOperations::PipeTo(
       script_state, GetInternalStream(script_state),
-      destination->GetInternalStream(script_state), options, exception_state);
+      destination_wrapper->GetInternalStream(script_state), options,
+      exception_state);
 }
 
 ScriptValue ReadableStream::tee(ScriptState* script_state,
@@ -520,7 +550,9 @@ void ReadableStream::LockAndDisturb(ScriptState* script_state,
   if (reader.IsEmpty())
     return;
 
-  ReadableStreamOperations::DefaultReaderRead(script_state, reader);
+  ScriptPromise promise =
+      ReadableStreamOperations::DefaultReaderRead(script_state, reader);
+  promise.MarkAsHandled();
 }
 
 void ReadableStream::Serialize(ScriptState* script_state,

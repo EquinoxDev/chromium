@@ -12,14 +12,15 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/test/test_timeouts.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/eme_constants.h"
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline_status.h"
-#include "media/test/mock_media_source.h"
 #include "media/test/pipeline_integration_test_base.h"
+#include "media/test/test_media_source.h"
 #include "third_party/libaom/av1_buildflags.h"
 
 namespace {
@@ -190,7 +191,7 @@ class MediaSourcePipelineIntegrationFuzzerTest
     scoped_refptr<media::DecoderBuffer> buffer(
         DecoderBuffer::CopyFrom(data, size));
 
-    MockMediaSource source(buffer, mimetype, kAppendWholeFile);
+    TestMediaSource source(buffer, mimetype, kAppendWholeFile);
 
     // Prevent timeout in the case of not enough media appended to complete
     // demuxer initialization, yet no error in the media appended.  The
@@ -202,9 +203,9 @@ class MediaSourcePipelineIntegrationFuzzerTest
         base::Bind(&OnEncryptedMediaInitData, this));
 
     // Allow parsing to either pass or fail without emitting a gtest failure
-    // from MockMediaSource.
+    // from TestMediaSource.
     source.set_expected_append_result(
-        MockMediaSource::ExpectedAppendResult::kSuccessOrFailure);
+        TestMediaSource::ExpectedAppendResult::kSuccessOrFailure);
 
     // TODO(wolenetz): Vary the behavior (abort/remove/seek/endOfStream/Append
     // in pieces/append near play-head/vary append mode/etc), perhaps using
@@ -224,6 +225,13 @@ class MediaSourcePipelineIntegrationFuzzerTest
 // Disable noisy logging.
 struct Environment {
   Environment() {
+    base::CommandLine::Init(0, nullptr);
+
+    // |test| instances uses ScopedTaskEnvironment, which needs TestTimeouts.
+    TestTimeouts::Initialize();
+
+    media::InitializeMediaLibrary();
+
     // Note, instead of LOG_FATAL, use a value at or below logging::LOG_VERBOSE
     // here to assist local debugging.
     logging::SetMinLogLevel(logging::LOG_FATAL);
@@ -237,16 +245,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   // Media pipeline starts new threads, which needs AtExitManager.
   base::AtExitManager at_exit;
 
-  // Media pipeline checks command line arguments internally.
-  base::CommandLine::Init(0, nullptr);
-
-  media::InitializeMediaLibrary();
-
   FuzzerVariant variant = PIPELINE_FUZZER_VARIANT;
 
   if (variant == SRC) {
-    media::ProgressivePipelineIntegrationFuzzerTest test;
-    test.RunTest(data, size);
+    {
+      media::ProgressivePipelineIntegrationFuzzerTest test;
+      test.RunTest(data, size);
+    }
+
+#if BUILDFLAG(ENABLE_DAV1D_DECODER)
+    {
+      // Rerun the test with the dav1d video decoder instead of libaom. Note:
+      // this ends up running for all SRC fuzzing and not just AV1 content, but
+      // that's true for our entire corpus.
+      base::test::ScopedFeatureList features_with_dav1d;
+      features_with_dav1d.InitAndEnableFeature(media::kDav1dVideoDecoder);
+      media::ProgressivePipelineIntegrationFuzzerTest test;
+      test.RunTest(data, size);
+    }
+#endif
   } else {
     // Sequentially fuzz with new and old MSE buffering APIs.  See
     // https://crbug.com/718641.
@@ -264,6 +281,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
       media::MediaSourcePipelineIntegrationFuzzerTest test;
       test.RunTest(data, size, MseFuzzerVariantEnumToMimeTypeString(variant));
     }
+
+#if BUILDFLAG(ENABLE_DAV1D_DECODER)
+    // Rerun the test with the dav1d video decoder instead of libaom. No need to
+    // run with ByPts in both configurations, just use the default.
+    if (variant == MP4_AV1) {
+      base::test::ScopedFeatureList features_with_dav1d;
+      features_with_dav1d.InitAndEnableFeature(media::kDav1dVideoDecoder);
+      media::MediaSourcePipelineIntegrationFuzzerTest test;
+      test.RunTest(data, size, MseFuzzerVariantEnumToMimeTypeString(variant));
+    }
+#endif
   }
 
   return 0;

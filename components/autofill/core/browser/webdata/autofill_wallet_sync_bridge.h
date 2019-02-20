@@ -66,12 +66,11 @@ class AutofillWalletSyncBridge : public base::SupportsUserData::Data,
   std::string GetClientTag(const syncer::EntityData& entity_data) override;
   std::string GetStorageKey(const syncer::EntityData& entity_data) override;
   bool SupportsIncrementalUpdates() const override;
-  StopSyncResponse ApplyStopSyncChanges(
-      std::unique_ptr<syncer::MetadataChangeList> delete_metadata_change_list)
-      override;
+  void ApplyStopSyncChanges(std::unique_ptr<syncer::MetadataChangeList>
+                                delete_metadata_change_list) override;
 
   // Sends all Wallet Data to the |callback| and keeps all the strings in their
-  // original format.
+  // original format (whereas GetAllDataForDebugging() has to make them UTF-8).
   void GetAllDataForTesting(DataCallback callback);
 
  private:
@@ -83,6 +82,10 @@ class AutofillWalletSyncBridge : public base::SupportsUserData::Data,
 
     bool IsEmpty() const { return items_added == 0 && items_removed == 0; }
   };
+
+  // Sends all Wallet Data to the |callback|. If |enforce_utf8|, the string
+  // fields that are in non-UTF-8 get encoded so that they conform to UTF-8.
+  void GetAllDataImpl(DataCallback callback, bool enforce_utf8);
 
   // Sets the wallet data from |entity_data| to this client and records metrics
   // about added/deleted data.

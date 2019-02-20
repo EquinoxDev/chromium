@@ -5,14 +5,17 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_TABS_TAB_STYLE_H_
 #define CHROME_BROWSER_UI_VIEWS_TABS_TAB_STYLE_H_
 
+#include <memory>
+
 #include "base/macros.h"
+#include "chrome/browser/ui/views/tabs/glow_hover_controller.h"
 #include "ui/gfx/geometry/rect_f.h"
-#include "ui/gfx/path.h"
 
 namespace gfx {
 class Canvas;
 }
 
+class SkPath;
 class Tab;
 
 // Holds all of the logic for rendering tabs, including preferred sizes, paths,
@@ -65,6 +68,17 @@ class TabStyle {
     float left = 0, right = 0;
   };
 
+  // Colors for various parts of the tab derived by TabStyle.
+  struct TabColors {
+    SkColor background_color;
+    SkColor title_color;
+    SkColor button_icon_idle_color;
+    SkColor button_icon_hovered_color;
+    SkColor button_icon_pressed_color;
+    SkColor button_background_hovered_color;
+    SkColor button_background_pressed_color;
+  };
+
   // Creates an appropriate TabStyle instance for a particular tab.
   // Caller is responsibly for the TabStyle object's lifespan and should delete
   // it when finished.
@@ -72,7 +86,7 @@ class TabStyle {
   // We've implemented this as a factory function so that when we're playing
   // with new variatons on tab shapes we can have a few possible implementations
   // and switch them in one place.
-  static TabStyle* CreateForTab(const Tab* tab);
+  static std::unique_ptr<TabStyle> CreateForTab(Tab* tab);
 
   virtual ~TabStyle();
 
@@ -80,23 +94,33 @@ class TabStyle {
   // If |force_active| is true, applies an active appearance on the tab (usually
   // involving painting an optional stroke) even if the tab is not the active
   // tab.
-  virtual gfx::Path GetPath(
+  virtual SkPath GetPath(
       PathType path_type,
       float scale,
       bool force_active = false,
       RenderUnits render_units = RenderUnits::kPixels) const = 0;
 
-  // Returns the thickness of the stroke drawn around the top and sides of the
-  // tab.  Only active tabs may have a stroke, and not in all cases.  If there
-  // is no stroke, returns 0.  If |should_paint_as_active| is true, the tab is
-  // treated as an active tab regardless of its true current state.
-  virtual int GetStrokeThickness(bool should_paint_as_active = false) const = 0;
-
-  // Paint the tab.
-  virtual void PaintTab(gfx::Canvas* canvas, const gfx::Path& clip) const = 0;
-
   // Returns the insets to use for laying out tab contents.
   virtual gfx::Insets GetContentsInsets() const = 0;
+
+  // Returns the z-value of the tab, which should be used to paint them in
+  // ascending order.
+  virtual float GetZValue() const = 0;
+
+  // Derives and returns colors for the tab. See TabColors, above.
+  virtual TabColors CalculateColors() const = 0;
+
+  // Paints the tab.
+  virtual void PaintTab(gfx::Canvas* canvas, const SkPath& clip) const = 0;
+
+  // Sets the center of the radial highlight in the hover animation.
+  virtual void SetHoverLocation(const gfx::Point& location) = 0;
+
+  // Shows the hover animation.
+  virtual void ShowHover(GlowHoverController::ShowStyle style) = 0;
+
+  // Hides the hover animation.
+  virtual void HideHover(GlowHoverController::HideStyle style) = 0;
 
   // Returns the minimum possible width of a selected Tab. Selected tabs must
   // always show a close button, and thus have a larger minimum size than

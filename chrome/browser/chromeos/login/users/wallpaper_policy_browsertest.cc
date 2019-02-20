@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ash/public/interfaces/wallpaper.mojom.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -39,6 +40,7 @@
 #include "chromeos/constants/chromeos_switches.h"
 #include "chromeos/cryptohome/cryptohome_parameters.h"
 #include "chromeos/cryptohome/system_salt_getter.h"
+#include "chromeos/dbus/constants/dbus_paths.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
@@ -151,7 +153,8 @@ class WallpaperPolicyTest : public LoginManagerTest,
     std::unique_ptr<policy::UserPolicyBuilder> user_policy_builder(
         new policy::UserPolicyBuilder());
     base::FilePath user_keys_dir;
-    EXPECT_TRUE(base::PathService::Get(DIR_USER_POLICY_KEYS, &user_keys_dir));
+    EXPECT_TRUE(base::PathService::Get(dbus_paths::DIR_USER_POLICY_KEYS,
+                                       &user_keys_dir));
     const std::string sanitized_user_id =
         CryptohomeClient::GetStubSanitizedUsername(
             cryptohome::CreateAccountIdentifierFromAccountId(account_id));
@@ -182,6 +185,11 @@ class WallpaperPolicyTest : public LoginManagerTest,
 
     LoginManagerTest::SetUpInProcessBrowserTestFixture();
     ASSERT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_));
+
+    // Set some fake state keys to make sure they are not empty.
+    std::vector<std::string> state_keys;
+    state_keys.push_back("1");
+    fake_session_manager_client_->set_server_backed_state_keys(state_keys);
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {

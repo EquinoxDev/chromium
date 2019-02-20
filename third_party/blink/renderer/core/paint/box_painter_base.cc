@@ -91,10 +91,6 @@ void BoxPainterBase::PaintNormalBoxShadow(const PaintInfo& info,
     if (fill_rect.IsEmpty())
       continue;
 
-    FloatRect shadow_rect(border.Rect());
-    shadow_rect.Inflate(shadow_blur + shadow_spread);
-    shadow_rect.Move(shadow_offset);
-
     // Save the state and clip, if not already done.
     // The clip does not depend on any shadow-specific properties.
     if (!state_saver.Saved()) {
@@ -136,14 +132,6 @@ void BoxPainterBase::PaintNormalBoxShadow(const PaintInfo& info,
                       DrawLooperBuilder::kShadowIgnoresAlpha, kDrawShadowOnly);
 
     if (has_border_radius) {
-      FloatRoundedRect influence_rect(
-          PixelSnappedIntRect(LayoutRect(shadow_rect)), border.GetRadii());
-      float change_amount = 2 * shadow_blur + shadow_spread;
-      if (change_amount >= 0)
-        influence_rect.ExpandRadii(change_amount);
-      else
-        influence_rect.ShrinkRadii(-change_amount);
-
       FloatRoundedRect rounded_fill_rect = border;
       rounded_fill_rect.Inflate(shadow_spread);
 
@@ -321,6 +309,112 @@ BoxPainterBase::FillLayerInfo::FillLayerInfo(
 
 namespace {
 
+// Given the |size| that the whole image should draw at, and the input phase
+// requested by the content, and the space between repeated tiles, return a
+// rectangle with |size| and a location that respects the phase but is no more
+// than one size + space in magnitude. In practice, this means that if there is
+// no repeating the returned rect would contain the destination_offset
+// location. The destination_offset passed here must exactly match the location
+// of the subset in a following call to ComputeSubsetForBackground.
+FloatRect ComputePhaseForBackground(const FloatPoint& destination_offset,
+                                    const FloatSize& size,
+                                    const FloatPoint& phase,
+                                    const FloatSize& spacing) {
+  const FloatSize step_per_tile(size + spacing);
+  return FloatRect(
+      FloatPoint(
+          destination_offset.X() + fmodf(-phase.X(), step_per_tile.Width()),
+          destination_offset.Y() + fmodf(-phase.Y(), step_per_tile.Height())),
+      size);
+}
+
+// Compute the image subset, in intrinsic image coordinates, that gets mapped
+// onto the |subset|, when the whole image would be drawn with phase and size
+// given by |phase_and_size|. Assumes |phase_and_size| contains |subset|. The
+// location of the requested subset should be the painting snapped location, or
+// whatever was used as a destination_offset in ComputePhaseForBackground.
+//
+// It is used to undo the offset added in ComputePhaseForBackground. The size
+// of requested subset should be the unsnapped size so that the computed
+// scale and location in the source image can be correctly determined.
+FloatRect ComputeSubsetForBackground(const FloatRect& phase_and_size,
+                                     const FloatRect& subset,
+                                     const FloatSize& intrinsic_size) {
+  // TODO(schenney): Re-enable this after determining why it fails for
+  // CAP, and maybe other cases.
+  // DCHECK(phase_and_size.Contains(subset));
+
+  const FloatSize scale(phase_and_size.Width() / intrinsic_size.Width(),
+                        phase_and_size.Height() / intrinsic_size.Height());
+  return FloatRect((subset.X() - phase_and_size.X()) / scale.Width(),
+                   (subset.Y() - phase_and_size.Y()) / scale.Height(),
+                   subset.Width() / scale.Width(),
+                   subset.Height() / scale.Height());
+}
+
+// The unsnapped_subset_size should be the target painting area implied by the
+//   content, without any snapping applied. It is necessary to correctly
+//   compute the subset of the source image to paint into the destination.
+// The snapped_paint_rect should be the target destination for painting into.
+// The phase is never snapped.
+// The tile_size is the total image size. The mapping from this size
+//   to the unsnapped_dest_rect size defines the scaling of the image for
+//   sprite computation.
+void DrawTiledBackground(GraphicsContext& context,
+                         Image* image,
+                         const FloatSize& unsnapped_subset_size,
+                         const FloatRect& snapped_paint_rect,
+                         const FloatPoint& phase,
+                         const FloatSize& tile_size,
+                         SkBlendMode op,
+                         const FloatSize& repeat_spacing) {
+  DCHECK(!tile_size.IsEmpty());
+
+  // Use the intrinsic size of the image if it has one, otherwise force the
+  // generated image to be the tile size.
+  FloatSize intrinsic_tile_size(image->Size());
+  FloatSize scale(1, 1);
+  if (image->HasRelativeSize()) {
+    intrinsic_tile_size = tile_size;
+  } else {
+    scale = FloatSize(tile_size.Width() / intrinsic_tile_size.Width(),
+                      tile_size.Height() / intrinsic_tile_size.Height());
+  }
+
+  const FloatRect one_tile_rect = ComputePhaseForBackground(
+      snapped_paint_rect.Location(), tile_size, phase, repeat_spacing);
+
+  // Check and see if a single draw of the image can cover the entire area we
+  // are supposed to tile. The dest_rect_for_subset must use the same
+  // location that was used in ComputePhaseForBackground and the unsnapped
+  // destination rect in order to correctly evaluate the subset size and
+  // location in the presence of border snapping and zoom.
+  FloatRect dest_rect_for_subset(snapped_paint_rect.Location(),
+                                 unsnapped_subset_size);
+  if (one_tile_rect.Contains(dest_rect_for_subset)) {
+    FloatRect visible_src_rect = ComputeSubsetForBackground(
+        one_tile_rect, dest_rect_for_subset, intrinsic_tile_size);
+    // Round to avoid filtering pulling in neighboring pixels, for the
+    // common case of sprite maps.
+    // TODO(schenney): Snapping at this level is a problem for cases where we
+    // might be animating background-position to pan over an image. Ideally we
+    // would either snap only if close to integral, or move snapping
+    // calculations up the stack.
+    visible_src_rect = FloatRect(RoundedIntRect(visible_src_rect));
+    context.DrawImage(image, Image::kSyncDecode, snapped_paint_rect,
+                      &visible_src_rect, op, kDoNotRespectImageOrientation);
+    return;
+  }
+
+  // Note that this tile rect the image's pre-scaled size.
+  FloatRect tile_rect(FloatPoint(), intrinsic_tile_size);
+  // This call takes the unscaled image, applies the given scale, and paints
+  // it into the snapped_dest_rect using phase from one_tile_rect and the
+  // given repeat spacing. Note the phase is already scaled.
+  context.DrawImageTiled(image, snapped_paint_rect, tile_rect, scale,
+                         one_tile_rect.Location(), repeat_spacing, op);
+}
+
 inline bool PaintFastBottomLayer(Node* node,
                                  const PaintInfo& paint_info,
                                  const BoxPainterBase::FillLayerInfo& info,
@@ -346,7 +440,6 @@ inline bool PaintFastBottomLayer(Node* node,
   FloatRoundedRect color_border =
       info.is_rounded_fill ? border_rect
                            : FloatRoundedRect(PixelSnappedIntRect(rect));
-
   // When the layer has an image, figure out whether it is covered by a single
   // tile. The border for painting images may not be the same as the color due
   // to optimizations for the image painting destination that avoid painting
@@ -372,7 +465,7 @@ inline bool PaintFastBottomLayer(Node* node,
 
       // Phase calculation uses the actual painted location, given by the
       // border-snapped destination rect.
-      image_tile = Image::ComputePhaseForBackground(
+      image_tile = ComputePhaseForBackground(
           FloatPoint(geometry.SnappedDestRect().Location()),
           FloatSize(geometry.TileSize()), geometry.Phase(),
           FloatSize(geometry.SpaceSize()));
@@ -430,7 +523,7 @@ inline bool PaintFastBottomLayer(Node* node,
   // so snap to integers. This is particuarly important for sprite maps.
   // Calculation up to this point, in LayoutUnits, can lead to small variations
   // from integer size, so it is safe to round without introducing major issues.
-  const FloatRect unrounded_subset = Image::ComputeSubsetForBackground(
+  const FloatRect unrounded_subset = ComputeSubsetForBackground(
       image_tile, dest_rect_for_subset, intrinsic_tile_size);
   FloatRect src_rect = FloatRect(RoundedIntRect(unrounded_subset));
 
@@ -554,17 +647,17 @@ void PaintFillLayerBackground(GraphicsContext& context,
   // NOTE: This method can be called with no image in situations when a bad
   // resource locator is given such as "//:0", so still check for image.
   if (info.should_paint_image && !geometry.SnappedDestRect().IsEmpty() &&
-      image) {
+      !geometry.TileSize().IsEmpty() && image) {
     TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage",
                  "data",
                  inspector_paint_image_event::Data(
                      node, *info.image, FloatRect(image->Rect()),
                      FloatRect(scrolled_paint_rect)));
-    context.DrawTiledImage(image,
-                           FloatSize(geometry.UnsnappedDestRect().Size()),
-                           FloatRect(geometry.SnappedDestRect()),
-                           geometry.Phase(), FloatSize(geometry.TileSize()),
-                           composite_op, FloatSize(geometry.SpaceSize()));
+    DrawTiledBackground(context, image,
+                        FloatSize(geometry.UnsnappedDestRect().Size()),
+                        FloatRect(geometry.SnappedDestRect()), geometry.Phase(),
+                        FloatSize(geometry.TileSize()), composite_op,
+                        FloatSize(geometry.SpaceSize()));
   }
 }
 
@@ -645,11 +738,16 @@ void BoxPainterBase::PaintFillLayer(const PaintInfo& paint_info,
       bleed_avoidance, border_padding_insets);
 
   // Fast path for drawing simple color backgrounds. Do not use the fast
-  // path if the dest rect has been adjusted for scrolling backgrounds
-  // because correcting the dest rect for this case reduces the accuracy of the
-  // destinations rects.
-  // TODO(schenney): Still use the fast path if not painting any images.
-  if (!did_adjust_paint_rect &&
+  // path with images if the dest rect has been adjusted for scrolling
+  // backgrounds because correcting the dest rect for scrolling reduces the
+  // accuracy of the destination rects. Also disable the fast path for images
+  // if we are shrinking the background for bleed avoidance, because this
+  // adjusts the border rects in a way that breaks the optimization.
+  bool disable_fast_path =
+      info.should_paint_image &&
+      (bleed_avoidance == kBackgroundBleedShrinkBackground ||
+       did_adjust_paint_rect);
+  if (!disable_fast_path &&
       PaintFastBottomLayer(node_, paint_info, info, rect, border_rect, geometry,
                            image.get(), composite_op)) {
     return;

@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_TEST_INTEGRATION_WALLET_HELPER_H_
 #define CHROME_BROWSER_SYNC_TEST_INTEGRATION_WALLET_HELPER_H_
 
+#include <utility>
 #include <vector>
 
 #include "base/test/scoped_feature_list.h"
@@ -23,6 +24,7 @@ struct PaymentsCustomerData;
 
 namespace sync_pb {
 class SyncEntity;
+class ModelTypeState;
 }
 
 namespace wallet_helper {
@@ -70,6 +72,8 @@ void GetServerCardsMetadata(
 void GetServerAddressesMetadata(
     int profile,
     std::map<std::string, autofill::AutofillMetadata>* addresses_metadata);
+
+sync_pb::ModelTypeState GetWalletDataModelTypeState(int profile);
 
 void UnmaskServerCard(int profile,
                       const autofill::CreditCard& credit_card,
@@ -132,20 +136,44 @@ class AutofillWalletChecker : public StatusChangeChecker,
   const int profile_b_;
 };
 
+// Checker to block until autofill wallet metadata sizes match on both profiles.
+class AutofillWalletMetadataSizeChecker
+    : public StatusChangeChecker,
+      public autofill::PersonalDataManagerObserver {
+ public:
+  AutofillWalletMetadataSizeChecker(int profile_a, int profile_b);
+  ~AutofillWalletMetadataSizeChecker() override;
+
+  // StatusChangeChecker implementation.
+  bool IsExitConditionSatisfied() override;
+  std::string GetDebugMessage() const override;
+
+  // autofill::PersonalDataManager implementation.
+  void OnPersonalDataChanged() override;
+
+ private:
+  const int profile_a_;
+  const int profile_b_;
+};
+
 // Class that enables or disables USS based on test parameter. Must be the first
 // base class of the test fixture.
 // TODO(jkrcal): When the new implementation fully launches, remove this class,
 // convert all tests from *_P back to *_F and remove the instance at the end.
-class UssWalletSwitchToggler : public testing::WithParamInterface<bool> {
+class UssWalletSwitchToggler
+    : public testing::WithParamInterface<std::pair<bool, bool>> {
  public:
   UssWalletSwitchToggler();
 
-  // Sets up feature overrides, based on the parameter of the test.
+  // Sets up feature overrides, based on the parameter of the test. Must be
+  // called before the test body is entered (otherwise TSan complains about a
+  // data race).
   void InitWithDefaultFeatures();
 
   // Sets up feature overrides, adds the toggled feature on top of specified
   // |enabled_features| and |disabled_features|. Vectors are passed by value
-  // because we need to alter them anyway.
+  // because we need to alter them anyway. Must be called before the test body
+  // is entered (otherwise TSan complains about a data race).
   void InitWithFeatures(std::vector<base::Feature> enabled_features,
                         std::vector<base::Feature> disabled_features);
 

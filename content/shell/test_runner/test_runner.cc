@@ -10,6 +10,7 @@
 #include <limits>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -20,7 +21,6 @@
 #include "build/build_config.h"
 #include "cc/paint/paint_canvas.h"
 #include "content/shell/common/web_test/web_test_switches.h"
-#include "content/shell/test_runner/layout_and_paint_async_then.h"
 #include "content/shell/test_runner/layout_dump.h"
 #include "content/shell/test_runner/mock_content_settings_client.h"
 #include "content/shell/test_runner/mock_screen_orientation_client.h"
@@ -147,6 +147,7 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
                                      const std::string& destination_host,
                                      bool allow_destination_subdomains);
   void AddWebPageOverlay();
+  void SetHighlightAds();
   void CapturePixelsAsyncThen(v8::Local<v8::Function> callback);
   void ClearAllDatabases();
   void ClearPrinting();
@@ -194,8 +195,6 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void UpdateAllLifecyclePhasesAndCompositeThen(
       v8::Local<v8::Function> callback);
   void SetAnimationRequiresRaster(bool do_raster);
-  void LayoutAndPaintAsync();
-  void LayoutAndPaintAsyncThen(v8::Local<v8::Function> callback);
   void LogToStderr(const std::string& output);
   void NotImplemented(const gin::Arguments& args);
   void NotifyDone();
@@ -232,7 +231,8 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetCustomTextOutput(const std::string& output);
   void SetDatabaseQuota(int quota);
   void SetDisallowedSubresourcePathSuffixes(
-      const std::vector<std::string>& suffixes);
+      const std::vector<std::string>& suffixes,
+      bool block_subresources);
   void SetDomainRelaxationForbiddenForURLScheme(bool forbidden,
                                                 const std::string& scheme);
   void SetDumpConsoleMessages(bool value);
@@ -240,10 +240,9 @@ class TestRunnerBindings : public gin::Wrappable<TestRunnerBindings> {
   void SetEffectiveConnectionType(const std::string& connection_type);
   void SetMockSpellCheckerEnabled(bool enabled);
   void SetImagesAllowed(bool allowed);
-  void SetIsolatedWorldContentSecurityPolicy(int world_id,
-                                             const std::string& policy);
-  void SetIsolatedWorldSecurityOrigin(int world_id,
-                                      v8::Local<v8::Value> origin);
+  void SetIsolatedWorldInfo(int world_id,
+                            v8::Local<v8::Value> security_origin,
+                            v8::Local<v8::Value> content_security_policy);
   void SetJavaScriptCanAccessClipboard(bool can_access);
   void SetMockScreenOrientation(const std::string& orientation);
   void SetPOSIXLocale(const std::string& locale);
@@ -333,7 +332,8 @@ void TestRunnerBindings::Install(
   v8::Local<v8::Object> global = context->Global();
   v8::Local<v8::Value> v8_bindings = bindings.ToV8();
 
-  global->Set(gin::StringToV8(isolate, "testRunner"), v8_bindings);
+  global->Set(context, gin::StringToV8(isolate, "testRunner"), v8_bindings)
+      .Check();
 
   // Inject some JavaScript to the top-level frame of a reftest in the
   // web-platform-tests suite to have the same reftest screenshot timing as
@@ -482,10 +482,6 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::UpdateAllLifecyclePhasesAndCompositeThen)
       .SetMethod("setAnimationRequiresRaster",
                  &TestRunnerBindings::SetAnimationRequiresRaster)
-      .SetMethod("layoutAndPaintAsync",
-                 &TestRunnerBindings::LayoutAndPaintAsync)
-      .SetMethod("layoutAndPaintAsyncThen",
-                 &TestRunnerBindings::LayoutAndPaintAsyncThen)
       .SetMethod("logToStderr", &TestRunnerBindings::LogToStderr)
       .SetMethod("notifyDone", &TestRunnerBindings::NotifyDone)
       .SetMethod("overridePreference", &TestRunnerBindings::OverridePreference)
@@ -553,14 +549,13 @@ gin::ObjectTemplateBuilder TestRunnerBindings::GetObjectTemplateBuilder(
                  &TestRunnerBindings::SetDumpJavaScriptDialogs)
       .SetMethod("setEffectiveConnectionType",
                  &TestRunnerBindings::SetEffectiveConnectionType)
+      .SetMethod("setHighlightAds", &TestRunnerBindings::SetHighlightAds)
       .SetMethod("setMockSpellCheckerEnabled",
                  &TestRunnerBindings::SetMockSpellCheckerEnabled)
       .SetMethod("setIconDatabaseEnabled", &TestRunnerBindings::NotImplemented)
       .SetMethod("setImagesAllowed", &TestRunnerBindings::SetImagesAllowed)
-      .SetMethod("setIsolatedWorldContentSecurityPolicy",
-                 &TestRunnerBindings::SetIsolatedWorldContentSecurityPolicy)
-      .SetMethod("setIsolatedWorldSecurityOrigin",
-                 &TestRunnerBindings::SetIsolatedWorldSecurityOrigin)
+      .SetMethod("setIsolatedWorldInfo",
+                 &TestRunnerBindings::SetIsolatedWorldInfo)
       .SetMethod("setJavaScriptCanAccessClipboard",
                  &TestRunnerBindings::SetJavaScriptCanAccessClipboard)
       .SetMethod("setMainFrameIsFirstResponder",
@@ -802,18 +797,14 @@ void TestRunnerBindings::EvaluateScriptInIsolatedWorld(
     view_runner_->EvaluateScriptInIsolatedWorld(world_id, script);
 }
 
-void TestRunnerBindings::SetIsolatedWorldSecurityOrigin(
+void TestRunnerBindings::SetIsolatedWorldInfo(
     int world_id,
-    v8::Local<v8::Value> origin) {
-  if (view_runner_)
-    view_runner_->SetIsolatedWorldSecurityOrigin(world_id, origin);
-}
-
-void TestRunnerBindings::SetIsolatedWorldContentSecurityPolicy(
-    int world_id,
-    const std::string& policy) {
-  if (view_runner_)
-    view_runner_->SetIsolatedWorldContentSecurityPolicy(world_id, policy);
+    v8::Local<v8::Value> security_origin,
+    v8::Local<v8::Value> content_security_policy) {
+  if (view_runner_) {
+    view_runner_->SetIsolatedWorldInfo(world_id, security_origin,
+                                       content_security_policy);
+  }
 }
 
 void TestRunnerBindings::AddOriginAccessAllowListEntry(
@@ -916,9 +907,10 @@ void TestRunnerBindings::DisableMockScreenOrientation() {
 }
 
 void TestRunnerBindings::SetDisallowedSubresourcePathSuffixes(
-    const std::vector<std::string>& suffixes) {
+    const std::vector<std::string>& suffixes,
+    bool block_subresources) {
   if (runner_)
-    runner_->SetDisallowedSubresourcePathSuffixes(suffixes);
+    runner_->SetDisallowedSubresourcePathSuffixes(suffixes, block_subresources);
 }
 
 void TestRunnerBindings::DidAcquirePointerLock() {
@@ -1319,6 +1311,11 @@ void TestRunnerBindings::SimulateWebNotificationClose(const std::string& title,
   runner_->SimulateWebNotificationClose(title, by_user);
 }
 
+void TestRunnerBindings::SetHighlightAds() {
+  if (view_runner_)
+    view_runner_->SetHighlightAds(true);
+}
+
 void TestRunnerBindings::AddWebPageOverlay() {
   if (view_runner_)
     view_runner_->AddWebPageOverlay();
@@ -1344,17 +1341,6 @@ void TestRunnerBindings::SetAnimationRequiresRaster(bool do_raster) {
   if (!runner_)
     return;
   runner_->SetAnimationRequiresRaster(do_raster);
-}
-
-void TestRunnerBindings::LayoutAndPaintAsync() {
-  if (view_runner_)
-    view_runner_->LayoutAndPaintAsync();
-}
-
-void TestRunnerBindings::LayoutAndPaintAsyncThen(
-    v8::Local<v8::Function> callback) {
-  if (view_runner_)
-    view_runner_->LayoutAndPaintAsyncThen(callback);
 }
 
 void TestRunnerBindings::GetManifestThen(v8::Local<v8::Function> callback) {
@@ -1742,8 +1728,8 @@ void TestRunner::ReplicateWebTestRuntimeFlagsChanges(
         changed_values);
 
     bool allowed = web_test_runtime_flags_.plugins_allowed();
-    for (WebViewTestProxyBase* window : test_interfaces_->GetWindowList())
-      window->web_view()->GetSettings()->SetPluginsEnabled(allowed);
+    for (WebViewTestProxy* window : test_interfaces_->GetWindowList())
+      window->webview()->GetSettings()->SetPluginsEnabled(allowed);
   }
 }
 
@@ -2152,8 +2138,8 @@ void TestRunner::SetMockScreenOrientation(const std::string& orientation_str) {
     orientation = blink::kWebScreenOrientationLandscapeSecondary;
   }
 
-  for (WebViewTestProxyBase* window : test_interfaces_->GetWindowList()) {
-    blink::WebFrame* main_frame = window->web_view()->MainFrame();
+  for (WebViewTestProxy* window : test_interfaces_->GetWindowList()) {
+    blink::WebFrame* main_frame = window->webview()->MainFrame();
     // TODO(lukasza): Need to make this work for remote frames.
     if (main_frame->IsWebLocalFrame()) {
       mock_screen_orientation_client_->UpdateDeviceOrientation(
@@ -2256,8 +2242,8 @@ void TestRunner::SetAcceptLanguages(const std::string& accept_languages) {
   web_test_runtime_flags_.set_accept_languages(accept_languages);
   OnWebTestRuntimeFlagsChanged();
 
-  for (WebViewTestProxyBase* window : test_interfaces_->GetWindowList())
-    window->web_view()->AcceptLanguagesChanged();
+  for (WebViewTestProxy* window : test_interfaces_->GetWindowList())
+    window->webview()->AcceptLanguagesChanged();
 }
 
 void TestRunner::SetPluginsEnabled(bool enabled) {
@@ -2375,8 +2361,8 @@ void TestRunner::SetStorageAllowed(bool allowed) {
 void TestRunner::SetPluginsAllowed(bool allowed) {
   web_test_runtime_flags_.set_plugins_allowed(allowed);
 
-  for (WebViewTestProxyBase* window : test_interfaces_->GetWindowList())
-    window->web_view()->GetSettings()->SetPluginsEnabled(allowed);
+  for (WebViewTestProxy* window : test_interfaces_->GetWindowList())
+    window->webview()->GetSettings()->SetPluginsEnabled(allowed);
 
   OnWebTestRuntimeFlagsChanged();
 }
@@ -2397,14 +2383,16 @@ void TestRunner::DumpPermissionClientCallbacks() {
 }
 
 void TestRunner::SetDisallowedSubresourcePathSuffixes(
-    const std::vector<std::string>& suffixes) {
+    const std::vector<std::string>& suffixes,
+    bool block_subresources) {
   DCHECK(main_view_);
   if (!main_view_->MainFrame()->IsWebLocalFrame())
     return;
   main_view_->MainFrame()
       ->ToWebLocalFrame()
       ->GetDocumentLoader()
-      ->SetSubresourceFilter(new MockWebDocumentSubresourceFilter(suffixes));
+      ->SetSubresourceFilter(
+          new MockWebDocumentSubresourceFilter(suffixes, block_subresources));
 }
 
 void TestRunner::DumpSpellCheckCallbacks() {

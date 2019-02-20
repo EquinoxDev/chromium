@@ -14,6 +14,7 @@
 <translation id="1153356358378277386">Eşlenen cihazlar</translation>
 <translation id="1195412055398077112">fazla tarama</translation>
 <translation id="119944043368869598">Tümünü temizle</translation>
+<translation id="123828989343052515">Yeni Masa</translation>
 <translation id="1247372569136754018">Mikrofon (dahili)</translation>
 <translation id="1252999807265626933"><ph name="POWER_SOURCE" /> güç kaynağından şarj ediliyor</translation>
 <translation id="1255033239764210633">Hava nasıl?</translation>
@@ -68,10 +69,12 @@
 <translation id="1969011864782743497"><ph name="DEVICE_NAME" /> (USB)</translation>
 <translation id="1993072747612765854">En yeni <ph name="SYSTEM_APP_NAME" /> güncellemesi ile ilgili daha fazla bilgi edinin</translation>
 <translation id="1995660704900986789">Kapat</translation>
+<translation id="1999763610967697511">Sürükleme ve bırakma</translation>
 <translation id="2012624427112548395">Ctrl+Arama+H</translation>
 <translation id="2016340657076538683">Mesaj yazın</translation>
 <translation id="2050339315714019657">Dikey</translation>
 <translation id="2067602449040652523">Klavye parlaklığı</translation>
+<translation id="209965399369889474">Ağa bağlı değilsiniz</translation>
 <translation id="2127372758936585790">Düşük güçlü şarj cihazı</translation>
 <translation id="2135456203358955318">Yerleştirilmiş büyüteç</translation>
 <translation id="2144487987174258011">Adobe Flash Player'ı güncellemek için yeniden başlatın</translation>
@@ -94,6 +97,7 @@
 <translation id="2412593942846481727">Güncelleme var</translation>
 <translation id="2413728805700750528"><ph name="DISPLAY_NAME" />, <ph name="DOMAIN" /> tarafından yönetilen bir oturumdur</translation>
 <translation id="2416346634399901812"><ph name="NETWORK_NAME" /> ağına bağlandı</translation>
+<translation id="2427507373259914951">Sol tıklama</translation>
 <translation id="2429753432712299108">"<ph name="DEVICE_NAME" />" adlı Bluetooth cihaz eşleme izni istiyor. Kabul etmeden önce şu cihazda gösterilen bu parolanın gösterildiğini onaylayın: <ph name="PASSKEY" /></translation>
 <translation id="2482878487686419369">Bildirimler</translation>
 <translation id="2484513351006226581">Klavye düzenini değiştirmek için <ph name="KEYBOARD_SHORTCUT" /> tuşlarına basın.</translation>
@@ -132,6 +136,7 @@
 <translation id="3000461861112256445">Mono ses</translation>
 <translation id="3009178788565917040">Çıkış</translation>
 <translation id="3019353588588144572">Pilin tam olarak şarj olması için kalan süre, <ph name="TIME_REMAINING" /></translation>
+<translation id="3051128274746680507">Denetlenen kullanıcı profiliniz yakında kaldırılacak. Daha fazla bilgi edinmek için oturum açın.</translation>
 <translation id="3055162170959710888">Bugün bu cihazı <ph name="USED_TIME" /> kullandınız</translation>
 <translation id="3077734595579995578">üstkrktr</translation>
 <translation id="3081696990447829002">Menüyü genişlet</translation>
@@ -143,10 +148,10 @@
 <translation id="3153444934357957346">Çoklu oturum açmada en fazla <ph name="MULTI_PROFILE_USER_LIMIT" /> hesabınız olabilir.</translation>
 <translation id="3154351730702813399">Cihaz yöneticisi göz atma etkinliğinizi izleyebilir.</translation>
 <translation id="3202010236269062730">{NUM_DEVICES,plural, =1{Bir cihaza bağlı}other{# cihaza bağlı}}</translation>
-<translation id="32244657276328332">Ağa bağlı değil</translation>
 <translation id="3236488194889173876">Kullanılabilir mobil ağ yok</translation>
 <translation id="3255483164551725916">Neler yapabilirsin?</translation>
 <translation id="3294437725009624529">Misafir</translation>
+<translation id="3308453408813785101"><ph name="USER_EMAIL_ADDRESS" /> daha sonra yine oturum açabilir.</translation>
 <translation id="332587331255250389">Lütfen pili değiştirin</translation>
 <translation id="3351879221545518001">Şu anda ekranı yayınlıyorsunuz.</translation>
 <translation id="3364721542077212959">Ekran kalemi araçları</translation>
@@ -193,6 +198,7 @@
 <translation id="4072264167173457037">Orta düzeyde sinyal</translation>
 <translation id="4146833061457621061">Müzik çal</translation>
 <translation id="4181841719683918333">Diller</translation>
+<translation id="4195877955194704651">Otomatik tıklamalar düğmesi</translation>
 <translation id="4217571870635786043">Dikte</translation>
 <translation id="4261870227682513959">Bildirim ayarlarını göster. Bildirimler kapalı</translation>
 <translation id="4269883910223712419">Bu cihazın yöneticisi şunları yapabilir:</translation>
@@ -230,6 +236,7 @@
 <translation id="479989351350248267">ara</translation>
 <translation id="4804818685124855865">Bağlantıyı kes</translation>
 <translation id="4849058404725798627">Klavye odağının olduğu nesneyi vurgula</translation>
+<translation id="485592688953820832">İşlem yok (duraklat)</translation>
 <translation id="4872237917498892622">Alt+Arama veya Üst Karakter</translation>
 <translation id="4890187583552566966">Google Asistan, yöneticiniz tarafından devre dışı bırakıldı.</translation>
 <translation id="4895488851634969361">Pil dolu.</translation>
@@ -256,6 +263,7 @@
 <translation id="5430931332414098647">Anında Tethering</translation>
 <translation id="5431825016875453137">OpenVPN / L2TP</translation>
 <translation id="544691375626129091">Mevcut tüm kullanıcılar zaten bu oturuma eklenmiş.</translation>
+<translation id="5465662442746197494">Yardıma mı ihtiyacınız var?</translation>
 <translation id="5496819745535887422">Yöneticiniz cihazınızı ilk haline döndürüyor. Cihaz yeniden başlatıldığında tüm veriler silinecektir.</translation>
 <translation id="553675580533261935">Oturum kapatılıyor</translation>
 <translation id="5537725057119320332">Yayınla</translation>
@@ -264,7 +272,6 @@
 <translation id="5571066253365925590">Bluetooth etkin</translation>
 <translation id="5597451508971090205"><ph name="SHORT_WEEKDAY" />, <ph name="DATE" /></translation>
 <translation id="5600837773213129531">Sesli geri bildirimi devre dışı bırakmak için Ctrl + Alt + Z tuşlarına basın.</translation>
-<translation id="5626283214046138476">Denetlenen kullanıcı hesabınızın süresi yakında doluyor.</translation>
 <translation id="5648021990716966815">Mikrofon jakı</translation>
 <translation id="5669267381087807207">Etkinleştiriliyor</translation>
 <translation id="5673434351075758678">Ayarlarınız senkronize edildikten sonra "<ph name="FROM_LOCALE" />" olan dil "<ph name="TO_LOCALE" />" olarak değiştirildi.</translation>
@@ -369,6 +376,7 @@
 <translation id="7348093485538360975">Ekran klavyesi</translation>
 <translation id="735745346212279324">VPN bağlantısı kesildi</translation>
 <translation id="7377169924702866686">Caps Lock açık.</translation>
+<translation id="7384299914270925461"><ph name="SIGN" /><ph name="MINUTES_REMAINING" />:<ph name="SECONDS_REMAINING" />sn.</translation>
 <translation id="7398254312354928459">Ağ bağlantısı değiştirildi</translation>
 <translation id="742594950370306541">Kamera kullanımda.</translation>
 <translation id="743058460480092004">Kamera ve mikrofon kullanımda.</translation>
@@ -420,13 +428,17 @@
 <translation id="8113423164597455979">Açık, tüm uygulamalar</translation>
 <translation id="8132793192354020517"><ph name="NAME" /> ağına bağlanıldı</translation>
 <translation id="813913629614996137">İlk kullanıma hazırlanıyor...</translation>
+<translation id="8142441511840089262">Çift tıklama</translation>
 <translation id="8142699993796781067">Özel ağ</translation>
+<translation id="8167567890448493835"><ph name="LOCALE_NAME" /> kullanılıyor</translation>
 <translation id="8190698733819146287">Dilleri ve girişi özelleştir...</translation>
 <translation id="8192202700944119416">Bildirimler gizlendi.</translation>
+<translation id="8203795194971602413">Sağ tıklama</translation>
 <translation id="8236042855478648955">Mola verme zamanı</translation>
 <translation id="8261506727792406068">Sil</translation>
 <translation id="8297006494302853456">Zayıf</translation>
 <translation id="8308637677604853869">Önceki menü</translation>
+<translation id="8332664326438198339">Başlatıcıya dön</translation>
 <translation id="8341451174107936385"><ph name="UNLOCK_MORE_FEATURES" />  <ph name="GET_STARTED" /></translation>
 <translation id="8351131234907093545">Not oluştur</translation>
 <translation id="8375916635258623388">Bu <ph name="DEVICE_NAME" /> ve telefonunuz otomatik olarak bağlanacaktır</translation>
@@ -442,7 +454,6 @@
 <translation id="8454013096329229812">Kablosuz açık.</translation>
 <translation id="847056008324733326">Ekran ölçeği ayarları</translation>
 <translation id="8477270416194247200">İptal etmek için Alt+Ara veya Üst Karakter tuşuna basın.</translation>
-<translation id="8484916590211895857"><ph name="NAME" />: Yeniden bağlanılıyor...</translation>
 <translation id="8513108775083588393">Otomatik döndür</translation>
 <translation id="8517041960877371778"><ph name="DEVICE_TYPE" /> cihazınız açıkken şarj olmayabilir.</translation>
 <translation id="8627191004499078455"><ph name="DEVICE_NAME" /> cihazına bağlandı</translation>
@@ -457,9 +468,7 @@
 <translation id="8734991477317290293">Bu klavye, tuş vuruşlarınızı çalmaya çalışıyor olabilir</translation>
 <translation id="8735953464173050365">Klavye ayarlarını göster. <ph name="KEYBOARD_NAME" /> seçildi</translation>
 <translation id="875593634123171288">VPN ayarlarını göster</translation>
-<translation id="8809737090443522491">Bir uygulamanın veya dokümanın adını yazın</translation>
 <translation id="8814190375133053267">Kablosuz</translation>
-<translation id="8825534185036233643">İkiden fazla ekranla yansıtma desteklenmez.</translation>
 <translation id="8828714802988429505">90°</translation>
 <translation id="8843682306134542540">Döndürme kilidini aç/kapat. <ph name="STATE_TEXT" /></translation>
 <translation id="8850991929411075241">Ara+Esc</translation>
@@ -467,7 +476,7 @@
 <translation id="8874184842967597500">Bağlı değil</translation>
 <translation id="8877788021141246043">Hatırlatıcı oluştur</translation>
 <translation id="8878886163241303700">Genişletilmiş ekran</translation>
-<translation id="8898978413391960553">00:00 sn.</translation>
+<translation id="890616557918890486">Kaynağı değiştir</translation>
 <translation id="8921624153894383499">Google Asistan bu dili konuşmuyor.</translation>
 <translation id="8938800817013097409">USB-C cihaz (arkadaki sağ bağlantı noktası)</translation>
 <translation id="8940956008527784070">Pil gücü az (%<ph name="PERCENTAGE" />)</translation>

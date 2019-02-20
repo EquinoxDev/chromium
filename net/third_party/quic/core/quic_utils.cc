@@ -295,6 +295,19 @@ bool QuicUtils::IsAckable(SentPacketState state) {
 }
 
 // static
+bool QuicUtils::IsRetransmittableFrame(QuicFrameType type) {
+  switch (type) {
+    case ACK_FRAME:
+    case PADDING_FRAME:
+    case STOP_WAITING_FRAME:
+    case MTU_DISCOVERY_FRAME:
+      return false;
+    default:
+      return true;
+  }
+}
+
+// static
 SentPacketState QuicUtils::RetransmissionTypeToPacketState(
     TransmissionType retransmission_type) {
   switch (retransmission_type) {
@@ -428,6 +441,37 @@ QuicConnectionId QuicUtils::CreateRandomConnectionId(QuicRandom* random,
   random->RandBytes(connection_id_bytes, QUIC_ARRAYSIZE(connection_id_bytes));
   return QuicConnectionId(static_cast<char*>(connection_id_bytes),
                           QUIC_ARRAYSIZE(connection_id_bytes));
+}
+
+// static
+bool QuicUtils::VariableLengthConnectionIdAllowedForVersion(
+    QuicTransportVersion version) {
+  // TODO(dschinazi): Allow in appropriate version when supported.
+  return false;
+}
+
+// static
+QuicConnectionId QuicUtils::CreateZeroConnectionId(
+    QuicTransportVersion version) {
+  if (!QuicConnectionIdSupportsVariableLength(Perspective::IS_SERVER) ||
+      !QuicConnectionIdSupportsVariableLength(Perspective::IS_CLIENT)) {
+    return QuicConnectionIdFromUInt64(0);
+  }
+  if (!VariableLengthConnectionIdAllowedForVersion(version)) {
+    char connection_id_bytes[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    return QuicConnectionId(static_cast<char*>(connection_id_bytes),
+                            QUIC_ARRAYSIZE(connection_id_bytes));
+  }
+  return EmptyQuicConnectionId();
+}
+
+// static
+bool QuicUtils::IsConnectionIdValidForVersion(QuicConnectionId connection_id,
+                                              QuicTransportVersion version) {
+  if (VariableLengthConnectionIdAllowedForVersion(version)) {
+    return true;
+  }
+  return connection_id.length() == kQuicDefaultConnectionIdLength;
 }
 
 QuicUint128 QuicUtils::GenerateStatelessResetToken(

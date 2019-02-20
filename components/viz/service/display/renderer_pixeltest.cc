@@ -7,6 +7,8 @@
 #include <memory>
 #include <tuple>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/aligned_memory.h"
 #include "build/build_config.h"
 #include "cc/base/math_util.h"
@@ -19,7 +21,6 @@
 #include "cc/test/resource_provider_test_utils.h"
 #include "cc/test/test_in_process_context_provider.h"
 #include "components/viz/client/client_resource_provider.h"
-#include "components/viz/common/gpu/texture_allocation.h"
 #include "components/viz/common/quads/picture_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
@@ -27,6 +28,8 @@
 #include "components/viz/service/display/gl_renderer.h"
 #include "components/viz/test/test_shared_bitmap_manager.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
+#include "gpu/command_buffer/client/shared_image_interface.h"
+#include "gpu/command_buffer/common/shared_image_usage.h"
 #include "media/base/video_frame.h"
 #include "media/renderers/video_resource_updater.h"
 #include "media/video/half_float_maker.h"
@@ -48,6 +51,17 @@ namespace viz {
 namespace {
 
 #if !defined(OS_ANDROID)
+template <typename T>
+base::span<const uint8_t> MakePixelSpan(const std::vector<T>& vec) {
+  return base::make_span(reinterpret_cast<const uint8_t*>(vec.data()),
+                         vec.size() * sizeof(T));
+}
+
+base::span<const uint8_t> MakePixelSpan(const SkBitmap& bitmap) {
+  return base::make_span(static_cast<const uint8_t*>(bitmap.getPixels()),
+                         bitmap.computeByteSize());
+}
+
 std::unique_ptr<base::SharedMemory> AllocateAndRegisterSharedBitmapMemory(
     const SharedBitmapId& id,
     const gfx::Size& size,
@@ -61,15 +75,14 @@ std::unique_ptr<base::SharedMemory> AllocateAndRegisterSharedBitmapMemory(
   return shm;
 }
 
-void DeleteTexture(scoped_refptr<ContextProvider> context_provider,
-                   GLuint texture,
-                   const gpu::SyncToken& sync_token,
-                   bool is_lost) {
+void DeleteSharedImage(scoped_refptr<ContextProvider> context_provider,
+                       gpu::Mailbox mailbox,
+                       const gpu::SyncToken& sync_token,
+                       bool is_lost) {
   DCHECK(context_provider);
-  gpu::gles2::GLES2Interface* gl = context_provider->ContextGL();
-  DCHECK(gl);
-  gl->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
-  gl->DeleteTextures(1, &texture);
+  gpu::SharedImageInterface* sii = context_provider->SharedImageInterface();
+  DCHECK(sii);
+  sii->DestroySharedImage(sync_token, mailbox);
 }
 
 ResourceId CreateGpuResource(scoped_refptr<ContextProvider> context_provider,
@@ -77,33 +90,21 @@ ResourceId CreateGpuResource(scoped_refptr<ContextProvider> context_provider,
                              const gfx::Size& size,
                              ResourceFormat format,
                              gfx::ColorSpace color_space,
-                             const void* pixels = nullptr) {
+                             base::span<const uint8_t> pixels) {
   DCHECK(context_provider);
-  gpu::gles2::GLES2Interface* gl = context_provider->ContextGL();
-  DCHECK(gl);
-  const gpu::Capabilities& caps = context_provider->ContextCapabilities();
-  auto allocation = TextureAllocation::MakeTextureId(
-      gl, caps, format,
-      /*use_gpu_memory_buffer_resources=*/false,
-      /*for_framebuffer_attachment=*/false);
-  if (pixels) {
-    TextureAllocation::UploadStorage(gl, caps, format, size, allocation,
-                                     color_space, pixels);
-  } else {
-    TextureAllocation::AllocateStorage(gl, caps, format, size, allocation,
-                                       color_space);
-  }
-  gpu::Mailbox mailbox;
-  gl->ProduceTextureDirectCHROMIUM(allocation.texture_id, mailbox.name);
-  gpu::SyncToken sync_token;
-  gl->GenSyncTokenCHROMIUM(sync_token.GetData());
+  gpu::SharedImageInterface* sii = context_provider->SharedImageInterface();
+  DCHECK(sii);
+  gpu::Mailbox mailbox = sii->CreateSharedImage(
+      format, size, color_space, gpu::SHARED_IMAGE_USAGE_DISPLAY, pixels);
+  gpu::SyncToken sync_token = sii->GenUnverifiedSyncToken();
+
   TransferableResource gl_resource = TransferableResource::MakeGL(
-      mailbox, GL_LINEAR, allocation.texture_target, sync_token);
+      mailbox, GL_LINEAR, GL_TEXTURE_2D, sync_token);
   gl_resource.size = size;
   gl_resource.format = format;
   gl_resource.color_space = std::move(color_space);
-  auto release_callback = SingleReleaseCallback::Create(base::BindOnce(
-      &DeleteTexture, std::move(context_provider), allocation.texture_id));
+  auto release_callback = SingleReleaseCallback::Create(
+      base::BindOnce(&DeleteSharedImage, std::move(context_provider), mailbox));
   return resource_provider->ImportResource(gl_resource,
                                            std::move(release_callback));
 }
@@ -237,9 +238,9 @@ void CreateTestTwoColoredTextureDrawQuad(
 
   ResourceId resource;
   if (gpu_resource) {
-    resource = CreateGpuResource(std::move(child_context_provider),
-                                 child_resource_provider, rect.size(),
-                                 RGBA_8888, gfx::ColorSpace(), &pixels.front());
+    resource = CreateGpuResource(
+        std::move(child_context_provider), child_resource_provider, rect.size(),
+        RGBA_8888, gfx::ColorSpace(), MakePixelSpan(pixels));
   } else {
     SharedBitmapId shared_bitmap_id = SharedBitmap::GenerateId();
     std::unique_ptr<base::SharedMemory> shm =
@@ -298,9 +299,9 @@ void CreateTestTextureDrawQuad(
 
   ResourceId resource;
   if (gpu_resource) {
-    resource = CreateGpuResource(std::move(child_context_provider),
-                                 child_resource_provider, rect.size(),
-                                 RGBA_8888, gfx::ColorSpace(), &pixels.front());
+    resource = CreateGpuResource(
+        std::move(child_context_provider), child_resource_provider, rect.size(),
+        RGBA_8888, gfx::ColorSpace(), MakePixelSpan(pixels));
   } else {
     SharedBitmapId shared_bitmap_id = SharedBitmap::GenerateId();
     std::unique_ptr<base::SharedMemory> shm =
@@ -747,15 +748,14 @@ void CreateTestYUVVideoDrawQuad_NV12(
   std::vector<uint8_t> y_pixels(ya_tex_size.GetArea(), y);
   ResourceId resource_y = CreateGpuResource(
       child_context_provider, child_resource_provider, ya_tex_size,
-      video_resource_updater->YuvResourceFormat(8), color_space,
-      y_pixels.data());
+      video_resource_updater->YuvResourceFormat(8), color_space, y_pixels);
 
   // U goes in the R component and V goes in the G component.
   uint32_t rgba_pixel = (u << 24) | (v << 16);
   std::vector<uint32_t> uv_pixels(uv_tex_size.GetArea(), rgba_pixel);
-  ResourceId resource_u =
-      CreateGpuResource(child_context_provider, child_resource_provider,
-                        uv_tex_size, RGBA_8888, color_space, uv_pixels.data());
+  ResourceId resource_u = CreateGpuResource(
+      child_context_provider, child_resource_provider, uv_tex_size, RGBA_8888,
+      color_space, MakePixelSpan(uv_pixels));
   ResourceId resource_v = resource_u;
   ResourceId resource_a = 0;
 
@@ -849,7 +849,7 @@ using RendererTypes =
                      SkiaRenderer,
                      cc::GLRendererWithExpandedViewport,
                      cc::SoftwareRendererWithExpandedViewport>;
-TYPED_TEST_CASE(RendererPixelTest, RendererTypes);
+TYPED_TEST_SUITE(RendererPixelTest, RendererTypes);
 
 template <typename RendererType>
 class SoftwareRendererPixelTest : public cc::RendererPixelTest<RendererType> {};
@@ -857,7 +857,7 @@ class SoftwareRendererPixelTest : public cc::RendererPixelTest<RendererType> {};
 using SoftwareRendererTypes =
     ::testing::Types<SoftwareRenderer,
                      cc::SoftwareRendererWithExpandedViewport>;
-TYPED_TEST_CASE(SoftwareRendererPixelTest, SoftwareRendererTypes);
+TYPED_TEST_SUITE(SoftwareRendererPixelTest, SoftwareRendererTypes);
 
 // TODO(weiliangc): Move these tests to normal RendererPixelTest as they pass
 // with SkiaRenderer. Failed test list recorded in crbug.com/821176.
@@ -869,7 +869,15 @@ using NonSkiaRendererTypes =
                      SoftwareRenderer,
                      cc::GLRendererWithExpandedViewport,
                      cc::SoftwareRendererWithExpandedViewport>;
-TYPED_TEST_CASE(NonSkiaRendererPixelTest, NonSkiaRendererTypes);
+TYPED_TEST_SUITE(NonSkiaRendererPixelTest, NonSkiaRendererTypes);
+
+// Test GLRenderer as well as SkiaRenderer.
+template <typename RendererType>
+class GLCapableRendererPixelTest : public cc::RendererPixelTest<RendererType> {
+};
+
+using GLCapableRendererTypes = ::testing::Types<GLRenderer, SkiaRenderer>;
+TYPED_TEST_SUITE(GLCapableRendererPixelTest, GLCapableRendererTypes);
 
 template <typename RendererType>
 class FuzzyForSoftwareOnlyPixelComparator : public cc::PixelComparator {
@@ -1241,11 +1249,13 @@ class IntersectingQuadGLPixelTest
     constexpr int kMaxResourceSize = 10000;
 
     video_resource_updater_ = std::make_unique<media::VideoResourceUpdater>(
-        this->child_context_provider_.get(), nullptr,
+        this->child_context_provider_.get(),
+        /*raster_context_provider=*/nullptr, nullptr,
         this->child_resource_provider_.get(), kUseStreamVideoDrawQuad,
         kUseGpuMemoryBufferResources, kUseR16Texture, kMaxResourceSize);
     video_resource_updater2_ = std::make_unique<media::VideoResourceUpdater>(
-        this->child_context_provider_.get(), nullptr,
+        this->child_context_provider_.get(),
+        /*raster_context_provider=*/nullptr, nullptr,
         this->child_resource_provider_.get(), kUseStreamVideoDrawQuad,
         kUseGpuMemoryBufferResources, kUseR16Texture, kMaxResourceSize);
   }
@@ -1265,9 +1275,9 @@ using SoftwareRendererTypes =
 using GLRendererTypes =
     ::testing::Types<GLRenderer, cc::GLRendererWithExpandedViewport>;
 
-TYPED_TEST_CASE(IntersectingQuadPixelTest, RendererTypes);
-TYPED_TEST_CASE(IntersectingQuadGLPixelTest, GLRendererTypes);
-TYPED_TEST_CASE(IntersectingQuadSoftwareTest, SoftwareRendererTypes);
+TYPED_TEST_SUITE(IntersectingQuadPixelTest, RendererTypes);
+TYPED_TEST_SUITE(IntersectingQuadGLPixelTest, GLRendererTypes);
+TYPED_TEST_SUITE(IntersectingQuadSoftwareTest, SoftwareRendererTypes);
 
 TYPED_TEST(IntersectingQuadPixelTest, SolidColorQuads) {
   this->SetupQuadStateAndRenderPass();
@@ -1644,9 +1654,9 @@ class VideoGLRendererPixelTest : public cc::GLRendererPixelTest {
     constexpr bool kUseR16Texture = false;
     constexpr int kMaxResourceSize = 10000;
     video_resource_updater_ = std::make_unique<media::VideoResourceUpdater>(
-        child_context_provider_.get(), nullptr, child_resource_provider_.get(),
-        kUseStreamVideoDrawQuad, kUseGpuMemoryBufferResources, kUseR16Texture,
-        kMaxResourceSize);
+        child_context_provider_.get(), nullptr, nullptr,
+        child_resource_provider_.get(), kUseStreamVideoDrawQuad,
+        kUseGpuMemoryBufferResources, kUseR16Texture, kMaxResourceSize);
   }
 
   void TearDown() override {
@@ -1774,7 +1784,7 @@ TEST_F(VideoGLRendererPixelTest, SimpleYUVRectBlack) {
 }
 
 // First argument (test case prefix) is intentionally left empty.
-INSTANTIATE_TEST_CASE_P(, VideoGLRendererPixelHiLoTest, testing::Bool());
+INSTANTIATE_TEST_SUITE_P(, VideoGLRendererPixelHiLoTest, testing::Bool());
 
 TEST_F(VideoGLRendererPixelTest, SimpleYUVJRect) {
   gfx::Rect rect(this->device_viewport_size_);
@@ -2383,7 +2393,7 @@ TYPED_TEST(RendererPixelTest, RenderPassAndMaskWithPartialQuad) {
   if (this->use_gpu()) {
     mask_resource_id = CreateGpuResource(
         this->child_context_provider_, this->child_resource_provider_.get(),
-        mask_rect.size(), RGBA_8888, gfx::ColorSpace(), bitmap.getPixels());
+        mask_rect.size(), RGBA_8888, gfx::ColorSpace(), MakePixelSpan(bitmap));
   } else {
     mask_resource_id =
         this->AllocateAndFillSoftwareResource(mask_rect.size(), bitmap);
@@ -2480,7 +2490,7 @@ TYPED_TEST(RendererPixelTest, RenderPassAndMaskWithPartialQuad2) {
   if (this->use_gpu()) {
     mask_resource_id = CreateGpuResource(
         this->child_context_provider_, this->child_resource_provider_.get(),
-        mask_rect.size(), RGBA_8888, gfx::ColorSpace(), bitmap.getPixels());
+        mask_rect.size(), RGBA_8888, gfx::ColorSpace(), MakePixelSpan(bitmap));
   } else {
     mask_resource_id =
         this->AllocateAndFillSoftwareResource(mask_rect.size(), bitmap);
@@ -2629,7 +2639,7 @@ class RendererPixelTestWithBackgroundFilter
 
   RenderPassList pass_list_;
   cc::FilterOperations backdrop_filters_;
-  gfx::RectF backdrop_filter_bounds_;
+  gfx::RRectF backdrop_filter_bounds_;
   gfx::Transform filter_pass_to_target_transform_;
   gfx::Rect filter_pass_layer_rect_;
 };
@@ -2638,8 +2648,8 @@ class RendererPixelTestWithBackgroundFilter
 using BackgroundFilterRendererTypes =
     ::testing::Types<GLRenderer, SkiaRenderer>;
 
-TYPED_TEST_CASE(RendererPixelTestWithBackgroundFilter,
-                BackgroundFilterRendererTypes);
+TYPED_TEST_SUITE(RendererPixelTestWithBackgroundFilter,
+                 BackgroundFilterRendererTypes);
 
 TYPED_TEST(RendererPixelTestWithBackgroundFilter, InvertFilter) {
   this->backdrop_filters_.Append(cc::FilterOperation::CreateInvertFilter(1.f));
@@ -2649,8 +2659,8 @@ TYPED_TEST(RendererPixelTestWithBackgroundFilter, InvertFilter) {
   // so the clipping bounds should be 0,0 WxH, not
   // this->filter_pass_layer_rect_.
   this->backdrop_filter_bounds_ =
-      gfx::RectF(0, 0, this->filter_pass_layer_rect_.width(),
-                 this->filter_pass_layer_rect_.height());
+      gfx::RRectF(0, 0, this->filter_pass_layer_rect_.width(),
+                  this->filter_pass_layer_rect_.height(), 0);
   this->SetUpRenderPassList();
   EXPECT_TRUE(this->RunPixelTest(
       &this->pass_list_,
@@ -2969,7 +2979,7 @@ TEST_F(GLRendererPixelTest, TileDrawQuadForceAntiAliasingOff) {
   if (this->use_gpu()) {
     resource = CreateGpuResource(
         this->child_context_provider_, this->child_resource_provider_.get(),
-        tile_size, RGBA_8888, gfx::ColorSpace(), bitmap.getPixels());
+        tile_size, RGBA_8888, gfx::ColorSpace(), MakePixelSpan(bitmap));
   } else {
     resource = this->AllocateAndFillSoftwareResource(tile_size, bitmap);
   }
@@ -3057,7 +3067,7 @@ TEST_F(GLRendererPixelTest, AntiAliasingPerspective) {
 }
 
 // Trilinear filtering is only supported in the gl renderer.
-TEST_F(GLRendererPixelTest, TrilinearFiltering) {
+TYPED_TEST(GLCapableRendererPixelTest, TrilinearFiltering) {
   gfx::Rect viewport_rect(this->device_viewport_size_);
 
   int root_pass_id = 1;
@@ -3073,7 +3083,7 @@ TEST_F(GLRendererPixelTest, TrilinearFiltering) {
   std::unique_ptr<RenderPass> child_pass = RenderPass::Create();
   child_pass->SetAll(
       child_pass_id, child_pass_rect, child_pass_rect, transform_to_root,
-      cc::FilterOperations(), cc::FilterOperations(), gfx::RectF(),
+      cc::FilterOperations(), cc::FilterOperations(), gfx::RRectF(),
       gfx::ColorSpace::CreateSRGB(), false, false, false, generate_mipmap);
 
   gfx::Rect red_rect(child_pass_rect);
@@ -3400,7 +3410,7 @@ TYPED_TEST(NonSkiaRendererPixelTest, TileDrawQuadNearestNeighbor) {
   if (this->use_gpu()) {
     resource = CreateGpuResource(
         this->child_context_provider_, this->child_resource_provider_.get(),
-        tile_size, RGBA_8888, gfx::ColorSpace(), bitmap.getPixels());
+        tile_size, RGBA_8888, gfx::ColorSpace(), MakePixelSpan(bitmap));
   } else {
     resource = this->AllocateAndFillSoftwareResource(tile_size, bitmap);
   }
@@ -3856,7 +3866,7 @@ TEST_F(GLRendererPixelTest, TextureQuadBatching) {
 
   ResourceId resource = CreateGpuResource(
       this->child_context_provider_, this->child_resource_provider_.get(),
-      mask_rect.size(), RGBA_8888, gfx::ColorSpace(), bitmap.getPixels());
+      mask_rect.size(), RGBA_8888, gfx::ColorSpace(), MakePixelSpan(bitmap));
 
   // Return the mapped resource id.
   std::unordered_map<ResourceId, ResourceId> resource_map =
@@ -3935,7 +3945,7 @@ TEST_F(GLRendererPixelTest, TileQuadClamping) {
   if (this->use_gpu()) {
     resource = CreateGpuResource(
         this->child_context_provider_, this->child_resource_provider_.get(),
-        tile_size, RGBA_8888, gfx::ColorSpace(), bitmap.getPixels());
+        tile_size, RGBA_8888, gfx::ColorSpace(), MakePixelSpan(bitmap));
   } else {
     resource = this->AllocateAndFillSoftwareResource(tile_size, bitmap);
   }
@@ -4032,7 +4042,7 @@ TEST_F(GLRendererPixelTestWithOverdrawFeedback, TranslucentRectangles) {
 }
 
 using SkiaRendererTypes = ::testing::Types<SkiaRenderer>;
-TYPED_TEST_CASE(SkiaRendererPixelTestWithOverdrawFeedback, SkiaRendererTypes);
+TYPED_TEST_SUITE(SkiaRendererPixelTestWithOverdrawFeedback, SkiaRendererTypes);
 
 class SkiaRendererPixelTestWithOverdrawFeedback
     : public cc::RendererPixelTest<SkiaRenderer> {
@@ -4187,7 +4197,7 @@ TEST_P(ColorTransformPixelTest, Basic) {
 
     ResourceId resource = CreateGpuResource(
         this->child_context_provider_, this->child_resource_provider_.get(),
-        rect.size(), RGBA_8888, src_color_space_, input_colors.data());
+        rect.size(), RGBA_8888, src_color_space_, input_colors);
 
     // Return the mapped resource id.
     std::unordered_map<ResourceId, ResourceId> resource_map =
@@ -4292,14 +4302,14 @@ bool color_space_premul_values[] = {
     true, false,
 };
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     FromColorSpace,
     ColorTransformPixelTest,
     testing::Combine(testing::ValuesIn(src_color_spaces),
                      testing::ValuesIn(intermediate_color_spaces),
                      testing::ValuesIn(color_space_premul_values)));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ToColorSpace,
     ColorTransformPixelTest,
     testing::Combine(testing::ValuesIn(intermediate_color_spaces),

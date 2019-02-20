@@ -39,7 +39,7 @@ import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.MinAndroidSdkLevel;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.ChromeSwitches;
-import org.chromium.chrome.browser.tabmodel.TabModel.TabLaunchType;
+import org.chromium.chrome.browser.tabmodel.TabLaunchType;
 import org.chromium.chrome.browser.vr.mock.MockVrDaydreamApi;
 import org.chromium.chrome.browser.vr.rules.XrActivityRestriction;
 import org.chromium.chrome.browser.vr.util.NativeUiUtils;
@@ -742,9 +742,8 @@ public class WebXrVrInputTest {
         // Note that we need to pass in the WebContents to use throughout this because automatically
         // using the first tab's WebContents doesn't work in Incognito.
         mWebXrVrTestFramework.loadUrlAndAwaitInitialization(
-                mTestRule.getTestServer().getURL(
-                        WebXrVrTestFramework.getEmbeddedServerPathForHtmlTestFile(
-                                "generic_webxr_permission_page")),
+                mWebXrVrTestFramework.getEmbeddedServerUrlForHtmlTestFile(
+                        "generic_webxr_permission_page"),
                 PAGE_LOAD_TIMEOUT_S);
         WebXrVrTestFramework.runJavaScriptOrFail("requestPermission({audio:true})",
                 POLL_TIMEOUT_SHORT_MS, mTestRule.getWebContents());
@@ -833,16 +832,17 @@ public class WebXrVrInputTest {
         // Note that we need to pass in the WebContents to use throughout this because automatically
         // using the first tab's WebContents doesn't work in Incognito.
         mWebXrVrTestFramework.loadUrlAndAwaitInitialization(
-                mTestRule.getTestServer().getURL(
-                        WebXrVrTestFramework.getEmbeddedServerPathForHtmlTestFile(
-                                "generic_webxr_permission_page")),
+                mWebXrVrTestFramework.getEmbeddedServerUrlForHtmlTestFile(
+                        "generic_webxr_permission_page"),
                 PAGE_LOAD_TIMEOUT_S);
         mWebXrVrTestFramework.enterSessionWithUserGestureOrFail(mTestRule.getWebContents());
+        NativeUiUtils.enableMockedInput();
         NativeUiUtils.performActionAndWaitForVisibilityStatus(
                 UserFriendlyElementName.WEB_XR_HOSTED_CONTENT, true /* visible */, () -> {
                     WebXrVrTestFramework.runJavaScriptOrFail("requestPermission({audio:true})",
                             POLL_TIMEOUT_SHORT_MS, mTestRule.getWebContents());
                 });
+        NativeUiUtils.waitForUiQuiescence();
         // Click outside the prompt and ensure that it gets dismissed.
         NativeUiUtils.clickElement(
                 UserFriendlyElementName.WEB_XR_HOSTED_CONTENT, new PointF(0.55f, 0.0f));
@@ -854,6 +854,7 @@ public class WebXrVrInputTest {
                     WebXrVrTestFramework.runJavaScriptOrFail("requestPermission({audio:true})",
                             POLL_TIMEOUT_SHORT_MS, mTestRule.getWebContents());
                 });
+        NativeUiUtils.waitForUiQuiescence();
         NativeUiUtils.clickElement(
                 UserFriendlyElementName.WEB_XR_HOSTED_CONTENT, new PointF(0.4f, -0.4f));
         WebXrVrTestFramework.waitOnJavaScriptStep(mTestRule.getWebContents());

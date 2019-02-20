@@ -4,6 +4,7 @@
 
 #include <utility>
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/metrics/field_trial.h"
@@ -315,6 +316,13 @@ void FlushCacheThreadForTesting() {
 
   // Block backend.
   BackendImpl::FlushForTesting();
+}
+
+net::Error Backend::OpenOrCreateEntry(const std::string& key,
+                                      net::RequestPriority priority,
+                                      EntryWithOpened* entry_struct,
+                                      CompletionOnceCallback callback) {
+  return net::ERR_NOT_IMPLEMENTED;
 }
 
 int64_t Backend::CalculateSizeOfEntriesBetween(

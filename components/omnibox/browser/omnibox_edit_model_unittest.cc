@@ -173,19 +173,19 @@ TEST_F(OmniboxEditModelTest, AdjustTextForCopyQueryInOmnibox) {
   {
     base::string16 result = base::ASCIIToUTF16("foobar");
     GURL url;
-    bool write_url;
+    bool write_url = false;
     model()->AdjustTextForCopy(0, &result, &url, &write_url);
 
     EXPECT_EQ(base::ASCIIToUTF16("foobar"), result);
-    EXPECT_EQ(GURL(), url);
-    EXPECT_FALSE(write_url);
+    EXPECT_EQ(GURL("https://www.example.com/"), url);
+    EXPECT_TRUE(write_url);
   }
 
   // Verify we copy the query verbatim even if the user has refined the query.
   {
     base::string16 result = base::ASCIIToUTF16("something else");
     GURL url;
-    bool write_url;
+    bool write_url = false;
     model()->AdjustTextForCopy(0, &result, &url, &write_url);
 
     EXPECT_EQ(base::ASCIIToUTF16("something else"), result);
@@ -228,6 +228,32 @@ TEST_F(OmniboxEditModelTest, InlineAutocompleteText) {
   EXPECT_EQ(base::ASCIIToUTF16("hello"), view()->GetText());
   EXPECT_EQ(base::string16(), view()->inline_autocomplete_text());
 }
+
+// iOS doesn't use elisions in the Omnibox textfield.
+#if !defined(OS_IOS)
+TEST_F(OmniboxEditModelTest, RespectUnelisionInZeroSuggest) {
+  location_bar_model()->set_url(GURL("https://www.example.com/"));
+  location_bar_model()->set_url_for_display(base::ASCIIToUTF16("example.com"));
+
+  EXPECT_TRUE(model()->ResetDisplayTexts());
+  model()->Revert();
+
+  // Set up view with unelided text.
+  EXPECT_EQ(base::ASCIIToUTF16("example.com"), view()->GetText());
+  EXPECT_TRUE(model()->Unelide(false /* exit_query_in_omnibox */));
+  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"), view()->GetText());
+  EXPECT_FALSE(model()->user_input_in_progress());
+  EXPECT_TRUE(view()->IsSelectAll());
+
+  // Test that we don't clobber the unelided text with inline autocomplete text.
+  EXPECT_EQ(base::string16(), view()->inline_autocomplete_text());
+  model()->OnPopupDataChanged(base::string16(), nullptr, base::string16(),
+                              false);
+  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"), view()->GetText());
+  EXPECT_FALSE(model()->user_input_in_progress());
+  EXPECT_TRUE(view()->IsSelectAll());
+}
+#endif  // !defined(OS_IOS)
 
 // This verifies the fix for a bug where calling OpenMatch() with a valid
 // alternate nav URL would fail a DCHECK if the input began with "http://".
@@ -285,25 +311,31 @@ TEST_F(OmniboxEditModelTest, DisplayText) {
   location_bar_model()->set_url(GURL("https://www.example.com/"));
   location_bar_model()->set_url_for_display(base::ASCIIToUTF16("example.com"));
 
-  // Verify we show the display text when there is no Query in Omnibox match.
-  model()->ResetDisplayTexts();
-#if defined(OS_IOS)
-  // iOS OmniboxEditModel always provides the full URL as the OmniboxView
-  // permanent display text.
-  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"),
-            model()->GetPermanentDisplayText());
-#else
-  EXPECT_EQ(base::ASCIIToUTF16("example.com"),
-            model()->GetPermanentDisplayText());
-#endif
+  EXPECT_TRUE(model()->ResetDisplayTexts());
+  model()->Revert();
 
   EXPECT_TRUE(model()->CurrentTextIsURL());
 
-  // Verify we can unelide and show the full URL properly.
-  model()->Unelide(false /* exit_query_in_omnibox */);
+#if defined(OS_IOS)
+  // iOS OmniboxEditModel always provides the full URL as the OmniboxView
+  // permanent display text. Unelision should return false.
+  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"),
+            model()->GetPermanentDisplayText());
   EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"), view()->GetText());
-  EXPECT_TRUE(model()->user_input_in_progress());
+  EXPECT_FALSE(model()->Unelide(false /* exit_query_in_omnibox */));
+  EXPECT_FALSE(model()->user_input_in_progress());
+  EXPECT_FALSE(view()->IsSelectAll());
+#else
+  // Verify we can unelide and show the full URL properly.
+  EXPECT_EQ(base::ASCIIToUTF16("example.com"),
+            model()->GetPermanentDisplayText());
+  EXPECT_EQ(base::ASCIIToUTF16("example.com"), view()->GetText());
+  EXPECT_TRUE(model()->Unelide(false /* exit_query_in_omnibox */));
+  EXPECT_FALSE(model()->user_input_in_progress());
   EXPECT_TRUE(view()->IsSelectAll());
+#endif
+
+  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"), view()->GetText());
   EXPECT_TRUE(model()->CurrentTextIsURL());
 
   // We should still show the current page's icon until the URL is modified.
@@ -316,18 +348,19 @@ TEST_F(OmniboxEditModelTest, DisplayAndExitQueryInOmnibox) {
   location_bar_model()->set_url(GURL("https://www.example.com/"));
   location_bar_model()->set_url_for_display(base::ASCIIToUTF16("example.com"));
   location_bar_model()->set_display_search_terms(base::ASCIIToUTF16("foobar"));
-  EXPECT_TRUE(model()->ResetDisplayTexts());
 
+  EXPECT_TRUE(model()->ResetDisplayTexts());
   model()->Revert();
+
   EXPECT_EQ(base::ASCIIToUTF16("foobar"), model()->GetPermanentDisplayText());
   EXPECT_EQ(base::ASCIIToUTF16("foobar"), view()->GetText());
   EXPECT_FALSE(model()->CurrentTextIsURL());
   EXPECT_TRUE(model()->ShouldShowCurrentPageIcon());
 
   // Verify we can exit Query in Omnibox mode properly.
-  model()->Unelide(true /* exit_query_in_omnibox */);
+  EXPECT_TRUE(model()->Unelide(true /* exit_query_in_omnibox */));
   EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"), view()->GetText());
-  EXPECT_TRUE(model()->user_input_in_progress());
+  EXPECT_FALSE(model()->user_input_in_progress());
   EXPECT_TRUE(view()->IsSelectAll());
   EXPECT_TRUE(model()->CurrentTextIsURL());
 
@@ -337,17 +370,25 @@ TEST_F(OmniboxEditModelTest, DisplayAndExitQueryInOmnibox) {
   EXPECT_FALSE(model()->ShouldShowCurrentPageIcon());
 }
 
-TEST_F(OmniboxEditModelTest, DisablePasteAndGoForLongTexts) {
-  EXPECT_TRUE(model()->OmniboxEditModel::CanPasteAndGo(
-      base::ASCIIToUTF16("short text")));
+TEST_F(OmniboxEditModelTest, UnelideDoesNothingWhenFullURLAlreadyShown) {
+  location_bar_model()->set_url(GURL("https://www.example.com/"));
+  location_bar_model()->set_url_for_display(
+      base::ASCIIToUTF16("https://www.example.com/"));
 
-  base::string16 almost_long_text = base::ASCIIToUTF16(
-      std::string(OmniboxEditModel::kMaxPasteAndGoTextLength, '.'));
-  EXPECT_TRUE(model()->OmniboxEditModel::CanPasteAndGo(almost_long_text));
+  EXPECT_TRUE(model()->ResetDisplayTexts());
+  model()->Revert();
 
-  base::string16 long_text = base::ASCIIToUTF16(
-      std::string(OmniboxEditModel::kMaxPasteAndGoTextLength + 1, '.'));
-  EXPECT_FALSE(model()->OmniboxEditModel::CanPasteAndGo(long_text));
+  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"),
+            model()->GetPermanentDisplayText());
+  EXPECT_TRUE(model()->CurrentTextIsURL());
+
+  // Verify Unelide does nothing.
+  EXPECT_FALSE(model()->Unelide(false /* exit_query_in_omnibox */));
+  EXPECT_EQ(base::ASCIIToUTF16("https://www.example.com/"), view()->GetText());
+  EXPECT_FALSE(model()->user_input_in_progress());
+  EXPECT_FALSE(view()->IsSelectAll());
+  EXPECT_TRUE(model()->CurrentTextIsURL());
+  EXPECT_TRUE(model()->ShouldShowCurrentPageIcon());
 }
 
 // The tab-switching system sometimes focuses the Omnibox even if it was not

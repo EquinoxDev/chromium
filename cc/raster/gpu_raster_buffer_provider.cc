@@ -24,7 +24,6 @@
 #include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
-#include "components/viz/common/gpu/texture_allocation.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -201,9 +200,7 @@ static void RasterizeSource(
     // valid by the time the consume command executes.
     ri->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
   }
-  GLuint texture_id = ri->CreateAndConsumeTexture(
-      texture_is_overlay_candidate, gfx::BufferUsage::SCANOUT, resource_format,
-      mailbox->name);
+  GLuint texture_id = ri->CreateAndConsumeForGpuRaster(mailbox->name);
   {
     ScopedGrContextAccess gr_context_access(context_provider);
     base::Optional<viz::ClientResourceProvider::ScopedSkSurface> scoped_surface;
@@ -242,7 +239,7 @@ static void RasterizeSource(
                                     playback_settings);
   }
 
-  ri->DeleteTextures(1, &texture_id);
+  ri->DeleteGpuRasterTexture(texture_id);
 }
 
 }  // namespace
@@ -414,7 +411,7 @@ bool GpuRasterBufferProvider::IsResourceReadyToDraw(
 
 uint64_t GpuRasterBufferProvider::SetReadyToDrawCallback(
     const std::vector<const ResourcePool::InUsePoolResource*>& resources,
-    const base::Closure& callback,
+    base::OnceClosure callback,
     uint64_t pending_callback_id) const {
   gpu::SyncToken latest_sync_token;
   for (const auto* in_use : resources) {
@@ -433,7 +430,7 @@ uint64_t GpuRasterBufferProvider::SetReadyToDrawCallback(
     // Use the compositor context because we want this callback on the
     // compositor thread.
     compositor_context_provider_->ContextSupport()->SignalSyncToken(
-        latest_sync_token, callback);
+        latest_sync_token, std::move(callback));
   }
 
   return callback_id;

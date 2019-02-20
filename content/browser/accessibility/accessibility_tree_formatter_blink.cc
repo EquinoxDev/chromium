@@ -81,6 +81,8 @@ std::string IntAttrToString(const BrowserAccessibility& node,
       return ui::ToString(static_cast<ax::mojom::TextDirection>(value));
     case ax::mojom::IntAttribute::kTextPosition:
       return ui::ToString(static_cast<ax::mojom::TextPosition>(value));
+    case ax::mojom::IntAttribute::kImageAnnotationStatus:
+      return ui::ToString(static_cast<ax::mojom::ImageAnnotationStatus>(value));
     // No pretty printing necessary for these:
     case ax::mojom::IntAttribute::kActivedescendantId:
     case ax::mojom::IntAttribute::kAriaCellColumnIndex:
@@ -306,7 +308,7 @@ base::string16 AccessibilityTreeFormatterBlink::ProcessTreeForOutput(
   if (show_ids()) {
     int id_value;
     dict.GetInteger("id", &id_value);
-    WriteAttribute(true, base::IntToString16(id_value), &line);
+    WriteAttribute(true, base::NumberToString16(id_value), &line);
   }
 
   base::string16 role_value;
@@ -434,7 +436,7 @@ base::string16 AccessibilityTreeFormatterBlink::ProcessTreeForOutput(
       } else {
         int int_value;
         value->GetInteger(i, &int_value);
-        attr_string += base::IntToString(int_value);
+        attr_string += base::NumberToString(int_value);
       }
     }
     WriteAttribute(false, attr_string, &line);
@@ -502,6 +504,10 @@ const std::string AccessibilityTreeFormatterBlink::GetAllowString() {
 
 const std::string AccessibilityTreeFormatterBlink::GetDenyString() {
   return "@BLINK-DENY:";
+}
+
+const std::string AccessibilityTreeFormatterBlink::GetDenyNodeString() {
+  return "@BLINK-DENY-NODE:";
 }
 
 }  // namespace content

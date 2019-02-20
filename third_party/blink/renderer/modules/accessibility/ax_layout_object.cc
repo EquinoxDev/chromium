@@ -230,9 +230,14 @@ ax::mojom::Role AXLayoutObject::NativeRoleIgnoringAria() const {
   if (layout_object_->IsSVGRoot())
     return ax::mojom::Role::kSvgRoot;
 
-  // Table sections should be ignored.
-  if (layout_object_->IsTableSection())
+  // Table sections should be ignored if there is no reason not to, e.g.
+  // ARIA 1.2 (and Core-AAM 1.1) state that elements which are focusable
+  // and not hidden must be included in the accessibility tree.
+  if (layout_object_->IsTableSection()) {
+    if (CanSetFocusAttribute())
+      return ax::mojom::Role::kGroup;
     return ax::mojom::Role::kIgnored;
+  }
 
   if (layout_object_->IsHR())
     return ax::mojom::Role::kSplitter;
@@ -310,7 +315,8 @@ bool AXLayoutObject::IsDefault() const {
     return false;
 
   // Checks for any kind of disabled, including aria-disabled.
-  if (Restriction() == kDisabled || RoleValue() != ax::mojom::Role::kButton)
+  if (Restriction() == kRestrictionDisabled ||
+      RoleValue() != ax::mojom::Role::kButton)
     return false;
 
   // Will only match :default pseudo class if it's the first default button in
@@ -664,10 +670,12 @@ bool AXLayoutObject::ComputeAccessibilityIsIgnored(
   // Find out if this element is inside of a label element.  If so, it may be
   // ignored because it's the label for a checkbox or radio button.
   AXObject* control_object = CorrespondingControlForLabelElement();
+  HTMLLabelElement* label = LabelElementContainer();
   if (control_object && control_object->IsCheckboxOrRadio() &&
-      control_object->NameFromLabelElement()) {
+      control_object->NameFromLabelElement() &&
+      AccessibleNode::GetPropertyOrARIAAttribute(
+          label, AOMStringProperty::kRole) == g_null_atom) {
     if (ignored_reasons) {
-      HTMLLabelElement* label = LabelElementContainer();
       if (label && label != GetNode()) {
         AXObject* label_ax_object = AXObjectCache().GetOrCreate(label);
         ignored_reasons->push_back(
@@ -1330,8 +1338,10 @@ static AXObject* NextOnLineInternalNG(const AXObject& ax_object) {
                NGPaintFragmentTraversalContext::Create(&fragments.back()));
        !runner.IsNull();
        runner = NGPaintFragmentTraversal::NextInlineLeafOf(runner)) {
-    LayoutObject* layout_object = runner.GetFragment()->GetLayoutObject();
-    if (AXObject* result = ax_object.AXObjectCache().GetOrCreate(layout_object))
+    LayoutObject* runner_layout_object =
+        runner.GetFragment()->GetLayoutObject();
+    if (AXObject* result =
+            ax_object.AXObjectCache().GetOrCreate(runner_layout_object))
       return result;
   }
   if (!ax_object.ParentObject())
@@ -1403,8 +1413,10 @@ static AXObject* PreviousOnLineInlineNG(const AXObject& ax_object) {
                NGPaintFragmentTraversalContext::Create(&fragments.front()));
        !runner.IsNull();
        runner = NGPaintFragmentTraversal::PreviousInlineLeafOf(runner)) {
-    LayoutObject* layout_object = runner.GetFragment()->GetLayoutObject();
-    if (AXObject* result = ax_object.AXObjectCache().GetOrCreate(layout_object))
+    LayoutObject* earlier_layout_object =
+        runner.GetFragment()->GetLayoutObject();
+    if (AXObject* result =
+            ax_object.AXObjectCache().GetOrCreate(earlier_layout_object))
       return result;
   }
   if (!ax_object.ParentObject())
@@ -1501,7 +1513,7 @@ String AXLayoutObject::StringValue() const {
   // time controls, by returning their value converted to text, with the
   // exception of checkboxes and radio buttons (which would return "on"), and
   // buttons which will return their name.
-  // https://html.spec.whatwg.org/multipage/forms.html#dom-input-value
+  // https://html.spec.whatwg.org/C/#dom-input-value
   if (const auto* input = ToHTMLInputElementOrNull(GetNode())) {
     if (input->type() != input_type_names::kButton &&
         input->type() != input_type_names::kCheckbox &&
@@ -2089,6 +2101,7 @@ void AXLayoutObject::AddChildren() {
   AddRemoteSVGChildren();
   AddTableChildren();
   AddInlineTextBoxChildren(false);
+  AddValidationMessageChild();
   AddAccessibleNodeChildren();
 
   for (const auto& child : children_) {
@@ -2191,7 +2204,7 @@ AtomicString AXLayoutObject::Language() const {
   // The style engine relies on, for example, the "lang" attribute of the
   // current node and its ancestors, and the document's "content-language"
   // header. See the Language of a Node Spec at
-  // https://html.spec.whatwg.org/multipage/dom.html#language
+  // https://html.spec.whatwg.org/C/#language
 
   if (!GetLayoutObject())
     return AXNodeObject::Language();
@@ -2562,6 +2575,18 @@ bool AXLayoutObject::OnNativeSetValueAction(const String& string) {
     return true;
   }
 
+  if (HasContentEditableAttributeSet()) {
+    ExceptionState exception_state(v8::Isolate::GetCurrent(),
+                                   ExceptionState::kExecutionContext, nullptr,
+                                   nullptr);
+    ToHTMLElement(GetNode())->setInnerText(string, exception_state);
+    if (exception_state.HadException()) {
+      exception_state.ClearException();
+      return false;
+    }
+    return true;
+  }
+
   return false;
 }
 
@@ -2765,6 +2790,30 @@ void AXLayoutObject::AddInlineTextBoxChildren(bool force) {
     if (!ax_object->AccessibilityIsIgnored())
       children_.push_back(ax_object);
   }
+}
+
+void AXLayoutObject::AddValidationMessageChild() {
+  if (!IsWebArea())
+    return;
+  AXObject* ax_object = AXObjectCache().ValidationMessageObjectIfInvalid();
+  if (ax_object)
+    children_.push_back(ax_object);
+}
+
+AXObject* AXLayoutObject::ErrorMessage() const {
+  // Check for aria-errormessage.
+  Element* existing_error_message =
+      GetAOMPropertyOrARIAAttribute(AOMRelationProperty::kErrorMessage);
+  if (existing_error_message)
+    return AXObjectCache().GetOrCreate(existing_error_message);
+
+  // Check for visible validationMessage. This can only be visible for a focused
+  // control. Corollary: if there is a visible validationMessage alert box, then
+  // it is related to the current focus.
+  if (this != AXObjectCache().FocusedObject())
+    return nullptr;
+
+  return AXObjectCache().ValidationMessageObjectIfInvalid();
 }
 
 void AXLayoutObject::LineBreaks(Vector<int>& line_breaks) const {
@@ -3154,6 +3203,9 @@ ax::mojom::Role AXLayoutObject::DetermineTableRowRole() const {
   if (!parent)
     return ax::mojom::Role::kGenericContainer;
 
+  if (parent->GetLayoutObject()->IsTableSection())
+    parent = parent->ParentObjectUnignored();
+
   if (parent->RoleValue() == ax::mojom::Role::kLayoutTable)
     return ax::mojom::Role::kLayoutTableRow;
 
@@ -3171,6 +3223,9 @@ ax::mojom::Role AXLayoutObject::DetermineTableCellRole() const {
     return ax::mojom::Role::kGenericContainer;
 
   AXObject* grandparent = parent->ParentObjectUnignored();
+  if (grandparent && grandparent->GetLayoutObject()->IsTableSection())
+    grandparent = grandparent->ParentObjectUnignored();
+
   if (!grandparent || !grandparent->IsTableLikeRole())
     return ax::mojom::Role::kGenericContainer;
 

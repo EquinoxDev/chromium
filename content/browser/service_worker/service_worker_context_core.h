@@ -211,6 +211,12 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // SERVICE_WORKER_FAILED if any did not succeed.
   void DeleteForOrigin(const GURL& origin, StatusCallback callback);
 
+  // Performs internal storage cleanup. Operations to the storage in the past
+  // (e.g. deletion) are usually recorded in disk for a certain period until
+  // compaction happens. This method wipes them out to ensure that the deleted
+  // entries and other traces like log files are removed.
+  void PerformStorageCleanup(base::OnceClosure callback);
+
   // Updates the service worker. If |force_bypass_cache| is true or 24 hours
   // have passed since the last update, bypasses the browser cache.
   void UpdateServiceWorker(ServiceWorkerRegistration* registration,
@@ -264,12 +270,11 @@ class CONTENT_EXPORT ServiceWorkerContextCore
 
   void ClearAllServiceWorkersForTest(base::OnceClosure callback);
 
-  // Determines if there is a ServiceWorker registration that matches |url|, and
-  // if |other_url| falls inside the scope of the same registration. See
-  // ServiceWorkerContext::CheckHasServiceWorker for more details.
+  // Determines if there is a ServiceWorker registration that matches
+  // |url|. See ServiceWorkerContext::CheckHasServiceWorker for more
+  // details.
   void CheckHasServiceWorker(
       const GURL& url,
-      const GURL& other_url,
       const ServiceWorkerContext::CheckHasServiceWorkerCallback callback);
 
   void UpdateVersionFailureCount(int64_t version_id,
@@ -330,7 +335,6 @@ class CONTENT_EXPORT ServiceWorkerContextCore
           registrations);
 
   void DidFindRegistrationForCheckHasServiceWorker(
-      const GURL& other_url,
       ServiceWorkerContext::CheckHasServiceWorkerCallback callback,
       blink::ServiceWorkerStatusCode status,
       scoped_refptr<ServiceWorkerRegistration> registration);

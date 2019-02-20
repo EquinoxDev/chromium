@@ -31,9 +31,9 @@ TestNavigationURLLoader::TestNavigationURLLoader(
 }
 
 void TestNavigationURLLoader::FollowRedirect(
-    const base::Optional<std::vector<std::string>>&
-        to_be_removed_request_headers,
-    const base::Optional<net::HttpRequestHeaders>& modified_request_headers) {
+    const std::vector<std::string>& removed_headers,
+    const net::HttpRequestHeaders& modified_headers,
+    PreviewsState new_previews_state) {
   redirect_count_++;
 }
 

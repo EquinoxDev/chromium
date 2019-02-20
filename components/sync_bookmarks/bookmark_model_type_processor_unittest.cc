@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/bind_helpers.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind_test_util.h"
 #include "base/test/mock_callback.h"
@@ -14,7 +15,6 @@
 #include "components/bookmarks/test/test_bookmark_client.h"
 #include "components/favicon/core/test/mock_favicon_service.h"
 #include "components/sync/base/unique_position.h"
-#include "components/sync/driver/fake_sync_client.h"
 #include "components/sync/model/data_type_activation_request.h"
 #include "components/undo/bookmark_undo_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -454,6 +454,43 @@ TEST_F(BookmarkModelTypeProcessorTest,
   // carries the new encryption key name.
   EXPECT_THAT(tracker->model_type_state().encryption_key_name(),
               Eq(kEncryptionKeyName));
+}
+
+// This tests that when the encryption key changes, but the received entities
+// are already encrypted with the up-to-date encryption key, no recommit is
+// needed.
+TEST_F(BookmarkModelTypeProcessorTest,
+       ShouldNotRecommitEntitiesWhenEncryptionIsUpToDate) {
+  SimulateModelReadyToSync();
+  SimulateOnSyncStarting();
+  // Initialize the process to make sure the tracker has been created.
+  InitWithSyncedBookmarks({}, processor());
+  const SyncedBookmarkTracker* tracker = processor()->GetTrackerForTest();
+  // The encryption key name should be empty.
+  ASSERT_TRUE(tracker->model_type_state().encryption_key_name().empty());
+
+  // Build a model type state with an encryption key name.
+  const std::string kEncryptionKeyName = "new_encryption_key_name";
+  sync_pb::ModelTypeState model_type_state(CreateDummyModelTypeState());
+  model_type_state.set_encryption_key_name(kEncryptionKeyName);
+
+  // Push an update that is encrypted with the new encryption key.
+  const std::string kNodeId = "node_id";
+  syncer::UpdateResponseData response_data = CreateUpdateResponseData(
+      {kNodeId, "title", "http://www.url.com", /*parent_id=*/kBookmarkBarId,
+       /*server_tag=*/std::string()},
+      syncer::UniquePosition::InitialPosition(
+          syncer::UniquePosition::RandomSuffix()),
+      /*response_version=*/0);
+  response_data.encryption_key_name = kEncryptionKeyName;
+
+  syncer::UpdateResponseDataList updates;
+  updates.push_back(response_data);
+  processor()->OnUpdateReceived(model_type_state, updates);
+
+  // The bookmarks shouldn't be marked for committing.
+  ASSERT_THAT(tracker->GetEntityForSyncId(kNodeId), NotNull());
+  EXPECT_THAT(tracker->GetEntityForSyncId(kNodeId)->IsUnsynced(), Eq(false));
 }
 
 // Verifies that the processor doesn't crash if sync is stopped before receiving

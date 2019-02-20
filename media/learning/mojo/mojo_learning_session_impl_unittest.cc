@@ -8,6 +8,7 @@
 #include "base/memory/ptr_util.h"
 #include "media/learning/common/learning_session.h"
 #include "media/learning/mojo/mojo_learning_session_impl.h"
+#include "media/learning/mojo/public/mojom/learning_types.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -18,13 +19,13 @@ class MojoLearningSessionImplTest : public ::testing::Test {
   class FakeLearningSession : public ::media::learning::LearningSession {
    public:
     void AddExample(const std::string& task_name,
-                    const TrainingExample& example) override {
+                    const LabelledExample& example) override {
       most_recent_task_name_ = task_name;
       most_recent_example_ = example;
     }
 
     std::string most_recent_task_name_;
-    TrainingExample most_recent_example_;
+    LabelledExample most_recent_example_;
   };
 
  public:
@@ -50,8 +51,8 @@ class MojoLearningSessionImplTest : public ::testing::Test {
 };
 
 TEST_F(MojoLearningSessionImplTest, FeaturesAndTargetValueAreCopied) {
-  mojom::TrainingExamplePtr example_ptr = mojom::TrainingExample::New();
-  const TrainingExample example = {{Value(123), Value(456), Value(890)},
+  mojom::LabelledExamplePtr example_ptr = mojom::LabelledExample::New();
+  const LabelledExample example = {{Value(123), Value(456), Value(890)},
                                    TargetValue(1234)};
 
   learning_session_impl_->AddExample(task_type_, example);

@@ -61,6 +61,9 @@ class CORE_EXPORT WorkerReportingProxy {
                                     const String& message,
                                     SourceLocation*) {}
 
+  // Invoked at the beginning of WorkerThread::InitializeOnWorkerThread.
+  virtual void WillInitializeWorkerContext() {}
+
   // Invoked when the new WorkerGlobalScope is created on
   // WorkerThread::InitializeOnWorkerThread.
   virtual void DidCreateWorkerGlobalScope(WorkerOrWorkletGlobalScope*) {}
@@ -68,6 +71,10 @@ class CORE_EXPORT WorkerReportingProxy {
   // Invoked when the WorkerGlobalScope is initialized on
   // WorkerThread::InitializeOnWorkerThread.
   virtual void DidInitializeWorkerContext() {}
+
+  // Invoked when the WorkerGlobalScope initialization failed on
+  // WorkerThread::InitializeOnWorkerThread.
+  virtual void DidFailToInitializeWorkerContext() {}
 
   // Invoked when the worker's main script is loaded on
   // WorkerThread::InitializeOnWorkerThread(). Only invoked when the script was
@@ -78,6 +85,11 @@ class CORE_EXPORT WorkerReportingProxy {
   // Invoked when it's failed to load the worker's main script from
   // InstalledScriptsManager.
   virtual void DidFailToLoadInstalledClassicScript() {}
+
+  // Invoked on success to fetch the worker's main classic/module script from
+  // network. This is not called when the script is loaded from
+  // InstalledScriptsManager.
+  virtual void DidFetchScript() {}
 
   // Invoked on failure to fetch the worker's classic script from network. This
   // is not called when the script is loaded from InstalledScriptsManager.

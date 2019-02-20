@@ -38,11 +38,6 @@ void ArcPictureInPictureWindowControllerImpl::OnWindowDestroyed() {
   // Should be a no-op on ARC. This is managed on the Android side.
 }
 
-void ArcPictureInPictureWindowControllerImpl::SetPictureInPictureCustomControls(
-    const std::vector<blink::PictureInPictureControlInfo>& info) {
-  // Should be a no-op on ARC. This is managed on the Android side.
-}
-
 void ArcPictureInPictureWindowControllerImpl::EmbedSurface(
     const viz::SurfaceId& surface_id,
     const gfx::Size& natural_size) {
@@ -81,13 +76,20 @@ bool ArcPictureInPictureWindowControllerImpl::TogglePlayPause() {
   return false;
 }
 
-void ArcPictureInPictureWindowControllerImpl::CustomControlPressed(
-    const std::string& control_id) {
+void ArcPictureInPictureWindowControllerImpl::SetAlwaysHidePlayPauseButton(
+    bool is_visible) {
   // Should be a no-op on ARC. This is managed on the Android side.
 }
 
-void ArcPictureInPictureWindowControllerImpl::SetAlwaysHidePlayPauseButton(
-    bool is_visible) {
+void ArcPictureInPictureWindowControllerImpl::SkipAd() {
+  // Should be a no-op on ARC. This is managed on the Android side.
+}
+
+void ArcPictureInPictureWindowControllerImpl::NextTrack() {
+  // Should be a no-op on ARC. This is managed on the Android side.
+}
+
+void ArcPictureInPictureWindowControllerImpl::PreviousTrack() {
   // Should be a no-op on ARC. This is managed on the Android side.
 }
 

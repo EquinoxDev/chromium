@@ -29,14 +29,13 @@ class TestSyncService : public SyncService {
   void SetDisableReasons(int disable_reasons);
   void SetTransportState(TransportState transport_state);
   void SetLocalSyncEnabled(bool local_sync_enabled);
-  void SetAuthenticatedAccountInfo(const AccountInfo& account_info);
+  void SetAuthenticatedAccountInfo(const CoreAccountInfo& account_info);
   void SetIsAuthenticatedAccountPrimary(bool is_primary);
   void SetSetupInProgress(bool in_progress);
   void SetAuthError(const GoogleServiceAuthError& auth_error);
   void SetFirstSetupComplete(bool first_setup_complete);
   void SetPreferredDataTypes(const ModelTypeSet& types);
   void SetActiveDataTypes(const ModelTypeSet& types);
-  void SetIsUsingSecondaryPassphrase(bool enabled);
   void SetLastCycleSnapshot(const SyncCycleSnapshot& snapshot);
   // Convenience versions of the above, for when the caller doesn't care about
   // the particular values in the snapshot, just whether there is one.
@@ -45,6 +44,7 @@ class TestSyncService : public SyncService {
   void SetDetailedSyncStatus(bool engine_available, SyncStatus status);
   void SetPassphraseRequired(bool required);
   void SetPassphraseRequiredForDecryption(bool required);
+  void SetIsUsingSecondaryPassphrase(bool enabled);
 
   // SyncService implementation.
   syncer::SyncUserSettings* GetUserSettings() override;
@@ -52,7 +52,7 @@ class TestSyncService : public SyncService {
   int GetDisableReasons() const override;
   TransportState GetTransportState() const override;
   bool IsLocalSyncEnabled() const override;
-  AccountInfo GetAuthenticatedAccountInfo() const override;
+  CoreAccountInfo GetAuthenticatedAccountInfo() const override;
   bool IsAuthenticatedAccountPrimary() const override;
   const GoogleServiceAuthError& GetAuthError() const override;
 
@@ -75,13 +75,10 @@ class TestSyncService : public SyncService {
   void RemoveObserver(SyncServiceObserver* observer) override;
   bool HasObserver(const SyncServiceObserver* observer) const override;
 
-  bool IsPassphraseRequiredForDecryption() const override;
-  base::Time GetExplicitPassphraseTime() const override;
-  bool IsUsingSecondaryPassphrase() const override;
-  void EnableEncryptEverything() override;
-  bool IsEncryptEverythingEnabled() const override;
-  void SetEncryptionPassphrase(const std::string& passphrase) override;
-  bool SetDecryptionPassphrase(const std::string& passphrase) override;
+  void AddPreferenceProvider(SyncTypePreferenceProvider* provider) override;
+  void RemovePreferenceProvider(SyncTypePreferenceProvider* provider) override;
+  bool HasPreferenceProvider(
+      SyncTypePreferenceProvider* provider) const override;
 
   UserShare* GetUserShare() const override;
 
@@ -102,10 +99,6 @@ class TestSyncService : public SyncService {
                        callback) override;
   void SetInvalidationsForSessionsEnabled(bool enabled) override;
 
-  // DataTypeEncryptionHandler implementation.
-  bool IsPassphraseRequired() const override;
-  ModelTypeSet GetEncryptedDataTypes() const override;
-
   // KeyedService implementation.
   void Shutdown() override;
 
@@ -115,17 +108,13 @@ class TestSyncService : public SyncService {
   int disable_reasons_ = DISABLE_REASON_NONE;
   TransportState transport_state_ = TransportState::ACTIVE;
   bool local_sync_enabled_ = false;
-  AccountInfo account_info_;
+  CoreAccountInfo account_info_;
   bool account_is_primary_ = true;
   bool setup_in_progress_ = false;
   GoogleServiceAuthError auth_error_;
 
   ModelTypeSet preferred_data_types_;
   ModelTypeSet active_data_types_;
-
-  bool using_secondary_passphrase_ = false;
-  bool passphrase_required_ = false;
-  bool passphrase_required_for_decryption_ = false;
 
   bool detailed_sync_status_engine_available_ = false;
   SyncStatus detailed_sync_status_;

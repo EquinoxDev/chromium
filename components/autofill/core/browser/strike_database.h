@@ -13,9 +13,14 @@
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/leveldb_proto/proto_database.h"
+#include "components/leveldb_proto/public/proto_database.h"
 
 namespace autofill {
+
+namespace {
+const char kKeyDeliminator[] = "__";
+}  // namespace
+
 class StrikeData;
 
 // Manages data on whether different Autofill opportunities should be offered to
@@ -47,12 +52,13 @@ class StrikeDatabase : public KeyedService {
   explicit StrikeDatabase(const base::FilePath& database_dir);
   ~StrikeDatabase() override;
 
-  // Increments in-memory cache and updates underlying ProtoDatabase.
-  int AddStrike(const std::string key);
+  // Increases in-memory cache by |strikes_increase| and updates underlying
+  // ProtoDatabase.
+  int AddStrikes(int strikes_increase, const std::string key);
 
-  // Removes an in-memory cache strike, updates last_update_timestamp, and
-  // updates underlying ProtoDatabase.
-  int RemoveStrike(const std::string key);
+  // Removes |strikes_decrease| in-memory cache strikes, updates
+  // last_update_timestamp, and updates underlying ProtoDatabase.
+  int RemoveStrikes(int strikes_decrease, const std::string key);
 
   // Returns strike count from in-memory cache.
   int GetStrikes(const std::string key);
@@ -60,6 +66,10 @@ class StrikeDatabase : public KeyedService {
   // Removes all database entries from in-memory cache and underlying
   // ProtoDatabase.
   void ClearStrikes(const std::string key);
+
+  // Removes all database entries from in-memory cache and underlying
+  // ProtoDatabase for the whole project.
+  void ClearAllStrikes(const std::string& project_prefix);
 
  protected:
   friend class StrikeDatabaseIntegratorBase;
@@ -91,6 +101,7 @@ class StrikeDatabase : public KeyedService {
                            GetIdForCreditCardSaveTest);
   FRIEND_TEST_ALL_PREFIXES(CreditCardSaveStrikeDatabaseTest,
                            RemoveExpiredStrikesOnLoadTest);
+  friend class SaveCardInfobarEGTestHelper;
   friend class StrikeDatabaseTest;
   friend class StrikeDatabaseTester;
 

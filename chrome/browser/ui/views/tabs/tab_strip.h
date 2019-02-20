@@ -23,7 +23,6 @@
 #include "chrome/browser/ui/views/tabs/tab_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "ui/base/material_design/material_design_controller_observer.h"
-#include "ui/gfx/animation/animation_container.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
@@ -34,7 +33,6 @@
 #include "ui/views/view.h"
 #include "ui/views/view_model.h"
 #include "ui/views/view_targeter_delegate.h"
-#include "ui/views/view_tracker.h"
 
 class NewTabButton;
 class StackedTabStripLayout;
@@ -43,6 +41,7 @@ class TabDragController;
 class TabHoverCardBubbleView;
 class TabStripController;
 class TabStripObserver;
+class ViewObserver;
 
 namespace gfx {
 class Rect;
@@ -68,6 +67,7 @@ class ImageView;
 class TabStrip : public views::AccessiblePaneView,
                  public views::ButtonListener,
                  public views::MouseWatcherListener,
+                 public views::ViewObserver,
                  public views::ViewTargeterDelegate,
                  public TabController,
                  public BrowserRootView::DropTarget,
@@ -116,8 +116,6 @@ class TabStrip : public views::AccessiblePaneView,
   // keep the throbbers in sync.
   void UpdateLoadingAnimations(const base::TimeDelta& elapsed_time);
 
-  bool IsAnyIconAnimating() const;
-
   // If |adjust_layout| is true the stacked layout changes based on whether the
   // user uses a mouse or a touch device with the tabstrip.
   void set_adjust_layout(bool adjust_layout) { adjust_layout_ = adjust_layout; }
@@ -133,17 +131,8 @@ class TabStrip : public views::AccessiblePaneView,
   // Sets |stacked_layout_| and animates if necessary.
   void SetStackedLayout(bool stacked_layout);
 
-  // Called when the value of SingleTabMode() changes.
-  void SingleTabModeChanged();
-
   // Returns the bounds of the new tab button.
   gfx::Rect new_tab_button_bounds() const { return new_tab_button_bounds_; }
-
-  // Starts highlighting the tab at the specified index.
-  void StartHighlight(int model_index);
-
-  // Stops all tab higlighting.
-  void StopAllHighlighting();
 
   // Adds a tab at the specified index.
   void AddTabAt(int model_index, TabRendererData data, bool is_active);
@@ -234,12 +223,6 @@ class TabStrip : public views::AccessiblePaneView,
   // Returns true if a tab is being dragged into this tab strip.
   bool IsActiveDropTarget() const;
 
-  // Returns the alpha that inactive tabs and the new tab button should use to
-  // blend against the frame background.  Inactive tabs and the new tab button
-  // differ in whether they change alpha when tab multiselection is occurring;
-  // |for_new_tab_button| toggles between the two calculations.
-  SkAlpha GetInactiveAlpha(bool for_new_tab_button) const;
-
   // Returns true if Tabs in this TabStrip are currently changing size or
   // position.
   bool IsAnimating() const;
@@ -267,7 +250,6 @@ class TabStrip : public views::AccessiblePaneView,
   bool IsTabPinned(const Tab* tab) const override;
   bool IsFirstVisibleTab(const Tab* tab) const override;
   bool IsLastVisibleTab(const Tab* tab) const override;
-  bool SingleTabMode() const override;
   void MaybeStartDrag(
       Tab* tab,
       const ui::LocatedEvent& event,
@@ -279,7 +261,7 @@ class TabStrip : public views::AccessiblePaneView,
   void OnMouseEventInTab(views::View* source,
                          const ui::MouseEvent& event) override;
   void UpdateHoverCard(Tab* tab, bool should_show) override;
-  bool ShouldPaintTab(const Tab* tab, float scale, gfx::Path* clip) override;
+  bool ShouldPaintTab(const Tab* tab, float scale, SkPath* clip) override;
   int GetStrokeThickness() const override;
   bool CanPaintThrobberToLayer() const override;
   bool HasVisibleBackgroundTabShapes() const override;
@@ -304,8 +286,9 @@ class TabStrip : public views::AccessiblePaneView,
   // MouseWatcherListener:
   void MouseMovedOutOfHost() override;
 
-  // views::View:
+  // views::AccessiblePaneView:
   void Layout() override;
+  bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
   void PaintChildren(const views::PaintInfo& paint_info) override;
   void OnPaint(gfx::Canvas* canvas) override;
   const char* GetClassName() const override;
@@ -397,6 +380,10 @@ class TabStrip : public views::AccessiblePaneView,
 
   // Sets the visibility state of all tabs based on ShouldTabBeVisible().
   void SetTabVisibility();
+
+  // Updates the indexes and count for AX data on all tabs. Used by some screen
+  // readers (e.g. ChromeVox).
+  void UpdateAccessibleTabIndices();
 
   // Drags the active tab by |delta|. |initial_positions| is the x-coordinates
   // of the tabs when the drag started.  This is only called when
@@ -635,6 +622,9 @@ class TabStrip : public views::AccessiblePaneView,
   // views::ViewTargeterDelegate:
   views::View* TargetForRect(views::View* root, const gfx::Rect& rect) override;
 
+  // views::ViewObserver:
+  void OnViewIsDeleting(views::View* observed_view) override;
+
   // ui::MaterialDesignControllerObserver:
   void OnTouchUiChanged() override;
 
@@ -655,7 +645,6 @@ class TabStrip : public views::AccessiblePaneView,
   // The view tracker is used to keep track of if the hover card has been
   // destroyed by its widget.
   TabHoverCardBubbleView* hover_card_ = nullptr;
-  views::ViewTracker hover_card_view_tracker_;
 
   std::unique_ptr<TabStripController> controller_;
 
@@ -685,11 +674,6 @@ class TabStrip : public views::AccessiblePaneView,
 
   // Valid for the lifetime of a drag over us.
   std::unique_ptr<DropArrow> drop_arrow_;
-
-  // To ensure all tabs pulse at the same time they share the same animation
-  // container. This is that animation container.
-  scoped_refptr<gfx::AnimationContainer> animation_container_{
-      new gfx::AnimationContainer()};
 
   // MouseWatcher is used for two things:
   // . When a tab is closed to reset the layout.
@@ -727,6 +711,10 @@ class TabStrip : public views::AccessiblePaneView,
 
   // Number of mouse moves.
   int mouse_move_count_ = 0;
+
+  // Accumulatated offsets from thumb wheel. Used to throttle horizontal
+  // scroll from thumb wheel.
+  int accumulated_horizontal_scroll_ = 0;
 
   // Timer used when a tab is closed and we need to relayout. Only used when a
   // tab close comes from a touch device.

@@ -306,7 +306,7 @@ public class OverlayPanel extends OverlayPanelAnimation implements ActivityState
      * @return The absolute amount in DP that the browser controls have shifted off screen.
      */
     protected float getBrowserControlsOffsetDp() {
-        if (mActivity == null || mActivity.getFullscreenManager() == null) return 0.0f;
+        if (mActivity == null) return 0.0f;
         return -mActivity.getFullscreenManager().getTopControlOffset() * mPxToDp;
     }
 
@@ -347,6 +347,16 @@ public class OverlayPanel extends OverlayPanelAnimation implements ActivityState
         } else {
             baseContentView.clearFocus();
         }
+    }
+
+    /**
+     * Returns whether the panel has been activated -- asked to show.  It may not yet be physically
+     * showing due animation.  Use {@link #isShowing} instead to determine if the panel is
+     * physically visible.
+     * @return Whether the panel is showing or about to show.
+     */
+    public boolean isActive() {
+        return mPanelShown;
     }
 
     // ============================================================================================
@@ -444,7 +454,8 @@ public class OverlayPanel extends OverlayPanelAnimation implements ActivityState
     @Override
     public OverlayPanelContent createNewOverlayPanelContent() {
         return new OverlayPanelContent(new OverlayContentDelegate(),
-                new OverlayContentProgressObserver(), mActivity, getBarHeight());
+                new OverlayContentProgressObserver(), mActivity, /* isIncognito= */ false,
+                getBarHeight());
     }
 
     /**

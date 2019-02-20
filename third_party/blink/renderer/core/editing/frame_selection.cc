@@ -953,6 +953,7 @@ String FrameSelection::SelectedTextForClipboard() const {
                      frame_->GetSettings() &&
                      frame_->GetSettings()->GetSelectionIncludesAltImageText())
                  .SetSkipsUnselectableContent(true)
+                 .SetEntersTextControls(true)
                  .Build());
 }
 
@@ -1087,9 +1088,9 @@ bool FrameSelection::SelectWordAroundCaret() {
   if (!selection.IsCaret())
     return false;
   const Position position = selection.Start();
-  static const EWordSide kWordSideList[2] = {kNextWordIfOnBoundary,
-                                             kPreviousWordIfOnBoundary};
-  for (EWordSide word_side : kWordSideList) {
+  static const WordSide kWordSideList[2] = {kNextWordIfOnBoundary,
+                                            kPreviousWordIfOnBoundary};
+  for (WordSide word_side : kWordSideList) {
     Position start = StartOfWordPosition(position, word_side);
     Position end = EndOfWordPosition(position, word_side);
 

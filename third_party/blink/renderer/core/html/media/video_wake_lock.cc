@@ -36,7 +36,7 @@ void VideoWakeLock::PageVisibilityChanged() {
   Update();
 }
 
-void VideoWakeLock::Trace(blink::Visitor* visitor) {
+void VideoWakeLock::Trace(Visitor* visitor) {
   NativeEventListener::Trace(visitor);
   PageVisibilityObserver::Trace(visitor);
   visitor->Trace(video_element_);
@@ -60,9 +60,6 @@ void VideoWakeLock::OnRemotePlaybackStateChanged(WebRemotePlaybackState state) {
   Update();
 }
 
-void VideoWakeLock::OnRemotePlaybackAvailabilityChanged(
-    WebRemotePlaybackAvailability) {}
-
 void VideoWakeLock::Update() {
   bool should_be_active = ShouldBeActive();
   if (should_be_active == active_)
@@ -75,8 +72,7 @@ void VideoWakeLock::Update() {
 bool VideoWakeLock::ShouldBeActive() const {
   bool page_visible = GetPage() && GetPage()->IsPageVisible();
   bool in_picture_in_picture =
-      PictureInPictureController::From(VideoElement().GetDocument())
-          .IsPictureInPictureElement(&VideoElement());
+      PictureInPictureController::IsElementInPictureInPicture(&VideoElement());
   return playing_ && (page_visible || in_picture_in_picture) &&
          remote_playback_state_ != WebRemotePlaybackState::kConnected;
 }

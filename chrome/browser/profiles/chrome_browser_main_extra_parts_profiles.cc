@@ -17,6 +17,7 @@
 #include "chrome/browser/browsing_data/chrome_browsing_data_remover_delegate_factory.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/chromeos/account_manager/account_manager_migrator.h"
+#include "chrome/browser/client_hints/client_hints_factory.h"
 #include "chrome/browser/consent_auditor/consent_auditor_factory.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -70,9 +71,8 @@
 #include "chrome/browser/signin/account_fetcher_service_factory.h"
 #include "chrome/browser/signin/account_investigator_factory.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
-#include "chrome/browser/signin/account_tracker_service_factory.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_profile_attributes_updater_factory.h"
 #include "chrome/browser/sync/model_type_store_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -149,6 +149,7 @@
 #include "chrome/browser/extensions/browser_context_keyed_service_factories.h"
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/ui/bookmarks/enhanced_bookmark_key_service_factory.h"
+#include "chrome/browser/ui/web_applications/web_app_metrics_factory.h"
 #include "chrome/browser/web_applications/web_app_provider_factory.h"
 #include "extensions/browser/api/networking_private/networking_private_delegate_factory.h"
 #include "extensions/browser/browser_context_keyed_service_factories.h"
@@ -225,7 +226,6 @@ void ChromeBrowserMainExtraPartsProfiles::
   AccountFetcherServiceFactory::GetInstance();
   AccountInvestigatorFactory::GetInstance();
   AccountReconcilorFactory::GetInstance();
-  AccountTrackerServiceFactory::GetInstance();
   autofill::PersonalDataManagerFactory::GetInstance();
 #if BUILDFLAG(ENABLE_BACKGROUND_CONTENTS)
   BackgroundContentsServiceFactory::GetInstance();
@@ -243,6 +243,7 @@ void ChromeBrowserMainExtraPartsProfiles::
   chromeos::android_sms::AndroidSmsServiceFactory::GetInstance();
 #endif
   ChromeSigninClientFactory::GetInstance();
+  ClientHintsFactory::GetInstance();
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OS_CHROMEOS)
   CloudPrintProxyServiceFactory::GetInstance();
 #endif
@@ -289,6 +290,7 @@ void ChromeBrowserMainExtraPartsProfiles::
   GoogleURLTrackerFactory::GetInstance();
   HistoryServiceFactory::GetInstance();
   HostContentSettingsMapFactory::GetInstance();
+  IdentityManagerFactory::EnsureFactoryAndDependeeFactoriesBuilt();
   InMemoryURLIndexFactory::GetInstance();
   invalidation::DeprecatedProfileInvalidationProviderFactory::GetInstance();
 #if !defined(OS_ANDROID)
@@ -375,7 +377,6 @@ void ChromeBrowserMainExtraPartsProfiles::
   SessionServiceFactory::GetInstance();
 #endif
   ShortcutsBackendFactory::GetInstance();
-  SigninManagerFactory::GetInstance();
   SigninProfileAttributesUpdaterFactory::GetInstance();
 
   if (SiteEngagementService::IsEnabled())
@@ -400,6 +401,7 @@ void ChromeBrowserMainExtraPartsProfiles::
 #endif
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   web_app::WebAppProviderFactory::GetInstance();
+  web_app::WebAppMetricsFactory::GetInstance();
 #endif
   WebDataServiceFactory::GetInstance();
   webrtc_event_logging::WebRtcEventLogManagerKeyedServiceFactory::GetInstance();

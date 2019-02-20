@@ -315,8 +315,7 @@ NTPUserDataLogger* NTPUserDataLogger::GetOrCreateFromWebContents(
   // detecting when the user leaves or returns to the NTP. In particular, if the
   // Google URL changes (e.g. google.com -> google.de), then we fall back to the
   // local NTP.
-  const content::NavigationEntry* entry =
-      content->GetController().GetVisibleEntry();
+  content::NavigationEntry* entry = content->GetController().GetVisibleEntry();
   if (entry && (logger->ntp_url_ != entry->GetURL())) {
     DVLOG(1) << "NTP URL changed from \"" << logger->ntp_url_ << "\" to \""
              << entry->GetURL() << "\"";
@@ -574,37 +573,27 @@ void NTPUserDataLogger::EmitNtpStatistics(base::TimeDelta load_time) {
     UMA_HISTOGRAM_LOAD_TIME("NewTabPage.LoadTime.NewTab", load_time);
   }
 
-  if (features::IsCustomBackgroundsEnabled()) {
-    if (!is_google) {
-      // TODO(crbug.com/869931): This is only emitted upon search engine change.
-      LogBackgroundCustomizationAvailability(
-          BackgroundCustomization::
-              BACKGROUND_CUSTOMIZATION_UNAVAILABLE_SEARCH_PROVIDER);
-    } else if (is_theme_configured) {
-      LogBackgroundCustomizationAvailability(
-          BackgroundCustomization::BACKGROUND_CUSTOMIZATION_UNAVAILABLE_THEME);
-    } else {
-      LogBackgroundCustomizationAvailability(
-          BackgroundCustomization::BACKGROUND_CUSTOMIZATION_AVAILABLE);
-    }
+  if (!is_google) {
+    // TODO(crbug.com/869931): This is only emitted upon search engine change.
+    LogBackgroundCustomizationAvailability(
+        BackgroundCustomization::
+            BACKGROUND_CUSTOMIZATION_UNAVAILABLE_SEARCH_PROVIDER);
+  } else if (is_theme_configured) {
+    LogBackgroundCustomizationAvailability(
+        BackgroundCustomization::BACKGROUND_CUSTOMIZATION_UNAVAILABLE_THEME);
   } else {
     LogBackgroundCustomizationAvailability(
-        BackgroundCustomization::BACKGROUND_CUSTOMIZATION_UNAVAILABLE_FEATURE);
+        BackgroundCustomization::BACKGROUND_CUSTOMIZATION_AVAILABLE);
   }
 
-  if (features::IsCustomLinksEnabled()) {
-    if (!is_google) {
-      // TODO(crbug.com/869931): This is only emitted upon search engine change.
-      LogShortcutCustomizationAvailability(
-          ShortcutCustomization::
-              SHORTCUT_CUSTOMIZATION_UNAVAILABLE_SEARCH_PROVIDER);
-    } else {
-      LogShortcutCustomizationAvailability(
-          ShortcutCustomization::SHORTCUT_CUSTOMIZATION_AVAILABLE);
-    }
+  if (!is_google) {
+    // TODO(crbug.com/869931): This is only emitted upon search engine change.
+    LogShortcutCustomizationAvailability(
+        ShortcutCustomization::
+            SHORTCUT_CUSTOMIZATION_UNAVAILABLE_SEARCH_PROVIDER);
   } else {
     LogShortcutCustomizationAvailability(
-        ShortcutCustomization::SHORTCUT_CUSTOMIZATION_UNAVAILABLE_FEATURE);
+        ShortcutCustomization::SHORTCUT_CUSTOMIZATION_AVAILABLE);
   }
 
   if (CustomBackgroundIsConfigured()) {

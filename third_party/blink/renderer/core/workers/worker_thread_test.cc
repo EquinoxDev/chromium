@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/synchronization/waitable_event.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_cache_options.h"
@@ -19,7 +20,6 @@
 #include "third_party/blink/renderer/core/workers/worker_thread_test_helper.h"
 #include "third_party/blink/renderer/platform/scheduler/test/fake_task_runner.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
-#include "third_party/blink/renderer/platform/waitable_event.h"
 
 using testing::_;
 using testing::AtMost;
@@ -32,21 +32,21 @@ namespace {
 
 // Used as a debugger task. Waits for a signal from the main thread.
 void WaitForSignalTask(WorkerThread* worker_thread,
-                       WaitableEvent* waitable_event) {
+                       base::WaitableEvent* waitable_event) {
   EXPECT_TRUE(worker_thread->IsCurrentThread());
 
+  worker_thread->DebuggerTaskStarted();
   // Notify the main thread that the debugger task is waiting for the signal.
   PostCrossThreadTask(
       *worker_thread->GetParentExecutionContextTaskRunners()->Get(
           TaskType::kInternalTest),
       FROM_HERE, CrossThreadBind(&test::ExitRunLoop));
-  worker_thread->DebuggerTaskStarted();
   waitable_event->Wait();
   worker_thread->DebuggerTaskFinished();
 }
 
 void TerminateParentOfNestedWorker(WorkerThread* parent_thread,
-                                   WaitableEvent* waitable_event) {
+                                   base::WaitableEvent* waitable_event) {
   EXPECT_TRUE(IsMainThread());
   parent_thread->Terminate();
   waitable_event->Signal();
@@ -99,7 +99,7 @@ void CreateNestedWorkerThenTerminateParent(
   nested_worker_helper->worker_thread->WaitForInit();
 
   // Ask the main threat to terminate this parent thread.
-  WaitableEvent child_waitable;
+  base::WaitableEvent child_waitable;
   PostCrossThreadTask(
       *parent_thread->GetParentExecutionContextTaskRunners()->Get(
           TaskType::kInternalTest),
@@ -120,7 +120,7 @@ void CreateNestedWorkerThenTerminateParent(
 
 void VerifyParentAndChildAreTerminated(WorkerThread* parent_thread,
                                        NestedWorkerHelper* nested_worker_helper,
-                                       WaitableEvent* waitable_event) {
+                                       base::WaitableEvent* waitable_event) {
   EXPECT_TRUE(parent_thread->IsCurrentThread());
   EXPECT_EQ(ExitCode::kGracefullyTerminated,
             parent_thread->GetExitCodeForTesting());
@@ -364,7 +364,8 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunningOnInitialization) {
   auto global_scope_creation_params =
       std::make_unique<GlobalScopeCreationParams>(
           KURL("http://fake.url/"), mojom::ScriptType::kClassic,
-          "fake user agent", nullptr /* web_worker_fetch_context */, headers,
+          OffMainThreadWorkerScriptFetchOption::kDisabled, "fake user agent",
+          nullptr /* web_worker_fetch_context */, headers,
           network::mojom::ReferrerPolicy::kDefault, security_origin_.get(),
           false /* starter_secure_context */,
           CalculateHttpsState(security_origin_.get()), WorkerClients::Create(),
@@ -385,7 +386,7 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunningOnInitialization) {
 
   // Used to wait for worker thread termination in a debugger task on the
   // worker thread.
-  WaitableEvent waitable_event;
+  base::WaitableEvent waitable_event;
   PostCrossThreadTask(
       *worker_thread_->GetTaskRunner(TaskType::kInternalInspector), FROM_HERE,
       CrossThreadBind(&WaitForSignalTask,
@@ -432,7 +433,7 @@ TEST_F(WorkerThreadTest, Terminate_WhileDebuggerTaskIsRunning) {
 
   // Used to wait for worker thread termination in a debugger task on the
   // worker thread.
-  WaitableEvent waitable_event;
+  base::WaitableEvent waitable_event;
   PostCrossThreadTask(
       *worker_thread_->GetTaskRunner(TaskType::kInternalInspector), FROM_HERE,
       CrossThreadBind(&WaitForSignalTask,
@@ -483,7 +484,7 @@ TEST_F(WorkerThreadTest, TerminateWorkerWhileChildIsLoading) {
                       CrossThreadUnretained(&nested_worker_helper)));
   test::EnterRunLoop();
 
-  WaitableEvent waitable_event;
+  base::WaitableEvent waitable_event;
   worker_thread_->GetWorkerBackingThread().BackingThread().PostTask(
       FROM_HERE, CrossThreadBind(&VerifyParentAndChildAreTerminated,
                                  CrossThreadUnretained(worker_thread_.get()),

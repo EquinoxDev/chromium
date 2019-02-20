@@ -510,8 +510,10 @@ void PaintController::FinishCycle() {
   if (usage_ == kTransient)
     return;
 
+#if DCHECK_IS_ON()
   DCHECK(new_display_item_list_.IsEmpty());
   DCHECK(new_paint_chunks_.IsInInitialState());
+#endif
 
   if (committed_) {
     committed_ = false;
@@ -554,9 +556,9 @@ void PaintController::ClearPropertyTreeChangedStateTo(
   // Calling |ClearChangedTo| for every chunk is O(|property nodes|^2) and
   // could be optimized by caching which nodes that have already been cleared.
   for (const auto& chunk : current_paint_artifact_->PaintChunks()) {
-    chunk.properties.Transform()->ClearChangedTo(to.Transform());
-    chunk.properties.Clip()->ClearChangedTo(to.Clip());
-    chunk.properties.Effect()->ClearChangedTo(to.Effect());
+    chunk.properties.Transform().ClearChangedTo(&to.Transform());
+    chunk.properties.Clip().ClearChangedTo(&to.Clip());
+    chunk.properties.Effect().ClearChangedTo(&to.Effect());
   }
 }
 

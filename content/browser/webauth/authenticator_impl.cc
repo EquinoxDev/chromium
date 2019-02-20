@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/base64url.h"
+#include "base/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -19,7 +20,6 @@
 #include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/webauth/authenticator_type_converters.h"
-#include "content/public/browser/authenticator_request_client_delegate.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/navigation_handle.h"
@@ -253,7 +253,6 @@ base::Optional<std::string> ProcessAppIdExtension(std::string appid,
 device::CtapMakeCredentialRequest CreateCtapMakeCredentialRequest(
     const std::string& client_data_json,
     const blink::mojom::PublicKeyCredentialCreationOptionsPtr& options,
-    bool is_individual_attestation,
     bool is_incognito) {
   auto credential_params = mojo::ConvertTo<
       std::vector<device::PublicKeyCredentialParams::CredentialInfo>>(
@@ -271,7 +270,6 @@ device::CtapMakeCredentialRequest CreateCtapMakeCredentialRequest(
           options->exclude_credentials);
 
   make_credential_param.SetExcludeList(std::move(exclude_list));
-  make_credential_param.SetIsIndividualAttestation(is_individual_attestation);
   make_credential_param.SetHmacSecret(options->hmac_create_secret);
   make_credential_param.set_is_incognito_mode(is_incognito);
   return make_credential_param;
@@ -490,8 +488,10 @@ base::flat_set<device::FidoTransportProtocol> GetTransportsEnabledByFlags() {
   }
 
   // caBLE is independent of the BLE transport.
-  transports.insert(
-      device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
+  if (base::FeatureList::IsEnabled(features::kWebAuthCable)) {
+    transports.insert(
+        device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
+  }
 
   return transports;
 }
@@ -644,6 +644,8 @@ void AuthenticatorImpl::MakeCredential(
   // TODO(kpaulhamus): Fetch and add the Channel ID/Token Binding ID public key
   // used to communicate with the origin.
   if (OriginIsCryptoTokenExtension(caller_origin_)) {
+    // Cryptotoken requests should be proxied without UI.
+    request_delegate_->DisableUI();
     // As Cryptotoken validates the origin, accept the relying party id as the
     // origin from requests originating from Cryptotoken. The origin is provided
     // in Cryptotoken requests as the relying party name, which should be used
@@ -657,12 +659,13 @@ void AuthenticatorImpl::MakeCredential(
         std::move(options->challenge));
   }
 
-  const bool individual_attestation =
-      options->attestation ==
-          blink::mojom::AttestationConveyancePreference::ENTERPRISE &&
-      request_delegate_->ShouldPermitIndividualAttestation(relying_party_id_);
-
-  attestation_preference_ = options->attestation;
+  // U2F requests proxied from the cryptotoken extension are limited to USB
+  // devices.
+  const auto transports =
+      OriginIsCryptoTokenExtension(caller_origin_)
+          ? base::flat_set<device::FidoTransportProtocol>(
+                {device::FidoTransportProtocol::kUsbHumanInterfaceDevice})
+          : transports_;
 
   auto authenticator_selection_criteria =
       options->authenticator_selection
@@ -671,12 +674,25 @@ void AuthenticatorImpl::MakeCredential(
           : device::AuthenticatorSelectionCriteria();
 
   auto ctap_request = CreateCtapMakeCredentialRequest(
-      client_data_json_, options, individual_attestation,
-      browser_context()->IsOffTheRecord());
+      client_data_json_, options, browser_context()->IsOffTheRecord());
+  // On dual protocol CTAP2/U2F devices, force credential creation over U2F.
   ctap_request.set_is_u2f_only(OriginIsCryptoTokenExtension(caller_origin_));
 
+  // Compute the effective attestation conveyance preference and set
+  // |attestation_requested_| for showing the attestation consent prompt later.
+  auto attestation = mojo::ConvertTo<::device::AttestationConveyancePreference>(
+      options->attestation);
+  if (attestation == ::device::AttestationConveyancePreference::ENTERPRISE &&
+      !request_delegate_->ShouldPermitIndividualAttestation(
+          relying_party_id_)) {
+    attestation = ::device::AttestationConveyancePreference::DIRECT;
+  }
+  ctap_request.set_attestation_preference(attestation);
+  attestation_requested_ =
+      attestation != ::device::AttestationConveyancePreference::NONE;
+
   request_ = std::make_unique<device::MakeCredentialRequestHandler>(
-      connector_, transports_, std::move(ctap_request),
+      connector_, transports, std::move(ctap_request),
       std::move(authenticator_selection_criteria),
       base::BindOnce(&AuthenticatorImpl::OnRegisterResponse,
                      weak_factory_.GetWeakPtr()));
@@ -723,6 +739,8 @@ void AuthenticatorImpl::GetAssertion(
   // TODO(kpaulhamus): Fetch and add the Channel ID/Token Binding ID public key
   // used to communicate with the origin.
   if (OriginIsCryptoTokenExtension(caller_origin_)) {
+    request_delegate_->DisableUI();
+
     // As Cryptotoken validates the origin, accept the relying party id as the
     // origin from requests originating from Cryptotoken.
     client_data_json_ = SerializeCollectedClientDataToJson(
@@ -770,6 +788,14 @@ void AuthenticatorImpl::GetAssertion(
     }
   }
 
+  // U2F requests proxied from the cryptotoken extension are limited to USB
+  // devices.
+  const auto transports =
+      OriginIsCryptoTokenExtension(caller_origin_)
+          ? base::flat_set<device::FidoTransportProtocol>(
+                {device::FidoTransportProtocol::kUsbHumanInterfaceDevice})
+          : transports_;
+
   DCHECK(get_assertion_response_callback_.is_null());
   get_assertion_response_callback_ = std::move(callback);
 
@@ -787,7 +813,7 @@ void AuthenticatorImpl::GetAssertion(
       CreatePlatformAuthenticatorIfAvailableAndCheckIfCredentialExists(
           ctap_request);
   request_ = std::make_unique<device::GetAssertionRequestHandler>(
-      connector_, transports_, std::move(ctap_request),
+      connector_, transports, std::move(ctap_request),
       base::BindOnce(&AuthenticatorImpl::OnSignResponse,
                      weak_factory_.GetWeakPtr()));
 
@@ -875,14 +901,9 @@ void AuthenticatorImpl::OnRegisterResponse(
       // Duplicate registration: the new credential would be created on an
       // authenticator that already contains one of the credentials in
       // |exclude_credentials|.
-      DCHECK(request_delegate_);
-      request_delegate_->DidFailWithInterestingReason(
+      SignalFailureToRequestDelegate(
           AuthenticatorRequestClientDelegate::InterestingFailureReason::
               kKeyAlreadyRegistered);
-      InvokeCallbackAndCleanup(
-          std::move(make_credential_response_callback_),
-          blink::mojom::AuthenticatorStatus::CREDENTIAL_EXCLUDED, nullptr,
-          Focus::kDoCheck);
       return;
     case device::FidoReturnCode::kAuthenticatorResponseInvalid:
       // The response from the authenticator was corrupted.
@@ -908,8 +929,7 @@ void AuthenticatorImpl::OnRegisterResponse(
         request_delegate_->UpdateLastTransportUsed(*transport_used);
       }
 
-      if (attestation_preference_ !=
-          blink::mojom::AttestationConveyancePreference::NONE) {
+      if (attestation_requested_) {
         // Cryptotoken requests may bypass the attestation prompt because the
         // extension implements its own. Invoking the attestation prompt code
         // here would not work anyway, because the WebContents associated with
@@ -975,8 +995,7 @@ void AuthenticatorImpl::OnRegisterResponseAttestationDecided(
     return;
   }
 
-  DCHECK(attestation_preference_ !=
-         blink::mojom::AttestationConveyancePreference::NONE);
+  DCHECK(attestation_requested_);
 
   if (!attestation_permitted) {
     UMA_HISTOGRAM_ENUMERATION("WebAuthentication.AttestationPromptResult",
@@ -1034,15 +1053,9 @@ void AuthenticatorImpl::OnSignResponse(
 
   switch (status_code) {
     case device::FidoReturnCode::kUserConsentButCredentialNotRecognized:
-      // No authenticators contained the credential.
-      DCHECK(request_delegate_);
-      request_delegate_->DidFailWithInterestingReason(
+      SignalFailureToRequestDelegate(
           AuthenticatorRequestClientDelegate::InterestingFailureReason::
               kKeyNotRegistered);
-      InvokeCallbackAndCleanup(
-          std::move(get_assertion_response_callback_),
-          blink::mojom::AuthenticatorStatus::CREDENTIAL_NOT_RECOGNIZED,
-          nullptr);
       return;
     case device::FidoReturnCode::kAuthenticatorResponseInvalid:
       // The response from the authenticator was corrupted.
@@ -1081,21 +1094,53 @@ void AuthenticatorImpl::OnSignResponse(
   NOTREACHED();
 }
 
-void AuthenticatorImpl::FailWithNotAllowedErrorAndCleanup() {
+void AuthenticatorImpl::SignalFailureToRequestDelegate(
+    AuthenticatorRequestClientDelegate::InterestingFailureReason reason) {
+  blink::mojom::AuthenticatorStatus status =
+      blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR;
+
+  switch (reason) {
+    case AuthenticatorRequestClientDelegate::InterestingFailureReason::
+        kKeyAlreadyRegistered:
+      status = blink::mojom::AuthenticatorStatus::CREDENTIAL_EXCLUDED;
+      break;
+    case AuthenticatorRequestClientDelegate::InterestingFailureReason::
+        kKeyNotRegistered:
+      status = blink::mojom::AuthenticatorStatus::CREDENTIAL_NOT_RECOGNIZED;
+      break;
+    case AuthenticatorRequestClientDelegate::InterestingFailureReason::kTimeout:
+      status = blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR;
+      break;
+  }
+
+  error_awaiting_user_acknowledgement_ = status;
+
+  // If WebAuthnUi is enabled, this error blocks until after receiving user
+  // acknowledgement. Otherwise, the error is returned right away.
+  if (request_delegate_->DoesBlockRequestOnFailure(reason)) {
+    // Cancel pending authenticator requests before the error dialog is shown.
+    request_->CancelActiveAuthenticators();
+    return;
+  }
+
+  FailWithErrorAndCleanup();
+}  // namespace content
+
+void AuthenticatorImpl::FailWithErrorAndCleanup() {
   DCHECK(make_credential_response_callback_ ||
          get_assertion_response_callback_);
   if (make_credential_response_callback_) {
-    InvokeCallbackAndCleanup(
-        std::move(make_credential_response_callback_),
-        blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr,
-        Focus::kDontCheck);
+    InvokeCallbackAndCleanup(std::move(make_credential_response_callback_),
+                             error_awaiting_user_acknowledgement_, nullptr,
+                             Focus::kDontCheck);
   } else if (get_assertion_response_callback_) {
-    InvokeCallbackAndCleanup(
-        std::move(get_assertion_response_callback_),
-        blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR, nullptr);
+    InvokeCallbackAndCleanup(std::move(get_assertion_response_callback_),
+                             error_awaiting_user_acknowledgement_, nullptr);
   }
 }
 
+// TODO(crbug.com/814418): Add web tests to verify timeouts are
+// indistinguishable from NOT_ALLOWED_ERROR cases.
 void AuthenticatorImpl::OnTimeout() {
   DCHECK(request_delegate_);
   if (awaiting_attestation_response_) {
@@ -1104,12 +1149,8 @@ void AuthenticatorImpl::OnTimeout() {
     awaiting_attestation_response_ = false;
   }
 
-  request_delegate_->DidFailWithInterestingReason(
+  SignalFailureToRequestDelegate(
       AuthenticatorRequestClientDelegate::InterestingFailureReason::kTimeout);
-
-  // TODO(crbug.com/814418): Add web tests to verify timeouts are
-  // indistinguishable from NOT_ALLOWED_ERROR cases.
-  FailWithNotAllowedErrorAndCleanup();
 }
 
 void AuthenticatorImpl::Cancel() {
@@ -1117,7 +1158,7 @@ void AuthenticatorImpl::Cancel() {
   if (!make_credential_response_callback_ && !get_assertion_response_callback_)
     return;
 
-  FailWithNotAllowedErrorAndCleanup();
+  FailWithErrorAndCleanup();
 }
 
 void AuthenticatorImpl::InvokeCallbackAndCleanup(
@@ -1157,6 +1198,9 @@ void AuthenticatorImpl::Cleanup() {
   get_assertion_response_callback_.Reset();
   client_data_json_.clear();
   app_id_.reset();
+  attestation_requested_ = false;
+  error_awaiting_user_acknowledgement_ =
+      blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR;
 }
 
 BrowserContext* AuthenticatorImpl::browser_context() const {

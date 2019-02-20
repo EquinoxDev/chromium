@@ -7,7 +7,7 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_ice_candidate_pair.h"
-#include "third_party/blink/renderer/core/dom/context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/execution_context/context_lifecycle_observer.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
 #include "third_party/blink/renderer/modules/peerconnection/adapters/ice_transport_proxy.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_ice_candidate_pair.h"
@@ -107,11 +107,11 @@ class MODULES_EXPORT RTCIceTransport final
   void stop();
   void addRemoteCandidate(RTCIceCandidate* remote_candidate,
                           ExceptionState& exception_state);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange, kStatechange);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(gatheringstatechange, kGatheringstatechange);
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange, kStatechange)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(gatheringstatechange, kGatheringstatechange)
   DEFINE_ATTRIBUTE_EVENT_LISTENER(selectedcandidatepairchange,
-                                  kSelectedcandidatepairchange);
-  DEFINE_ATTRIBUTE_EVENT_LISTENER(icecandidate, kIcecandidate);
+                                  kSelectedcandidatepairchange)
+  DEFINE_ATTRIBUTE_EVENT_LISTENER(icecandidate, kIcecandidate)
 
   // EventTarget overrides.
   const AtomicString& InterfaceName() const override;

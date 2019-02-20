@@ -46,25 +46,19 @@ class ExtensionMessagePort : public MessagePort {
                        content::RenderProcessHost* extension_process);
   ~ExtensionMessagePort() override;
 
-  // Checks whether the frames to which this port is tied at its construction
-  // are still aware of this port's existence. Frames that don't know about
-  // the port are removed from the set of frames. This should be used for opener
-  // ports because the frame may be navigated before the port was initialized.
-  void RevalidatePort();
-
   // MessagePort:
   void RemoveCommonFrames(const MessagePort& port) override;
   bool HasFrame(content::RenderFrameHost* rfh) const override;
   bool IsValidPort() override;
+  void RevalidatePort() override;
   void DispatchOnConnect(const std::string& channel_name,
                          std::unique_ptr<base::DictionaryValue> source_tab,
                          int source_frame_id,
                          int guest_process_id,
                          int guest_render_frame_routing_id,
-                         const std::string& source_extension_id,
+                         const MessagingEndpoint& source_endpoint,
                          const std::string& target_extension_id,
-                         const GURL& source_url,
-                         const std::string& tls_channel_id) override;
+                         const GURL& source_url) override;
   void DispatchOnDisconnect(const std::string& error_message) override;
   void DispatchOnMessage(const Message& message) override;
   void IncrementLazyKeepaliveCount() override;

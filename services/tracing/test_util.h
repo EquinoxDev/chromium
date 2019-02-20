@@ -37,10 +37,8 @@ class MockAgent : public mojom::Agent {
  private:
   // mojom::Agent
   void StartTracing(const std::string& config,
-                    base::TimeTicks coordinator_time,
-                    StartTracingCallback cb) override;
+                    base::TimeTicks coordinator_time) override;
   void StopAndFlush(mojom::RecorderPtr recorder) override;
-  void GetCategories(GetCategoriesCallback cb) override;
   void RequestBufferStatus(RequestBufferStatusCallback cb) override;
 
   mojo::Binding<mojom::Agent> binding_;

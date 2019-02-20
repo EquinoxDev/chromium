@@ -18,6 +18,7 @@
 #include "base/allocator/buildflags.h"
 #include "base/at_exit.h"
 #include "base/base_switches.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
@@ -40,7 +41,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "components/download/public/common/download_task_runner.h"
-#include "components/tracing/common/trace_startup.h"
 #include "content/app/mojo/mojo_init.h"
 #include "content/browser/browser_process_sub_thread.h"
 #include "content/browser/browser_thread_impl.h"
@@ -67,6 +67,7 @@
 #include "services/service_manager/sandbox/sandbox_type.h"
 #include "services/service_manager/sandbox/switches.h"
 #include "services/service_manager/zygote/common/zygote_buildflags.h"
+#include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/blink/public/common/origin_trials/trial_token_validator.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
@@ -697,9 +698,7 @@ int ContentMainRunnerImpl::Initialize(const ContentMainParams& params) {
 #endif  // !OS_ANDROID
 
 #if defined(OS_WIN)
-    // Enable exporting of events to ETW if requested on the command line.
-    if (command_line.HasSwitch(switches::kTraceExportEventsToETW))
-      base::trace_event::TraceEventETWExport::EnableETWExport();
+    base::trace_event::TraceEventETWExport::EnableETWExport();
 #endif  // OS_WIN
 
 #if !defined(OS_ANDROID)
@@ -901,11 +900,11 @@ int ContentMainRunnerImpl::RunServiceManager(MainFunctionParams& main_params,
     }
 #endif
 
-    // Create a MessageLoop if one does not already exist for the current
-    // thread. This thread won't be promoted as BrowserThread::UI until
-    // BrowserMainLoop::MainMessageLoopStart().
-    if (!base::MessageLoopCurrentForUI::IsSet())
-      main_message_loop_ = std::make_unique<base::MessageLoopForUI>();
+    // Register the TaskExecutor for posting task to the BrowserThreads. It is
+    // incorrect to post to a BrowserThread before this point. This instantiates
+    // and binds the MessageLoopForUI on the main thread (but it's only labeled
+    // as BrowserThread::UI in BrowserMainLoop::MainMessageLoopStart).
+    BrowserTaskExecutor::Create();
 
     delegate_->PostEarlyInitialization(main_params.ui_task != nullptr);
 
@@ -914,9 +913,7 @@ int ContentMainRunnerImpl::RunServiceManager(MainFunctionParams& main_params,
       StartBrowserTaskScheduler();
     }
 
-    // Register the TaskExecutor for posting task to the BrowserThreads. It is
-    // incorrect to post to a BrowserThread before this point.
-    BrowserTaskExecutor::Create();
+    BrowserTaskExecutor::PostFeatureListSetup();
 
     if (!base::FeatureList::IsEnabled(
             features::kAllowStartingServiceManagerOnly)) {
@@ -969,8 +966,8 @@ void ContentMainRunnerImpl::Shutdown() {
   }
 
 #if !defined(CHROME_MULTIPLE_DLL_CHILD)
-  // The message loop needs to be destroyed before |exit_manager_|.
-  main_message_loop_.reset();
+  // The BrowserTaskExecutor needs to be destroyed before |exit_manager_|.
+  BrowserTaskExecutor::Shutdown();
 #endif  // !defined(CHROME_MULTIPLE_DLL_CHILD)
 
 #if defined(OS_WIN)

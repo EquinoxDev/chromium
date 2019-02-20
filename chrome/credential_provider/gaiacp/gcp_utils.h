@@ -5,6 +5,8 @@
 #ifndef CHROME_CREDENTIAL_PROVIDER_GAIACP_GCP_UTILS_H_
 #define CHROME_CREDENTIAL_PROVIDER_GAIACP_GCP_UTILS_H_
 
+#include <string>
+
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
@@ -35,6 +37,22 @@ namespace credential_provider {
 
 // Windows supports a maximum of 20 characters plus null in username.
 constexpr int kWindowsUsernameBufferLength = 21;
+
+// Maximum domain length is 256 characters including null.
+// https://support.microsoft.com/en-ca/help/909264/naming-conventions-in-active-directory-for-computers-domains-sites-and
+constexpr int kWindowsDomainBufferLength = 256;
+
+// According to:
+// https://stackoverflow.com/questions/1140528/what-is-the-maximum-length-of-a-sid-in-sddl-format
+constexpr int kWindowsSidBufferLength = 184;
+
+// Max number of attempts to find a new username when a user already exists
+// with the same username.
+constexpr int kMaxUsernameAttempts = 10;
+
+// First index to append to a username when another user with the same name
+// already exists.
+constexpr int kInitialDuplicateUsernameIndex = 2;
 
 // Because of some strange dependency problems with windows header files,
 // define STATUS_SUCCESS here instead of including ntstatus.h or SubAuth.h
@@ -107,7 +125,8 @@ HRESULT WaitForProcess(base::win::ScopedHandle::Handle process_handle,
                        int buffer_size);
 
 // Creates a restricted, batch or interactive login token for the given user.
-HRESULT CreateLogonToken(const wchar_t* username,
+HRESULT CreateLogonToken(const wchar_t* domain,
+                         const wchar_t* username,
                          const wchar_t* password,
                          bool interactive,
                          base::win::ScopedHandle* token);
@@ -175,9 +194,6 @@ HRESULT GetCommandLineForEntrypoint(HINSTANCE dll_handle,
 // Enrolls the machine to with the Google MDM server if not already.
 HRESULT EnrollToGoogleMdmIfNeeded(const base::DictionaryValue& properties);
 
-// Gets the auth package id for NEGOSSP_NAME_A.
-HRESULT GetAuthenticationPackageId(ULONG* id);
-
 // Handles the writing and deletion of a startup sentinel file used to ensure
 // that the GCPW does not crash continuously on startup and render the
 // winlogon process unusable.
@@ -220,6 +236,20 @@ struct FakesForTesting {
 // static data.  This way the production DLL does not need to include binary
 // code used only for testing.
 typedef void CALLBACK (*SetFakesForTestingFn)(const FakesForTesting* fakes);
+
+// Initializes the members of a Windows STRING struct (UNICODE_STRING or
+// LSA_STRING) to point to the string pointed to by |string|.
+template <class WindowsStringT,
+          class WindowsStringCharT = decltype(WindowsStringT().Buffer[0])>
+void InitWindowsStringWithString(const WindowsStringCharT* string,
+                                 WindowsStringT* windows_string) {
+  constexpr size_t buffer_char_size = sizeof(WindowsStringCharT);
+  windows_string->Buffer = const_cast<WindowsStringCharT*>(string);
+  windows_string->Length = static_cast<USHORT>(
+      std::char_traits<WindowsStringCharT>::length((windows_string->Buffer)) *
+      buffer_char_size);
+  windows_string->MaximumLength = windows_string->Length + buffer_char_size;
+}
 
 }  // namespace credential_provider
 

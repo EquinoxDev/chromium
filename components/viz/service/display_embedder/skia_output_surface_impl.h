@@ -22,6 +22,15 @@ namespace base {
 class WaitableEvent;
 }
 
+namespace gl {
+class GLSurface;
+}
+
+namespace gpu {
+class CommandBufferTaskExecutor;
+class SharedContextState;
+}  // namespace gpu
+
 namespace viz {
 
 class GpuServiceImpl;
@@ -44,6 +53,10 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
                         gpu::SurfaceHandle surface_handle,
                         SyntheticBeginFrameSource* synthetic_begin_frame_source,
                         bool show_overdraw_feedback);
+  SkiaOutputSurfaceImpl(
+      scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor,
+      scoped_refptr<gl::GLSurface> gl_surface,
+      scoped_refptr<gpu::SharedContextState> shared_context_state);
   ~SkiaOutputSurfaceImpl() override;
 
   // OutputSurface implementation:
@@ -74,7 +87,6 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
 
   // SkiaOutputSurface implementation:
   SkCanvas* BeginPaintCurrentFrame() override;
-  sk_sp<SkImage> MakePromiseSkImage(ResourceMetadata metadata) override;
   sk_sp<SkImage> MakePromiseSkImageFromYUV(
       std::vector<ResourceMetadata> metadatas,
       SkYUVColorSpace yuv_color_space,
@@ -83,40 +95,64 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   SkCanvas* BeginPaintRenderPass(const RenderPassId& id,
                                  const gfx::Size& surface_size,
                                  ResourceFormat format,
-                                 bool mipmap) override;
+                                 bool mipmap,
+                                 sk_sp<SkColorSpace> color_space) override;
   gpu::SyncToken SubmitPaint() override;
-  sk_sp<SkImage> MakePromiseSkImageFromRenderPass(const RenderPassId& id,
-                                                  const gfx::Size& size,
-                                                  ResourceFormat format,
-                                                  bool mipmap) override;
+  sk_sp<SkImage> MakePromiseSkImage(ResourceMetadata metadata) override;
+  sk_sp<SkImage> MakePromiseSkImageFromRenderPass(
+      const RenderPassId& id,
+      const gfx::Size& size,
+      ResourceFormat format,
+      bool mipmap,
+      sk_sp<SkColorSpace> color_space) override;
+  gpu::SyncToken ReleasePromiseSkImages(
+      std::vector<sk_sp<SkImage>> image) override;
+
   void RemoveRenderPassResource(std::vector<RenderPassId> ids) override;
   void CopyOutput(RenderPassId id,
-                  const gfx::Rect& copy_rect,
+                  const copy_output::RenderPassGeometry& geometry,
                   const gfx::ColorSpace& color_space,
-                  const gfx::Rect& result_rect,
                   std::unique_ptr<CopyOutputRequest> request) override;
   void AddContextLostObserver(ContextLostObserver* observer) override;
   void RemoveContextLostObserver(ContextLostObserver* observer) override;
 
  private:
-  template <class T>
   class PromiseTextureHelper;
   class YUVAPromiseTextureHelper;
   void InitializeOnGpuThread(base::WaitableEvent* event);
   SkSurfaceCharacterization CreateSkSurfaceCharacterization(
       const gfx::Size& surface_size,
       ResourceFormat format,
-      bool mipmap);
+      bool mipmap,
+      sk_sp<SkColorSpace> color_space);
   void DidSwapBuffersComplete(gpu::SwapBuffersCompleteParams params,
                               const gfx::Size& pixel_size);
   void BufferPresented(const gfx::PresentationFeedback& feedback);
   void ContextLost();
+  void ScheduleGpuTask(base::OnceClosure callback,
+                       std::vector<gpu::SyncToken> sync_tokens);
 
   uint64_t sync_fence_release_ = 0;
+
   GpuServiceImpl* const gpu_service_;
+
+  // Stuffs for running with |task_executor_| instead of |gpu_service_|.
+  scoped_refptr<gpu::CommandBufferTaskExecutor> task_executor_;
+  scoped_refptr<gl::GLSurface> gl_surface_;
+  scoped_refptr<gpu::SharedContextState> shared_context_state_;
+  std::unique_ptr<gpu::CommandBufferTaskExecutor::Sequence> sequence_;
+
+  const bool is_using_vulkan_;
   const gpu::SurfaceHandle surface_handle_;
   SyntheticBeginFrameSource* const synthetic_begin_frame_source_;
   OutputSurfaceClient* client_ = nullptr;
+
+  unsigned int backing_framebuffer_object_ = 0;
+  gfx::Size reshape_surface_size_;
+  float reshape_device_scale_factor_ = 0.f;
+  gfx::ColorSpace reshape_color_space_;
+  bool reshape_has_alpha_ = false;
+  bool reshape_use_stencil_ = false;
 
   std::unique_ptr<base::WaitableEvent> initialize_waitable_event_;
   SkSurfaceCharacterization characterization_;
@@ -151,6 +187,7 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   // Whether to send OutputSurfaceClient::DidSwapWithSize notifications.
   bool needs_swap_size_notifications_ = false;
 
+  // Observers for context lost.
   base::ObserverList<ContextLostObserver>::Unchecked observers_;
 
   THREAD_CHECKER(thread_checker_);

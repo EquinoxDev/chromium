@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
@@ -435,7 +436,7 @@ class MockServiceWorkerRegistration : public ServiceWorkerRegistration {
   }
 
  protected:
-  ~MockServiceWorkerRegistration() override{};
+  ~MockServiceWorkerRegistration() override {}
 
  private:
   std::set<ServiceWorkerRegistration::Listener*> listeners_;
@@ -813,7 +814,7 @@ TEST_P(ServiceWorkerProviderHostTest, GetRegistration_Success) {
   EXPECT_EQ(blink::mojom::ServiceWorkerErrorType::kNone,
             GetRegistration(remote_endpoint.host_ptr()->get(), kScope, &info));
   ASSERT_TRUE(info);
-  EXPECT_EQ(kScope, info->options->scope);
+  EXPECT_EQ(kScope, info->scope);
 }
 
 TEST_P(ServiceWorkerProviderHostTest,
@@ -883,7 +884,7 @@ TEST_P(ServiceWorkerProviderHostTest,
        ReservedClientsAreNotExposedToClientsAPI) {
   {
     auto provider_info =
-        blink::mojom::ServiceWorkerProviderInfoForSharedWorker::New();
+        blink::mojom::ServiceWorkerProviderInfoForWorker::New();
     base::WeakPtr<ServiceWorkerProviderHost> host =
         ServiceWorkerProviderHost::PreCreateForSharedWorker(
             context_->AsWeakPtr(), helper_->mock_render_process_id(),
@@ -906,11 +907,60 @@ TEST_P(ServiceWorkerProviderHostTest,
     remote_endpoint.BindWithProviderHostInfo(&info);
     GURL url = GURL("https://www.example.com/page");
     host->UpdateUrls(url, url);
+    FinishNavigation(host.get(), std::move(info));
     EXPECT_FALSE(CanFindClientProviderHost(host.get()));
 
-    FinishNavigation(host.get(), std::move(info));
+    base::RunLoop run_loop;
+    host->AddExecutionReadyCallback(run_loop.QuitClosure());
+    remote_endpoint.host_ptr()->get()->OnExecutionReady();
+    run_loop.Run();
     EXPECT_TRUE(CanFindClientProviderHost(host.get()));
   }
+}
+
+// Tests the client phase transitions for a navigation.
+TEST_P(ServiceWorkerProviderHostTest, ClientPhaseForWindow) {
+  base::WeakPtr<ServiceWorkerProviderHost> host =
+      ServiceWorkerProviderHost::PreCreateNavigationHost(
+          helper_->context()->AsWeakPtr(), true,
+          base::RepeatingCallback<WebContents*(void)>());
+  EXPECT_FALSE(host->is_response_committed());
+  EXPECT_FALSE(host->is_execution_ready());
+
+  blink::mojom::ServiceWorkerProviderHostInfoPtr info =
+      CreateProviderHostInfoForWindow(host->provider_id(), 1 /* route_id */);
+  ServiceWorkerRemoteProviderEndpoint remote_endpoint;
+  remote_endpoint.BindWithProviderHostInfo(&info);
+  GURL url = GURL("https://www.example.com/page");
+  host->UpdateUrls(url, url);
+  FinishNavigation(host.get(), std::move(info));
+  EXPECT_TRUE(host->is_response_committed());
+  EXPECT_FALSE(host->is_execution_ready());
+
+  base::RunLoop run_loop;
+  host->AddExecutionReadyCallback(run_loop.QuitClosure());
+  remote_endpoint.host_ptr()->get()->OnExecutionReady();
+  run_loop.Run();
+  EXPECT_TRUE(host->is_response_committed());
+  EXPECT_TRUE(host->is_execution_ready());
+}
+
+// Tests the client phase transitions for a shared worker.
+TEST_P(ServiceWorkerProviderHostTest, ClientPhaseForSharedWorker) {
+  auto provider_info = blink::mojom::ServiceWorkerProviderInfoForWorker::New();
+  base::WeakPtr<ServiceWorkerProviderHost> host =
+      ServiceWorkerProviderHost::PreCreateForSharedWorker(
+          context_->AsWeakPtr(), helper_->mock_render_process_id(),
+          &provider_info);
+  EXPECT_FALSE(host->is_response_committed());
+  EXPECT_FALSE(host->is_execution_ready());
+
+  const GURL url("https://www.example.com/shared_worker.js");
+  host->UpdateUrls(url, url);
+  host->CompleteSharedWorkerPreparation();
+
+  EXPECT_TRUE(host->is_response_committed());
+  EXPECT_TRUE(host->is_execution_ready());
 }
 
 // Tests that the service worker involved with a navigation (via
@@ -1100,8 +1150,8 @@ TEST_P(ServiceWorkerProviderHostTest, HintToUpdateServiceWorkerMultiple) {
   ExpectUpdateIsScheduled(version3.get());
 }
 
-INSTANTIATE_TEST_CASE_P(IsServiceWorkerServicificationEnabled,
-                        ServiceWorkerProviderHostTest,
-                        ::testing::Bool(););
+INSTANTIATE_TEST_SUITE_P(IsServiceWorkerServicificationEnabled,
+                         ServiceWorkerProviderHostTest,
+                         ::testing::Bool());
 
 }  // namespace content

@@ -369,7 +369,7 @@ class AutofillWalletSyncBridgeTest : public UssSwitchToggler,
 
   base::MockCallback<base::RepeatingCallback<void(bool)>>* active_callback() {
     return &active_callback_;
-  };
+  }
 
  private:
   autofill::TestAutofillClock test_clock_;
@@ -884,8 +884,8 @@ TEST_P(AutofillWalletSyncBridgeTest, NotifiesWhenActivelySyncing) {
   bridge()->ApplyStopSyncChanges(/*delete_metadata_change_list=*/nullptr);
 }
 
-INSTANTIATE_TEST_CASE_P(USS,
-                        AutofillWalletSyncBridgeTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(USS,
+                         AutofillWalletSyncBridgeTest,
+                         ::testing::Values(false, true));
 
 }  // namespace autofill

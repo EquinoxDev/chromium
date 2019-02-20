@@ -212,16 +212,16 @@ RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget,
         GetFrameSinkId(), this);
   }
 
-  RenderViewHost* rvh = host()->GetRenderViewHost();
   bool needs_begin_frames = true;
 
-  if (rvh) {
+  RenderWidgetHostOwnerDelegate* owner_delegate = host()->owner_delegate();
+  if (owner_delegate) {
     // TODO(mostynb): actually use prefs.  Landing this as a separate CL
     // first to rebaseline some unreliable web tests.
     // NOTE: This will not be run for child frame widgets, which do not have
     // an owner delegate and won't get a RenderViewHost here.
-    ignore_result(rvh->GetWebkitPreferences());
-    needs_begin_frames = !rvh->GetDelegate()->IsNeverVisible();
+    ignore_result(owner_delegate->GetWebkitPreferencesForWidget());
+    needs_begin_frames = !owner_delegate->IsNeverVisible();
   }
 
   cursor_manager_.reset(new CursorManager(this));
@@ -666,7 +666,7 @@ void RenderWidgetHostViewMac::OnGestureEvent(
 
   ui::LatencyInfo latency_info(ui::SourceEventType::TOUCH);
 
-  if (ShouldRouteEvent(web_gesture)) {
+  if (ShouldRouteEvents()) {
     blink::WebGestureEvent gesture_event(web_gesture);
     host()->delegate()->GetInputEventRouter()->RouteGestureEvent(
         this, &gesture_event, latency_info);
@@ -997,7 +997,7 @@ gfx::Range RenderWidgetHostViewMac::ConvertCharacterRangeToCompositionRange(
 }
 
 WebContents* RenderWidgetHostViewMac::GetWebContents() {
-  return WebContents::FromRenderViewHost(host()->GetRenderViewHost());
+  return WebContents::FromRenderViewHost(RenderViewHost::From(host()));
 }
 
 bool RenderWidgetHostViewMac::GetCachedFirstRectForCharacterRange(
@@ -1241,25 +1241,20 @@ const viz::FrameSinkId& RenderWidgetHostViewMac::GetFrameSinkId() const {
   return browser_compositor_->GetDelegatedFrameHost()->frame_sink_id();
 }
 
-bool RenderWidgetHostViewMac::ShouldRouteEvent(
-    const WebInputEvent& event) const {
+bool RenderWidgetHostViewMac::ShouldRouteEvents() const {
   // Event routing requires a valid frame sink (that is, that we be connected to
   // a ui::Compositor), which is not guaranteed to be the case.
   // https://crbug.com/844095
   if (!browser_compositor_->GetRootFrameSinkId().is_valid())
     return false;
-  // See also RenderWidgetHostViewAura::ShouldRouteEvent.
-  // TODO(wjmaclean): Update this function if RenderWidgetHostViewMac implements
-  // OnTouchEvent(), to match what we are doing in RenderWidgetHostViewAura.
-  // The only touch events and touch gesture events expected here are
-  // injected synthetic events.
+
   return host()->delegate() && host()->delegate()->GetInputEventRouter();
 }
 
 void RenderWidgetHostViewMac::SendTouchpadZoomEvent(
     const WebGestureEvent* event) {
   DCHECK(event->IsTouchpadZoomEvent());
-  if (ShouldRouteEvent(*event)) {
+  if (ShouldRouteEvents()) {
     host()->delegate()->GetInputEventRouter()->RouteGestureEvent(
         this, event, ui::LatencyInfo(ui::SourceEventType::TOUCHPAD));
     return;
@@ -1275,7 +1270,7 @@ void RenderWidgetHostViewMac::InjectTouchEvent(
   if (!result.succeeded)
     return;
 
-  if (ShouldRouteEvent(event)) {
+  if (ShouldRouteEvents()) {
     WebTouchEvent touch_event(event);
     host()->delegate()->GetInputEventRouter()->RouteTouchEvent(
         this, &touch_event, latency_info);
@@ -1456,18 +1451,17 @@ void RenderWidgetHostViewMac::SetAccessibilityWindow(NSWindow* window) {
   remote_window_accessible_.reset();
 }
 
-bool RenderWidgetHostViewMac::SyncIsRenderViewHost(bool* is_render_view) {
-  // TODO(danakj): This should return true/false if there is an owner delegate
-  // instead of checking if it is a RenderViewHost.
-  *is_render_view = host()->GetRenderViewHost() != nullptr;
+bool RenderWidgetHostViewMac::SyncIsWidgetForMainFrame(
+    bool* is_for_main_frame) {
+  *is_for_main_frame = !!host()->owner_delegate();
   return true;
 }
 
-void RenderWidgetHostViewMac::SyncIsRenderViewHost(
-    SyncIsRenderViewHostCallback callback) {
-  bool is_render_view;
-  SyncIsRenderViewHost(&is_render_view);
-  std::move(callback).Run(is_render_view);
+void RenderWidgetHostViewMac::SyncIsWidgetForMainFrame(
+    SyncIsWidgetForMainFrameCallback callback) {
+  bool is_for_main_frame;
+  SyncIsWidgetForMainFrame(&is_for_main_frame);
+  std::move(callback).Run(is_for_main_frame);
 }
 
 void RenderWidgetHostViewMac::RequestShutdown() {
@@ -1581,7 +1575,7 @@ void RenderWidgetHostViewMac::RouteOrProcessMouseEvent(
   blink::WebMouseEvent web_event = const_web_event;
   ui::LatencyInfo latency_info(ui::SourceEventType::OTHER);
   latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
-  if (ShouldRouteEvent(web_event)) {
+  if (ShouldRouteEvents()) {
     host()->delegate()->GetInputEventRouter()->RouteMouseEvent(this, &web_event,
                                                                latency_info);
   } else {
@@ -1599,7 +1593,7 @@ void RenderWidgetHostViewMac::RouteOrProcessTouchEvent(
 
   ui::LatencyInfo latency_info(ui::SourceEventType::OTHER);
   latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
-  if (ShouldRouteEvent(web_event)) {
+  if (ShouldRouteEvents()) {
     host()->delegate()->GetInputEventRouter()->RouteTouchEvent(this, &web_event,
                                                                latency_info);
   } else {
@@ -1613,14 +1607,14 @@ void RenderWidgetHostViewMac::RouteOrProcessWheelEvent(
   ui::LatencyInfo latency_info(ui::SourceEventType::WHEEL);
   latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
   mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
-      web_event, ShouldRouteEvent(web_event));
+      web_event, ShouldRouteEvents());
   if (web_event.phase == blink::WebMouseWheelEvent::kPhaseEnded) {
     // A wheel end event is scheduled and will get dispatched if momentum
     // phase doesn't start in 100ms. Don't sent the wheel end event
     // immediately.
     return;
   }
-  if (ShouldRouteEvent(web_event)) {
+  if (ShouldRouteEvents()) {
     host()->delegate()->GetInputEventRouter()->RouteMouseWheelEvent(
         this, &web_event, latency_info);
   } else {

@@ -10,6 +10,7 @@
 #include <string>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
 #include "cc/base/devtools_instrumentation.h"
@@ -63,7 +64,8 @@ ProxyImpl::ProxyImpl(base::WeakPtr<ProxyMain> proxy_main_weak_ptr,
       task_runner_provider_(task_runner_provider),
       smoothness_priority_expiration_notifier_(
           task_runner_provider->ImplThreadTaskRunner(),
-          base::Bind(&ProxyImpl::RenewTreePriority, base::Unretained(this)),
+          base::BindRepeating(&ProxyImpl::RenewTreePriority,
+                              base::Unretained(this)),
           base::TimeDelta::FromSecondsD(
               kSmoothnessTakesPriorityExpirationDelay)),
       rendering_stats_instrumentation_(
@@ -171,10 +173,10 @@ void ProxyImpl::SetInputThrottledUntilCommitOnImpl(bool is_throttled) {
   RenewTreePriority();
 }
 
-void ProxyImpl::SetDeferMainFrameUpdateOnImpl(
-    bool defer_main_frame_update) const {
+void ProxyImpl::SetDeferBeginMainFrameOnImpl(
+    bool defer_begin_main_frame) const {
   DCHECK(IsImplThread());
-  scheduler_->SetDeferMainFrameUpdate(defer_main_frame_update);
+  scheduler_->SetDeferBeginMainFrame(defer_begin_main_frame);
 }
 
 void ProxyImpl::SetNeedsRedrawOnImpl(const gfx::Rect& damage_rect) {
@@ -444,11 +446,11 @@ void ProxyImpl::RenewTreePriority() {
                                               scroll_handler_state);
 }
 
-void ProxyImpl::PostDelayedAnimationTaskOnImplThread(const base::Closure& task,
+void ProxyImpl::PostDelayedAnimationTaskOnImplThread(base::OnceClosure task,
                                                      base::TimeDelta delay) {
   DCHECK(IsImplThread());
-  task_runner_provider_->ImplThreadTaskRunner()->PostDelayedTask(FROM_HERE,
-                                                                 task, delay);
+  task_runner_provider_->ImplThreadTaskRunner()->PostDelayedTask(
+      FROM_HERE, std::move(task), delay);
 }
 
 void ProxyImpl::DidActivateSyncTree() {
@@ -504,6 +506,13 @@ void ProxyImpl::DidPresentCompositorFrameOnImplThread(
       FROM_HERE, base::BindOnce(&ProxyMain::DidPresentCompositorFrame,
                                 proxy_main_weak_ptr_, frame_token,
                                 std::move(callbacks), feedback));
+}
+
+void ProxyImpl::DidGenerateLocalSurfaceIdAllocationOnImplThread(
+    const viz::LocalSurfaceIdAllocation& allocation) {
+  MainThreadTaskRunner()->PostTask(
+      FROM_HERE, base::BindOnce(&ProxyMain::DidGenerateLocalSurfaceIdAllocation,
+                                proxy_main_weak_ptr_, allocation));
 }
 
 bool ProxyImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
@@ -655,8 +664,8 @@ void ProxyImpl::ScheduledActionBeginMainFrameNotExpectedUntil(
     base::TimeTicks time) {
   DCHECK(IsImplThread());
   MainThreadTaskRunner()->PostTask(
-      FROM_HERE, base::Bind(&ProxyMain::BeginMainFrameNotExpectedUntil,
-                            proxy_main_weak_ptr_, time));
+      FROM_HERE, base::BindOnce(&ProxyMain::BeginMainFrameNotExpectedUntil,
+                                proxy_main_weak_ptr_, time));
 }
 
 DrawResult ProxyImpl::DrawInternal(bool forced_draw) {

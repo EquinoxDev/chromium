@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/location.h"
@@ -373,6 +374,7 @@ scoped_refptr<gpu::Buffer> CommandBufferProxyImpl::CreateTransferBuffer(
       OnClientError(gpu::error::kOutOfBounds);
     return nullptr;
   }
+  DCHECK_LE(shared_memory_mapping.size(), static_cast<size_t>(UINT32_MAX));
 
   if (last_state_.error == gpu::error::kNoError) {
     base::UnsafeSharedMemoryRegion region =
@@ -738,8 +740,8 @@ void CommandBufferProxyImpl::TryUpdateStateThreadSafe() {
     if (last_state_.error != gpu::error::kNoError) {
       callback_thread_->PostTask(
           FROM_HERE,
-          base::Bind(&CommandBufferProxyImpl::LockAndDisconnectChannel,
-                     weak_ptr_factory_.GetWeakPtr()));
+          base::BindOnce(&CommandBufferProxyImpl::LockAndDisconnectChannel,
+                         weak_ptr_factory_.GetWeakPtr()));
     }
   }
 }
@@ -830,8 +832,9 @@ void CommandBufferProxyImpl::DisconnectChannelInFreshCallStack() {
   // stack in case things will use it, and give the GpuChannelClient a chance to
   // act fully on the lost context.
   callback_thread_->PostTask(
-      FROM_HERE, base::Bind(&CommandBufferProxyImpl::LockAndDisconnectChannel,
-                            weak_ptr_factory_.GetWeakPtr()));
+      FROM_HERE,
+      base::BindOnce(&CommandBufferProxyImpl::LockAndDisconnectChannel,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void CommandBufferProxyImpl::LockAndDisconnectChannel() {

@@ -105,7 +105,7 @@ void InspectorTraceEvents::WillSendRequest(
     ExecutionContext*,
     unsigned long identifier,
     DocumentLoader* loader,
-    ResourceRequest& request,
+    const ResourceRequest& request,
     const ResourceResponse& redirect_response,
     const FetchInitiatorInfo&,
     ResourceType) {
@@ -114,6 +114,20 @@ void InspectorTraceEvents::WillSendRequest(
       "devtools.timeline", "ResourceSendRequest", TRACE_EVENT_SCOPE_THREAD,
       "data",
       inspector_send_request_event::Data(loader, identifier, frame, request));
+}
+
+void InspectorTraceEvents::WillSendNavigationRequest(
+    ExecutionContext*,
+    unsigned long identifier,
+    DocumentLoader* loader,
+    const KURL& url,
+    const AtomicString& http_method,
+    EncodedFormData*) {
+  LocalFrame* frame = loader ? loader->GetFrame() : nullptr;
+  TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceSendRequest",
+                       TRACE_EVENT_SCOPE_THREAD, "data",
+                       inspector_send_navigation_request_event::Data(
+                           loader, identifier, frame, url, http_method));
 }
 
 void InspectorTraceEvents::DidReceiveResourceResponse(
@@ -131,7 +145,7 @@ void InspectorTraceEvents::DidReceiveResourceResponse(
 void InspectorTraceEvents::DidReceiveData(unsigned long identifier,
                                           DocumentLoader* loader,
                                           const char* data,
-                                          int encoded_data_length) {
+                                          uint64_t encoded_data_length) {
   LocalFrame* frame = loader ? loader->GetFrame() : nullptr;
   TRACE_EVENT_INSTANT1("devtools.timeline", "ResourceReceivedData",
                        TRACE_EVENT_SCOPE_THREAD, "data",
@@ -326,6 +340,7 @@ const char* PseudoTypeToString(CSSSelector::PseudoType pseudo_type) {
     DEFINE_STRING_MAPPING(PseudoShadow)
     DEFINE_STRING_MAPPING(PseudoSlotted)
     DEFINE_STRING_MAPPING(PseudoSpatialNavigationFocus)
+    DEFINE_STRING_MAPPING(PseudoSpatialNavigationInterest)
     DEFINE_STRING_MAPPING(PseudoIsHtml)
     DEFINE_STRING_MAPPING(PseudoListBox)
     DEFINE_STRING_MAPPING(PseudoHostHasAppearance)
@@ -391,6 +406,8 @@ const char* NotStreamedReasonString(ScriptStreamer::NotStreamingReason reason) {
       return "already used streamed data";
     case ScriptStreamer::kWorkerTopLevelScript:
       return "worker top-level scripts are not streamable";
+    case ScriptStreamer::kModuleScript:
+      return "module script";
     case ScriptStreamer::kAlreadyLoaded:
     case ScriptStreamer::kCount:
     case ScriptStreamer::kInvalid:
@@ -712,20 +729,6 @@ std::unique_ptr<TracedValue> inspector_paint_invalidation_tracking_event::Data(
   return value;
 }
 
-std::unique_ptr<TracedValue> inspector_scroll_invalidation_tracking_event::Data(
-    const LayoutObject& layout_object) {
-  static const char kScrollInvalidationReason[] =
-      "Scroll with viewport-constrained element";
-
-  std::unique_ptr<TracedValue> value = TracedValue::Create();
-  value->SetString("frame",
-                   IdentifiersFactory::FrameId(layout_object.GetFrame()));
-  value->SetString("reason", kScrollInvalidationReason);
-  SetGeneratingNodeInfo(value.get(), &layout_object, "nodeId", "nodeName");
-  SourceLocation::Capture()->ToTracedValue(value.get(), "stackTrace");
-  return value;
-}
-
 std::unique_ptr<TracedValue> inspector_change_resource_priority_event::Data(
     DocumentLoader* loader,
     unsigned long identifier,
@@ -753,6 +756,25 @@ std::unique_ptr<TracedValue> inspector_send_request_event::Data(
   value->SetString("url", request.Url().GetString());
   value->SetString("requestMethod", request.HttpMethod());
   const char* priority = ResourcePriorityString(request.Priority());
+  if (priority)
+    value->SetString("priority", priority);
+  SetCallStack(value.get());
+  return value;
+}
+
+std::unique_ptr<TracedValue> inspector_send_navigation_request_event::Data(
+    DocumentLoader* loader,
+    unsigned long identifier,
+    LocalFrame* frame,
+    const KURL& url,
+    const AtomicString& http_method) {
+  std::unique_ptr<TracedValue> value = TracedValue::Create();
+  value->SetString("requestId", IdentifiersFactory::LoaderId(loader));
+  value->SetString("frame", IdentifiersFactory::FrameId(frame));
+  value->SetString("url", url.GetString());
+  value->SetString("requestMethod", http_method);
+  const char* priority =
+      ResourcePriorityString(ResourceLoadPriority::kVeryHigh);
   if (priority)
     value->SetString("priority", priority);
   SetCallStack(value.get());
@@ -820,13 +842,13 @@ std::unique_ptr<TracedValue> inspector_receive_data_event::Data(
     DocumentLoader* loader,
     unsigned long identifier,
     LocalFrame* frame,
-    int encoded_data_length) {
+    uint64_t encoded_data_length) {
   String request_id = IdentifiersFactory::RequestId(loader, identifier);
 
   std::unique_ptr<TracedValue> value = TracedValue::Create();
   value->SetString("requestId", request_id);
   value->SetString("frame", IdentifiersFactory::FrameId(frame));
-  value->SetInteger("encodedDataLength", encoded_data_length);
+  value->SetDouble("encodedDataLength", encoded_data_length);
   return value;
 }
 

@@ -4,6 +4,8 @@
 
 #include "extensions/browser/extension_registrar.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/stl_util.h"
@@ -16,8 +18,8 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/lazy_context_id.h"
+#include "extensions/browser/lazy_context_task_queue.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/renderer_startup_helper.h"
@@ -521,10 +523,8 @@ void ExtensionRegistrar::MaybeSpinUpLazyBackgroundPage(
     return;
 
   // Wake up the event page by posting a dummy task.
-  LazyBackgroundTaskQueue* queue =
-      LazyBackgroundTaskQueue::Get(browser_context_);
-  queue->AddPendingTask(LazyContextId(browser_context_, extension->id()),
-                        base::DoNothing());
+  const LazyContextId context_id(browser_context_, extension->id());
+  context_id.GetTaskQueue()->AddPendingTask(context_id, base::DoNothing());
 }
 
 }  // namespace extensions

@@ -25,9 +25,9 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_buffer.h"
 #include "net/ssl/ssl_client_cert_type.h"
-#include "net/third_party/spdy/core/spdy_framer.h"
-#include "net/third_party/spdy/core/spdy_header_block.h"
-#include "net/third_party/spdy/core/spdy_protocol.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_framer.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_header_block.h"
+#include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "url/gurl.h"
 
@@ -451,7 +451,8 @@ class NET_EXPORT_PRIVATE SpdyStream {
 
   // Saves the given headers into |response_headers_| and calls
   // OnHeadersReceived() on the delegate if attached.
-  void SaveResponseHeaders(const spdy::SpdyHeaderBlock& response_headers);
+  void SaveResponseHeaders(const spdy::SpdyHeaderBlock& response_headers,
+                           int status);
 
   static std::string DescribeState(State state);
 

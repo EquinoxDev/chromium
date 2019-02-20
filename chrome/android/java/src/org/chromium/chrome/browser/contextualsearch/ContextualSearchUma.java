@@ -5,6 +5,7 @@
 package org.chromium.chrome.browser.contextualsearch;
 
 import android.support.annotation.IntDef;
+import android.text.format.DateUtils;
 import android.util.Pair;
 
 import org.chromium.base.metrics.RecordHistogram;
@@ -19,7 +20,6 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Centralizes UMA data collection for Contextual Search. All calls must be made from the UI thread.
@@ -713,14 +713,13 @@ public class ContextualSearchUma {
      */
     public static void logDuration(boolean wereResultsSeen, boolean isChained, long durationMs) {
         if (wereResultsSeen) {
-            RecordHistogram.recordTimesHistogram("Search.ContextualSearchDurationSeen",
-                    durationMs, TimeUnit.MILLISECONDS);
+            RecordHistogram.recordTimesHistogram("Search.ContextualSearchDurationSeen", durationMs);
         } else if (isChained) {
-            RecordHistogram.recordTimesHistogram("Search.ContextualSearchDurationUnseenChained",
-                    durationMs, TimeUnit.MILLISECONDS);
+            RecordHistogram.recordTimesHistogram(
+                    "Search.ContextualSearchDurationUnseenChained", durationMs);
         } else {
-            RecordHistogram.recordTimesHistogram("Search.ContextualSearchDurationUnseen",
-                    durationMs, TimeUnit.MILLISECONDS);
+            RecordHistogram.recordTimesHistogram(
+                    "Search.ContextualSearchDurationUnseen", durationMs);
         }
     }
 
@@ -730,7 +729,7 @@ public class ContextualSearchUma {
      */
     public static void logSearchTermResolutionDuration(long durationMs) {
         RecordHistogram.recordMediumTimesHistogram(
-                "Search.ContextualSearchResolutionDuration", durationMs, TimeUnit.MILLISECONDS);
+                "Search.ContextualSearchResolutionDuration", durationMs);
     }
 
     /**
@@ -742,8 +741,7 @@ public class ContextualSearchUma {
     public static void logPrefetchedSearchNavigatedDuration(long durationMs, boolean didResolve) {
         String histogramName = didResolve ? "Search.ContextualSearchResolvedSearchDuration"
                                           : "Search.ContextualSearchLiteralSearchDuration";
-        RecordHistogram.recordMediumTimesHistogram(
-                histogramName, durationMs, TimeUnit.MILLISECONDS);
+        RecordHistogram.recordMediumTimesHistogram(histogramName, durationMs);
     }
 
     /**
@@ -752,7 +750,7 @@ public class ContextualSearchUma {
      */
     public static void logPanelOpenDuration(long durationMs) {
         RecordHistogram.recordMediumTimesHistogram(
-                "Search.ContextualSearchPanelOpenDuration", durationMs, TimeUnit.MILLISECONDS);
+                "Search.ContextualSearchPanelOpenDuration", durationMs);
     }
 
     /**
@@ -789,11 +787,11 @@ public class ContextualSearchUma {
      * @param durationMs The duration to record.
      */
     public static void logPanelViewDurationAction(long durationMs) {
-        if (durationMs < 1000) {
+        if (durationMs < DateUtils.SECOND_IN_MILLIS) {
             RecordUserAction.record("ContextualSearch.ViewLessThanOneSecond");
-        } else if (durationMs < 3000) {
+        } else if (durationMs < DateUtils.SECOND_IN_MILLIS * 3) {
             RecordUserAction.record("ContextualSearch.ViewOneToThreeSeconds");
-        } else if (durationMs < 10000) {
+        } else if (durationMs < DateUtils.SECOND_IN_MILLIS * 10) {
             RecordUserAction.record("ContextualSearch.ViewThreeToTenSeconds");
         } else {
             RecordUserAction.record("ContextualSearch.ViewMoreThanTenSeconds");
@@ -873,8 +871,7 @@ public class ContextualSearchUma {
     public static void logBarOverlapPeekDuration(boolean wasBarOverlap, long panelPeekDurationMs) {
         String histogram = wasBarOverlap ? "Search.ContextualSearchBarOverlap.PeekDuration"
                                          : "Search.ContextualSearchBarNoOverlap.PeekDuration";
-        RecordHistogram.recordMediumTimesHistogram(
-                histogram, panelPeekDurationMs, TimeUnit.MILLISECONDS);
+        RecordHistogram.recordMediumTimesHistogram(histogram, panelPeekDurationMs);
     }
 
     /**
@@ -1305,6 +1302,17 @@ public class ContextualSearchUma {
                 "Search.ContextualSearchPrevious28DayImpressions", previous28DayImpressions);
         RecordHistogram.recordPercentageHistogram(
                 "Search.ContextualSearchPrevious28DayCtr", previous28DayCtr);
+    }
+
+    /**
+     * Logs a duration since the outcomes (and associated timestamp) were saved in persistent
+     * storage.
+     * @param durationMs The duration to log, in milliseconds.
+     */
+    public static void logOutcomesTimestamp(long durationMs) {
+        int durationInDays = (int) (durationMs / DateUtils.DAY_IN_MILLIS);
+        RecordHistogram.recordCount100Histogram(
+                "Search.ContextualSearch.OutcomesDuration", durationInDays);
     }
 
     /**

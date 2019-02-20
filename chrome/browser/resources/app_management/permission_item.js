@@ -4,6 +4,10 @@
 Polymer({
   is: 'app-management-permission-item',
 
+  behaviors: [
+    app_management.StoreClient,
+  ],
+
   properties: {
     /**
      * The name of the permission, to be displayed to the user.
@@ -12,8 +16,9 @@ Polymer({
     permissionLabel: String,
 
     /**
-     * A string version of the permission type, corresponding to a value of
-     * the TestPermissionType enum.
+     * A string version of the permission type. Must be a value of the
+     * permission type enum corresponding to the AppType of app_.
+     * E.g. A value of PwaPermissionType if app_.type === AppType.kWeb.
      * @type {string}
      */
     permissionType: String,
@@ -21,38 +26,31 @@ Polymer({
     /**
      * @type {App}
      */
-    app: Object,
+    app_: Object,
 
     /**
-     * @private {PermissionValue}
+     * @type {string}
      */
-    permissionValue_: {
-      type: Boolean,
-      computed: 'getPermissionValue_(app, permissionType)',
-    },
+    icon: String,
   },
 
-  /**
-   * @param {App} app
-   * @param {string} permissionType
-   * @return {PermissionValue}
-   * @private
-   */
-  getPermissionValue_: function(app, permissionType) {
-    if (!app) {
-      return false;
-    }
-    return app.permissions[TestPermissionTypeEnum[permissionType]];
+  listeners: {
+    'click': 'onClick_',
+  },
+
+  attached: function() {
+    this.watch('app_', state => app_management.util.getSelectedApp(state));
+    this.updateFromStore();
   },
 
   /**
    * @private
    */
-  togglePermission_: function(e) {
-    const newPermissionValue = !this.permissionValue_;
-    const permissionType = TestPermissionTypeEnum[this.permissionType];
+  onClick_: function(e) {
+    e.preventDefault();
 
-    app_management.BrowserProxy.getInstance().handler.setPermission(
-        this.app.id, permissionType, newPermissionValue);
+    const /** @type {AppManagementPermissionToggleElement} */ toggle =
+        this.$['permission-toggle'];
+    toggle.togglePermission_();
   },
 });

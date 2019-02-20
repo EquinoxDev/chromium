@@ -6,6 +6,7 @@
 
 #import <Foundation/Foundation.h>
 
+#include "base/bind.h"
 #include "base/values.h"
 #include "ios/chrome/browser/web/java_script_console/java_script_console_message.h"
 #include "ios/web/public/web_state/web_frame.h"
@@ -20,8 +21,8 @@ namespace {
 static const char* kCommandPrefix = "console";
 }
 
-JavaScriptConsoleTabHelper::JavaScriptConsoleTabHelper(
-    web::WebState* web_state) {
+JavaScriptConsoleTabHelper::JavaScriptConsoleTabHelper(web::WebState* web_state)
+    : web_state_(web_state) {
   web_state->AddObserver(this);
   web_state->AddScriptCommandCallback(
       base::BindRepeating(
@@ -49,22 +50,23 @@ bool JavaScriptConsoleTabHelper::OnJavaScriptConsoleMessage(
   if (!log_level_value || !log_level_value->is_string()) {
     return false;
   }
-  const base::Value* origin_value = message.FindKey("origin");
-  if (!origin_value || !origin_value->is_string()) {
+  const base::Value* url_value = message.FindKey("url");
+  if (!url_value || !url_value->is_string()) {
     return false;
   }
 
   JavaScriptConsoleMessage frame_message;
   frame_message.level = log_level_value->GetString();
-  frame_message.origin = GURL(origin_value->GetString());
+  frame_message.url = GURL(url_value->GetString());
   frame_message.message = base::Value::ToUniquePtrValue(log_message->Clone());
-  delegate_->DidReceiveConsoleMessage(frame_message);
+  delegate_->DidReceiveConsoleMessage(web_state_, sender_frame, frame_message);
   return true;
 }
 
 void JavaScriptConsoleTabHelper::WebStateDestroyed(web::WebState* web_state) {
   web_state->RemoveScriptCommandCallback(kCommandPrefix);
   web_state->RemoveObserver(this);
+  web_state_ = nullptr;
 }
 
 void JavaScriptConsoleTabHelper::SetDelegate(
@@ -72,4 +74,12 @@ void JavaScriptConsoleTabHelper::SetDelegate(
   delegate_ = delegate;
 }
 
-JavaScriptConsoleTabHelper::~JavaScriptConsoleTabHelper() = default;
+JavaScriptConsoleTabHelper::~JavaScriptConsoleTabHelper() {
+  if (web_state_) {
+    web_state_->RemoveObserver(this);
+    web_state_->RemoveScriptCommandCallback(kCommandPrefix);
+    web_state_ = nullptr;
+  }
+}
+
+WEB_STATE_USER_DATA_KEY_IMPL(JavaScriptConsoleTabHelper)

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/android/android_hardware_buffer_compat.h"
+#include "base/bind.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/traced_value.h"
@@ -73,8 +74,6 @@ GvrSchedulerDelegate::GvrSchedulerDelegate(GlBrowserInterface* browser,
                             kWebVrInitialFrameTimeoutSeconds),
       browser_(browser),
       gvr_api_(gvr_api),
-      webvr_vsync_align_(
-          base::FeatureList::IsEnabled(features::kWebVrVsyncAlign)),
       cardboard_gamepad_(cardboard_gamepad),
       vsync_helper_(base::BindRepeating(&GvrSchedulerDelegate::OnVSync,
                                         base::Unretained(this))),
@@ -690,10 +689,8 @@ bool GvrSchedulerDelegate::WebVrCanAnimateFrame(bool is_from_onvsync) {
   // If we want to send vsync-aligned frames, we only allow animation to start
   // when called from OnVSync, so if we're called from somewhere else we can
   // skip all the other checks. Legacy Cardboard mode (not surfaceless) doesn't
-  // use vsync aligned frames, and there's a flag to disable it for surfaceless
-  // mode.
-  if (graphics_->DoesSurfacelessRendering() && webvr_vsync_align_ &&
-      !is_from_onvsync) {
+  // use vsync aligned frames.
+  if (graphics_->DoesSurfacelessRendering() && !is_from_onvsync) {
     DVLOG(3) << __func__ << ": waiting for onvsync (vsync aligned)";
     return false;
   }

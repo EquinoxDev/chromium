@@ -25,6 +25,7 @@
 #include "ash/public/cpp/window_properties.h"
 #include "ash/shelf/shelf_application_menu_model.h"
 #include "ash/shelf/shelf_controller.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -111,8 +112,7 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/grit/extensions_browser_resources.h"
-#include "net/base/mock_network_change_notifier.h"
-#include "net/base/network_change_notifier.h"
+#include "services/network/test/test_network_connection_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/window_parenting_client.h"
 #include "ui/aura/test/mus/change_completion_waiter.h"
@@ -145,6 +145,10 @@ constexpr char kCrxAppPrefix[] = "_crx_";
 // Dummy app id is used to put at least one pin record to prevent initializing
 // pin model with default apps that can affect some tests.
 constexpr char kDummyAppId[] = "dummyappid_dummyappid_dummyappid";
+
+constexpr char kCameraAppName[] = "Camera";
+constexpr char kCameraAppPackage[] = "com.google.android.GoogleCameraArc";
+constexpr char kCameraAppActivity[] = "com.android.camera.CameraLauncher";
 
 // ShelfModelObserver implementation that tracks what messages are invoked.
 class TestShelfModelObserver : public ash::ShelfModelObserver {
@@ -438,7 +442,7 @@ class TestChromeLauncherController : public ChromeLauncherController {
 class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
  protected:
   ChromeLauncherControllerTest()
-      : BrowserWithTestWindowTest(Browser::TYPE_TABBED, false) {}
+      : BrowserWithTestWindowTest(Browser::TYPE_TABBED) {}
 
   ~ChromeLauncherControllerTest() override {}
 
@@ -713,12 +717,11 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
         base::WrapUnique<LauncherControllerHelper>(helper));
   }
 
-  void InsertPrefValue(base::ListValue* pref_value,
-                       int index,
+  void AppendPrefValue(base::ListValue* pref_value,
                        const std::string& extension_id) {
-    auto entry = std::make_unique<base::DictionaryValue>();
-    entry->SetString(kPinnedAppsPrefAppIDPath, extension_id);
-    pref_value->Insert(index, std::move(entry));
+    base::DictionaryValue entry;
+    entry.SetKey(kPinnedAppsPrefAppIDKey, base::Value(extension_id));
+    pref_value->GetList().push_back(std::move(entry));
   }
 
   void InsertRemoveAllPinsChange(syncer::SyncChangeList* list) {
@@ -1054,6 +1057,11 @@ class ChromeLauncherControllerTest : public BrowserWithTestWindowTest {
     return widget;
   }
 
+  void NotifyOnTaskDestroyed(int32_t task_id) {
+    ArcAppListPrefs* const prefs = arc_test_.arc_app_list_prefs();
+    prefs->OnTaskDestroyed(task_id);
+  }
+
   // Needed for extension service & friends to work.
   scoped_refptr<Extension> extension_chrome_;
   scoped_refptr<Extension> extension1_;
@@ -1222,14 +1230,14 @@ class MultiProfileMultiBrowserShelfLayoutChromeLauncherControllerTest
     user_manager_enabler_ = std::make_unique<user_manager::ScopedUserManager>(
         std::make_unique<chromeos::FakeChromeUserManager>());
 
+    // Initialize the rest.
+    ChromeLauncherControllerTest::SetUp();
+
     // Initialize WallpaperControllerClient.
     wallpaper_controller_client_ =
         std::make_unique<WallpaperControllerClient>();
     wallpaper_controller_client_->InitForTesting(
         test_wallpaper_controller_.CreateInterfacePtr());
-
-    // Initialize the rest.
-    ChromeLauncherControllerTest::SetUp();
 
     // AvatarMenu and multiple profiles works after user logged in.
     profile_manager()->SetLoggedIn(true);
@@ -1504,8 +1512,8 @@ TEST_F(ChromeLauncherControllerTest, MergePolicyAndUserPrefPinnedApps) {
 
   base::ListValue policy_value;
   // extension 2 4 are pinned by policy
-  InsertPrefValue(&policy_value, 0, extension2_->id());
-  InsertPrefValue(&policy_value, 1, extensionDocApp_->id());
+  AppendPrefValue(&policy_value, extension2_->id());
+  AppendPrefValue(&policy_value, extensionDocApp_->id());
   profile()->GetTestingPrefService()->SetManagedPref(
       prefs::kPolicyPinnedLauncherApps, policy_value.CreateDeepCopy());
 
@@ -2970,8 +2978,8 @@ TEST_F(ChromeLauncherControllerTest, Policy) {
 
   // Pin policy should be initilized before controller start.
   base::ListValue policy_value;
-  InsertPrefValue(&policy_value, 0, extension1_->id());
-  InsertPrefValue(&policy_value, 1, extension2_->id());
+  AppendPrefValue(&policy_value, extension1_->id());
+  AppendPrefValue(&policy_value, extension2_->id());
   profile()->GetTestingPrefService()->SetManagedPref(
       prefs::kPolicyPinnedLauncherApps, policy_value.CreateDeepCopy());
 
@@ -3896,7 +3904,7 @@ TEST_F(ChromeLauncherControllerWithArcTest, ArcAppPinPolicy) {
   // package_name (not hash) specified as id. In this test we check that
   // by hash we can determine that appropriate package was set by policy.
   base::ListValue policy_value;
-  InsertPrefValue(&policy_value, 0, appinfo.package_name);
+  AppendPrefValue(&policy_value, appinfo.package_name);
   profile()->GetTestingPrefService()->SetManagedPref(
       prefs::kPolicyPinnedLauncherApps, policy_value.CreateDeepCopy());
 
@@ -4021,6 +4029,60 @@ TEST_F(ChromeLauncherControllerWithArcTest, ShelfItemWithMultipleWindows) {
   EXPECT_TRUE(window2->IsActive());
 }
 
+// Test that ARC camera app can successfully open and close.
+TEST_F(ChromeLauncherControllerWithArcTest, ArcCameraAppOpenAndClose) {
+  InitLauncherControllerWithBrowser();
+
+  const arc::mojom::AppInfo appinfo =
+      CreateAppInfo(kCameraAppName, kCameraAppActivity, kCameraAppPackage);
+
+  // Widgets will be deleted by the system.
+  views::Widget* window1 = CreateArcWindow("org.chromium.arc.1");
+  NotifyOnTaskCreated(appinfo, 1 /* task_id */);
+  ASSERT_TRUE(window1);
+  EXPECT_TRUE(window1->IsActive());
+
+  // After starting the ARC camera app, it's actually the internal camera app
+  // being put onto the shelf. Therefore, we need to specify the internal
+  // camera app shelf ID to access it.
+  const std::string intern_app_id(app_list::kInternalAppIdCamera);
+  const ash::ShelfID intern_shelf_id(intern_app_id);
+  EXPECT_TRUE(launcher_controller_->IsOpen(intern_shelf_id));
+
+  NotifyOnTaskDestroyed(1 /* task_id */);
+  window1->Close();
+
+  EXPECT_FALSE(launcher_controller_->IsOpen(intern_shelf_id));
+}
+
+// Test that the app menu item count is 1 for the built-in camera app.
+TEST_F(ChromeLauncherControllerWithArcTest, ArcCameraAppMenuItemsCount) {
+  InitLauncherControllerWithBrowser();
+
+  const arc::mojom::AppInfo appinfo =
+      CreateAppInfo(kCameraAppName, kCameraAppActivity, kCameraAppPackage);
+
+  // Widgets will be deleted by the system.
+  views::Widget* window1 = CreateArcWindow("org.chromium.arc.1");
+  NotifyOnTaskCreated(appinfo, 1 /* task_id */);
+  ASSERT_TRUE(window1);
+  EXPECT_TRUE(window1->IsActive());
+
+  // After starting the ARC camera app, it's actually the internal camera app
+  // being put onto the shelf. Therefore, we need to specify the internal
+  // camera app shelf ID to access it.
+  const std::string intern_app_id(app_list::kInternalAppIdCamera);
+  ash::ShelfItemDelegate* item_delegate =
+      model_->GetShelfItemDelegate(ash::ShelfID(intern_app_id));
+  ASSERT_TRUE(item_delegate);
+
+  // We want to make sure there's only 1 menu item for camera app, even if both
+  // ARC window and internal app window might have been added to
+  // AppWindowLauncherItemController.
+  ash::MenuItemList items = item_delegate->GetAppMenuItems(ui::EF_NONE);
+  ASSERT_EQ(1u, items.size());
+}
+
 namespace {
 class ChromeLauncherControllerArcDefaultAppsTest
     : public ChromeLauncherControllerTest {
@@ -4058,9 +4120,9 @@ class ChromeLauncherControllerPlayStoreAvailabilityTest
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerPlayStoreAvailabilityTest);
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        ChromeLauncherControllerPlayStoreAvailabilityTest,
-                        ::testing::Bool());
+INSTANTIATE_TEST_SUITE_P(,
+                         ChromeLauncherControllerPlayStoreAvailabilityTest,
+                         ::testing::Bool());
 
 }  // namespace
 
@@ -4495,8 +4557,8 @@ class ChromeLauncherControllerDemoModeTest
 };
 
 TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOnline) {
-  net::test::MockNetworkChangeNotifier notifier;
-  notifier.SetConnectionType(net::NetworkChangeNotifier::CONNECTION_ETHERNET);
+  network::TestNetworkConnectionTracker::GetInstance()->SetConnectionType(
+      network::mojom::ConnectionType::CONNECTION_ETHERNET);
 
   InitLauncherControllerWithBrowser();
 
@@ -4504,8 +4566,8 @@ TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOnline) {
 
   extension_service_->AddExtension(extension1_.get());
   extension_service_->AddExtension(extension2_.get());
-  InsertPrefValue(&policy_value, 0, extension1_->id());
-  InsertPrefValue(&policy_value, 1, extension2_->id());
+  AppendPrefValue(&policy_value, extension1_->id());
+  AppendPrefValue(&policy_value, extension2_->id());
 
   arc::mojom::AppInfo appinfo =
       CreateAppInfo("Some App", "SomeActivity", "com.example.app");
@@ -4516,8 +4578,8 @@ TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOnline) {
   const std::string online_only_app_id =
       AddArcAppAndShortcut(online_only_appinfo);
 
-  InsertPrefValue(&policy_value, 2, appinfo.package_name);
-  InsertPrefValue(&policy_value, 3, online_only_appinfo.package_name);
+  AppendPrefValue(&policy_value, appinfo.package_name);
+  AppendPrefValue(&policy_value, online_only_appinfo.package_name);
 
   // If the device is offline, extension2 and onlineonly should be unpinned.
   chromeos::DemoSession::Get()->OverrideIgnorePinPolicyAppsForTesting(
@@ -4545,8 +4607,8 @@ TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOnline) {
 }
 
 TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOffline) {
-  net::test::MockNetworkChangeNotifier notifier;
-  notifier.SetConnectionType(net::NetworkChangeNotifier::CONNECTION_NONE);
+  network::TestNetworkConnectionTracker::GetInstance()->SetConnectionType(
+      network::mojom::ConnectionType::CONNECTION_NONE);
 
   InitLauncherControllerWithBrowser();
 
@@ -4554,8 +4616,8 @@ TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOffline) {
 
   extension_service_->AddExtension(extension1_.get());
   extension_service_->AddExtension(extension2_.get());
-  InsertPrefValue(&policy_value, 0, extension1_->id());
-  InsertPrefValue(&policy_value, 1, extension2_->id());
+  AppendPrefValue(&policy_value, extension1_->id());
+  AppendPrefValue(&policy_value, extension2_->id());
 
   arc::mojom::AppInfo appinfo =
       CreateAppInfo("Some App", "SomeActivity", "com.example.app");
@@ -4566,8 +4628,8 @@ TEST_F(ChromeLauncherControllerDemoModeTest, PinnedAppsOffline) {
   const std::string online_only_app_id =
       AddArcAppAndShortcut(online_only_appinfo);
 
-  InsertPrefValue(&policy_value, 2, appinfo.package_name);
-  InsertPrefValue(&policy_value, 3, online_only_appinfo.package_name);
+  AppendPrefValue(&policy_value, appinfo.package_name);
+  AppendPrefValue(&policy_value, online_only_appinfo.package_name);
 
   // If the device is offline, extension2 and onlineonly should be unpinned.
   chromeos::DemoSession::Get()->OverrideIgnorePinPolicyAppsForTesting(

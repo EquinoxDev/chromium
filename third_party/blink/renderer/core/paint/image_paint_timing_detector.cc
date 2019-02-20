@@ -24,8 +24,9 @@
 namespace blink {
 
 namespace {
+#ifndef NDEBUG
 String GetImageUrl(const LayoutObject& object) {
-  if (object.IsImage()) {
+  if (object.IsLayoutImage()) {
     const ImageResourceContent* cached_image =
         ToLayoutImage(&object)->CachedImage();
     return cached_image ? cached_image->Url().StrippedForUseAsReferrer() : "";
@@ -55,6 +56,7 @@ String GetImageUrl(const LayoutObject& object) {
   }
   return concatenated_result.ToString();
 }
+#endif
 
 bool AttachedBackgroundImagesAllLoaded(const LayoutObject& object) {
   DCHECK(ImagePaintTimingDetector::HasContentfulBackgroundImage(object));
@@ -74,7 +76,7 @@ bool AttachedBackgroundImagesAllLoaded(const LayoutObject& object) {
 }
 
 bool IsLoaded(const LayoutObject& object) {
-  if (object.IsImage()) {
+  if (object.IsLayoutImage()) {
     const ImageResourceContent* cached_image =
         ToLayoutImage(&object)->CachedImage();
     return cached_image ? cached_image->IsLoaded() : false;
@@ -122,36 +124,41 @@ void ImagePaintTimingDetector::PopulateTraceValue(
     TracedValue& value,
     const ImageRecord& first_image_paint,
     unsigned candidate_index) const {
-  value.SetInteger("DOMNodeId", first_image_paint.node_id);
+  value.SetInteger("DOMNodeId", static_cast<int>(first_image_paint.node_id));
+#ifndef NDEBUG
   value.SetString("imageUrl", first_image_paint.image_url);
-  value.SetInteger("size", first_image_paint.first_size);
+#endif
+  value.SetInteger("size", static_cast<int>(first_image_paint.first_size));
   value.SetInteger("candidateIndex", candidate_index);
   value.SetString("frame",
                   IdentifiersFactory::FrameId(&frame_view_->GetFrame()));
 }
 
 void ImagePaintTimingDetector::OnLargestImagePaintDetected(
-    const ImageRecord& largest_image_record) {
-  largest_image_paint_ = largest_image_record.first_paint_time_after_loaded;
+    ImageRecord* largest_image_record) {
+  DCHECK(largest_image_record);
+  DCHECK(!largest_image_record->first_paint_time_after_loaded.is_null());
+  largest_image_paint_ = largest_image_record;
   std::unique_ptr<TracedValue> value = TracedValue::Create();
-  PopulateTraceValue(*value, largest_image_record,
+  PopulateTraceValue(*value, *largest_image_record,
                      ++largest_image_candidate_index_max_);
   TRACE_EVENT_INSTANT_WITH_TIMESTAMP1(
       "loading", "LargestImagePaint::Candidate", TRACE_EVENT_SCOPE_THREAD,
-      largest_image_record.first_paint_time_after_loaded, "data",
+      largest_image_record->first_paint_time_after_loaded, "data",
       std::move(value));
-  frame_view_->GetPaintTimingDetector().DidChangePerformanceTiming();
 }
 
 void ImagePaintTimingDetector::OnLastImagePaintDetected(
-    const ImageRecord& last_image_record) {
-  last_image_paint_ = last_image_record.first_paint_time_after_loaded;
+    ImageRecord* last_image_record) {
+  DCHECK(last_image_record);
+  DCHECK(!last_image_record->first_paint_time_after_loaded.is_null());
+  last_image_paint_ = last_image_record;
   std::unique_ptr<TracedValue> value = TracedValue::Create();
-  PopulateTraceValue(*value, last_image_record,
+  PopulateTraceValue(*value, *last_image_record,
                      ++last_image_candidate_index_max_);
   TRACE_EVENT_INSTANT_WITH_TIMESTAMP1(
       "loading", "LastImagePaint::Candidate", TRACE_EVENT_SCOPE_THREAD,
-      last_image_record.first_paint_time_after_loaded, "data",
+      last_image_record->first_paint_time_after_loaded, "data",
       std::move(value));
   frame_view_->GetPaintTimingDetector().DidChangePerformanceTiming();
 }
@@ -167,17 +174,16 @@ void ImagePaintTimingDetector::Analyze() {
   bool new_candidate_detected = false;
   if (largest_image_record &&
       !largest_image_record->first_paint_time_after_loaded.is_null() &&
-      largest_image_record->first_paint_time_after_loaded !=
-          largest_image_paint_) {
+      largest_image_record != largest_image_paint_) {
     new_candidate_detected = true;
-    OnLargestImagePaintDetected(*largest_image_record);
+    OnLargestImagePaintDetected(largest_image_record);
   }
   ImageRecord* last_image_record = FindLastPaintCandidate();
   if (last_image_record &&
       !last_image_record->first_paint_time_after_loaded.is_null() &&
-      last_image_record->first_paint_time_after_loaded != last_image_paint_) {
+      last_image_record != last_image_paint_) {
     new_candidate_detected = true;
-    OnLastImagePaintDetected(*last_image_record);
+    OnLastImagePaintDetected(last_image_record);
   }
   if (new_candidate_detected) {
     frame_view_->GetPaintTimingDetector().DidChangePerformanceTiming();
@@ -214,17 +220,13 @@ void ImagePaintTimingDetector::NotifyNodeRemoved(DOMNodeId node_id) {
     detached_ids_.insert(node_id);
 
     if (id_record_map_.size() - detached_ids_.size() == 0) {
-      const bool largest_image_paint_invalidated =
-          largest_image_paint_ != base::TimeTicks();
-      const bool last_image_paint_invalidated =
-          last_image_paint_ != base::TimeTicks();
-      if (largest_image_paint_invalidated)
-        largest_image_paint_ = base::TimeTicks();
-      if (last_image_paint_invalidated)
-        last_image_paint_ = base::TimeTicks();
-      if (largest_image_paint_invalidated || last_image_paint_invalidated) {
-        frame_view_->GetPaintTimingDetector().DidChangePerformanceTiming();
-      }
+      // If either largest_image_paint_ or last_image_paint_ will change to
+      // nullptr, update performance timing.
+      if (!largest_image_paint_ && !last_image_paint_)
+        return;
+      largest_image_paint_ = nullptr;
+      last_image_paint_ = nullptr;
+      frame_view_->GetPaintTimingDetector().DidChangePerformanceTiming();
     }
   }
 }
@@ -348,7 +350,9 @@ void ImagePaintTimingDetector::RecordImage(const LayoutObject& object,
     // Non-trivial image is found.
     std::unique_ptr<ImageRecord> record = std::make_unique<ImageRecord>();
     record->node_id = node_id;
+#ifndef NDEBUG
     record->image_url = GetImageUrl(object);
+#endif
     // Mind that first_size has to be assigned at the push of
     // size_ordered_set_ since it's the sorting key.
     record->first_size = rect_size;
@@ -394,9 +398,7 @@ ImageRecord* ImagePaintTimingDetector::FindLastPaintCandidate() {
 }
 
 ImageRecord* ImagePaintTimingDetector::FindCandidate(
-    std::set<base::WeakPtr<ImageRecord>,
-             bool (*)(const base::WeakPtr<ImageRecord>&,
-                      const base::WeakPtr<ImageRecord>&)>& ordered_set) {
+    ImageRecordSet& ordered_set) {
   for (auto it = ordered_set.begin(); it != ordered_set.end(); ++it) {
     if (detached_ids_.Contains((*it)->node_id))
       continue;

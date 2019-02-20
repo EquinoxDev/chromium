@@ -4,10 +4,6 @@
 
 #import "ios/chrome/browser/ui/infobars/infobar_container_view_controller.h"
 
-#include "base/ios/block_types.h"
-#include "base/logging.h"
-#import "ios/chrome/browser/ui/util/rtl_geometry.h"
-
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
@@ -16,41 +12,28 @@
 // InfobarUI.
 @implementation InfobarContainerViewController
 
+#pragma mark - UIViewController
+
 - (void)viewDidLoad {
-  self.view = [[UIView alloc] initWithFrame:CGRectMake(20, 100, 360, 75)];
+  self.view = [[UIView alloc] initWithFrame:CGRectZero];
 }
 
-#pragma mark - InfobarConsumer
-
-- (void)addInfoBarWithDelegate:(id<InfobarUIDelegate>)infoBarDelegate
-                      position:(NSInteger)position {
-  UIViewController* infoBarViewController =
-      static_cast<UIViewController*>(infoBarDelegate);
-
-  [self addChildViewController:infoBarViewController];
-  [self.view addSubview:infoBarViewController.view];
-  infoBarViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
-  [infoBarViewController didMoveToParentViewController:self];
-
+- (void)addInfobarViewController:(UIViewController*)infobarViewController {
+  [self addChildViewController:infobarViewController];
+  [self.view addSubview:infobarViewController.view];
+  [infobarViewController didMoveToParentViewController:self];
+  infobarViewController.view.translatesAutoresizingMaskIntoConstraints = NO;
   [NSLayoutConstraint activateConstraints:@[
-    [infoBarViewController.view.leadingAnchor
+    [infobarViewController.view.topAnchor
+        constraintEqualToAnchor:self.view.topAnchor
+                       constant:10],
+    [infobarViewController.view.bottomAnchor
+        constraintEqualToAnchor:self.view.bottomAnchor],
+    [infobarViewController.view.leadingAnchor
         constraintEqualToAnchor:self.view.leadingAnchor],
-    [infoBarViewController.view.trailingAnchor
-        constraintEqualToAnchor:self.view.trailingAnchor],
-    [infoBarViewController.view.topAnchor
-        constraintEqualToAnchor:self.view.topAnchor],
-    [infoBarViewController.view.bottomAnchor
-        constraintEqualToAnchor:self.view.bottomAnchor]
+    [infobarViewController.view.trailingAnchor
+        constraintEqualToAnchor:self.view.trailingAnchor]
   ]];
-}
-
-- (void)setUserInteractionEnabled:(BOOL)enabled {
-  [self.view setUserInteractionEnabled:enabled];
-}
-
-- (void)updateLayoutAnimated:(BOOL)animated {
-  // NO-OP - This shouldn't be need in the new UI since we use autolayout for
-  // the contained Infobars.
 }
 
 @end

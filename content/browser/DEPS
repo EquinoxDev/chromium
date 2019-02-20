@@ -29,6 +29,7 @@ include_rules = [
   "+components/cbor",
 
   "+content/app/strings/grit",  # For generated headers
+  "+content/public/app",
   "+content/public/browser",
   "+device/base/synchronization",
   "+device/gamepad", # For gamepad API
@@ -103,6 +104,7 @@ include_rules = [
   "+third_party/blink/public/platform/web_text_input_type.h",
   "+third_party/blink/public/platform/mac/web_scrollbar_theme.h",
   "+third_party/blink/public/platform/modules/font_unique_name_lookup/font_unique_name_lookup.mojom.h",
+  "+third_party/blink/public/platform/modules/idle/idle_manager.mojom.h",
   "+third_party/blink/public/platform/modules/indexeddb/web_idb_database_exception.h",
   "+third_party/blink/public/platform/modules/locks/lock_manager.mojom.h",
   "+third_party/blink/public/platform/modules/notifications/web_notification_constants.h",
@@ -114,7 +116,6 @@ include_rules = [
   "+third_party/blink/public/web/web_device_emulation_params.h",
   "+third_party/blink/public/web/web_drag_status.h",
   "+third_party/blink/public/web/web_fullscreen_options.h",
-  "+third_party/blink/public/web/web_frame_serializer_cache_control_policy.h",
   "+third_party/blink/public/web/web_ime_text_span.h",
   "+third_party/blink/public/web/web_media_player_action.h",
   "+third_party/blink/public/web/web_plugin_action.h",
@@ -132,6 +133,7 @@ include_rules = [
   "+third_party/blink/public/platform/mime_registry.mojom.h",
   "+third_party/blink/public/platform/modules/background_sync/background_sync.mojom.h",
   "+third_party/blink/public/platform/modules/bluetooth/web_bluetooth.mojom.h",
+  "+third_party/blink/public/platform/modules/broadcastchannel/broadcast_channel.mojom-test-utils.h",
   "+third_party/blink/public/platform/modules/broadcastchannel/broadcast_channel.mojom.h",
   "+third_party/blink/public/platform/modules/cookie_store/cookie_store.mojom.h",
   "+third_party/blink/public/platform/modules/geolocation/geolocation_service.mojom.h",

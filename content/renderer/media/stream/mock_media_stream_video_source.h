@@ -63,11 +63,11 @@ class MockMediaStreamVideoSource : public MediaStreamVideoSource {
 
  protected:
   // Implements MediaStreamSource.
-  void DoChangeSource(const MediaStreamDevice& new_device) override;
+  void DoChangeSource(const blink::MediaStreamDevice& new_device) override;
 
   // Implements MediaStreamVideoSource.
   void StartSourceImpl(
-      const VideoCaptureDeliverFrameCB& frame_callback) override;
+      const blink::VideoCaptureDeliverFrameCB& frame_callback) override;
   void StopSourceImpl() override;
   base::Optional<media::VideoCaptureFormat> GetCurrentFormat() const override;
   void StopSourceForRestartImpl() override;
@@ -84,7 +84,7 @@ class MockMediaStreamVideoSource : public MediaStreamVideoSource {
   bool can_stop_for_restart_ = true;
   bool can_restart_ = true;
   bool is_suspended_ = false;
-  VideoCaptureDeliverFrameCB frame_callback_;
+  blink::VideoCaptureDeliverFrameCB frame_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(MockMediaStreamVideoSource);
 };

@@ -4,6 +4,7 @@
 <translation id="1001534784610492198">Arkivet för installationsfilen är skadat eller ogiltigt. Ladda ned Google Chrome igen.</translation>
 <translation id="102763973188675173">Anpassa och styr Google Chrome. En uppdatering är tillgänglig.</translation>
 <translation id="1035334672863811645">Logga in i Chrome</translation>
+<translation id="1051826050538111504">Det finns skadlig programvara på datorn. Den skadliga programvaran kan tas bort, inställningarna återställas och tillägg inaktiveras så att webbläsaren fungerar som den ska igen.</translation>
 <translation id="1065672644894730302">Det går inte att läsa inställningarna.
 
 Vissa funktioner kanske inte är tillgängliga och ändringar i inställningarna sparas inte.</translation>
@@ -72,6 +73,7 @@ Om du loggar in ändå synkroniseras din information i Chrome, till exempel bokm
 <translation id="2580411288591421699">Det går inte att installera samma version av Google Chrome som redan körs. Stäng Google Chrome och försök igen.</translation>
 <translation id="2586406160782125153">Webbinformationen raderas från enheten. Logga in i Chrome som <ph name="USER_EMAIL" /> om du vill kunna återställa datan senare.</translation>
 <translation id="2588322182880276190">Logotypen för Chrome</translation>
+<translation id="2644798301485385923">Chrome OS-system</translation>
 <translation id="2652691236519827073">Öppna länkar i en ny flik i Chrome</translation>
 <translation id="2665296953892887393">Hjälp oss att göra Google Chrome bättre genom att skicka felrapporter och <ph name="UMA_LINK" /> till Google.</translation>
 <translation id="2689103672227170538">Det här tillägget har ändrat vilken sida som visas när du startar Chrome.</translation>
@@ -88,7 +90,6 @@ Om du loggar in ändå synkroniseras din information i Chrome, till exempel bokm
 <translation id="3080151273017101988">Fortsätt köra bakgrundsappar när Google Chrome avslutas</translation>
 <translation id="3089968997497233615">Det finns en ny, ännu säkrare version av Google Chrome.</translation>
 <translation id="3149510190863420837">Chrome-appar</translation>
-<translation id="3180085900771989961">Den ansvariga måste ta bort och lägga till dig i Chrome på nytt.</translation>
 <translation id="3251381707915721925">Om du vill ange vilka webbplatser som ska vara tillåtna för <ph name="NEW_PROFILE_NAME" /> besöker du <ph name="BEGIN_LINK_1" /><ph name="DISPLAY_LINK" /><ph name="END_LINK_1" /> och konfigurerar begränsningar och andra inställningar där. Om du inte ändrar standardinställningarna får <ph name="NEW_PROFILE_NAME" /> surfa fritt på webben.
 
 Kom ihåg att låsa din profil när du inte använder Chrome om <ph name="NEW_PROFILE_NAME" /> inte ska få tillgång till ditt konto. Gör så här: Klicka på profilnamnet i webbläsarens övre högra hörn och välj Stäng och aktivera barnspärr.
@@ -103,6 +104,7 @@ Ytterligare anvisningar har skickats med e-post till dig på <ph name="ACCOUNT_E
 <translation id="3451115285585441894">Lägger till i Chrome ...</translation>
 <translation id="345171907106878721">Lägg till dig själv i Chrome</translation>
 <translation id="3479552764303398839">Inte nu</translation>
+<translation id="34857402635545079">Rensa även data från Chrome (<ph name="URL" />)</translation>
 <translation id="3503306920980160878">Du behöver ge Chrome åtkomst till din plats om den ska kunna delas med webbplatsen</translation>
 <translation id="3582972582564653026">Synkronisera och anpassa Chrome på alla enheter du använder</translation>
 <translation id="3622797965165704966">Nu är det enklare att använda Chrome med ditt Google-konto och på delade datorer.</translation>
@@ -112,7 +114,6 @@ Ytterligare anvisningar har skickats med e-post till dig på <ph name="ACCOUNT_E
 <translation id="3735758079232443276">Tillägget <ph name="EXTENSION_NAME" /> har ändrat vilken sida som visas när du startar Chrome.</translation>
 <translation id="3780814664026482060">Chrome – <ph name="PAGE_TITLE" /></translation>
 <translation id="3784527566857328444">Ta bort från Chrome …</translation>
-<translation id="3844992844761326777">Det finns skadlig programvara på datorn. Du kan låta Chrome ta bort den och återställa inställningarna så att webbläsaren fungerar som den ska igen.</translation>
 <translation id="386202838227397562">Stäng alla Google Chrome-fönster och försök igen.</translation>
 <translation id="3870154837782082782">Google Inc.</translation>
 <translation id="3873044882194371212">Öppna länken i ett inko&amp;gnitofönster i Chrome</translation>
@@ -158,7 +159,6 @@ Ytterligare anvisningar har skickats med e-post till dig på <ph name="ACCOUNT_E
 <translation id="5062123544085870375">Starta om Chrome OS</translation>
 <translation id="5090044601776247154">Från och med Google Chrome 70 är kontrollerade användarprofiler inte längre tillgängliga.</translation>
 <translation id="5132929315877954718">Upptäck fantastiska program, spel, tillägg och teman för Google Chrome.</translation>
-<translation id="5166975452760862670">Google Chrome visas på det här språket</translation>
 <translation id="5170938038195470297">Profilen kan inte användas eftersom den tillhör en nyare version av Google Chrome.
 
 Vissa funktioner är kanske inte tillgängliga. Ange en annan profilkatalog om du vill använda en nyare version av Chrome.</translation>
@@ -174,9 +174,9 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="556024056938947818">Google Chrome försöker visa lösenord.</translation>
 <translation id="5566025111015594046">Google Chrome (mDNS-In)</translation>
 <translation id="565744775970812598"><ph name="FILE_NAME" /> kan vara skadlig och har blockerats av Chrome.</translation>
+<translation id="5686916850681061684">Anpassa och styr Google Chrome. Någonting behöver ses över. Klicka här för mer information.</translation>
 <translation id="5715063361988620182">{SECONDS,plural, =1{Google Chrome startas om om en sekund}other{Google Chrome startas om om # sekunder}}</translation>
 <translation id="573759479754913123">Om Chrome OS</translation>
-<translation id="5774845247549698882">Chrome OS visas på det här språket</translation>
 <translation id="5795887333006832406"><ph name="PAGE_TITLE" /> – Google Chrome Canary</translation>
 <translation id="5804318322022881572">Det gick inte att starta Chrome. Försök igen.</translation>
 <translation id="5877064549588274448">Kanalen har ändrats. Starta om enheten om du vill tillämpa ändringarna.</translation>
@@ -201,6 +201,7 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="6566149418543181476">Google Chrome uppdateras (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="6598387184982954187">Du använder <ph name="PROFILE_EMAIL" /> för att synkronisera dina grejer i Chrome. Om du vill uppdatera synkroniseringsinställningen eller använda Chrome utan ett Google-konto besöker du <ph name="SETTINGS_LINK" />.</translation>
 <translation id="6600954340915313787">Kopierat till Chrome</translation>
+<translation id="6609605543612238677">Systemadministratören har konfigurerat Google Chrome så att webbadressen <ph name="URL" /> öppnas i en annan webbläsare.</translation>
 <translation id="6634887557811630702">Google Chrome behöver inte uppdateras.</translation>
 <translation id="6676384891291319759">Gå ut på Internet</translation>
 <translation id="6679975945624592337">Låt Google Chrome köras i bakgrunden</translation>
@@ -208,6 +209,7 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="683440813066116847">Regel som tillåter inkommande mDNS-trafik för Google Chrome Canary.</translation>
 <translation id="686561893457936865">Ta med dig Chrome överallt</translation>
 <translation id="6885412569789873916">Appar i Chrome Beta</translation>
+<translation id="6943584222992551122">Den här personens webbinformation raderas från enheten. Logga in i Chrome som <ph name="USER_EMAIL" /> om du vill återställa data.</translation>
 <translation id="6964107240822114422">{0,plural, =0{Det finns en uppdatering för Chrome}=1{Det finns en uppdatering för Chrome}other{Det finns en uppdatering för Chrome sedan # dagar}}</translation>
 <translation id="6967962315388095737">Regel som tillåter inkommande mDNS-trafik för Google Chrome Beta.</translation>
 <translation id="6970811910055250180">Enheten uppdateras ...</translation>
@@ -218,6 +220,7 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="7106741999175697885">Aktivitetshanteraren - Google Chrome</translation>
 <translation id="7164397146364144019">Du kan bidra till att göra Chrome säkrare och enklare att använda genom att rapportera uppgifter om möjliga säkerhetsincidenter till Google automatiskt.</translation>
 <translation id="7242029209006116544">Du loggar in med ett hanterat konto och ger dess administratör kontroll över din Google Chrome-profil. Dina Chrome-uppgifter, t.ex. dina appar, bokmärken, din historik, dina lösenord och andra inställningar, knyts permanent till <ph name="USER_NAME" />. Du kommer att kunna ta bort dessa uppgifter via instrumentpanelen i Google Konton, men du kommer inte att kunna koppla dessa uppgifter till ett annat konto. Du kan skapa en ny profil om du vill hålla dina befintliga Chrome-uppgifter separata. <ph name="LEARN_MORE" /></translation>
+<translation id="7295052994004373688">Användargränssnittet i Google Chrome visas på det här språket</translation>
 <translation id="7296210096911315575">Viktig användnings- och säkerhetsinformation</translation>
 <translation id="7308322188646931570">Du behöver ge Chrome åtkomst till lagringsutrymmet om det ska gå att ladda ned filer</translation>
 <translation id="7339898014177206373">Nytt fönster</translation>
@@ -280,6 +283,7 @@ Google Chrome kan inte återställa dina inställningar.</translation>
 <translation id="870251953148363156">Uppdatera &amp;Google Chrome</translation>
 <translation id="873133009373065397">Google Chrome kan inte fastställa eller ange standardwebbläsaren</translation>
 <translation id="8736674169840206667">Administratören meddelar att du måste starta om Chrome så att en uppdatering tillämpas</translation>
+<translation id="8788264404293392165">Användargränssnittet i Chrome OS visas på det här språket</translation>
 <translation id="8791470158600044404">{0,plural, =1{Om en minut startas Chrome OS om}other{Om # minuter startas Chrome OS om}}</translation>
 <translation id="8823341990149967727">Den här versionen av Chrome är inaktuell</translation>
 <translation id="884296878221830158">Det styr också vilken sida som visas när du startar Chrome eller klickar på hemknappen.</translation>

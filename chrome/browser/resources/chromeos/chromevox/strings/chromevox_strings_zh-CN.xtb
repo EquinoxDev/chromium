@@ -54,6 +54,7 @@
 <translation id="1346059596910821859">提示</translation>
 <translation id="1346748346194534595">向右</translation>
 <translation id="135978014023467274">您已更新至 ChromeVox 63！</translation>
+<translation id="1360699455582016846">点击路由键 <ph name="ROUTING_KEY_NUMBER" /> 下面的项</translation>
 <translation id="136718599399906424">表格下一行</translation>
 <translation id="1377925789329510816">这是最后一个标题。按 Search+H 组合键可跳回至第一个标题，按 Search+Shift+H 组合键则可转到此页面上的第二个标题。</translation>
 <translation id="1383876407941801731">搜索</translation>
@@ -112,6 +113,7 @@
 <translation id="1905379170753160525">显示标题列表</translation>
 <translation id="1912556590115083156">vlnk</translation>
 <translation id="1913761808037590218">#ed</translation>
+<translation id="1914635379910604678"><ph name="DOT" /> 并击</translation>
 <translation id="1954623340234317532">年周数控件</translation>
 <translation id="1964135212174907577">下一个对象</translation>
 <translation id="1969092762068865084">7月</translation>
@@ -266,6 +268,7 @@
 <translation id="316542773973815724">导航</translation>
 <translation id="3172700825913348768">{COUNT,plural, =1{1个空格}other{#个空格}}</translation>
 <translation id="320961988183078793">进入了<ph name="TYPE" /></translation>
+<translation id="3218691001991391708">粘贴<ph name="TEXT" />。</translation>
 <translation id="3223701887221307104"><ph name="NAME" />，标签页</translation>
 <translation id="3226035351387556942">chk</translation>
 <translation id="3229375994964697375">访问过的链接</translation>
@@ -285,48 +288,6 @@
 <translation id="3322936298410871309">上一个1级标题</translation>
 <translation id="3323447499041942178">文本框</translation>
 <translation id="3338224621010291843"><ph name="VALUE" /> <ph name="NAME" /> 滑块</translation>
-<translation id="3353420241558113817">{"ar": "阿拉伯语",
-        "bg": "保加利亚语",
-        "ca": "加泰罗尼亚语",
-        "cs": "捷克语",
-        "da": "丹麦语",
-        "de": "德语",
-        "de_CH": "德语（瑞士）",
-        "de_DE": "德语（德国）",
-        "el": "希腊语",
-        "en": "英语",
-        "en_CA": "英语（加拿大）",
-        "en_GB": "英语（英国）",
-        "en_US": "英语（美国）",
-        "es": "西班牙语",
-        "et": "爱沙尼亚语",
-        "fr": "法语",
-        "fr_CA": "法语（加拿大）",
-        "fr_FR": "法语（法国）",
-        "fi": "芬兰语",
-        "he": "希伯来语",
-        "hi": "印地语",
-        "hr": "克罗地亚语",
-        "hu": "匈牙利语",
-        "is": "冰岛语",
-        "it": "意大利语",
-        "ko": "韩语",
-        "lt": "立陶宛语",
-        "lv": "拉脱维亚语",
-        "nb": "挪威博克马尔语",
-        "nl": "荷兰语",
-        "pl": "波兰语",
-        "pt": "葡萄牙语",
-        "ro": "罗马尼亚语",
-        "ru": "俄语",
-        "sk": "斯洛伐克语",
-        "sl": "斯洛文尼亚语",
-        "sr": "塞尔维亚语",
-        "sv": "瑞典语",
-        "tr": "土耳其语",
-        "vi": "越南语",
-        "zh": "中文",
-        "zh_TW": "中文（繁体）"}</translation>
 <translation id="335581015389089642">语音</translation>
 <translation id="3359142382821736686">seprtr</translation>
 <translation id="3374537878095184207">{COUNT,plural, =1{1个加号}other{#个加号}}</translation>
@@ -343,12 +304,14 @@
 <translation id="3468959318854349468">无标题</translation>
 <translation id="3473644018603298796">已选择<ph name="COUNT" />项</translation>
 <translation id="3486232535569802404"><ph name="V1" />到<ph name="V2" /></translation>
+<translation id="3490765818161916458">列表网格</translation>
 <translation id="3492609944033322585">{COUNT,plural, =1{1个右方括号}other{#个右方括号}}</translation>
 <translation id="3493915602752813531">不存在下一个定位点。</translation>
 <translation id="3494946239022273294">mnuitm</translation>
 <translation id="3497063866483065785">{COUNT,plural, =1{1个问号}other{#个问号}}</translation>
 <translation id="3514822174137761109">{COUNT,plural, =1{1个插入符号}other{#个插入符号}}</translation>
 <translation id="352577523970648069">可编辑的文本字段</translation>
+<translation id="3549141990712742152">剪切<ph name="TEXT" />。</translation>
 <translation id="3549680091535286226">用 2 根手指点按即可暂时关闭语音</translation>
 <translation id="3568702578574425662"><ph name="NAME" />，未选中的复选框</translation>
 <translation id="3589661172894441357">词汇表</translation>
@@ -380,6 +343,7 @@
 <translation id="3856075812838139784">只读</translation>
 <translation id="3887576927692165210">ed</translation>
 <translation id="3897092660631435901">菜单</translation>
+<translation id="3907138069015388678">列表网格</translation>
 <translation id="3909320334364316587">上一个6级标题</translation>
 <translation id="3914173277599553213">必需</translation>
 <translation id="3914732343065571127">ChromeVox 命令参考</translation>
@@ -514,7 +478,6 @@
 <translation id="4973762002207131920">已切换到“<ph name="KEY" />”。</translation>
 <translation id="4975416682604111799">毫秒</translation>
 <translation id="49787999531187221">ChromeVox目前已停用。</translation>
-<translation id="4979263087381759787">开发者选项</translation>
 <translation id="4979404613699303341">上一个按钮</translation>
 <translation id="4982773647088557172"><ph name="VALUE" />，<ph name="NAME" />，列表框</translation>
 <translation id="4983588134362688868">跳至页首</translation>
@@ -529,6 +492,7 @@
 <translation id="5020651427400641814">启用语音登录功能</translation>
 <translation id="5041394372352067729">将盲文显示移动到页首</translation>
 <translation id="5042770794184672516">调大朗读音量</translation>
+<translation id="5042992464904238023">网页内容</translation>
 <translation id="5050015258024679800">上一个4级标题</translation>
 <translation id="5054047268577924192">上一个列表项</translation>
 <translation id="5075936896689244141">Next 按键映射</translation>
@@ -673,6 +637,7 @@
 <translation id="6129953537138746214">空格</translation>
 <translation id="6132506484792346370">列表框或组合框</translation>
 <translation id="6142308968191113180">4级标题标记</translation>
+<translation id="6158882249329863701">第 <ph name="TABLECELLROWINDEX" /> 行，第 <ph name="TABLECELLCOLUMNINDEX" /> 列</translation>
 <translation id="6164829606128959761">计量条</translation>
 <translation id="6169420925157477918">图片含有详细说明</translation>
 <translation id="6186305613600865047">跳至页尾</translation>
@@ -688,6 +653,7 @@
 <translation id="6307969636681130414">已按下</translation>
 <translation id="6322856989298155004">提示音</translation>
 <translation id="6324551002951139333">检测到语法错误</translation>
+<translation id="6325241889020214828">复制<ph name="TEXT" />。</translation>
 <translation id="6348657800373377022">组合框</translation>
 <translation id="6350358010104919766">{COUNT,plural, =1{1 个项目符号}other{# 个项目符号}}</translation>
 <translation id="6355910664415701303">不存在上一个列表项。</translation>
@@ -697,6 +663,7 @@
 <translation id="6387719785439924554">边栏内容标记</translation>
 <translation id="6411426777058107714">不存在上一个单选按钮。</translation>
 <translation id="6414968628640960377">上一个不同元素。</translation>
+<translation id="6417265370957905582">Google 助理</translation>
 <translation id="641759969622533235">{COUNT,plural, =1{1个冒号}other{#个冒号}}</translation>
 <translation id="6438968337250688271"><ph name="NAME" />，菜单</translation>
 <translation id="6444046323172968959">提醒对话框</translation>
@@ -876,6 +843,89 @@
 <translation id="8037651341025652929">总结</translation>
 <translation id="8042761080832772327">编辑文本，搜索条目</translation>
 <translation id="8049189770492311300">定时器</translation>
+<translation id="8056782883599416672">{"ar": "阿拉伯语",
+        "as": "阿萨姆语",
+        "aw": "阿瓦德语",
+        "be": "孟加拉语",
+        "bg": "保加利亚语",
+        "bh": "比哈里语",
+        "bo": "藏语",
+        "br": "布拉吉语",
+        "ca": "加泰罗尼亚语",
+        "ckb": "中库尔德语",
+        "cs": "捷克语",
+        "cy": "威尔士语",
+        "da": "丹麦语",
+        "de": "德语",
+        "de_CH": "德语（瑞士）",
+        "de_DE": "德语（德国）",
+        "dra": "德拉维语",
+        "el": "希腊语",
+        "en": "英语",
+        "en_CA": "英语（加拿大）",
+        "en_GB": "英语（英国）",
+        "en_US": "英语（美国）",
+        "eo": "世界语",
+        "es": "西班牙语",
+        "et": "爱沙尼亚语",
+        "fa": "波斯语",
+        "fr": "法语",
+        "fr_CA": "法语（加拿大）",
+        "fr_FR": "法语（法国）",
+        "fi": "芬兰语",
+        "ga": "爱尔兰语",
+        "gd": "盖尔语",
+        "gon": "龚德语",
+        "gu": "古吉拉特语",
+        "he": "希伯来语",
+        "hi": "印地语",
+        "hr": "克罗地亚语",
+        "hu": "匈牙利语",
+        "hy": "亚美尼亚语",
+        "is": "冰岛语",
+        "it": "意大利语",
+        "iu": "因纽特语",
+        "ka": "卡纳达语",
+        "kh": "卡西语",
+        "ko": "韩语",
+        "kok": "贡根语",
+        "kru": "库鲁克语",
+        "ks": "克什米尔语",
+        "lt": "立陶宛语",
+        "lv": "拉脱维亚语",
+        "mao": "毛利语",
+        "ml": "马拉雅拉姆语",
+        "mt": "马耳他语",
+        "mwr": "马尔瓦里语",
+        "mn": "蒙古语",
+        "mun": "蒙达语",
+        "nb": "挪威博克马尔语",
+        "ne": "尼泊尔语",
+        "nl": "荷兰语",
+        "no": "挪威语",
+        "or": "奥里亚语",
+        "pi": "巴利语",
+        "pl": "波兰语",
+        "pt": "葡萄牙语",
+        "pu": "旁遮普语",
+        "ro": "罗马尼亚语",
+        "ru": "俄语",
+        "sa": "梵语",
+        "si": "信德语",
+        "sin": "僧伽罗语",
+        "sk": "斯洛伐克语",
+        "sl": "斯洛文尼亚语",
+        "sr": "塞尔维亚语",
+        "sv": "瑞典语",
+        "ta": "泰米尔语",
+        "te": "泰卢固语",
+        "tr": "土耳其语",
+        "tsn": "南非荷兰语",
+        "uk": "乌克兰语",
+        "ur": "乌尔都语",
+        "vi": "越南语",
+        "zh": "中文",
+        "zh_TW": "中文（繁体）"}</translation>
 <translation id="8065607967589909823">当前选择为</translation>
 <translation id="8066678206530322333">横幅</translation>
 <translation id="8076492880354921740">标签页</translation>
@@ -885,6 +935,7 @@
 <translation id="8153880621934657047">不在表格内。</translation>
 <translation id="817440585505441544">{COUNT,plural, =1{1个下划线}other{#个下划线}}</translation>
 <translation id="8179976553408161302">Enter</translation>
+<translation id="8183813379996435469">自动检测和切换 ChromeVox 语言。</translation>
 <translation id="8184828902145951186">行</translation>
 <translation id="8186185314313222077">切换全屏模式</translation>
 <translation id="8199231515320852133">读出当前单元格的标题</translation>
@@ -959,6 +1010,7 @@
 <translation id="8937112856099038376">intlnk</translation>
 <translation id="8940925288729953902">辅助键</translation>
 <translation id="8943175951035496220">不存在右侧单元格。</translation>
+<translation id="8946628535652548639">行 <ph name="TABLECELLROWINDEX" />，列 <ph name="TABLECELLCOLUMNINDEX" /></translation>
 <translation id="8978496506222343566">tltip</translation>
 <translation id="8986362086234534611">不保存</translation>
 <translation id="900114243503212879">文件</translation>

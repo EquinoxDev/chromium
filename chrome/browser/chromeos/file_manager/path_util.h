@@ -38,12 +38,15 @@ base::FilePath GetMyFilesFolderForProfile(Profile* profile);
 // As of now (M40), the conversion is used only during initialization of
 // download_prefs, where profile unaware initialization precedes profile
 // aware stage. Below are the list of relocations we have made in the past.
+// *Updated in M73 to handle /home/chronos/user to
+// /home/chronos/u-{hash}/MyFiles/Downloads
 //
 // M27: crbug.com/229304, for supporting {offline, recent, shared} folders
 //   in Drive. Migration code for this is removed in M34.
 // M34-35: crbug.com/313539, 356322, for supporting multi profiles.
 //   Migration code is removed in M40.
 bool MigratePathFromOldFormat(Profile* profile,
+                              const base::FilePath& old_base,
                               const base::FilePath& old_path,
                               base::FilePath* new_path);
 
@@ -57,6 +60,14 @@ bool MigratePathFromOldFormat(Profile* profile,
 bool MigrateFromDownloadsToMyFiles(Profile* profile,
                                    const base::FilePath& old_path,
                                    base::FilePath* new_path);
+
+// Convers |old_path| in /special/drive-<hash> to |new_path| in
+// /media/fuse/drivefs-<id>. Returns true if path is changed else
+// returns false if |old_path| was not inside Drive, and |new_path| is
+// undefined.
+bool MigrateToDriveFs(Profile* profile,
+                      const base::FilePath& old_path,
+                      base::FilePath* new_path);
 
 // The canonical mount point name for "Downloads" folder.
 std::string GetDownloadsMountPointName(Profile* profile);

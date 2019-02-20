@@ -11,8 +11,6 @@ component("cpp") {
     "accelerators.h",
     "app_list/app_list_config.cc",
     "app_list/app_list_config.h",
-    "app_list/app_list_constants.cc",
-    "app_list/app_list_constants.h",
     "app_list/app_list_features.cc",
     "app_list/app_list_features.h",
     "app_list/app_list_switches.cc",
@@ -112,6 +110,8 @@ component("cpp") {
     "system_tray_focus_observer.h",
     "tablet_mode.cc",
     "tablet_mode.h",
+    "touch_uma.cc",
+    "touch_uma.h",
     "wallpaper_types.h",
     "window_animation_types.h",
     "window_pin_type.cc",
@@ -126,7 +126,8 @@ component("cpp") {
 
   deps = [
     "//ash/public/cpp/vector_icons",
-    "//chromeos:power_manager_proto",
+    "//chromeos:chromeos_constants",
+    "//chromeos/dbus:power_manager_proto",
     "//components/prefs",
     "//mojo/public/cpp/bindings",
     "//services/service_manager/public/cpp",
@@ -156,6 +157,45 @@ component("cpp") {
       [ "//ash/public/interfaces:interfaces_internal" ]
 
   output_name = "ash_public_cpp"
+}
+
+source_set("manifest") {
+  sources = [
+    "manifest.cc",
+    "manifest.h",
+  ]
+
+  deps = [
+    "//ash/public/interfaces:interfaces_internal",
+    "//base",
+    "//chromeos/services/multidevice_setup/public/mojom",
+    "//services/content/public/mojom",
+    "//services/data_decoder/public/mojom",
+    "//services/device/public/mojom",
+    "//services/preferences/public/mojom",
+    "//services/service_manager/public/cpp",
+    "//services/service_manager/public/mojom",
+    "//services/viz/public/interfaces",
+    "//services/ws/public/cpp:manifest",
+    "//services/ws/public/mojom",
+  ]
+}
+
+source_set("manifest_for_tests") {
+  testonly = true
+
+  sources = [
+    "test_manifest.cc",
+    "test_manifest.h",
+  ]
+
+  deps = [
+    ":manifest",
+    "//ash/public/interfaces:test_interfaces",
+    "//base",
+    "//services/service_manager/public/cpp",
+    "//services/service_manager/public/mojom",
+  ]
 }
 
 # Using a test service because the traits need to pass handles around. Revisit
@@ -195,6 +235,7 @@ source_set("unit_tests") {
 }
 
 source_set("test_support") {
+  testonly = true
   sources = [
     "immersive/immersive_fullscreen_controller_test_api.cc",
     "immersive/immersive_fullscreen_controller_test_api.h",
@@ -207,6 +248,7 @@ source_set("test_support") {
     "//base",
     "//services/service_manager/public/cpp",
     "//ui/aura",
+    "//ui/aura:test_support",
     "//ui/gfx",
     "//ui/keyboard:mojom",
     "//ui/views",

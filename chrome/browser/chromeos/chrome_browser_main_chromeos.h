@@ -34,6 +34,7 @@ class AssistantClient;
 namespace chromeos {
 
 class ArcKioskAppManager;
+class CrosUsbDetector;
 class DemoModeResourcesRemover;
 class DiagnosticsdBridge;
 class DiscoverManager;
@@ -46,6 +47,7 @@ class NetworkPrefStateObserver;
 class NetworkThrottlingObserver;
 class PowerMetricsReporter;
 class RendererFreezer;
+class SchedulerConfigurationManager;
 class ShutdownPolicyForwarder;
 class WakeOnWifiManager;
 
@@ -156,6 +158,10 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   std::unique_ptr<crostini::CrosvmMetrics> crosvm_metrics_;
   std::unique_ptr<DiscoverManager> discover_manager_;
   std::unique_ptr<DiagnosticsdBridge> diagnosticsd_bridge_;
+  std::unique_ptr<SchedulerConfigurationManager>
+      scheduler_configuration_manager_;
+
+  std::unique_ptr<CrosUsbDetector> cros_usb_detector_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainPartsChromeos);
 };

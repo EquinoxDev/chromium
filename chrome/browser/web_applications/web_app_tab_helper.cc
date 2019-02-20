@@ -14,9 +14,7 @@ WebAppTabHelper::~WebAppTabHelper() = default;
 // static
 WebAppTabHelper* WebAppTabHelper::CreateForWebContents(
     content::WebContents* web_contents) {
-  // Do nothing if already exists.
-  if (FromWebContents(web_contents))
-    return nullptr;
+  DCHECK(!FromWebContents(web_contents));
 
   auto tab_helper = std::make_unique<WebAppTabHelper>(web_contents);
   WebAppTabHelper* result = tab_helper.get();
@@ -39,6 +37,16 @@ AppId WebAppTabHelper::GetAppId(const GURL& url) {
 bool WebAppTabHelper::IsInAppWindow() const {
   // TODO(beccahughes): Implement.
   return false;
+}
+
+bool WebAppTabHelper::IsUserInstalled() const {
+  // TODO(loyso): Implement it.
+  return false;
+}
+
+bool WebAppTabHelper::IsFromInstallButton() const {
+  // TODO(loyso): Implement it. Plumb |force_shortcut_app| into Registry.
+  return true;
 }
 
 }  // namespace web_app

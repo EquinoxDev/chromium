@@ -148,6 +148,7 @@ PaintLayer::PaintLayer(LayoutBoxModelObject& layout_object)
       needs_position_update_(!IsRootLayer()),
 #endif
       has3d_transformed_descendant_(false),
+      contains_dirty_overlay_scrollbars_(false),
       needs_ancestor_dependent_compositing_inputs_update_(
           !RuntimeEnabledFeatures::CompositeAfterPaintEnabled()),
       child_needs_compositing_inputs_update_(
@@ -233,6 +234,10 @@ PaintLayer::~PaintLayer() {
 
 String PaintLayer::DebugName() const {
   return GetLayoutObject().DebugName();
+}
+
+DOMNodeId PaintLayer::OwnerNodeId() const {
+  return static_cast<const DisplayItemClient&>(GetLayoutObject()).OwnerNodeId();
 }
 
 LayoutRect PaintLayer::VisualRect() const {
@@ -594,20 +599,20 @@ void PaintLayer::MapPointInPaintInvalidationContainerToBacking(
   if (!paint_invalidation_layer->GroupedMapping())
     return;
 
-  LayoutBoxModelObject& transformed_ancestor =
-      paint_invalidation_layer->TransformAncestorOrRoot().GetLayoutObject();
+  GraphicsLayer* squashing_layer =
+      paint_invalidation_layer->GroupedMapping()->SquashingLayer();
 
-  // |paintInvalidationContainer| may have a local 2D transform on it, so take
-  // that into account when mapping into the space of the transformed ancestor.
-  point = paint_invalidation_container.LocalToAncestorPoint(
-      point, &transformed_ancestor);
-  // Don't include composited scroll offsets, since
-  // SquashingOffsetFromTransformedAncestor does not.
-  if (transformed_ancestor.UsesCompositedScrolling())
-    point.Move(ToLayoutBox(transformed_ancestor).ScrolledContentOffset());
+  PropertyTreeState source_state =
+      paint_invalidation_container.FirstFragment().LocalBorderBoxProperties();
+  PropertyTreeState dest_state = squashing_layer->GetPropertyTreeState();
 
-  point.MoveBy(-paint_invalidation_layer->GroupedMapping()
-                    ->SquashingOffsetFromTransformedAncestor());
+  // Move the point into the source_state transform space, map to dest_state
+  // transform space, then move into squashing layer state.
+  point.MoveBy(paint_invalidation_container.FirstFragment().PaintOffset());
+  point = GeometryMapper::SourceToDestinationProjection(
+              source_state.Transform(), dest_state.Transform())
+              .MapPoint(point);
+  point.MoveBy(-squashing_layer->GetOffsetFromTransformNode());
 }
 
 void PaintLayer::MapRectInPaintInvalidationContainerToBacking(
@@ -617,22 +622,20 @@ void PaintLayer::MapRectInPaintInvalidationContainerToBacking(
   if (!paint_invalidation_layer->GroupedMapping())
     return;
 
-  LayoutBoxModelObject& transformed_ancestor =
-      paint_invalidation_layer->TransformAncestorOrRoot().GetLayoutObject();
+  GraphicsLayer* squashing_layer =
+      paint_invalidation_layer->GroupedMapping()->SquashingLayer();
 
-  // |paintInvalidationContainer| may have a local 2D transform on it, so take
-  // that into account when mapping into the space of the transformed ancestor.
-  rect = LayoutRect(
-      paint_invalidation_container
-          .LocalToAncestorQuad(FloatRect(rect), &transformed_ancestor)
-          .BoundingBox());
-  // Don't include composited scroll offsets, since
-  // SquashingOffsetFromTransformedAncestor does not.
-  if (transformed_ancestor.UsesCompositedScrolling())
-    rect.Move(ToLayoutBox(transformed_ancestor).ScrolledContentOffset());
+  PropertyTreeState source_state =
+      paint_invalidation_container.FirstFragment().LocalBorderBoxProperties();
+  PropertyTreeState dest_state = squashing_layer->GetPropertyTreeState();
 
-  rect.MoveBy(-paint_invalidation_layer->GroupedMapping()
-                   ->SquashingOffsetFromTransformedAncestor());
+  // Move the point into the source_state transform space, map to dest_state
+  // transform space, then move into squashing layer state.
+  rect.MoveBy(paint_invalidation_container.FirstFragment().PaintOffset());
+  GeometryMapper::SourceToDestinationProjection(source_state.Transform(),
+                                                dest_state.Transform())
+      .MapRect(rect);
+  rect.MoveBy(-squashing_layer->GetOffsetFromTransformNode());
 }
 
 void PaintLayer::DirtyVisibleContentStatus() {
@@ -734,8 +737,14 @@ void PaintLayer::UpdateDescendantDependentFlags() {
       GetLayoutObject().SetNeedsPaintPropertyUpdate();
     needs_descendant_dependent_flags_update_ = false;
 
-    if (IsSelfPaintingLayer() && needs_visual_overflow_recalc_)
+    if (IsSelfPaintingLayer() && needs_visual_overflow_recalc_) {
+      LayoutRect old_visual_rect = GetLayoutObject().VisualOverflowRect();
       GetLayoutObject().RecalcVisualOverflow();
+      if (old_visual_rect != GetLayoutObject().VisualOverflowRect()) {
+        SetNeedsCompositingInputsUpdateInternal();
+        MarkAncestorChainForFlagsUpdate(DoesNotNeedDescendantDependentUpdate);
+      }
+    }
     needs_visual_overflow_recalc_ = false;
   }
 
@@ -1065,21 +1074,20 @@ PaintLayer* PaintLayer::EnclosingLayerForPaintInvalidation() const {
   return nullptr;
 }
 
-void PaintLayer::SetNeedsCompositingInputsUpdate(
-    DescendantDependentFlagsUpdateFlag flag) {
+void PaintLayer::SetNeedsCompositingInputsUpdate() {
   SetNeedsCompositingInputsUpdateInternal();
 
   // TODO(chrishtr): These are a bit of a heavy hammer, because not all
   // things which require compositing inputs update require a descendant-
   // dependent flags update. Reduce call sites after CAP launch allows
   /// removal of CompositingInputsUpdater.
-  MarkAncestorChainForFlagsUpdate(flag);
+  MarkAncestorChainForFlagsUpdate(NeedsDescendantDependentUpdate);
 }
 
 void PaintLayer::SetNeedsVisualOverflowRecalc() {
   DCHECK(IsSelfPaintingLayer());
   needs_visual_overflow_recalc_ = true;
-  SetNeedsCompositingInputsUpdate();
+  MarkAncestorChainForFlagsUpdate();
 }
 
 void PaintLayer::SetNeedsCompositingInputsUpdateInternal() {
@@ -2459,13 +2467,23 @@ FloatRect PaintLayer::FilterReferenceBox() const {
   return FloatRect();
 }
 
-FloatRect PaintLayer::BackdropFilterBounds() const {
+FloatRect PaintLayer::BackdropFilterReferenceBox() const {
   FloatRect reference_box(GetLayoutObject().BorderBoundingBox());
   float zoom = GetLayoutObject().StyleRef().EffectiveZoom();
   if (zoom != 1)
     reference_box.Scale(1 / zoom);
   reference_box.Move(-ToFloatSize(FilterReferenceBox().Location()));
   return reference_box;
+}
+
+gfx::RRectF PaintLayer::BackdropFilterBounds(
+    const FloatRect& reference_box) const {
+  auto& style = GetLayoutObject().StyleRef();
+  if (!style.HasBorderRadius())
+    return gfx::RRectF(reference_box, 0);
+  FloatRoundedRect rrect = style.GetRoundedBorderFor(LayoutRect(reference_box));
+  // FloatRoundedRect has a typecast to SkRRect().
+  return gfx::RRectF(rrect);
 }
 
 bool PaintLayer::HitTestClippedOutByClipPath(
@@ -3180,15 +3198,12 @@ void PaintLayer::StyleDidChange(StyleDifference diff,
       // context, in order to generate new paint chunks in the correct order.
       // Raster invalidation will be issued if needed during paint.
       SetNeedsRepaint();
-    } else if (old_style) {
+    } else if (old_style &&
+               !RuntimeEnabledFeatures::CompositeAfterPaintEnabled()) {
       // Change of PaintedOutputInvisible() will affect existence of paint
       // chunks, so needs repaint.
-      PaintLayerPainter painter(*this);
-      // It's fine for PaintedOutputInvisible() to access the current
-      // compositing state.
-      DisableCompositingQueryAsserts disable;
-      if (painter.PaintedOutputInvisible(*old_style) !=
-          painter.PaintedOutputInvisible(new_style))
+      if (PaintLayerPainter::PaintedOutputInvisible(*old_style) !=
+          PaintLayerPainter::PaintedOutputInvisible(new_style))
         SetNeedsRepaint();
     }
   }
@@ -3242,15 +3257,16 @@ void PaintLayer::UpdateCompositorFilterOperationsForFilter(
 
 void PaintLayer::UpdateCompositorFilterOperationsForBackdropFilter(
     CompositorFilterOperations& operations,
-    gfx::RectF* backdrop_filter_bounds) const {
+    gfx::RRectF* backdrop_filter_bounds) const {
   DCHECK(backdrop_filter_bounds);
   const auto& style = GetLayoutObject().StyleRef();
   if (style.BackdropFilter().IsEmpty()) {
     operations.Clear();
+    *backdrop_filter_bounds = gfx::RRectF();
     return;
   }
-  FloatRect reference_box = BackdropFilterBounds();
-  *backdrop_filter_bounds = reference_box;
+  FloatRect reference_box = BackdropFilterReferenceBox();
+  *backdrop_filter_bounds = BackdropFilterBounds(reference_box);
   if (operations.IsEmpty() || reference_box != operations.ReferenceBox())
     operations = CreateCompositorFilterOperationsForBackdropFilter();
 }
@@ -3263,7 +3279,7 @@ PaintLayer::CreateCompositorFilterOperationsForBackdropFilter() const {
     return return_value;
   }
   float zoom = style.EffectiveZoom();
-  FloatRect reference_box = BackdropFilterBounds();
+  FloatRect reference_box = BackdropFilterReferenceBox();
   return_value = FilterEffectBuilder(reference_box, zoom)
                      .BuildFilterOperations(style.BackdropFilter());
   DCHECK(!return_value.IsEmpty());
@@ -3385,6 +3401,13 @@ void PaintLayer::ComputeSelfHitTestRects(
 
 void PaintLayer::SetNeedsRepaint() {
   SetNeedsRepaintInternal();
+
+  // If you need repaint, then you might issue raster invalidations, and in
+  // Composite after Paint mode, we do these in PAC::Update().
+  LocalFrameView* frame_view = GetLayoutObject().GetDocument().View();
+  if (RuntimeEnabledFeatures::CompositeAfterPaintEnabled() && frame_view) {
+    frame_view->SetPaintArtifactCompositorNeedsUpdate();
+  }
 
   // Do this unconditionally to ensure container chain is marked when
   // compositing status of the layer changes.

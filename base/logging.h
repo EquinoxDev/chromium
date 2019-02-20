@@ -162,7 +162,7 @@ namespace logging {
 
 // TODO(avi): do we want to do a unification of character types here?
 #if defined(OS_WIN)
-typedef wchar_t PathChar;
+typedef base::char16 PathChar;
 #elif defined(OS_POSIX) || defined(OS_FUCHSIA)
 typedef char PathChar;
 #endif
@@ -416,8 +416,8 @@ const LogSeverity LOG_0 = LOG_ERROR;
 #define LOG_IS_ON(severity) \
   (::logging::ShouldCreateLogMessage(::logging::LOG_##severity))
 
-// We can't do any caching tricks with VLOG_IS_ON() like the
-// google-glog version since it requires GCC extensions.  This means
+// We don't do any caching tricks with VLOG_IS_ON() like the
+// google-glog version since it increases binary size.  This means
 // that using the v-logging functions in conjunction with --vmodule
 // may be slow.
 #define VLOG_IS_ON(verboselevel) \
@@ -854,9 +854,9 @@ DEFINE_CHECK_OP_IMPL(GT, > )
 #define DPLOG(severity)                                         \
   LAZY_STREAM(PLOG_STREAM(severity), DLOG_IS_ON(severity))
 
-#define DVLOG(verboselevel) DVLOG_IF(verboselevel, VLOG_IS_ON(verboselevel))
+#define DVLOG(verboselevel) DVLOG_IF(verboselevel, true)
 
-#define DVPLOG(verboselevel) DVPLOG_IF(verboselevel, VLOG_IS_ON(verboselevel))
+#define DVPLOG(verboselevel) DVPLOG_IF(verboselevel, true)
 
 // Definitions for DCHECK et al.
 
@@ -1135,7 +1135,7 @@ BASE_EXPORT void RawLog(int level, const char* message);
 BASE_EXPORT bool IsLoggingToFileEnabled();
 
 // Returns the default log file path.
-BASE_EXPORT std::wstring GetLogFileFullPath();
+BASE_EXPORT base::string16 GetLogFileFullPath();
 #endif
 
 }  // namespace logging

@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
@@ -15,6 +16,8 @@
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/common/buildflags.h"
+#include "chrome/services/noop/noop_service.h"
+#include "chrome/services/noop/public/cpp/utils.h"
 #include "components/mirroring/mojom/constants.mojom.h"
 #include "components/mirroring/service/features.h"
 #include "components/mirroring/service/mirroring_service.h"
@@ -32,7 +35,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/sandbox/switches.h"
-#include "ui/base/ui_features.h"
+#include "ui/base/buildflags.h"
 
 #if !defined(OS_ANDROID)
 #include "chrome/utility/importer/profile_import_impl.h"
@@ -260,6 +263,11 @@ ChromeContentUtilityClient::MaybeCreateMainThreadService(
     service_manager::mojom::ServiceRequest request) {
   if (service_name == unzip::mojom::kServiceName)
     return std::make_unique<unzip::UnzipService>(std::move(request));
+
+  if (service_name == chrome::mojom::kNoopServiceName &&
+      chrome::IsNoopServiceEnabled()) {
+    return std::make_unique<chrome::NoopService>(std::move(request));
+  }
 
 #if BUILDFLAG(ENABLE_PRINTING)
   if (service_name == printing::mojom::kServiceName)

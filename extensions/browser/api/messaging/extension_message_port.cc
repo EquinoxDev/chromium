@@ -4,6 +4,7 @@
 
 #include "extensions/browser/api/messaging/extension_message_port.h"
 
+#include "base/bind.h"
 #include "base/scoped_observer.h"
 #include "base/strings/strcat.h"
 #include "content/public/browser/browser_context.h"
@@ -17,6 +18,7 @@
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_manager_observer.h"
 #include "extensions/common/api/messaging/message.h"
+#include "extensions/common/api/messaging/messaging_endpoint.h"
 #include "extensions/common/extension_messages.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 
@@ -169,17 +171,6 @@ ExtensionMessagePort::ExtensionMessagePort(
 
 ExtensionMessagePort::~ExtensionMessagePort() {}
 
-void ExtensionMessagePort::RevalidatePort() {
-  // Only opener ports need to be revalidated, because these are created in the
-  // renderer before the browser knows about them.
-  DCHECK(!extension_process_);
-  DCHECK_LE(frames_.size(), 1U);
-
-  // If the port is unknown, the renderer will respond by closing the port.
-  SendToPort(std::make_unique<ExtensionMsg_ValidateMessagePort>(
-      MSG_ROUTING_NONE, port_id_));
-}
-
 void ExtensionMessagePort::RemoveCommonFrames(const MessagePort& port) {
   // Avoid overlap in the set of frames to make sure that it does not matter
   // when UnregisterFrame is called.
@@ -200,16 +191,31 @@ bool ExtensionMessagePort::IsValidPort() {
   return !frames_.empty();
 }
 
+void ExtensionMessagePort::RevalidatePort() {
+  // Checks whether the frames to which this port is tied at its construction
+  // are still aware of this port's existence. Frames that don't know about
+  // the port are removed from the set of frames. This should be used for opener
+  // ports because the frame may be navigated before the port was initialized.
+
+  // Only opener ports need to be revalidated, because these are created in the
+  // renderer before the browser knows about them.
+  DCHECK(!extension_process_);
+  DCHECK_LE(frames_.size(), 1U);
+
+  // If the port is unknown, the renderer will respond by closing the port.
+  SendToPort(std::make_unique<ExtensionMsg_ValidateMessagePort>(
+      MSG_ROUTING_NONE, port_id_));
+}
+
 void ExtensionMessagePort::DispatchOnConnect(
     const std::string& channel_name,
     std::unique_ptr<base::DictionaryValue> source_tab,
     int source_frame_id,
     int guest_process_id,
     int guest_render_frame_routing_id,
-    const std::string& source_extension_id,
+    const MessagingEndpoint& source_endpoint,
     const std::string& target_extension_id,
-    const GURL& source_url,
-    const std::string& tls_channel_id) {
+    const GURL& source_url) {
   ExtensionMsg_TabConnectionInfo source;
   if (source_tab)
     source.tab.Swap(source_tab.get());
@@ -217,13 +223,13 @@ void ExtensionMessagePort::DispatchOnConnect(
 
   ExtensionMsg_ExternalConnectionInfo info;
   info.target_id = target_extension_id;
-  info.source_id = source_extension_id;
+  info.source_endpoint = source_endpoint;
   info.source_url = source_url;
   info.guest_process_id = guest_process_id;
   info.guest_render_frame_routing_id = guest_render_frame_routing_id;
 
   SendToPort(std::make_unique<ExtensionMsg_DispatchOnConnect>(
-      MSG_ROUTING_NONE, port_id_, channel_name, source, info, tls_channel_id));
+      MSG_ROUTING_NONE, port_id_, channel_name, source, info));
 }
 
 void ExtensionMessagePort::DispatchOnDisconnect(

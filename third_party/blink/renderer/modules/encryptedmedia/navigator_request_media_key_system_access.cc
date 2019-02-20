@@ -6,7 +6,10 @@
 
 #include <algorithm>
 
+#include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "services/metrics/public/cpp/ukm_builders.h"
+#include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/blink/public/mojom/feature_policy/feature_policy.mojom-blink.h"
 #include "third_party/blink/public/platform/web_encrypted_media_client.h"
 #include "third_party/blink/public/platform/web_encrypted_media_request.h"
@@ -109,8 +112,6 @@ static WebVector<WebEncryptedMediaSessionType> ConvertSessionTypes(
 // This class allows capabilities to be checked and a MediaKeySystemAccess
 // object to be created asynchronously.
 class MediaKeySystemAccessInitializer final : public EncryptedMediaRequest {
-  WTF_MAKE_NONCOPYABLE(MediaKeySystemAccessInitializer);
-
  public:
   MediaKeySystemAccessInitializer(
       ScriptState*,
@@ -148,6 +149,8 @@ class MediaKeySystemAccessInitializer final : public EncryptedMediaRequest {
   Member<ScriptPromiseResolver> resolver_;
   const String key_system_;
   WebVector<WebMediaKeySystemConfiguration> supported_configurations_;
+
+  DISALLOW_COPY_AND_ASSIGN(MediaKeySystemAccessInitializer);
 };
 
 MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(
@@ -214,6 +217,8 @@ const SecurityOrigin* MediaKeySystemAccessInitializer::GetSecurityOrigin()
 
 void MediaKeySystemAccessInitializer::RequestSucceeded(
     WebContentDecryptionModuleAccess* access) {
+  DVLOG(3) << __func__;
+
   if (!IsExecutionContextValid())
     return;
 
@@ -224,6 +229,8 @@ void MediaKeySystemAccessInitializer::RequestSucceeded(
 
 void MediaKeySystemAccessInitializer::RequestNotSupported(
     const WebString& error_message) {
+  DVLOG(3) << __func__ << " error: " << error_message.Ascii();
+
   if (!IsExecutionContextValid())
     return;
 
@@ -241,23 +248,38 @@ bool MediaKeySystemAccessInitializer::IsExecutionContextValid() const {
 }
 
 void MediaKeySystemAccessInitializer::CheckVideoCapabilityRobustness() const {
-  // Only check for widevine key system.
-  if (KeySystem() != "com.widevine.alpha")
+  const char kWidevineKeySystem[] = "com.widevine.alpha";
+  const char kWidevineHwSecureAllRobustness[] = "HW_SECURE_ALL";
+
+  // Reported to UKM. Existing values must not change and new values must be
+  // added at the end of the list.
+  enum KeySystemForUkm {
+    kClearKey = 0,
+    kWidevine = 1,
+  };
+
+  // Only check for widevine key system for now.
+  if (KeySystem() != kWidevineKeySystem)
     return;
 
   bool has_video_capabilities = false;
   bool has_empty_robustness = false;
+  bool has_hw_secure_all = false;
 
   for (const auto& config : supported_configurations_) {
     for (const auto& capability : config.video_capabilities) {
       has_video_capabilities = true;
       if (capability.robustness.IsEmpty()) {
         has_empty_robustness = true;
-        break;
+      } else if (capability.robustness == kWidevineHwSecureAllRobustness) {
+        has_hw_secure_all = true;
       }
+
+      if (has_empty_robustness && has_hw_secure_all)
+        break;
     }
 
-    if (has_empty_robustness)
+    if (has_empty_robustness && has_hw_secure_all)
       break;
   }
 
@@ -278,6 +300,20 @@ void MediaKeySystemAccessInitializer::CheckVideoCapabilityRobustness() const {
         "specifying the robustness level could result in unexpected "
         "behavior."));
   }
+
+  Document* document = To<Document>(resolver_->GetExecutionContext());
+  if (!document)
+    return;
+
+  ukm::builders::Media_EME_RequestMediaKeySystemAccess builder(
+      document->UkmSourceID());
+  builder.SetKeySystem(KeySystemForUkm::kWidevine);
+  builder.SetVideoCapabilities(static_cast<int>(has_video_capabilities));
+  builder.SetVideoCapabilities_HasEmptyRobustness(
+      static_cast<int>(has_empty_robustness));
+  builder.SetVideoCapabilities_HasHwSecureAllRobustness(
+      static_cast<int>(has_hw_secure_all));
+  builder.Record(document->UkmRecorder());
 }
 
 }  // namespace

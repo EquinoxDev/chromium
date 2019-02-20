@@ -300,12 +300,12 @@ class BaseIsolatedScriptArgsAdapter(object):
           self.options.isolated_script_test_filter)
 
     # Augment test repeat if needed
-    if self.options.isolated_script_test_repeat:
+    if self.options.isolated_script_test_repeat is not None:
       isolated_script_cmd += self.generate_test_repeat_args(
           self.options.isolated_script_test_repeat)
 
     # Augment test launcher retry limit args if needed
-    if self.options.isolated_script_test_launcher_retry_limit:
+    if self.options.isolated_script_test_launcher_retry_limit is not None:
       isolated_script_cmd += self.generate_test_launcher_retry_limit_args(
           self.options.isolated_script_test_launcher_retry_limit)
 
@@ -343,16 +343,17 @@ class BaseIsolatedScriptArgsAdapter(object):
     # all the time on Linux.
     env[CHROME_SANDBOX_ENV] = CHROME_SANDBOX_PATH
     valid = True
-    rc = 0
     try:
       env['CHROME_HEADLESS'] = '1'
+      print 'Running command: %s\nwith env: %r' % (
+          ' '.join(cmd), env)
       if self.options.xvfb:
-        return xvfb.run_executable(cmd, env)
+        exit_code = xvfb.run_executable(cmd, env)
       else:
-         return run_command(cmd, env=env)
-
+        exit_code = subprocess.call(cmd, env=env)
+      print 'Command returned exit code %d' % exit_code
+      return exit_code
     except Exception:
-      rc = 1
       traceback.print_exc()
       valid = False
     finally:
@@ -366,4 +367,4 @@ class BaseIsolatedScriptArgsAdapter(object):
             'failures': failures,
         }, fp)
 
-    return rc
+    return 1

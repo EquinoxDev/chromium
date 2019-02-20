@@ -4,7 +4,6 @@
 include_rules = [
   "+components/account_id/account_id.h",
   "+components/device_event_log",
-  "+components/policy/core/common/cloud/cloud_policy_constants.h",
   "+components/policy/proto",
   "+components/pref_registry",
   "+components/prefs",
@@ -27,6 +26,6 @@ specific_include_rules = {
   ],
 
   ".*test\.cc": [
-    "+services/network/test/test_url_loader_factory.h",
+    "+services/network/test",
   ],
 }

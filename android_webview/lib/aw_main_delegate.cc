@@ -23,6 +23,7 @@
 #include "base/android/apk_assets.h"
 #include "base/android/build_info.h"
 #include "base/android/locale_utils.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/i18n/icu_util.h"
@@ -36,10 +37,10 @@
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/crash/core/common/crash_key.h"
 #include "components/safe_browsing/android/safe_browsing_api_handler_bridge.h"
-#include "components/services/heap_profiling/public/cpp/allocator_shim.h"
+#include "components/services/heap_profiling/public/cpp/sampling_profiler_wrapper.h"
 #include "components/spellcheck/spellcheck_buildflags.h"
 #include "components/viz/common/features.h"
-#include "content/public/browser/android/browser_media_player_manager_register.h"
+#include "content/public/browser/android/media_url_interceptor_register.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
@@ -260,7 +261,7 @@ void AwMainDelegate::PreSandboxStartup() {
     }
   }
 
-  crash_reporter::EnableCrashReporter(process_type);
+  EnableCrashReporter(process_type);
 
   base::android::BuildInfo* android_build_info =
       base::android::BuildInfo::GetInstance();
@@ -275,14 +276,14 @@ void AwMainDelegate::PreSandboxStartup() {
 
   static ::crash_reporter::CrashKeyString<8> sdk_int_key(
       crash_keys::kAndroidSdkInt);
-  sdk_int_key.Set(base::IntToString(android_build_info->sdk_int()));
+  sdk_int_key.Set(base::NumberToString(android_build_info->sdk_int()));
 }
 
 int AwMainDelegate::RunProcess(
     const std::string& process_type,
     const content::MainFunctionParams& main_function_params) {
   if (process_type.empty()) {
-    browser_runner_.reset(content::BrowserMainRunner::Create());
+    browser_runner_ = content::BrowserMainRunner::Create();
     int exit_code = browser_runner_->Initialize(main_function_params);
     DCHECK_LT(exit_code, 0);
 

@@ -64,8 +64,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     # Flakes heavily on many OpenGL configurations
     self.Fail('conformance2/transform_feedback/too-small-buffers.html',
         ['no_angle'], bug=832238)
-    self.Fail('conformance2/transform_feedback/too-small-buffers.html',
-        ['opengl'], bug=832238)
 
     # Failing on NVIDIA OpenGL, but fixed in latest driver
     # TODO(http://crbug.com/887241): Upgrade the drivers on the bots.
@@ -76,9 +74,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Fail('conformance/glsl/bugs/' +
         'vector-scalar-arithmetic-inside-loop-complex.html',
         ['nvidia'], bug=772651)
-
-    # All platforms.
-    self.Fail('conformance2/glsl3/tricky-loop-conditions.html', bug=905001)
 
     # This test needs to be rewritten to measure its expected
     # performance; it's currently too flaky even on release bots.
@@ -91,22 +86,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         bug=660844) # WebGL 2.0.1
     self.Fail('conformance/rendering/rendering-sampling-feedback-loop.html',
         bug=660844) # WebGL 2.0.1
-    self.Fail('conformance2/textures/misc/' +
-        'integer-cubemap-specification-order-bug.html',
-        bug=905003) # owner:cwallez, test might be buggy
-
-    # Need to implement new lifetime/deletion semantics.
-    self.Fail('conformance2/vertex_arrays/vertex-array-object.html', bug=739604)
-
-    # The following actually passes on gl_passthrough and also Mac Intel with
-    # command buffer.
-    self.Fail('deqp/functional/gles3/shadertexturefunction/' +
-        'texturelodoffset.html',
-        bug=794335)
-
-    self.Fail('conformance2/uniforms/' +
-        'incompatible-texture-type-for-sampler.html',
-        bug=809237)
 
     # Nvidia bugs fixed in latest driver
     # TODO(http://crbug.com/887241): Upgrade the drivers on the bots.
@@ -130,6 +109,10 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Fail('conformance2/textures/misc/' +
         'generate-mipmap-with-large-base-level.html',
         ['win', 'no_passthrough'], bug=3033) # angle bug ID
+    self.Fail('conformance2/glsl3/tricky-loop-conditions.html',
+        ['win'], bug=1465) # anglebug.com/1465
+    self.Fail('conformance/textures/misc/texture-active-bind.html',
+        ['win'], bug=931006)
 
     # Win / NVidia
     self.Flaky('deqp/functional/gles3/fbomultisample*',
@@ -145,6 +128,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     # Win / NVIDIA Quadro P400 / D3D11 flaky failures
     self.Fail('deqp/data/gles3/shaders/functions.html',
         ['win', ('nvidia', 0x1cb3), 'd3d11'], bug=680754)
+    self.Flaky('deqp/functional/gles3/framebufferblit/depth_stencil.html',
+        ['win', ('nvidia', 0x1cb3), 'd3d11'], bug=921052)
     self.Fail('deqp/functional/gles3/transformfeedback/' +
         'basic_types_interleaved_lines.html',
         ['win', ('nvidia', 0x1cb3), 'd3d11'], bug=680754)
@@ -190,6 +175,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Fail('conformance2/textures/canvas_sub_rectangle/' +
         'tex-2d-rgb565-rgb-unsigned_byte.html',
         ['win', ('nvidia', 0x1cb3), 'opengl'], bug=781668)
+    self.Flaky('conformance2/textures/image_bitmap_from_image_data/' +
+        'tex-2d-rgb9_e5-rgb-float.html',
+        ['win', ('nvidia', 0x1cb3), 'opengl', 'passthrough'], bug=921055)
     self.Fail('conformance/limits/gl-max-texture-dimensions.html',
         ['win', ('nvidia', 0x1cb3), 'opengl'], bug=715001)
     self.Fail('conformance/textures/misc/texture-size.html',
@@ -202,6 +190,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['win', 'nvidia', 'opengl', 'passthrough'], bug=887578)
     self.Flaky('deqp/functional/gles3/transformfeedback/*',
         ['win', ('nvidia', 0x1cb3), 'opengl'], bug=822733)
+    self.Fail('conformance2/textures/misc/' +
+        'integer-cubemap-specification-order-bug.html',
+        ['win', 'nvidia', 'opengl', 'passthrough'], bug=905003)
 
     # Win / AMD
 
@@ -329,6 +320,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     # Passthrough command decoder
     self.Fail('conformance/misc/webgl-specific-stencil-settings.html',
         ['passthrough'], bug=844349)
+    self.Fail('conformance2/extensions/ext-float-blend.html',
+        ['passthrough'], bug=930993)
 
     # Passthrough command decoder / OpenGL
     self.Fail('conformance2/misc/uninitialized-test-2.html',
@@ -337,6 +330,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['passthrough', 'opengl'], bug=602688)
     self.Fail('conformance2/state/gl-get-calls.html', ['passthrough', 'opengl'],
         bug=602688)
+    self.Flaky('conformance2/vertex_arrays/vertex-array-object.html',
+        ['passthrough', 'opengl'], bug=920265)
     self.Fail('deqp/functional/gles3/integerstatequery.html',
         ['passthrough', 'opengl'], bug=602688)
     self.Fail('conformance/textures/canvas/' +
@@ -360,10 +355,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Flaky('conformance/renderbuffers/' +
         'depth-renderbuffer-initialization.html',
         ['win', 'passthrough', 'opengl'], bug=835364)
-
-    # These Transform Feedback tests seem flaky on ANGLE/GL with passthrough.
-    self.Flaky('conformance2/transform_feedback/switching-objects.html',
-        ['passthrough', 'opengl'], bug=832238)
 
     # Passthrough command decoder / OpenGL / Intel
     self.Fail('conformance2/textures/video/tex-2d-rgb32f-rgb-float.html',
@@ -427,6 +418,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['linux', 'passthrough', 'opengl', 'nvidia'], bug=766918)
     self.Fail('deqp/functional/gles3/shaderoperator/common_functions_*.html',
         ['linux', 'passthrough', 'opengl', 'nvidia'], bug=793055)
+    self.Flaky('conformance/extensions/webgl-compressed-texture-s3tc.html',
+        ['linux', 'passthrough', 'opengl', 'nvidia'], bug=927407)
 
     # Passthrough command decoder / Linux / OpenGL / Intel
     self.Flaky('conformance/extensions/webgl-compressed-texture-s3tc.html',
@@ -449,6 +442,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['sierra', 'amd'], bug=870856)
     self.Fail('conformance2/textures/misc/tex-mipmap-levels.html',
         ['sierra', 'amd'], bug=870856)
+    # Flaky on 10.13 as well.
+    self.Flaky('conformance2/textures/misc/tex-mipmap-levels.html',
+        ['highsierra', 'amd'], bug=870856)
 
     # Regressions in 10.13
     self.Fail('deqp/functional/gles3/fbocolorbuffer/tex2d_00.html',
@@ -469,6 +465,10 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Fail('deqp/functional/gles3/texturespecification/' +
         'teximage2d_pbo_cube_00.html',
         ['highsierra', 'mojave', ('nvidia', 0xfe9)], bug=774827)
+
+    self.Fail('conformance2/textures/misc/' +
+        'integer-cubemap-specification-order-bug.html',
+        ['sierra', ('intel', 0x0a2e)], bug=905003)
 
     # Fails on multiple GPU types.
     self.Fail('conformance/glsl/misc/fragcolor-fragdata-invariant.html',
@@ -498,6 +498,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Flaky(
         'conformance/extensions/webgl-compressed-texture-size-limit.html',
         ['mac', ('nvidia', 0xfe9)], bug=483282)
+    self.Flaky('conformance/ogles/GL/exp2/exp2_001_to_008.html',
+        ['mac', ('nvidia', 0xfe9)], bug=923080)
     self.Fail('conformance/programs/' +
         'gl-bind-attrib-location-long-names-test.html',
         ['mac', ('nvidia', 0xfe9)], bug=483282)
@@ -510,6 +512,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Flaky('conformance2/textures/image_bitmap_from_video/' +
         'tex-2d-rgba16f-rgba-half_float.html',
         ['mac', ('nvidia', 0xfe9)], bug=682834)
+    self.Flaky('conformance2/textures/canvas/tex-3d-rg16f-rg-float.html',
+        ['mac', ('nvidia', 0xfe9)], bug=922517)
     self.Fail('conformance/glsl/bugs/init-array-with-loop.html',
         ['mac', ('nvidia', 0xfe9)], bug=784817)
 
@@ -670,6 +674,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Flaky('conformance2/textures/canvas/tex-3d-r16f-red-half_float.html',
         ['mac', ('nvidia', 0xfe9)], bug=911772)
 
+    self.Fail('conformance2/glsl3/tricky-loop-conditions.html',
+        ['mac', ('nvidia', 0xfe9)], bug=929398)
+
     # When these fail on this configuration, they fail multiple times in a row.
     self.Fail('deqp/functional/gles3/shaderoperator/*',
         ['mac', 'nvidia'], bug=756537)
@@ -692,6 +699,7 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     # failing rather than flaky.
     self.Fail('conformance2/textures/misc/tex-base-level-bug.html',
         ['highsierra', 'amd'], bug=870856)
+
     self.Fail('deqp/functional/gles3/transformfeedback/' +
         'array_interleaved_lines.html',
         ['sierra', 'amd'], bug=483282)
@@ -770,6 +778,8 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['mac', 'amd'], bug=644360)
     self.Flaky('deqp/functional/gles3/shaderindexing/tmp.html',
         ['mac', 'amd'], bug=659871)
+    self.Flaky('deqp/functional/gles3/shaderindexing/varying.html',
+        ['mac', 'amd'], bug=928989)
 
     # These seem to be provoking intermittent GPU process crashes on
     # the MacBook Pros with AMD GPUs.
@@ -826,28 +836,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         'textureprojgrad.html',
         ['mac', 'intel'], bug=905004)
 
-    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
-              'tex-2d-r8ui-red_integer-unsigned_byte.html',
-              ['yosemite', 'intel'], bug=665656)
-    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
-              'tex-2d-rg8ui-rg_integer-unsigned_byte.html',
-              ['yosemite', 'intel'], bug=665656)
-    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
-              'tex-2d-rgb8ui-rgb_integer-unsigned_byte.html',
-              ['yosemite', 'intel'], bug=665656)
-    self.Fail('conformance2/textures/canvas_sub_rectangle/' +
-              'tex-2d-rgba8ui-rgba_integer-unsigned_byte.html',
-              ['yosemite', 'intel'], bug=665656)
-
-    self.Fail('conformance2/textures/image_data/' +
-        'tex-2d-rgba8ui-rgba_integer-unsigned_byte.html',
-        ['mac', 'intel'], bug=665197)
-    self.Fail('conformance2/textures/image_data/' +
-        'tex-2d-rgb8ui-rgb_integer-unsigned_byte.html',
-        ['mac', 'intel'], bug=665197)
-    self.Fail('conformance2/textures/image_data/' +
-        'tex-2d-rg8ui-rg_integer-unsigned_byte.html',
-        ['mac', 'intel'], bug=665197)
+    self.Fail('conformance2/textures/*/' +
+        'tex-2d-*_integer-unsigned_byte.html',
+        ['mac', ('intel', 0x0a2e)], bug=665197)
 
     self.Fail('conformance2/textures/misc/' +
         'integer-cubemap-texture-sampling.html',
@@ -855,7 +846,7 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
 
     self.Fail('conformance2/renderbuffers/' +
         'multisampled-depth-renderbuffer-initialization.html',
-        ['mac', 'intel'], bug=731877)
+        ['mac', ('intel', 0x0a2e)], bug=731877)
 
     self.Fail('conformance/rendering/rendering-stencil-large-viewport.html',
         ['mac', 'intel'], bug=782317)
@@ -896,10 +887,11 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['linux', 'nvidia'], bug=618447)
     self.Fail('conformance2/glsl3/vector-dynamic-indexing-swizzled-lvalue.html',
         ['linux', 'nvidia'], bug=709351)
+    self.Fail('conformance2/textures/misc/' +
+        'integer-cubemap-specification-order-bug.html',
+        ['linux', 'nvidia'], bug=905003)
     self.Fail('conformance2/rendering/framebuffer-texture-level1.html',
         ['linux', 'nvidia', 'opengl'], bug=680278)
-    self.Fail('conformance2/rendering/multisampling-fragment-evaluation.html',
-        ['linux', 'nvidia', 'no_passthrough'], bug=682815)
     self.Fail('conformance2/textures/image/' +
         'tex-3d-rg8ui-rg_integer-unsigned_byte.html',
         ['linux', ('nvidia', 0xf02)], bug=680282)
@@ -911,7 +903,7 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
 
     # Linux NVIDIA Quadro P400
     self.Skip('conformance2/rendering/blitframebuffer-size-overflow.html',
-        ['linux', ('nvidia', 0x1cb3)], bug=830046)
+        ['linux', 'passthrough', ('nvidia', 0x1cb3)], bug=830046)
     # Observed flaky on Swarmed bots. Some of these were directly
     # observed, some not. We can't afford any flakes on the tryservers
     # so mark them all flaky.
@@ -1311,6 +1303,9 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     self.Fail('conformance2/textures/misc/' +
         'generate-mipmap-with-large-base-level.html',
         ['linux', ('amd', 0x6613)], bug=913301)
+    self.Skip('conformance2/uniforms/' +
+        'incompatible-texture-type-for-sampler.html',
+        ['linux', ('amd', 0x6613)], bug=809237)
 
     ####################
     # Android failures #
@@ -1329,14 +1324,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
     # Basic failures that need to be investigated on multiple devices
     self.Fail('conformance2/glsl3/vector-dynamic-indexing-swizzled-lvalue.html',
         ['android'], bug=709351)
-    # Video uploads to some texture formats new in WebGL 2.0 are
-    # failing.
-    self.Fail('conformance2/textures/video/' +
-        'tex-2d-rg8ui-rg_integer-unsigned_byte.html',
-        ['android'], bug=906735)
-    self.Fail('conformance2/textures/video/' +
-        'tex-2d-rgb8ui-rgb_integer-unsigned_byte.html',
-        ['android'], bug=906735)
 
     # Qualcomm (Pixel 2) failures
     self.Fail('conformance/extensions/webgl-compressed-texture-astc.html',
@@ -1345,11 +1332,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['android', 'qualcomm'], bug=906739)
     self.Fail('conformance2/glsl3/compare-structs-containing-arrays.html',
         ['android', 'qualcomm'], bug=906742)
-    self.Fail('conformance2/rendering/uniform-block-buffer-size.html',
-        ['android', 'qualcomm'], bug=906743)
-    self.Fail('conformance2/textures/video/' +
-        'tex-2d-rgba8ui-rgba_integer-unsigned_byte.html',
-        ['android', 'qualcomm'], bug=906735)
     self.Fail('conformance2/textures/misc/tex-new-formats.html',
         ['android', 'qualcomm'], bug=906740)
     self.Fail('conformance2/textures/misc/copy-texture-image-luma-format.html',
@@ -1369,8 +1351,6 @@ class WebGL2ConformanceExpectations(WebGLConformanceExpectations):
         ['android', 'nvidia'], bug=874620)
     self.Fail('conformance2/glsl3/vector-dynamic-indexing-nv-driver-bug.html',
         ['android', 'nvidia'], bug=905006)
-    self.Fail('conformance2/rendering/blitframebuffer-size-overflow.html',
-        ['android', 'nvidia'], bug=830046)
 
     # Conflicting expectations to test that the
     # "Expectations have no collisions" unittest works.

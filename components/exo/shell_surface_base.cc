@@ -29,6 +29,7 @@
 #include "components/exo/surface.h"
 #include "components/exo/wm_helper.h"
 #include "services/ws/public/mojom/window_tree_constants.mojom.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
@@ -46,7 +47,6 @@
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
-#include "ui/gfx/path.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
 #include "ui/wm/core/shadow_controller.h"
@@ -115,29 +115,6 @@ class CustomFrameView : public ash::NonClientFrameViewAsh,
       NonClientFrameViewAsh::SetShouldPaintHeader(paint);
       return;
     }
-    // TODO(oshima): The caption area will be unknown
-    // if a client draw a caption. (It may not even be
-    // rectangular). Remove mask.
-    aura::Window* window = GetWidget()->GetNativeWindow();
-    ui::Layer* layer = window->layer();
-    if (paint) {
-      if (layer->alpha_shape()) {
-        layer->SetAlphaShape(nullptr);
-        layer->SetMasksToBounds(false);
-      }
-      return;
-    }
-
-    int inset = window->GetProperty(aura::client::kTopViewInset);
-    if (inset <= 0)
-      return;
-
-    gfx::Rect bound(bounds().size());
-    bound.Inset(0, inset, 0, 0);
-    std::unique_ptr<ShapeRects> shape = std::make_unique<ShapeRects>();
-    shape->push_back(bound);
-    layer->SetAlphaShape(std::move(shape));
-    layer->SetMasksToBounds(true);
   }
 
   // Overridden from aura::WindowObserver:
@@ -177,7 +154,7 @@ class CustomFrameView : public ash::NonClientFrameViewAsh,
       return ash::NonClientFrameViewAsh::NonClientHitTest(point);
     return GetWidget()->client_view()->NonClientHitTest(point);
   }
-  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {
+  void GetWindowMask(const gfx::Size& size, SkPath* window_mask) override {
     if (visible())
       return ash::NonClientFrameViewAsh::GetWindowMask(size, window_mask);
   }
@@ -205,6 +182,15 @@ class CustomFrameView : public ash::NonClientFrameViewAsh,
           .size();
     }
     return minimum_size;
+  }
+  gfx::Size GetMaximumSize() const override {
+    gfx::Size maximum_size = shell_surface_->GetMaximumSize();
+    if (visible() && !maximum_size.IsEmpty()) {
+      return ash::NonClientFrameViewAsh::GetWindowBoundsForClientBounds(
+                 gfx::Rect(maximum_size))
+          .size();
+    }
+    return maximum_size;
   }
 
  private:
@@ -516,6 +502,13 @@ void ShellSurfaceBase::SetMinimumSize(const gfx::Size& size) {
   pending_minimum_size_ = size;
 }
 
+void ShellSurfaceBase::SetAspectRatio(const gfx::SizeF& aspect_ratio) {
+  TRACE_EVENT1("exo", "ShellSurfaceBase::SetAspectRatio", "aspect_ratio",
+               aspect_ratio.ToString());
+
+  pending_aspect_ratio_ = aspect_ratio;
+}
+
 void ShellSurfaceBase::SetCanMinimize(bool can_minimize) {
   TRACE_EVENT1("exo", "ShellSurfaceBase::SetCanMinimize", "can_minimize",
                can_minimize);
@@ -751,7 +744,7 @@ bool ShellSurfaceBase::WidgetHasHitTestMask() const {
   return true;
 }
 
-void ShellSurfaceBase::GetWidgetHitTestMask(gfx::Path* mask) const {
+void ShellSurfaceBase::GetWidgetHitTestMask(SkPath* mask) const {
   GetHitTestMask(mask);
 
   gfx::Point origin = host_window()->bounds().origin();
@@ -1097,6 +1090,13 @@ void ShellSurfaceBase::CommitWidget() {
   if (!widget_)
     return;
 
+  if (!pending_aspect_ratio_.IsEmpty()) {
+    widget_->SetAspectRatio(pending_aspect_ratio_);
+  } else if (widget_->GetNativeWindow()) {
+    // TODO(yoshiki): Move the logic to clear aspect ratio into view::Widget.
+    widget_->GetNativeWindow()->ClearProperty(aura::client::kAspectRatio);
+  }
+
   UpdateWidgetBounds();
   UpdateShadow();
 
@@ -1108,7 +1108,7 @@ void ShellSurfaceBase::CommitWidget() {
     // Prevent window from being activated when hit test region is empty.
     bool activatable = activatable_ && HasHitTestRegion();
     if (activatable != CanActivate()) {
-      set_can_activate(activatable);
+      SetCanActivate(activatable);
       // Activate or deactivate window if activation state changed.
       if (activatable) {
         // Automatically activate only if the window is modal.

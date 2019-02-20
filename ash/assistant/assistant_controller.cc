@@ -32,6 +32,7 @@ AssistantController::AssistantController()
       assistant_screen_context_controller_(this),
       assistant_setup_controller_(this),
       assistant_ui_controller_(this),
+      view_delegate_(this),
       weak_factory_(this) {
   Shell::Get()->voice_interaction_controller()->AddLocalObserver(this);
   chromeos::CrasAudioHandler::Get()->AddAudioObserver(this);
@@ -137,10 +138,8 @@ void AssistantController::OnDeepLinkReceived(
       break;
     }
     case DeepLinkType::kFeedback:
-      // TODO(dmblack): Possibly use a new FeedbackSource (this method defaults
-      // to kFeedbackSourceAsh). This may be useful for differentiating feedback
-      // UI and behavior for Assistant.
-      Shell::Get()->new_window_controller()->OpenFeedbackPage();
+      Shell::Get()->new_window_controller()->OpenFeedbackPage(
+          /*from_assistant=*/true);
       break;
     case DeepLinkType::kScreenshot:
       // We close the UI before taking the screenshot as it's probably not the
@@ -258,8 +257,11 @@ void AssistantController::NotifyDeepLinkReceived(const GURL& deep_link) {
   const std::map<std::string, std::string> params =
       assistant::util::GetDeepLinkParams(deep_link);
 
+  // TODO(wutao): Remove AssistantControllerObserver::OnDeepLinkReceived.
   for (AssistantControllerObserver& observer : observers_)
     observer.OnDeepLinkReceived(type, params);
+
+  view_delegate_.NotifyDeepLinkReceived(type, params);
 }
 
 void AssistantController::NotifyUrlOpened(const GURL& url, bool from_server) {
@@ -271,6 +273,19 @@ void AssistantController::OnVoiceInteractionStatusChanged(
     mojom::VoiceInteractionState state) {
   if (state == mojom::VoiceInteractionState::NOT_READY)
     assistant_ui_controller_.CloseUi(AssistantExitPoint::kUnspecified);
+}
+
+void AssistantController::SendAssistantFeedback(
+    bool assistant_debug_info_allowed,
+    const std::string& feedback_description,
+    const std::string& screenshot_png) {
+  chromeos::assistant::mojom::AssistantFeedbackPtr assistant_feedback =
+      chromeos::assistant::mojom::AssistantFeedback::New();
+  assistant_feedback->assistant_debug_info_allowed =
+      assistant_debug_info_allowed;
+  assistant_feedback->description = feedback_description;
+  assistant_feedback->screenshot_png = screenshot_png;
+  assistant_->SendAssistantFeedback(std::move(assistant_feedback));
 }
 
 base::WeakPtr<AssistantController> AssistantController::GetWeakPtr() {

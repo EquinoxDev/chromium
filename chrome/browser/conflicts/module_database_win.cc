@@ -14,9 +14,9 @@
 #include "content/public/browser/browser_task_traits.h"
 
 #if defined(GOOGLE_CHROME_BUILD)
+#include "base/enterprise_util.h"
 #include "base/feature_list.h"
 #include "base/task/post_task.h"
-#include "base/win/win_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/conflicts/incompatible_applications_updater_win.h"
 #include "chrome/browser/conflicts/module_load_attempt_log_listener_win.h"
@@ -76,6 +76,7 @@ ModuleDatabase::ModuleDatabase(
       // base::Unretained().
       module_inspector_(base::Bind(&ModuleDatabase::OnModuleInspected,
                                    base::Unretained(this))) {
+  AddObserver(&module_inspector_);
   AddObserver(&third_party_metrics_);
 
 #if defined(GOOGLE_CHROME_BUILD)
@@ -172,9 +173,10 @@ void ModuleDatabase::OnModuleLoad(content::ProcessType process_type,
   // is never freed.
   if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ModuleDatabase::OnModuleLoad,
-                              base::Unretained(this), process_type, module_path,
-                              module_size, module_time_date_stamp));
+        FROM_HERE,
+        base::BindOnce(&ModuleDatabase::OnModuleLoad, base::Unretained(this),
+                       process_type, module_path, module_size,
+                       module_time_date_stamp));
     return;
   }
 
@@ -219,7 +221,7 @@ void ModuleDatabase::OnModuleAddedToBlacklist(const base::FilePath& module_path,
                                               uint32_t module_size,
                                               uint32_t module_time_date_stamp) {
   auto iter = modules_.find(
-      ModuleInfoKey(module_path, module_size, module_time_date_stamp, 0));
+      ModuleInfoKey(module_path, module_size, module_time_date_stamp));
 
   // Only known modules should be added to the blacklist.
   DCHECK(iter != modules_.end());
@@ -303,8 +305,7 @@ bool ModuleDatabase::FindOrCreateModuleInfo(
     ModuleDatabase::ModuleInfo** module_info) {
   auto result = modules_.emplace(
       std::piecewise_construct,
-      std::forward_as_tuple(module_path, module_size, module_time_date_stamp,
-                            modules_.size()),
+      std::forward_as_tuple(module_path, module_size, module_time_date_stamp),
       std::forward_as_tuple());
 
   // New modules must be inspected.
@@ -334,7 +335,7 @@ void ModuleDatabase::OnRegisteredModulesEnumerated() {
 
 void ModuleDatabase::OnModuleInspected(
     const ModuleInfoKey& module_key,
-    std::unique_ptr<ModuleInspectionResult> inspection_result) {
+    ModuleInspectionResult inspection_result) {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   auto it = modules_.find(module_key);
@@ -380,7 +381,7 @@ void ModuleDatabase::MaybeInitializeThirdPartyConflictsManager() {
   // the command-line.
   // TODO(pmonette): Move IAttachmentExecute::Save() to a utility process and
   //                 remove this.
-  if (base::win::IsEnterpriseManaged() &&
+  if (base::IsMachineExternallyManaged() &&
       !AreThirdPartyFeaturesEnabledViaCommandLine()) {
     return;
   }

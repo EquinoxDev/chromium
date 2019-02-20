@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
@@ -15,6 +16,7 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/strcat.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -390,7 +392,6 @@ void NetErrorHelper::GenerateLocalizedErrorPage(
     bool can_show_network_diagnostics_dialog,
     std::unique_ptr<ErrorPageParams> params,
     bool* reload_button_shown,
-    bool* show_saved_copy_button_shown,
     bool* show_cached_copy_button_shown,
     bool* download_button_shown,
     OfflineContentOnNetErrorFeatureState* offline_content_feature_state,
@@ -413,8 +414,6 @@ void NetErrorHelper::GenerateLocalizedErrorPage(
         *offline_content_feature_state, IsAutoFetchFeatureEnabled(),
         RenderThread::Get()->GetLocale(), std::move(params), &error_strings);
     *reload_button_shown = error_strings.Get("reloadButton", nullptr);
-    *show_saved_copy_button_shown =
-        error_strings.Get("showSavedCopyButton", nullptr);
     *show_cached_copy_button_shown =
         error_strings.Get("cacheButton", nullptr);
     *download_button_shown =
@@ -437,12 +436,8 @@ void NetErrorHelper::LoadErrorPage(const std::string& html,
 }
 
 void NetErrorHelper::EnablePageHelperFunctions(net::Error net_error) {
-  if (net::IsCertificateError(net_error)) {
-    SSLCertificateErrorPageController::Install(
-        render_frame(),
-        weak_ssl_error_controller_delegate_factory_.GetWeakPtr());
-    return;
-  }
+  SSLCertificateErrorPageController::Install(
+      render_frame(), weak_ssl_error_controller_delegate_factory_.GetWeakPtr());
   NetErrorPageController::Install(
       render_frame(), weak_controller_delegate_factory_.GetWeakPtr());
 
@@ -557,17 +552,6 @@ void NetErrorHelper::ReloadPage(bool bypass_cache) {
   render_frame()->GetWebFrame()->StartReload(
       bypass_cache ? blink::WebFrameLoadType::kReloadBypassingCache
                    : blink::WebFrameLoadType::kReload);
-}
-
-void NetErrorHelper::LoadPageFromCache(const GURL& page_url) {
-  blink::WebLocalFrame* web_frame = render_frame()->GetWebFrame();
-  DCHECK_NE("POST",
-            web_frame->GetDocumentLoader()->GetRequest().HttpMethod().Ascii());
-
-  blink::WebURLRequest request(page_url);
-  request.SetCacheMode(blink::mojom::FetchCacheMode::kOnlyIfCached);
-  request.SetRequestorOrigin(blink::WebSecurityOrigin::Create(page_url));
-  web_frame->StartNavigation(request);
 }
 
 void NetErrorHelper::DiagnoseError(const GURL& page_url) {

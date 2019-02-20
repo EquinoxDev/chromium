@@ -27,7 +27,7 @@ v8::Local<v8::Value> JSEventHandlerForContentAttribute::GetListenerObject(
 }
 
 // Implements Step 3. of "get the current value of the event handler"
-// https://html.spec.whatwg.org/multipage/webappapis.html#getting-the-current-value-of-the-event-handler
+// https://html.spec.whatwg.org/C/#getting-the-current-value-of-the-event-handler
 v8::Local<v8::Value> JSEventHandlerForContentAttribute::GetCompiledHandler(
     EventTarget& event_target) {
   // Do not compile the same code twice.
@@ -194,9 +194,7 @@ v8::Local<v8::Value> JSEventHandlerForContentAttribute::GetCompiledHandler(
   // EventHandler callback function object whose object reference is function
   // and whose callback context is settings object.
   compiled_function->SetName(V8String(isolate, function_name_));
-  SetCompiledHandler(
-      script_state_of_event_target, compiled_function,
-      V8PrivateProperty::GetCustomWrappableEventHandler(GetIsolate()));
+  SetCompiledHandler(script_state_of_event_target, compiled_function);
 
   return JSEventHandler::GetListenerObject(event_target);
 }

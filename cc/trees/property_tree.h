@@ -374,9 +374,11 @@ class CC_EXPORT EffectTree final : public PropertyTree<EffectNode> {
 
  private:
   void UpdateOpacities(EffectNode* node, EffectNode* parent_node);
+  void UpdateSubtreeHidden(EffectNode* node, EffectNode* parent_node);
   void UpdateIsDrawn(EffectNode* node, EffectNode* parent_node);
   void UpdateBackfaceVisibility(EffectNode* node, EffectNode* parent_node);
   void UpdateHasMaskingChild(EffectNode* node, EffectNode* parent_node);
+  void UpdateIsMasked(EffectNode* node, EffectNode* parent_node);
 
   // Stores copy requests, keyed by node id.
   std::unordered_multimap<int, std::unique_ptr<viz::CopyOutputRequest>>
@@ -657,7 +659,7 @@ class CC_EXPORT PropertyTrees final {
   // this property tree. Returns whether a draw property update is
   // needed.
   bool ElementIsAnimatingChanged(const MutatorHost* mutator_host,
-                                 ElementId element_id,
+                                 const PropertyToElementIdMap& element_id_map,
                                  ElementListType list_type,
                                  const PropertyAnimationState& mask,
                                  const PropertyAnimationState& state,

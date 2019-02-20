@@ -12,6 +12,10 @@ namespace chromeos {
 namespace assistant {
 namespace features {
 
+// Enable Assistant Feedback UI.
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
+extern const base::Feature kAssistantFeedbackUi;
+
 // Enables Assistant voice match enrollment.
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
 extern const base::Feature kAssistantVoiceMatch;
@@ -23,6 +27,18 @@ extern const base::Feature kAssistantWarmerWelcomeFeature;
 // Enables Assistant app support.
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
 extern const base::Feature kAssistantAppSupport;
+
+// Enables Assistant routines.
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
+extern const base::Feature kAssistantRoutines;
+
+// Enables in-Assistant notifications.
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
+extern const base::Feature kInAssistantNotifications;
+
+// Enables clear cut logging.
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
+extern const base::Feature kEnableClearCutLog;
 
 // Enables DSP for hotword detection.
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
@@ -44,7 +60,18 @@ extern const base::Feature kTimerNotification;
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
 extern const base::Feature kTimerTicks;
 
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsAppSupportEnabled();
+
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsClearCutLogEnabled();
+
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsDspHotwordEnabled();
+
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsFeedbackUiEnabled();
+
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
+bool IsInAssistantNotificationsEnabled();
+
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsRoutinesEnabled();
 
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsStereoAudioInputEnabled();
 
@@ -53,6 +80,10 @@ COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsTimerNotificationEnabled();
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsTimerTicksEnabled();
 
 COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC) bool IsWarmerWelcomeEnabled();
+
+// Enables sending the client discourse context with text queries.
+COMPONENT_EXPORT(ASSISTANT_SERVICE_PUBLIC)
+extern const base::Feature kEnableTextQueriesWithClientDiscourseContext;
 
 }  // namespace features
 }  // namespace assistant

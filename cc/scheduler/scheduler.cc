@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
@@ -106,6 +107,12 @@ void Scheduler::SetBeginFrameSource(viz::BeginFrameSource* source) {
     return;
   if (observing_begin_frame_source_)
     begin_frame_source_->AddObserver(this);
+}
+
+void Scheduler::NotifyAnimationWorkletStateChange(AnimationWorkletState state,
+                                                  TreeType tree) {
+  state_machine_.NotifyAnimationWorkletStateChange(state, tree);
+  ProcessScheduledActions();
 }
 
 void Scheduler::SetNeedsBeginMainFrame() {
@@ -740,10 +747,10 @@ void Scheduler::DrawForced() {
       client_->CurrentFrameHadRAF(), client_->NextFrameHasPendingRAF());
 }
 
-void Scheduler::SetDeferMainFrameUpdate(bool defer_main_frame_update) {
-  TRACE_EVENT1("cc", "Scheduler::SetDeferMainFrameUpdate",
-               "defer_main_frame_update", defer_main_frame_update);
-  state_machine_.SetDeferMainFrameUpdate(defer_main_frame_update);
+void Scheduler::SetDeferBeginMainFrame(bool defer_begin_main_frame) {
+  TRACE_EVENT1("cc", "Scheduler::SetDeferBeginMainFrame",
+               "defer_begin_main_frame", defer_begin_main_frame);
+  state_machine_.SetDeferBeginMainFrame(defer_begin_main_frame);
   ProcessScheduledActions();
 }
 

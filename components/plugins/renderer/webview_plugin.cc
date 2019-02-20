@@ -17,6 +17,7 @@
 #include "content/public/renderer/render_view.h"
 #include "gin/converter.h"
 #include "skia/ext/platform_canvas.h"
+#include "third_party/blink/public/mojom/frame/document_interface_broker.mojom.h"
 #include "third_party/blink/public/platform/web_coalesced_input_event.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_response.h"
@@ -66,9 +67,15 @@ WebViewPlugin* WebViewPlugin::Create(content::RenderView* render_view,
                                      const GURL& url) {
   DCHECK(url.is_valid()) << "Blink requires the WebView to have a valid URL.";
   WebViewPlugin* plugin = new WebViewPlugin(render_view, delegate, preferences);
-  plugin->web_view_helper_.main_frame()->CommitNavigation(
-      blink::WebNavigationParams::CreateWithHTMLString(html_data, url),
-      nullptr /* extra_data */);
+  // Loading may synchronously access |delegate| which could be
+  // uninitialized just yet, so load in another task.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner =
+      plugin->web_view_helper_.main_frame()->GetTaskRunner(
+          blink::TaskType::kInternalDefault);
+  task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(&WebViewPlugin::LoadHTML,
+                     plugin->weak_factory_.GetWeakPtr(), html_data, url));
   return plugin;
 }
 
@@ -256,15 +263,17 @@ WebViewPlugin::WebViewHelper::WebViewHelper(WebViewPlugin* plugin,
                                             const WebPreferences& preferences)
     : plugin_(plugin) {
   web_view_ = WebView::Create(/*client=*/this,
-                              /*widget_client=*/this,
                               /*is_hidden=*/false,
                               /*compositing_enabled=*/false,
                               /*opener=*/nullptr);
   // ApplyWebPreferences before making a WebLocalFrame so that the frame sees a
   // consistent view of our preferences.
   content::RenderView::ApplyWebPreferences(preferences, web_view_);
-  WebLocalFrame* web_frame =
-      WebLocalFrame::CreateMainFrame(web_view_, this, nullptr, nullptr);
+  blink::mojom::DocumentInterfaceBrokerPtrInfo document_interface_broker;
+  WebLocalFrame* web_frame = WebLocalFrame::CreateMainFrame(
+      web_view_, this, nullptr,
+      mojo::MakeRequest(&document_interface_broker).PassMessagePipe(), nullptr);
+  // The created WebFrameWidget is owned by the |web_frame|.
   WebFrameWidget::CreateForMainFrame(this, web_frame);
 }
 
@@ -288,10 +297,6 @@ blink::WebScreenInfo WebViewPlugin::WebViewHelper::GetScreenInfo() {
   // TODO(danakj): This should probably return the screen info for the
   // RenderView.
   return blink::WebScreenInfo();
-}
-
-blink::WebWidgetClient* WebViewPlugin::WebViewHelper::WidgetClient() {
-  return this;
 }
 
 void WebViewPlugin::WebViewHelper::SetToolTipText(
@@ -378,6 +383,12 @@ void WebViewPlugin::OnZoomLevelChanged() {
     web_view()->SetZoomLevel(
         blink::WebView::ZoomFactorToZoomLevel(container_->PageZoomFactor()));
   }
+}
+
+void WebViewPlugin::LoadHTML(const std::string& html_data, const GURL& url) {
+  web_view_helper_.main_frame()->CommitNavigation(
+      blink::WebNavigationParams::CreateWithHTMLString(html_data, url),
+      nullptr /* extra_data */);
 }
 
 void WebViewPlugin::UpdatePluginForNewGeometry(

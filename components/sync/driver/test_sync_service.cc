@@ -55,7 +55,7 @@ void TestSyncService::SetLocalSyncEnabled(bool local_sync_enabled) {
 }
 
 void TestSyncService::SetAuthenticatedAccountInfo(
-    const AccountInfo& account_info) {
+    const CoreAccountInfo& account_info) {
   account_info_ = account_info;
 }
 
@@ -83,10 +83,6 @@ void TestSyncService::SetActiveDataTypes(const ModelTypeSet& types) {
   active_data_types_ = types;
 }
 
-void TestSyncService::SetIsUsingSecondaryPassphrase(bool enabled) {
-  using_secondary_passphrase_ = enabled;
-}
-
 void TestSyncService::SetLastCycleSnapshot(const SyncCycleSnapshot& snapshot) {
   last_cycle_snapshot_ = snapshot;
 }
@@ -106,11 +102,15 @@ void TestSyncService::SetDetailedSyncStatus(bool engine_available,
 }
 
 void TestSyncService::SetPassphraseRequired(bool required) {
-  passphrase_required_ = required;
+  user_settings_.SetPassphraseRequired(required);
 }
 
 void TestSyncService::SetPassphraseRequiredForDecryption(bool required) {
-  passphrase_required_for_decryption_ = required;
+  user_settings_.SetPassphraseRequiredForDecryption(required);
+}
+
+void TestSyncService::SetIsUsingSecondaryPassphrase(bool enabled) {
+  user_settings_.SetIsUsingSecondaryPassphrase(enabled);
 }
 
 SyncUserSettings* TestSyncService::GetUserSettings() {
@@ -133,7 +133,7 @@ bool TestSyncService::IsLocalSyncEnabled() const {
   return local_sync_enabled_;
 }
 
-AccountInfo TestSyncService::GetAuthenticatedAccountInfo() const {
+CoreAccountInfo TestSyncService::GetAuthenticatedAccountInfo() const {
   return account_info_;
 }
 
@@ -188,27 +188,14 @@ bool TestSyncService::HasObserver(const SyncServiceObserver* observer) const {
   return false;
 }
 
-bool TestSyncService::IsPassphraseRequiredForDecryption() const {
-  return passphrase_required_for_decryption_;
-}
+void TestSyncService::AddPreferenceProvider(
+    SyncTypePreferenceProvider* provider) {}
 
-base::Time TestSyncService::GetExplicitPassphraseTime() const {
-  return base::Time();
-}
+void TestSyncService::RemovePreferenceProvider(
+    SyncTypePreferenceProvider* provider) {}
 
-bool TestSyncService::IsUsingSecondaryPassphrase() const {
-  return using_secondary_passphrase_;
-}
-
-void TestSyncService::EnableEncryptEverything() {}
-
-bool TestSyncService::IsEncryptEverythingEnabled() const {
-  return false;
-}
-
-void TestSyncService::SetEncryptionPassphrase(const std::string& passphrase) {}
-
-bool TestSyncService::SetDecryptionPassphrase(const std::string& passphrase) {
+bool TestSyncService::HasPreferenceProvider(
+    SyncTypePreferenceProvider* provider) const {
   return false;
 }
 
@@ -277,20 +264,6 @@ void TestSyncService::GetAllNodes(
     const base::Callback<void(std::unique_ptr<base::ListValue>)>& callback) {}
 
 void TestSyncService::SetInvalidationsForSessionsEnabled(bool enabled) {}
-
-bool TestSyncService::IsPassphraseRequired() const {
-  return passphrase_required_;
-}
-
-ModelTypeSet TestSyncService::GetEncryptedDataTypes() const {
-  if (!using_secondary_passphrase_) {
-    // PASSWORDS are always encrypted.
-    return ModelTypeSet(PASSWORDS);
-  }
-  // Some types can never be encrypted, e.g. DEVICE_INFO and
-  // AUTOFILL_WALLET_DATA, so make sure we don't report them as encrypted.
-  return Intersection(GetPreferredDataTypes(), EncryptableUserTypes());
-}
 
 void TestSyncService::Shutdown() {}
 

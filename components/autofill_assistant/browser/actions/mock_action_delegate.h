@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_ACTIONS_MOCK_ACTION_DELEGATE_H_
 #define COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_ACTIONS_MOCK_ACTION_DELEGATE_H_
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -47,29 +48,14 @@ class MockActionDelegate : public ActionDelegate {
                     const Selector&,
                     base::OnceCallback<void(ProcessedActionStatusProto)>&));
 
-  MOCK_METHOD1(ShowStatusMessage, void(const std::string& message));
+  MOCK_METHOD1(SetStatusMessage, void(const std::string& message));
+  MOCK_METHOD0(GetStatusMessage, std::string());
   MOCK_METHOD2(ClickOrTapElement,
                void(const Selector& selector,
                     base::OnceCallback<void(bool)> callback));
 
-  void Choose(const std::vector<UiController::Choice>& choices,
-              base::OnceCallback<void(const std::string&)> callback) override {
-    OnChoose(choices, callback);
-  }
-
-  MOCK_METHOD2(OnChoose,
-               void(const std::vector<UiController::Choice>& choice,
-                    base::OnceCallback<void(const std::string&)>& callback));
-
-  MOCK_METHOD1(ForceChoose, void(const std::string&));
-
-  void ChooseAddress(
-      base::OnceCallback<void(const std::string&)> callback) override {
-    OnChooseAddress(callback);
-  }
-
-  MOCK_METHOD1(OnChooseAddress,
-               void(base::OnceCallback<void(const std::string&)>& callback));
+  MOCK_METHOD1(Prompt, void(std::unique_ptr<std::vector<Chip>> chips));
+  MOCK_METHOD0(CancelPrompt, void());
 
   void FillAddressForm(const autofill::AutofillProfile* profile,
                        const Selector& selector,
@@ -81,14 +67,6 @@ class MockActionDelegate : public ActionDelegate {
                void(const autofill::AutofillProfile* profile,
                     const Selector& selector,
                     base::OnceCallback<void(bool)>& callback));
-
-  void ChooseCard(
-      base::OnceCallback<void(const std::string&)> callback) override {
-    OnChooseCard(callback);
-  }
-
-  MOCK_METHOD1(OnChooseCard,
-               void(base::OnceCallback<void(const std::string&)>& callback));
 
   void FillCardForm(std::unique_ptr<autofill::CreditCard> card,
                     const base::string16& cvc,
@@ -108,20 +86,17 @@ class MockActionDelegate : public ActionDelegate {
   MOCK_METHOD2(FocusElement,
                void(const Selector& selector,
                     base::OnceCallback<void(bool)> callback));
-  MOCK_METHOD1(SetTouchableElements,
-               void(const std::vector<Selector>& element_selectors));
+  MOCK_METHOD1(SetTouchableElementArea,
+               void(const ElementAreaProto& touchable_element_area));
 
   MOCK_METHOD2(HighlightElement,
                void(const Selector& selector,
                     base::OnceCallback<void(bool)> callback));
 
-  MOCK_METHOD4(
-      GetPaymentInformation,
-      void(payments::mojom::PaymentOptionsPtr payment_options,
-           base::OnceCallback<void(std::unique_ptr<PaymentInformation>)>
-               callback,
-           const std::string& title,
-           const std::vector<std::string>& supported_basic_card_networks));
+  MOCK_METHOD1(GetPaymentInformation,
+               void(std::unique_ptr<PaymentRequestOptions> options));
+
+  MOCK_METHOD1(GetFullCard, void(GetFullCardCallback callback));
 
   void SetFieldValue(const Selector& selector,
                      const std::string& value,
@@ -157,15 +132,10 @@ class MockActionDelegate : public ActionDelegate {
   MOCK_METHOD0(GetPersonalDataManager, autofill::PersonalDataManager*());
   MOCK_METHOD0(GetWebContents, content::WebContents*());
   MOCK_METHOD1(StopCurrentScriptAndShutdown, void(const std::string& message));
-  MOCK_METHOD0(HideDetails, void());
-  MOCK_METHOD2(ShowDetails,
-               void(const DetailsProto& details,
-                    base::OnceCallback<void(bool)> callback));
-  MOCK_METHOD2(ShowProgressBar, void(int progress, const std::string& message));
-  MOCK_METHOD0(HideProgressBar, void());
-  MOCK_METHOD0(ShowOverlay, void());
-  MOCK_METHOD0(HideOverlay, void());
-  MOCK_METHOD1(AllowShowingSoftKeyboard, void(bool));
+  MOCK_METHOD1(SetDetails, void(const Details& details));
+  MOCK_METHOD0(ClearDetails, void());
+  MOCK_METHOD1(SetProgress, void(int progress));
+  MOCK_METHOD1(SetChips, void(std::unique_ptr<std::vector<Chip>> chips));
 };
 
 }  // namespace autofill_assistant

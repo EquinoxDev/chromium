@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/base_paths.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/alias.h"
 #include "base/debug/dump_without_crashing.h"
@@ -186,7 +187,6 @@ ChromeNetworkDelegate::ChromeNetworkDelegate(
     extensions::EventRouterForwarder* event_router)
     : extensions_delegate_(
           ChromeExtensionsNetworkDelegate::Create(event_router)),
-      profile_(nullptr),
       experimental_web_platform_features_enabled_(
           base::CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kEnableExperimentalWebPlatformFeatures)) {}
@@ -199,7 +199,6 @@ void ChromeNetworkDelegate::set_extension_info_map(
 }
 
 void ChromeNetworkDelegate::set_profile(void* profile) {
-  profile_ = profile;
   extensions_delegate_->set_profile(profile);
 }
 
@@ -264,7 +263,7 @@ int ChromeNetworkDelegate::OnHeadersReceived(
 void ChromeNetworkDelegate::OnBeforeRedirect(net::URLRequest* request,
                                              const GURL& new_location) {
   extensions_delegate_->NotifyBeforeRedirect(request, new_location);
-  variations::StripVariationHeaderIfNeeded(new_location, request);
+  variations::StripVariationsHeaderIfNeeded(new_location, request);
 }
 
 void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request,

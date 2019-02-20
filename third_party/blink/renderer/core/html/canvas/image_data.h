@@ -134,7 +134,7 @@ class CORE_EXPORT ImageData final : public ScriptWrappable,
   const DOMUint8ClampedArray* data() const;
   ImageDataArray& dataUnion() { return data_union_; }
   const ImageDataArray& dataUnion() const { return data_union_; }
-  void dataUnion(ImageDataArray& result) { result = data_union_; };
+  void dataUnion(ImageDataArray& result) { result = data_union_; }
 
   DOMArrayBufferBase* BufferBase() const;
   CanvasColorParams GetCanvasColorParams();
@@ -159,7 +159,7 @@ class CORE_EXPORT ImageData final : public ScriptWrappable,
                                   base::Optional<IntRect> crop_rect,
                                   const ImageBitmapOptions*) override;
 
-  void Trace(blink::Visitor*) override;
+  void Trace(Visitor*) override;
 
   WARN_UNUSED_RESULT v8::Local<v8::Object> AssociateWithWrapper(
       v8::Isolate*,

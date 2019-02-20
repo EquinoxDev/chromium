@@ -182,6 +182,8 @@ class ASH_EXPORT AccessibilityController
   void SetSwitchAccessEventHandlerDelegate(
       mojom::SwitchAccessEventHandlerDelegatePtr delegate) override;
   void ToggleDictationFromSource(mojom::DictationToggleSource source) override;
+  void ForwardKeyEventsToSwitchAccess(bool should_forward) override;
+  void GetBatteryDescription(GetBatteryDescriptionCallback callback) override;
 
   // SessionObserver:
   void OnSigninScreenPrefServiceInitialized(PrefService* prefs) override;

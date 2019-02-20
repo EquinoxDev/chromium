@@ -97,11 +97,6 @@ class BrowserNonClientFrameView : public views::NonClientFrameView,
   // tabstrip background.
   SkColor GetFrameColor(ActiveState active_state = kUseCurrent) const;
 
-  // Returns the color to use for text and other title bar elements given the
-  // frame |active_state|.
-  virtual SkColor GetFrameForegroundColor(
-      ActiveState active_state = kUseCurrent) const = 0;
-
   // Returns COLOR_TOOLBAR_TOP_SEPARATOR[,_INACTIVE] depending on the activation
   // state of the window.
   SkColor GetToolbarTopSeparatorColor() const;
@@ -121,15 +116,8 @@ class BrowserNonClientFrameView : public views::NonClientFrameView,
   // Provided for mus. Updates the client-area of the WindowTreeHostMus.
   virtual void UpdateClientArea();
 
-  // Provided for mus to update the minimum window size property.
+  // Provided for mus and macOS to update the minimum window size property.
   virtual void UpdateMinimumSize();
-
-  // Whether the special painting mode for one tab is allowed, regardless of how
-  // many tabs there are right now.
-  virtual bool IsSingleTabModeAvailable() const;
-
-  // Whether the frame should be painted with the special mode for one tab.
-  bool ShouldPaintAsSingleTabMode() const;
 
   // views::NonClientFrameView:
   using views::NonClientFrameView::ShouldPaintAsActive;
@@ -137,21 +125,14 @@ class BrowserNonClientFrameView : public views::NonClientFrameView,
   int NonClientHitTest(const gfx::Point& point) override;
   void ResetWindowControls() override;
 
-  // TabStripObserver:
-  void OnSingleTabModeChanged() override;
-
   HostedAppButtonContainer* hosted_app_button_container_for_testing() {
     return hosted_app_button_container_;
   }
 
-  // Draws a taskbar icon for non-guest sessions, erases it otherwise.
-  void UpdateTaskbarDecoration();
-
  protected:
-  // Whether the frame should be painted with theming.
-  // By default, tabbed browser windows are themed but popup and app windows are
-  // not.
-  virtual bool ShouldPaintAsThemed() const;
+  // Returns the color to use for text, caption buttons, and other title bar
+  // elements.
+  virtual SkColor GetCaptionColor(ActiveState active_state = kUseCurrent) const;
 
   // Converts an ActiveState to a bool representing whether the frame should be
   // treated as active.

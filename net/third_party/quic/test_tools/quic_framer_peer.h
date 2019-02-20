@@ -18,11 +18,11 @@ class QuicFramerPeer {
  public:
   QuicFramerPeer() = delete;
 
-  static QuicPacketNumber CalculatePacketNumberFromWire(
+  static uint64_t CalculatePacketNumberFromWire(
       QuicFramer* framer,
       QuicPacketNumberLength packet_number_length,
       QuicPacketNumber last_packet_number,
-      QuicPacketNumber packet_number);
+      uint64_t packet_number);
   static void SetLastSerializedConnectionId(QuicFramer* framer,
                                             QuicConnectionId connection_id);
   static void SetLargestPacketNumber(QuicFramer* framer,
@@ -116,12 +116,13 @@ class QuicFramerPeer {
   static bool ProcessMaxStreamDataFrame(QuicFramer* framer,
                                         QuicDataReader* reader,
                                         QuicWindowUpdateFrame* frame);
-  static bool AppendMaxStreamIdFrame(QuicFramer* framer,
-                                     const QuicMaxStreamIdFrame& frame,
-                                     QuicDataWriter* writer);
-  static bool ProcessMaxStreamIdFrame(QuicFramer* framer,
-                                      QuicDataReader* reader,
-                                      QuicMaxStreamIdFrame* frame);
+  static bool AppendMaxStreamsFrame(QuicFramer* framer,
+                                    const QuicMaxStreamIdFrame& frame,
+                                    QuicDataWriter* writer);
+  static bool ProcessMaxStreamsFrame(QuicFramer* framer,
+                                     QuicDataReader* reader,
+                                     QuicMaxStreamIdFrame* frame,
+                                     uint64_t frame_type);
   static bool AppendIetfBlockedFrame(QuicFramer* framer,
                                      const QuicBlockedFrame& frame,
                                      QuicDataWriter* writer);
@@ -136,12 +137,13 @@ class QuicFramerPeer {
                                         QuicDataReader* reader,
                                         QuicBlockedFrame* frame);
 
-  static bool AppendStreamIdBlockedFrame(QuicFramer* framer,
-                                         const QuicStreamIdBlockedFrame& frame,
-                                         QuicDataWriter* writer);
-  static bool ProcessStreamIdBlockedFrame(QuicFramer* framer,
-                                          QuicDataReader* reader,
-                                          QuicStreamIdBlockedFrame* frame);
+  static bool AppendStreamsBlockedFrame(QuicFramer* framer,
+                                        const QuicStreamIdBlockedFrame& frame,
+                                        QuicDataWriter* writer);
+  static bool ProcessStreamsBlockedFrame(QuicFramer* framer,
+                                         QuicDataReader* reader,
+                                         QuicStreamIdBlockedFrame* frame,
+                                         uint64_t frame_type);
 
   static bool AppendNewConnectionIdFrame(QuicFramer* framer,
                                          const QuicNewConnectionIdFrame& frame,
@@ -161,6 +163,8 @@ class QuicFramerPeer {
                                    const QuicFrame& frame,
                                    bool last_frame_in_packet,
                                    QuicPacketNumberLength packet_number_length);
+  static void SetFirstSendingPacketNumber(QuicFramer* framer,
+                                          uint64_t packet_number);
 };
 
 }  // namespace test

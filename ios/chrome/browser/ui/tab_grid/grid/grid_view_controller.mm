@@ -5,7 +5,7 @@
 #import "ios/chrome/browser/ui/tab_grid/grid/grid_view_controller.h"
 
 #include "base/ios/block_types.h"
-#import "base/logging.h"
+#include "base/logging.h"
 #import "base/mac/foundation_util.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
@@ -73,24 +73,6 @@ NSIndexPath* CreateIndexPath(NSInteger index) {
 @end
 
 @implementation GridViewController
-// Public properties.
-@synthesize theme = _theme;
-@synthesize delegate = _delegate;
-@synthesize imageDataSource = _imageDataSource;
-@synthesize emptyStateView = _emptyStateView;
-@synthesize showsSelectionUpdates = _showsSelectionUpdates;
-// Private properties.
-@synthesize updatesCollectionView = _updatesCollectionView;
-@synthesize collectionView = _collectionView;
-@synthesize items = _items;
-@synthesize selectedItemID = _selectedItemID;
-@synthesize lastInsertedItemID = _lastInsertedItemID;
-@synthesize itemReorderRecognizer = _itemReorderRecognizer;
-@synthesize itemReorderTouchPoint = _itemReorderTouchPoint;
-@synthesize emptyStateAnimator = _emptyStateAnimator;
-@synthesize defaultLayout = _defaultLayout;
-@synthesize reorderingLayout = _reorderingLayout;
-@synthesize hasChangedOrder = _hasChangedOrder;
 
 - (instancetype)init {
   if (self = [super init]) {
@@ -99,6 +81,8 @@ NSIndexPath* CreateIndexPath(NSInteger index) {
   }
   return self;
 }
+
+#pragma mark - UIViewController
 
 - (void)loadView {
   self.defaultLayout = [[GridLayout alloc] init];
@@ -163,6 +147,13 @@ NSIndexPath* CreateIndexPath(NSInteger index) {
 - (void)viewWillDisappear:(BOOL)animated {
   self.updatesCollectionView = NO;
   [super viewWillDisappear:animated];
+}
+
+#pragma mark - UITraitEnvironment
+
+- (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
+  [super traitCollectionDidChange:previousTraitCollection];
+  [self.collectionView.collectionViewLayout invalidateLayout];
 }
 
 #pragma mark - Public

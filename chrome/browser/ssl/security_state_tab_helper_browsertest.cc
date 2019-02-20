@@ -5,10 +5,13 @@
 #include "chrome/browser/ssl/security_state_tab_helper.h"
 
 #include "base/base64.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
+#include "base/metrics/field_trial.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
@@ -415,7 +418,7 @@ void ProceedThroughInterstitial(content::WebContents* tab) {
             tab);
     helper->GetBlockingPageForCurrentlyCommittedNavigationForTesting()
         ->CommandReceived(
-            base::IntToString(security_interstitials::CMD_PROCEED));
+            base::NumberToString(security_interstitials::CMD_PROCEED));
     nav_observer.Wait();
   } else {
     content::InterstitialPage* interstitial_page = tab->GetInterstitialPage();
@@ -430,15 +433,14 @@ void ProceedThroughInterstitial(content::WebContents* tab) {
   }
 }
 
-void GetFilePathWithHostAndPortReplacement(
+std::string GetFilePathWithHostAndPortReplacement(
     const std::string& original_file_path,
-    const net::HostPortPair& host_port_pair,
-    std::string* replacement_path) {
+    const net::HostPortPair& host_port_pair) {
   base::StringPairs replacement_text;
   replacement_text.push_back(
       make_pair("REPLACE_WITH_HOST_AND_PORT", host_port_pair.ToString()));
-  net::test_server::GetFilePathWithReplacements(
-      original_file_path, replacement_text, replacement_path);
+  return net::test_server::GetFilePathWithReplacements(original_file_path,
+                                                       replacement_text);
 }
 
 GURL GetURLWithNonLocalHostname(net::EmbeddedTestServer* server,
@@ -488,7 +490,7 @@ class SecurityStateTabHelperTest : public CertVerifierBrowserTest,
 
   // Navigates to an empty page and runs |javascript| to create a URL with with
   // a scheme of |scheme|. Expects a security level of NONE if
-  // |use_secure_inner_origin| is true and HTTP_SHOW_WARNING otherwise.
+  // |use_secure_inner_origin| is true and DANGEROUS otherwise.
   void TestBlobOrFilesystemURL(const std::string& scheme,
                                const std::string& javascript,
                                bool use_secure_inner_origin) {
@@ -521,8 +523,25 @@ class SecurityStateTabHelperTest : public CertVerifierBrowserTest,
         contents->GetController().GetVisibleEntry();
     ASSERT_TRUE(entry);
 
+    // TODO(crbug.com/917693): Remove this conditional and hard-code the test
+    // expectation to DANGEROUS when the feature fully launches.
+    security_state::SecurityLevel expected_security_level =
+        security_state::NONE;
+    if (base::FeatureList::IsEnabled(
+            security_state::features::kMarkHttpAsFeature)) {
+      std::string parameter = base::GetFieldTrialParamValueByFeature(
+          security_state::features::kMarkHttpAsFeature,
+          security_state::features::kMarkHttpAsFeatureParameterName);
+      if (parameter ==
+          security_state::features::kMarkHttpAsParameterDangerous) {
+        expected_security_level = security_state::DANGEROUS;
+      } else {
+        expected_security_level = security_state::HTTP_SHOW_WARNING;
+      }
+    }
+
     EXPECT_EQ(use_secure_inner_origin ? security_state::NONE
-                                      : security_state::HTTP_SHOW_WARNING,
+                                      : expected_security_level,
               security_info.security_level);
   }
 
@@ -533,9 +552,9 @@ class SecurityStateTabHelperTest : public CertVerifierBrowserTest,
   DISALLOW_COPY_AND_ASSIGN(SecurityStateTabHelperTest);
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        SecurityStateTabHelperTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(,
+                         SecurityStateTabHelperTest,
+                         ::testing::Values(false, true));
 
 // Same as SecurityStateTabHelperTest, but with Incognito enabled.
 class SecurityStateTabHelperIncognitoTest : public SecurityStateTabHelperTest {
@@ -552,9 +571,9 @@ class SecurityStateTabHelperIncognitoTest : public SecurityStateTabHelperTest {
   DISALLOW_COPY_AND_ASSIGN(SecurityStateTabHelperIncognitoTest);
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        SecurityStateTabHelperIncognitoTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(,
+                         SecurityStateTabHelperIncognitoTest,
+                         ::testing::Values(false, true));
 
 class DidChangeVisibleSecurityStateTest
     : public InProcessBrowserTest,
@@ -586,9 +605,9 @@ class DidChangeVisibleSecurityStateTest
   DISALLOW_COPY_AND_ASSIGN(DidChangeVisibleSecurityStateTest);
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        DidChangeVisibleSecurityStateTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(,
+                         DidChangeVisibleSecurityStateTest,
+                         ::testing::Values(false, true));
 
 IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, HttpPage) {
   ui_test_utils::NavigateToURL(
@@ -728,10 +747,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContent) {
   replacement_pair.set_host("example.test");
 
   // Navigate to an HTTPS page that displays mixed content.
-  std::string replacement_path;
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_displays_insecure_content.html", replacement_pair,
-      &replacement_path);
+  std::string replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_displays_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -740,9 +757,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContent) {
       false, false /* expect cert status error */);
 
   // Navigate to an HTTPS page that displays mixed content dynamically.
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_with_dynamic_insecure_content.html", replacement_pair,
-      &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_with_dynamic_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -761,8 +777,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContent) {
       false, false /* expect cert status error */);
 
   // Navigate to an HTTPS page that runs mixed content.
-  GetFilePathWithHostAndPortReplacement("/ssl/page_runs_insecure_content.html",
-                                        replacement_pair, &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_runs_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -771,9 +787,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContent) {
       false, false /* expect cert status error */);
 
   // Navigate to an HTTPS page that runs and displays mixed content.
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_runs_and_displays_insecure_content.html", replacement_pair,
-      &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_runs_and_displays_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -786,9 +801,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContent) {
   net::HostPortPair host_port_pair =
       net::HostPortPair::FromURL(https_server_.GetURL("/title1.html"));
   host_port_pair.set_host("different-host.test");
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_runs_insecure_content_in_iframe.html", host_port_pair,
-      &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_runs_insecure_content_in_iframe.html", host_port_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -893,10 +907,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContentWithSHA1Cert) {
   replacement_pair.set_host("example.test");
 
   // Navigate to an HTTPS page that displays mixed content.
-  std::string replacement_path;
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_displays_insecure_content.html", replacement_pair,
-      &replacement_path);
+  std::string replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_displays_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -905,9 +917,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContentWithSHA1Cert) {
       false, false /* expect cert status error */);
 
   // Navigate to an HTTPS page that displays mixed content dynamically.
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_with_dynamic_insecure_content.html", replacement_pair,
-      &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_with_dynamic_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -926,8 +937,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContentWithSHA1Cert) {
       false, false /* expect cert status error */);
 
   // Navigate to an HTTPS page that runs mixed content.
-  GetFilePathWithHostAndPortReplacement("/ssl/page_runs_insecure_content.html",
-                                        replacement_pair, &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_runs_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -936,9 +947,8 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContentWithSHA1Cert) {
       false, false /* expect cert status error */);
 
   // Navigate to an HTTPS page that runs and displays mixed content.
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_runs_and_displays_insecure_content.html", replacement_pair,
-      &replacement_path);
+  replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_runs_and_displays_insecure_content.html", replacement_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -955,13 +965,12 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, MixedContentStrictBlocking) {
 
   // Navigate to an HTTPS page that tries to run mixed content in an
   // iframe, with strict mixed content blocking.
-  std::string replacement_path;
   net::HostPortPair host_port_pair =
       net::HostPortPair::FromURL(https_server_.GetURL("/title1.html"));
   host_port_pair.set_host("different-host.test");
-  GetFilePathWithHostAndPortReplacement(
+  std::string replacement_path = GetFilePathWithHostAndPortReplacement(
       "/ssl/page_runs_insecure_content_in_iframe_with_strict_blocking.html",
-      host_port_pair, &replacement_path);
+      host_port_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -990,10 +999,9 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, BrokenHTTPS) {
       false, true /* expect cert status error */);
 
   // Navigate to a broken HTTPS page that displays mixed content.
-  std::string replacement_path;
-  GetFilePathWithHostAndPortReplacement(
+  std::string replacement_path = GetFilePathWithHostAndPortReplacement(
       "/ssl/page_displays_insecure_content.html",
-      embedded_test_server()->host_port_pair(), &replacement_path);
+      embedded_test_server()->host_port_pair());
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   CheckSecurityInfoForSecure(
@@ -1234,7 +1242,7 @@ class PKPModelClientTest : public SecurityStateTabHelperTest {
       transport_security_state_source_;
 };
 
-INSTANTIATE_TEST_CASE_P(, PKPModelClientTest, ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(, PKPModelClientTest, ::testing::Values(false, true));
 
 IN_PROC_BROWSER_TEST_P(PKPModelClientTest, PKPBypass) {
   content::WebContents* web_contents =
@@ -1335,9 +1343,9 @@ class SecurityStateLoadingTest : public SecurityStateTabHelperTest {
   DISALLOW_COPY_AND_ASSIGN(SecurityStateLoadingTest);
 };
 
-INSTANTIATE_TEST_CASE_P(,
-                        SecurityStateLoadingTest,
-                        ::testing::Values(false, true));
+INSTANTIATE_TEST_SUITE_P(,
+                         SecurityStateLoadingTest,
+                         ::testing::Values(false, true));
 
 // Tests that navigation state changes cause the security state to be
 // updated.
@@ -1600,10 +1608,9 @@ IN_PROC_BROWSER_TEST_P(DidChangeVisibleSecurityStateTest,
   EXPECT_TRUE(observer.latest_explanations().summary.empty());
 
   // Visit an (otherwise valid) HTTPS page that displays mixed content.
-  std::string replacement_path;
-  GetFilePathWithHostAndPortReplacement(
+  std::string replacement_path = GetFilePathWithHostAndPortReplacement(
       "/ssl/page_displays_insecure_content.html",
-      embedded_test_server()->host_port_pair(), &replacement_path);
+      embedded_test_server()->host_port_pair());
 
   GURL mixed_content_url(https_server_.GetURL(replacement_path));
   ui_test_utils::NavigateToURL(browser(), mixed_content_url);
@@ -2168,12 +2175,10 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperTest, FormSecurityLevelHistogram) {
   ASSERT_TRUE(broken_https_server.Start());
 
   // Make the form target the expired certificate server.
-  std::string replacement_path;
   net::HostPortPair host_port_pair =
       net::HostPortPair::FromURL(broken_https_server.GetURL("/google.html"));
-  GetFilePathWithHostAndPortReplacement(
-      "/ssl/page_with_form_targeting_insecure_url.html", host_port_pair,
-      &replacement_path);
+  std::string replacement_path = GetFilePathWithHostAndPortReplacement(
+      "/ssl/page_with_form_targeting_insecure_url.html", host_port_pair);
   ui_test_utils::NavigateToURL(browser(),
                                https_server_.GetURL(replacement_path));
   content::TestNavigationObserver navigation_observer(

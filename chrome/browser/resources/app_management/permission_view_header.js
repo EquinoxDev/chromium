@@ -4,11 +4,20 @@
 Polymer({
   is: 'app-management-permission-view-header',
 
+  behaviors: [
+    app_management.StoreClient,
+  ],
+
   properties: {
     /** @type {App} */
-    app: {
+    app_: {
       type: Object,
     },
+  },
+
+  attached: function() {
+    this.watch('app_', state => app_management.util.getSelectedApp(state));
+    this.updateFromStore();
   },
 
   /**
@@ -18,5 +27,23 @@ Polymer({
    */
   iconUrlFromId_: function(app) {
     return app_management.util.getAppIcon(app);
+  },
+
+  /**
+   * @private
+   */
+  onClickBackButton_: function() {
+    if (!window.history.state) {
+      this.dispatch(app_management.actions.changePage(PageType.MAIN));
+    } else {
+      window.history.back();
+    }
+  },
+
+  /**
+   * @private
+   */
+  onClickUninstallButton_: function() {
+    app_management.BrowserProxy.getInstance().handler.uninstall(this.app_.id);
   },
 });

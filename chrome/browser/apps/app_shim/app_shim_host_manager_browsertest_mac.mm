@@ -6,6 +6,7 @@
 
 #include <unistd.h>
 
+#include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/macros.h"
@@ -120,7 +121,8 @@ class AppShimHostManagerBrowserTest : public InProcessBrowserTest,
   void OnShimLaunchRequested(
       ::AppShimHost* host,
       bool recreate_shims,
-      apps::LaunchShimCallback launch_callback) override {}
+      apps::ShimLaunchedCallback launched_callback,
+      apps::ShimTerminatedCallback terminated_callback) override {}
   void OnShimProcessConnected(
       std::unique_ptr<AppShimHostBootstrap> bootstrap) override;
   void OnShimClose(::AppShimHost* host) override {}

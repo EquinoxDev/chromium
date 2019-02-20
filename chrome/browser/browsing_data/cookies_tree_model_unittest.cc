@@ -5,6 +5,7 @@
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 
 #include <string>
+#include <utility>
 
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
@@ -173,8 +174,8 @@ class CookiesTreeModelTest : public testing::Test {
       // foo1 -> cookies -> a,
       // foo2 -> cookies -> b,
       // foo3 -> cookies -> c,
-      // gdbhost1 -> database -> db1,
-      // gdbhost2 -> database -> db2,
+      // gdbhost1 -> database -> http://gdbhost1:1/,
+      // gdbhost2 -> database -> http://gdbhost2:2/,
       // host1 -> localstorage -> http://host1:1/,
       //       -> sessionstorage -> http://host1:1/,
       // host2 -> localstorage -> http://host2:2/.
@@ -195,7 +196,8 @@ class CookiesTreeModelTest : public testing::Test {
       // xyz.com -> flash_lsos
       EXPECT_EQ(71, cookies_model->GetRoot()->GetTotalNodeCount());
       EXPECT_EQ("A,B,C", GetDisplayedCookies(cookies_model.get()));
-      EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+      EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+                GetDisplayedDatabases(cookies_model.get()));
       EXPECT_EQ("http://host1:1/,http://host2:2/",
                 GetDisplayedLocalStorages(cookies_model.get()));
       EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -274,39 +276,26 @@ class CookiesTreeModelTest : public testing::Test {
     // compatibility with tests. The tests should be updated once all
     // appropriate parts have been migrated to url::Origin.
     switch (node_type) {
-      case CookieTreeNode::DetailedInfo::TYPE_SESSION_STORAGE:
-        return node->GetDetailedInfo().session_storage_info->origin_url.spec() +
-            ",";
-      case CookieTreeNode::DetailedInfo::TYPE_LOCAL_STORAGE:
-        return node->GetDetailedInfo().local_storage_info->origin_url.spec() +
-            ",";
-      case CookieTreeNode::DetailedInfo::TYPE_DATABASE:
-        return node->GetDetailedInfo().database_info->database_name + ",";
       case CookieTreeNode::DetailedInfo::TYPE_COOKIE:
         return node->GetDetailedInfo().cookie->Name() + ",";
       case CookieTreeNode::DetailedInfo::TYPE_APPCACHE:
-        return node->GetDetailedInfo().appcache_info->manifest_url.spec() +
-            ",";
+        return node->GetDetailedInfo().appcache_info->manifest_url.spec() + ",";
+      case CookieTreeNode::DetailedInfo::TYPE_CACHE_STORAGE:
+      case CookieTreeNode::DetailedInfo::TYPE_DATABASE:
       case CookieTreeNode::DetailedInfo::TYPE_INDEXED_DB:
-        return node->GetDetailedInfo().indexed_db_info->origin.GetURL().spec() +
-               ",";
+      case CookieTreeNode::DetailedInfo::TYPE_LOCAL_STORAGE:
+      case CookieTreeNode::DetailedInfo::TYPE_SERVICE_WORKER:
+      case CookieTreeNode::DetailedInfo::TYPE_SESSION_STORAGE:
+        return node->GetDetailedInfo().usage_info->origin.GetURL().spec() + ",";
       case CookieTreeNode::DetailedInfo::TYPE_FILE_SYSTEM:
-        return node->GetDetailedInfo().file_system_info->origin.spec() +
-            ",";
+        return node->GetDetailedInfo()
+                   .file_system_info->origin.GetURL()
+                   .spec() +
+               ",";
       case CookieTreeNode::DetailedInfo::TYPE_QUOTA:
         return node->GetDetailedInfo().quota_info->host + ",";
-      case CookieTreeNode::DetailedInfo::TYPE_SERVICE_WORKER:
-        return node->GetDetailedInfo()
-                   .service_worker_info->origin.GetURL()
-                   .spec() +
-               ",";
       case CookieTreeNode::DetailedInfo::TYPE_SHARED_WORKER:
         return node->GetDetailedInfo().shared_worker_info->worker.spec() + ",";
-      case CookieTreeNode::DetailedInfo::TYPE_CACHE_STORAGE:
-        return node->GetDetailedInfo()
-                   .cache_storage_info->origin.GetURL()
-                   .spec() +
-               ",";
       case CookieTreeNode::DetailedInfo::TYPE_FLASH_LSO:
         return node->GetDetailedInfo().flash_lso_domain + ",";
       case CookieTreeNode::DetailedInfo::TYPE_MEDIA_LICENSE:
@@ -454,7 +443,7 @@ TEST_F(CookiesTreeModelTest, RemoveAll) {
     SCOPED_TRACE("Before removing");
     EXPECT_EQ("A,B,C",
               GetDisplayedCookies(cookies_model.get()));
-    EXPECT_EQ("db1,db2",
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
               GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
@@ -554,7 +543,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`xyz.com` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -584,7 +574,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`swhost2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -613,7 +604,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`swhost1` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -642,7 +634,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`sharedworkerhost2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -668,7 +661,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`sharedworkerhost1` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -693,7 +687,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`quotahost2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -719,7 +714,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`quotahost1` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -743,7 +739,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`media2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -767,7 +764,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`media1` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -790,7 +788,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`idbhost2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -813,7 +812,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`idbhost1` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -836,7 +836,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`host2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/",
@@ -859,7 +860,8 @@ TEST_F(CookiesTreeModelTest, Remove) {
   {
     SCOPED_TRACE("`host1` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("", GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("", GetDisplayedSessionStorages(cookies_model.get()));
     EXPECT_EQ("http://fshost1:1/,http://fshost2:2/,http://fshost3:3/",
@@ -874,12 +876,12 @@ TEST_F(CookiesTreeModelTest, Remove) {
     EXPECT_EQ(31, cookies_model->GetRoot()->GetTotalNodeCount());
   }
 
-  // gdbhost2 -> database -> db2 (3 objects)
+  // gdbhost2 -> database -> http://gdbhost2:2/ (3 objects)
   DeleteStoredObjects(cookies_model->GetRoot()->GetChild(9));
   {
     SCOPED_TRACE("`gdbhost2` removed.");
     EXPECT_STREQ("A,B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/", GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("", GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("", GetDisplayedSessionStorages(cookies_model.get()));
     EXPECT_EQ("http://fshost1:1/,http://fshost2:2/,http://fshost3:3/",
@@ -893,7 +895,7 @@ TEST_F(CookiesTreeModelTest, Remove) {
     EXPECT_EQ("", GetDisplayedMediaLicenses(cookies_model.get()));
     EXPECT_EQ(28, cookies_model->GetRoot()->GetTotalNodeCount());
   }
-  // gdbhost1 -> database -> db1 (3 objects)
+  // gdbhost1 -> database -> http://gdbhost1:1/ (3 objects)
   DeleteStoredObjects(cookies_model->GetRoot()->GetChild(8));
   {
     SCOPED_TRACE("`gdbhost1` removed.");
@@ -1078,7 +1080,8 @@ TEST_F(CookiesTreeModelTest, RemoveCookiesNode) {
     // 69 because in this case, the origin remains, although the COOKIES
     // node beneath it has been deleted.
     EXPECT_EQ(69, cookies_model->GetRoot()->GetTotalNodeCount());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1105,7 +1108,7 @@ TEST_F(CookiesTreeModelTest, RemoveCookiesNode) {
   {
     SCOPED_TRACE("First database origin removed");
     EXPECT_STREQ("B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost2:2/", GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1133,7 +1136,7 @@ TEST_F(CookiesTreeModelTest, RemoveCookiesNode) {
   {
     SCOPED_TRACE("First local storage origin removed");
     EXPECT_STREQ("B,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost2:2/", GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1166,7 +1169,8 @@ TEST_F(CookiesTreeModelTest, RemoveCookieNode) {
   {
     SCOPED_TRACE("Second origin COOKIES node removed");
     EXPECT_STREQ("A,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1196,7 +1200,7 @@ TEST_F(CookiesTreeModelTest, RemoveCookieNode) {
   {
     SCOPED_TRACE("First database origin removed");
     EXPECT_STREQ("A,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost2:2/", GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1224,7 +1228,7 @@ TEST_F(CookiesTreeModelTest, RemoveCookieNode) {
   {
     SCOPED_TRACE("First local storage origin removed");
     EXPECT_STREQ("A,C", GetDisplayedCookies(cookies_model.get()).c_str());
-    EXPECT_EQ("db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost2:2/", GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1304,8 +1308,8 @@ TEST_F(CookiesTreeModelTest, RemoveSingleCookieNode) {
     // foo1 -> cookies -> a,
     // foo2 -> cookies -> b,
     // foo3 -> cookies -> c,d
-    // dbhost1 -> database -> db1,
-    // dbhost2 -> database -> db2,
+    // dbhost1 -> database -> http://gdbhost1:1/,
+    // dbhost2 -> database -> http://gdbhost2:2/,
     // host1 -> localstorage -> http://host1:1/,
     //       -> sessionstorage -> http://host1:1/,
     // host2 -> localstorage -> http://host2:2/,
@@ -1323,7 +1327,8 @@ TEST_F(CookiesTreeModelTest, RemoveSingleCookieNode) {
     // sharedworkerhost2 -> shared worker -> https://sharedworkerhost2:2
     EXPECT_EQ(64, cookies_model.GetRoot()->GetTotalNodeCount());
     EXPECT_STREQ("A,B,C,D", GetDisplayedCookies(&cookies_model).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(&cookies_model));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1346,7 +1351,8 @@ TEST_F(CookiesTreeModelTest, RemoveSingleCookieNode) {
   {
     SCOPED_TRACE("Third cookie origin removed");
     EXPECT_STREQ("A,B", GetDisplayedCookies(&cookies_model).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(&cookies_model));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1425,8 +1431,8 @@ TEST_F(CookiesTreeModelTest, RemoveSingleCookieNodeOf3) {
     // foo1 -> cookies -> a,
     // foo2 -> cookies -> b,
     // foo3 -> cookies -> c,d,e
-    // dbhost1 -> database -> db1,
-    // dbhost2 -> database -> db2,
+    // dbhost1 -> database -> http://gdbhost1:1/,
+    // dbhost2 -> database -> http://gdbhost2:2/,
     // host1 -> localstorage -> http://host1:1/,
     //       -> sessionstorage -> http://host1:1/,
     // host2 -> localstorage -> http://host2:2/,
@@ -1444,7 +1450,8 @@ TEST_F(CookiesTreeModelTest, RemoveSingleCookieNodeOf3) {
     // sharedworkerhost2 -> shared worker -> https://sharedworkerhost2:2
     EXPECT_EQ(65, cookies_model.GetRoot()->GetTotalNodeCount());
     EXPECT_STREQ("A,B,C,D,E", GetDisplayedCookies(&cookies_model).c_str());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(&cookies_model));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1469,7 +1476,8 @@ TEST_F(CookiesTreeModelTest, RemoveSingleCookieNodeOf3) {
     SCOPED_TRACE("Middle cookie in third cookie origin removed");
     EXPECT_STREQ("A,B,C,E", GetDisplayedCookies(&cookies_model).c_str());
     EXPECT_EQ(64, cookies_model.GetRoot()->GetTotalNodeCount());
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(&cookies_model));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(&cookies_model));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1962,7 +1970,8 @@ TEST_F(CookiesTreeModelTest, MediaLicensesFilter) {
   {
     SCOPED_TRACE("Search for everything");
     EXPECT_EQ("A,B,C", GetDisplayedCookies(cookies_model.get()));
-    EXPECT_EQ("db1,db2", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/,http://gdbhost2:2/",
+              GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/,http://host2:2/",
@@ -1990,7 +1999,7 @@ TEST_F(CookiesTreeModelTest, MediaLicensesFilter) {
   {
     SCOPED_TRACE("Search for '1'");
     EXPECT_EQ("A", GetDisplayedCookies(cookies_model.get()));
-    EXPECT_EQ("db1", GetDisplayedDatabases(cookies_model.get()));
+    EXPECT_EQ("http://gdbhost1:1/", GetDisplayedDatabases(cookies_model.get()));
     EXPECT_EQ("http://host1:1/",
               GetDisplayedLocalStorages(cookies_model.get()));
     EXPECT_EQ("http://host1:1/",

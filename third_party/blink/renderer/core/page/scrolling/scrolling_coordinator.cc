@@ -29,6 +29,7 @@
 #include <utility>
 
 #include "build/build_config.h"
+#include "cc/animation/animation_host.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/painted_overlay_scrollbar_layer.h"
 #include "cc/layers/painted_scrollbar_layer.h"
@@ -57,7 +58,6 @@
 #include "third_party/blink/renderer/core/paint/compositing/composited_layer_mapping.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/platform/animation/compositor_animation_host.h"
 #include "third_party/blink/renderer/platform/animation/compositor_animation_timeline.h"
 #include "third_party/blink/renderer/platform/geometry/region.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
@@ -77,9 +77,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
 #include "third_party/blink/renderer/platform/scroll/main_thread_scrolling_reason.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
-
-using blink::WebRect;
-using blink::WebVector;
 
 namespace {
 
@@ -152,27 +149,37 @@ void ScrollingCoordinator::NotifyTransformChanged(LocalFrame* frame,
   }
 }
 
-void ScrollingCoordinator::DidScroll(const gfx::ScrollOffset& offset,
-                                     const CompositorElementId& element_id) {
+ScrollableArea*
+ScrollingCoordinator::ScrollableAreaWithElementIdInAllLocalFrames(
+    const CompositorElementId& id) {
   for (auto* frame = page_->MainFrame(); frame;
        frame = frame->Tree().TraverseNext()) {
-    // Remote frames will receive DidScroll callbacks from their own compositor.
     if (!frame->IsLocalFrame())
       continue;
 
-    // Find the associated scrollable area using the element id and notify it
-    // of the compositor-side scroll. We explicitly do not check the
-    // VisualViewport which handles scroll offset differently (see:
-    // VisualViewport::didScroll).
+    // Find the associated scrollable area using the element id.
     if (LocalFrameView* view = ToLocalFrame(frame)->View()) {
-      if (auto* scrollable = view->ScrollableAreaWithElementId(element_id)) {
-        scrollable->DidScroll(FloatPoint(offset.x(), offset.y()));
-        return;
+      if (auto* scrollable = view->ScrollableAreaWithElementId(id)) {
+        return scrollable;
       }
     }
   }
+  // The ScrollableArea with matching ElementId does not exist in local frames.
+  return nullptr;
+}
+
+void ScrollingCoordinator::DidScroll(const gfx::ScrollOffset& offset,
+                                     const CompositorElementId& element_id) {
+  // Find the associated scrollable area using the element id and notify it of
+  // the compositor-side scroll. We explicitly do not check the VisualViewport
+  // which handles scroll offset differently (see: VisualViewport::didScroll).
+  // Remote frames will receive DidScroll callbacks from their own compositor.
   // The ScrollableArea with matching ElementId may have been deleted and we can
   // safely ignore the DidScroll callback.
+  if (auto* scrollable =
+          ScrollableAreaWithElementIdInAllLocalFrames(element_id)) {
+    scrollable->DidScroll(FloatPoint(offset.x(), offset.y()));
+  }
 }
 
 void ScrollingCoordinator::UpdateAfterPaint(LocalFrameView* frame_view) {
@@ -264,7 +271,7 @@ static void ForAllGraphicsLayers(GraphicsLayer& layer,
 // on the GraphicsLayer's paint chunks.
 static void UpdateLayerTouchActionRects(GraphicsLayer& layer) {
   DCHECK(RuntimeEnabledFeatures::PaintTouchActionRectsEnabled());
-  if (!layer.DrawsContent())
+  if (!layer.PaintsContentOrHitTest())
     return;
 
   if (layer.Client().ShouldThrottleRendering()) {
@@ -272,13 +279,12 @@ static void UpdateLayerTouchActionRects(GraphicsLayer& layer) {
     return;
   }
 
-  auto offset = layer.GetOffsetFromTransformNode();
-  gfx::Vector2dF layer_offset = gfx::Vector2dF(offset.X(), offset.Y());
+  layer.CcLayer()->SetOffsetToTransformParent(
+      gfx::Vector2dF(FloatPoint(layer.GetOffsetFromTransformNode())));
   PaintChunkSubset paint_chunks =
       PaintChunkSubset(layer.GetPaintController().PaintChunks());
-  PaintArtifactCompositor::UpdateTouchActionRects(layer.CcLayer(), layer_offset,
-                                                  layer.GetPropertyTreeState(),
-                                                  paint_chunks);
+  PaintArtifactCompositor::UpdateTouchActionRects(
+      layer.CcLayer(), layer.GetPropertyTreeState(), paint_chunks);
 }
 
 static void ClearPositionConstraintExceptForLayer(GraphicsLayer* layer,
@@ -1005,23 +1011,23 @@ void ScrollingCoordinator::SetShouldUpdateScrollLayerPositionOnMainThread(
 
 void ScrollingCoordinator::LayerTreeViewInitialized(
     WebLayerTreeView& layer_tree_view,
+    cc::AnimationHost& animation_host,
     LocalFrameView* view) {
-  if (Platform::Current()->IsThreadedAnimationEnabled()) {
-    std::unique_ptr<CompositorAnimationTimeline> timeline =
-        CompositorAnimationTimeline::Create();
-    auto host = std::make_unique<CompositorAnimationHost>(
-        layer_tree_view.CompositorAnimationHost());
-    if (view && view->GetFrame().LocalFrameRoot() != page_->MainFrame()) {
-      view->GetScrollingContext()->SetAnimationHost(std::move(host));
-      view->GetScrollingContext()->SetAnimationTimeline(std::move(timeline));
-      view->GetCompositorAnimationHost()->AddTimeline(
-          *view->GetCompositorAnimationTimeline());
-    } else {
-      animation_host_ = std::move(host);
-      programmatic_scroll_animator_timeline_ = std::move(timeline);
-      animation_host_->AddTimeline(
-          *programmatic_scroll_animator_timeline_.get());
-    }
+  if (!Platform::Current()->IsThreadedAnimationEnabled())
+    return;
+
+  std::unique_ptr<CompositorAnimationTimeline> timeline =
+      CompositorAnimationTimeline::Create();
+  if (view && view->GetFrame().LocalFrameRoot() != page_->MainFrame()) {
+    view->GetScrollingContext()->SetAnimationHost(&animation_host);
+    view->GetScrollingContext()->SetAnimationTimeline(std::move(timeline));
+    view->GetCompositorAnimationHost()->AddAnimationTimeline(
+        view->GetCompositorAnimationTimeline()->GetAnimationTimeline());
+  } else {
+    animation_host_ = &animation_host;
+    programmatic_scroll_animator_timeline_ = std::move(timeline);
+    animation_host_->AddAnimationTimeline(
+        programmatic_scroll_animator_timeline_->GetAnimationTimeline());
   }
 }
 
@@ -1029,13 +1035,13 @@ void ScrollingCoordinator::WillCloseLayerTreeView(
     WebLayerTreeView& layer_tree_view,
     LocalFrameView* view) {
   if (view && view->GetFrame().LocalFrameRoot() != page_->MainFrame()) {
-    view->GetCompositorAnimationHost()->RemoveTimeline(
-        *view->GetCompositorAnimationTimeline());
+    view->GetCompositorAnimationHost()->RemoveAnimationTimeline(
+        view->GetCompositorAnimationTimeline()->GetAnimationTimeline());
     view->GetScrollingContext()->SetAnimationTimeline(nullptr);
     view->GetScrollingContext()->SetAnimationHost(nullptr);
   } else if (programmatic_scroll_animator_timeline_) {
-    animation_host_->RemoveTimeline(
-        *programmatic_scroll_animator_timeline_.get());
+    animation_host_->RemoveAnimationTimeline(
+        programmatic_scroll_animator_timeline_->GetAnimationTimeline());
     programmatic_scroll_animator_timeline_ = nullptr;
     animation_host_ = nullptr;
   }

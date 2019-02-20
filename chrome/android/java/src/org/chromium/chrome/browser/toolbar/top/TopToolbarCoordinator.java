@@ -15,6 +15,7 @@ import android.widget.ImageButton;
 
 import org.chromium.base.VisibleForTesting;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.ThemeColorProvider;
 import org.chromium.chrome.browser.appmenu.AppMenuButtonHelper;
 import org.chromium.chrome.browser.compositor.Invalidator;
 import org.chromium.chrome.browser.compositor.layouts.LayoutManager;
@@ -152,7 +153,7 @@ public class TopToolbarCoordinator implements Toolbar {
     }
 
     /**
-     * @return The view containing the menu button and menu button badge.
+     * @return The wrapper for the browsing mode toolbar's menu button.
      */
     public MenuButton getMenuButtonWrapper() {
         if (mToolbarLayout == null) return null;
@@ -373,6 +374,18 @@ public class TopToolbarCoordinator implements Toolbar {
     }
 
     /**
+     * Overrides tab switcher launching behavior.
+     * @param newClickListener The new {@link OnClickListener} for tab switcher button clicks.
+     *
+     */
+    public void setTabSwitcherClickListener(OnClickListener newClickListener) {
+        if (mTabSwitcherModeCoordinatorPhone != null) {
+            mTabSwitcherModeCoordinatorPhone.setOnTabSwitcherClickHandler(newClickListener);
+        }
+        mToolbarLayout.setOnTabSwitcherClickHandler(newClickListener);
+    }
+
+    /**
      * Gives inheriting classes the chance to show or hide the TabSwitcher mode of this toolbar.
      * @param inTabSwitcherMode Whether or not TabSwitcher mode should be shown or hidden.
      * @param showToolbar    Whether or not to show the normal toolbar while animating.
@@ -414,6 +427,15 @@ public class TopToolbarCoordinator implements Toolbar {
         if (mTabSwitcherModeCoordinatorPhone != null) {
             mTabSwitcherModeCoordinatorPhone.setIncognitoStateProvider(provider);
         }
+    }
+
+    /**
+     * @param provider The provider used to determine theme color.
+     */
+    public void setThemeColorProvider(ThemeColorProvider provider) {
+        final MenuButton menuButtonWrapper = getMenuButtonWrapper();
+        if (menuButtonWrapper == null) return;
+        menuButtonWrapper.setThemeColorProvider(provider);
     }
 
     /**
@@ -528,7 +550,7 @@ public class TopToolbarCoordinator implements Toolbar {
 
     @Override
     public void showAppMenuUpdateBadge() {
-        mToolbarProvider.whenLoaded((toolbar) -> mToolbarLayout.showAppMenuUpdateBadge());
+        mToolbarProvider.whenLoaded((toolbar) -> mToolbarLayout.showAppMenuUpdateBadge(true));
     }
 
     @Override

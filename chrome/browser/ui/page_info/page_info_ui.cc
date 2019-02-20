@@ -218,8 +218,8 @@ PageInfoUI::PermissionInfo::PermissionInfo()
 
 PageInfoUI::ChosenObjectInfo::ChosenObjectInfo(
     const PageInfo::ChooserUIInfo& ui_info,
-    std::unique_ptr<base::DictionaryValue> object)
-    : ui_info(ui_info), object(std::move(object)) {}
+    std::unique_ptr<ChooserContextBase::Object> chooser_object)
+    : ui_info(ui_info), chooser_object(std::move(chooser_object)) {}
 
 PageInfoUI::ChosenObjectInfo::~ChosenObjectInfo() {}
 
@@ -230,6 +230,9 @@ PageInfoUI::IdentityInfo::IdentityInfo()
       show_change_password_buttons(false) {}
 
 PageInfoUI::IdentityInfo::~IdentityInfo() {}
+
+PageInfoUI::PageFeatureInfo::PageFeatureInfo()
+    : is_vr_presentation_in_headset(false) {}
 
 std::unique_ptr<PageInfoUI::SecurityDescription>
 PageInfoUI::GetSecurityDescription(const IdentityInfo& identity_info) const {
@@ -428,7 +431,7 @@ SkColor PageInfoUI::GetSecondaryTextColor() {
 base::string16 PageInfoUI::ChosenObjectToUIString(
     const ChosenObjectInfo& object) {
   base::string16 name;
-  object.object->GetString(object.ui_info.ui_name_key, &name);
+  object.chooser_object->value.GetString(object.ui_info.ui_name_key, &name);
   return name;
 }
 
@@ -575,9 +578,21 @@ const gfx::ImageSkia PageInfoUI::GetChosenObjectIcon(
     const ChosenObjectInfo& object,
     bool deleted,
     SkColor related_text_color) {
-  DCHECK_EQ(CONTENT_SETTINGS_TYPE_USB_CHOOSER_DATA,
-            object.ui_info.content_settings_type);
-  const gfx::VectorIcon* icon = &vector_icons::kUsbIcon;
+  const gfx::VectorIcon* icon = &gfx::kNoneIcon;
+  switch (object.ui_info.content_settings_type) {
+    case CONTENT_SETTINGS_TYPE_USB_CHOOSER_DATA:
+      icon = &vector_icons::kUsbIcon;
+      break;
+    case CONTENT_SETTINGS_TYPE_SERIAL_CHOOSER_DATA:
+      icon = &vector_icons::kSerialPortIcon;
+      break;
+    default:
+      // All other content settings types do not represent chosen object
+      // permissions.
+      NOTREACHED();
+      break;
+  }
+
   if (deleted) {
     return gfx::CreateVectorIconWithBadge(
         *icon, kVectorIconSize,
@@ -602,6 +617,13 @@ const gfx::ImageSkia PageInfoUI::GetSiteSettingsIcon(
     const SkColor related_text_color) {
   return gfx::CreateVectorIcon(
       kSettingsIcon, kVectorIconSize,
+      color_utils::DeriveDefaultIconColor(related_text_color));
+}
+
+// static
+const gfx::ImageSkia PageInfoUI::GetVrSettingsIcon(SkColor related_text_color) {
+  return gfx::CreateVectorIcon(
+      kVrHeadsetIcon, kVectorIconSize,
       color_utils::DeriveDefaultIconColor(related_text_color));
 }
 #endif

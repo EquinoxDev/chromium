@@ -29,8 +29,10 @@
 #include "chrome/browser/chromeos/policy/device_cloud_policy_store_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
+#include "chrome/browser/chromeos/policy/device_native_printers_handler.h"
 #include "chrome/browser/chromeos/policy/device_network_configuration_updater.h"
 #include "chrome/browser/chromeos/policy/device_policy_cloud_external_data_manager.h"
+#include "chrome/browser/chromeos/policy/device_wallpaper_image_handler.h"
 #include "chrome/browser/chromeos/policy/enrollment_config.h"
 #include "chrome/browser/chromeos/policy/hostname_handler.h"
 #include "chrome/browser/chromeos/policy/minimum_version_policy_handler.h"
@@ -54,9 +56,9 @@
 #include "chromeos/network/onc/onc_certificate_importer_impl.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "chromeos/settings/cros_settings_provider.h"
-#include "chromeos/settings/install_attributes.h"
 #include "chromeos/settings/timezone_settings.h"
 #include "chromeos/system/statistics_provider.h"
+#include "chromeos/tpm/install_attributes.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
 #include "components/policy/core/common/cloud/resource_cache.h"
@@ -211,7 +213,7 @@ void BrowserPolicyConnectorChromeOS::Init(
           DeviceNetworkConfigurationUpdater::DeviceAssetIDFetcher());
   // NetworkCertLoader may be not initialized in tests.
   if (chromeos::NetworkCertLoader::IsInitialized()) {
-    chromeos::NetworkCertLoader::Get()->AddPolicyCertificateProvider(
+    chromeos::NetworkCertLoader::Get()->SetDevicePolicyCertificateProvider(
         device_network_configuration_updater_.get());
   }
 
@@ -224,6 +226,13 @@ void BrowserPolicyConnectorChromeOS::Init(
   minimum_version_policy_handler_ =
       std::make_unique<MinimumVersionPolicyHandler>(
           chromeos::CrosSettings::Get());
+
+  device_native_printers_handler_ =
+      std::make_unique<DeviceNativePrintersHandler>(GetPolicyService());
+
+  device_wallpaper_image_handler_ =
+      std::make_unique<DeviceWallpaperImageHandler>(local_state,
+                                                    GetPolicyService());
 }
 
 void BrowserPolicyConnectorChromeOS::PreShutdown() {
@@ -238,8 +247,8 @@ void BrowserPolicyConnectorChromeOS::PreShutdown() {
 void BrowserPolicyConnectorChromeOS::Shutdown() {
   // NetworkCertLoader may be not initialized in tests.
   if (chromeos::NetworkCertLoader::IsInitialized()) {
-    chromeos::NetworkCertLoader::Get()->RemovePolicyCertificateProvider(
-        device_network_configuration_updater_.get());
+    chromeos::NetworkCertLoader::Get()->SetDevicePolicyCertificateProvider(
+        nullptr);
   }
   device_network_configuration_updater_.reset();
 
@@ -254,6 +263,12 @@ void BrowserPolicyConnectorChromeOS::Shutdown() {
 
   if (hostname_handler_)
     hostname_handler_->Shutdown();
+
+  if (device_native_printers_handler_)
+    device_native_printers_handler_->Shutdown();
+
+  if (device_wallpaper_image_handler_)
+    device_wallpaper_image_handler_->Shutdown();
 
   ChromeBrowserPolicyConnector::Shutdown();
 }

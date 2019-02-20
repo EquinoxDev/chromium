@@ -337,7 +337,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
   bool ShouldPlaceVerticalScrollbarOnLeft() const override;
   int PageStep(ScrollbarOrientation) const override;
   ScrollBehavior ScrollBehaviorStyle() const override;
-  CompositorAnimationHost* GetCompositorAnimationHost() const override;
+  cc::AnimationHost* GetCompositorAnimationHost() const override;
   CompositorAnimationTimeline* GetCompositorAnimationTimeline() const override;
   void GetTickmarks(Vector<IntRect>&) const override;
 
@@ -446,6 +446,13 @@ class CORE_EXPORT PaintLayerScrollableArea final
   PaintLayer* Layer() const override;
 
   LayoutScrollbarPart* Resizer() const { return resizer_; }
+
+  const IntPoint& CachedOverlayScrollbarOffset() {
+    return cached_overlay_scrollbar_offset_;
+  }
+  void SetCachedOverlayScrollbarOffset(const IntPoint& offset) {
+    cached_overlay_scrollbar_offset_ = offset;
+  }
 
   IntRect RectForHorizontalScrollbar(const IntRect& border_box_rect) const;
   IntRect RectForVerticalScrollbar(const IntRect& border_box_rect) const;
@@ -672,6 +679,8 @@ class CORE_EXPORT PaintLayerScrollableArea final
   // This is the offset from the beginning of content flow.
   ScrollOffset scroll_offset_;
 
+  IntPoint cached_overlay_scrollbar_offset_;
+
   // LayoutObject to hold our custom scroll corner.
   LayoutScrollbarPart* scroll_corner_;
 
@@ -691,7 +700,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
   LayoutRect vertical_scrollbar_visual_rect_;
   LayoutRect scroll_corner_and_resizer_visual_rect_;
 
-  class ScrollingBackgroundDisplayItemClient : public DisplayItemClient {
+  class ScrollingBackgroundDisplayItemClient final : public DisplayItemClient {
     DISALLOW_NEW();
 
    public:
@@ -699,13 +708,14 @@ class CORE_EXPORT PaintLayerScrollableArea final
         const PaintLayerScrollableArea& scrollable_area)
         : scrollable_area_(&scrollable_area) {}
 
-    LayoutRect VisualRect() const override;
-    String DebugName() const override;
-    bool PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const override;
-
     void Trace(Visitor* visitor) { visitor->Trace(scrollable_area_); }
 
    private:
+    LayoutRect VisualRect() const final;
+    String DebugName() const final;
+    DOMNodeId OwnerNodeId() const final;
+    bool PaintedOutputOfObjectHasNoEffectRegardlessOfSize() const final;
+
     Member<const PaintLayerScrollableArea> scrollable_area_;
   };
 

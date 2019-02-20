@@ -10,7 +10,9 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/optional.h"
 #include "chrome/browser/android/chrome_feature_list.h"
 #include "chrome/browser/android/feature_utilities.h"
@@ -55,11 +57,14 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/security_style_explanations.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/media_stream_request.h"
 #include "jni/TabWebContentsDelegateAndroid_jni.h"
-#include "ppapi/buildflags/buildflags.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
+
+#if BUILDFLAG(ENABLE_PRINTING)
+#include "components/printing/browser/print_composite_client.h"
+#endif
 
 using base::android::AttachCurrentThread;
 using base::android::JavaParamRef;
@@ -105,10 +110,15 @@ infobars::InfoBar* FindHungRendererInfoBar(InfoBarService* infobar_service) {
 
 void ShowFramebustBlockInfobarInternal(content::WebContents* web_contents,
                                        const GURL& url) {
+  auto intervention_outcome =
+      [](FramebustBlockMessageDelegate::InterventionOutcome outcome) {
+        UMA_HISTOGRAM_ENUMERATION("WebCore.Framebust.InterventionOutcome",
+                                  outcome);
+      };
   FramebustBlockInfoBar::Show(
       web_contents,
       std::make_unique<FramebustBlockMessageDelegate>(
-          web_contents, url, FramebustBlockMessageDelegate::OutcomeCallback()));
+          web_contents, url, base::BindOnce(intervention_outcome)));
 }
 
 }  // anonymous namespace
@@ -166,8 +176,7 @@ void TabWebContentsDelegateAndroid::CloseContents(
 
 bool TabWebContentsDelegateAndroid::ShouldFocusLocationBarByDefault(
     WebContents* source) {
-  const content::NavigationEntry* entry =
-      source->GetController().GetActiveEntry();
+  content::NavigationEntry* entry = source->GetController().GetActiveEntry();
   if (entry) {
     GURL url = entry->GetURL();
     GURL virtual_url = entry->GetVirtualURL();
@@ -181,6 +190,17 @@ bool TabWebContentsDelegateAndroid::ShouldFocusLocationBarByDefault(
   return false;
 }
 
+#if BUILDFLAG(ENABLE_PRINTING)
+void TabWebContentsDelegateAndroid::PrintCrossProcessSubframe(
+    content::WebContents* web_contents,
+    const gfx::Rect& rect,
+    int document_cookie,
+    content::RenderFrameHost* subframe_host) const {
+  auto* client = printing::PrintCompositeClient::FromWebContents(web_contents);
+  if (client)
+    client->PrintCrossProcessSubframe(rect, document_cookie, subframe_host);
+}
+#endif
 
 void TabWebContentsDelegateAndroid::Observe(
     int type,
@@ -305,7 +325,7 @@ void TabWebContentsDelegateAndroid::RequestMediaAccessPermission(
 bool TabWebContentsDelegateAndroid::CheckMediaAccessPermission(
     content::RenderFrameHost* render_frame_host,
     const GURL& security_origin,
-    content::MediaStreamType type) {
+    blink::MediaStreamType type) {
   return MediaCaptureDevicesDispatcher::GetInstance()
       ->CheckMediaAccessPermission(render_frame_host, security_origin, type);
 }
@@ -435,14 +455,6 @@ blink::WebSecurityStyle TabWebContentsDelegateAndroid::GetSecurityStyle(
   helper->GetSecurityInfo(&security_info);
   return security_state::GetSecurityStyle(security_info,
                                           security_style_explanations);
-}
-
-void TabWebContentsDelegateAndroid::RequestAppBannerFromDevTools(
-    content::WebContents* web_contents) {
-  banners::AppBannerManagerAndroid* manager =
-      banners::AppBannerManagerAndroid::FromWebContents(web_contents);
-  DCHECK(manager);
-  manager->RequestAppBanner(web_contents->GetLastCommittedURL(), true);
 }
 
 void TabWebContentsDelegateAndroid::OnDidBlockFramebust(

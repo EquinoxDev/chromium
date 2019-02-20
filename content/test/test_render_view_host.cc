@@ -15,6 +15,8 @@
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
+#include "content/browser/renderer_host/input/synthetic_gesture_target.h"
+#include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/common/frame_messages.h"
@@ -82,6 +84,12 @@ TestRenderWidgetHostView::TestRenderWidgetHostView(RenderWidgetHost* rwh)
 #endif
 
   host()->SetView(this);
+
+  if (host()->delegate() && host()->delegate()->GetInputEventRouter() &&
+      GetFrameSinkId().is_valid()) {
+    host()->delegate()->GetInputEventRouter()->AddFrameSinkIdOwner(
+        GetFrameSinkId(), this);
+  }
 
 #if defined(USE_AURA)
   window_.reset(new aura::Window(
@@ -213,6 +221,12 @@ void TestRenderWidgetHostView::OnFrameTokenChanged(uint32_t frame_token) {
   OnFrameTokenChangedForView(frame_token);
 }
 
+std::unique_ptr<SyntheticGestureTarget>
+TestRenderWidgetHostView::CreateSyntheticGestureTarget() {
+  NOTIMPLEMENTED();
+  return nullptr;
+}
+
 void TestRenderWidgetHostView::UpdateBackgroundColor() {}
 
 TestRenderViewHost::TestRenderViewHost(
@@ -290,8 +304,8 @@ void TestRenderViewHost::SimulateWasShown() {
   GetWidget()->WasShown(false /* record_presentation_time */);
 }
 
-WebPreferences TestRenderViewHost::TestComputeWebkitPrefs() {
-  return ComputeWebkitPrefs();
+WebPreferences TestRenderViewHost::TestComputeWebPreferences() {
+  return ComputeWebPreferences();
 }
 
 void TestRenderViewHost::OnWebkitPreferencesChanged() {

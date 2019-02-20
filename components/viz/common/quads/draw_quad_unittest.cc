@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/unguessable_token.h"
 #include "cc/base/math_util.h"
 #include "cc/paint/filter_operations.h"
 #include "cc/test/fake_raster_source.h"
@@ -24,6 +25,7 @@
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/quads/tile_draw_quad.h"
+#include "components/viz/common/quads/video_hole_draw_quad.h"
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/effects/SkBlurImageFilter.h"
@@ -255,24 +257,28 @@ TEST(DrawQuadTest, CopyStreamVideoDrawQuad) {
   bool needs_blending = true;
   ResourceId resource_id = 64;
   gfx::Size resource_size_in_pixels = gfx::Size(40, 41);
-  gfx::Transform matrix = gfx::Transform(0.5, 0.25, 1, 0.75, 0, 1);
+  gfx::PointF uv_top_left(0.25f, 0.3f);
+  gfx::PointF uv_bottom_right(0.75f, 0.7f);
   CREATE_SHARED_STATE();
 
   CREATE_QUAD_NEW(StreamVideoDrawQuad, visible_rect, needs_blending,
-                  resource_id, resource_size_in_pixels, matrix);
+                  resource_id, resource_size_in_pixels, uv_top_left,
+                  uv_bottom_right);
   EXPECT_EQ(DrawQuad::STREAM_VIDEO_CONTENT, copy_quad->material);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
   EXPECT_EQ(needs_blending, copy_quad->needs_blending);
   EXPECT_EQ(resource_id, copy_quad->resource_id());
   EXPECT_EQ(resource_size_in_pixels, copy_quad->resource_size_in_pixels());
-  EXPECT_EQ(matrix, copy_quad->matrix);
+  EXPECT_EQ(uv_top_left, copy_quad->uv_top_left);
+  EXPECT_EQ(uv_bottom_right, copy_quad->uv_bottom_right);
 
   CREATE_QUAD_ALL(StreamVideoDrawQuad, resource_id, resource_size_in_pixels,
-                  matrix);
+                  uv_top_left, uv_bottom_right);
   EXPECT_EQ(DrawQuad::STREAM_VIDEO_CONTENT, copy_quad->material);
   EXPECT_EQ(resource_id, copy_quad->resource_id());
   EXPECT_EQ(resource_size_in_pixels, copy_quad->resource_size_in_pixels());
-  EXPECT_EQ(matrix, copy_quad->matrix);
+  EXPECT_EQ(uv_top_left, copy_quad->uv_top_left);
+  EXPECT_EQ(uv_bottom_right, copy_quad->uv_bottom_right);
 }
 
 TEST(DrawQuadTest, CopySurfaceDrawQuad) {
@@ -287,16 +293,19 @@ TEST(DrawQuadTest, CopySurfaceDrawQuad) {
 
   CREATE_QUAD_NEW(SurfaceDrawQuad, visible_rect,
                   SurfaceRange(fallback_surface_id, primary_surface_id),
-                  SK_ColorWHITE, true);
+                  SK_ColorWHITE, /*stretch_content_to_fill_bounds=*/true,
+                  /*ignores_input_event=*/true);
   EXPECT_EQ(DrawQuad::SURFACE_CONTENT, copy_quad->material);
   EXPECT_EQ(visible_rect, copy_quad->visible_rect);
   EXPECT_EQ(primary_surface_id, copy_quad->surface_range.end());
   EXPECT_EQ(fallback_surface_id, *copy_quad->surface_range.start());
   EXPECT_TRUE(copy_quad->stretch_content_to_fill_bounds);
+  EXPECT_TRUE(copy_quad->ignores_input_event);
 
   CREATE_QUAD_ALL(SurfaceDrawQuad,
                   SurfaceRange(fallback_surface_id, primary_surface_id),
-                  SK_ColorWHITE, false);
+                  SK_ColorWHITE, /*stretch_content_to_fill_bounds=*/false,
+                  /*ignores_input_event=*/false);
   EXPECT_EQ(DrawQuad::SURFACE_CONTENT, copy_quad->material);
   EXPECT_EQ(primary_surface_id, copy_quad->surface_range.end());
   EXPECT_EQ(fallback_surface_id, *copy_quad->surface_range.start());
@@ -387,6 +396,21 @@ TEST(DrawQuadTest, CopyTileDrawQuad) {
   EXPECT_EQ(texture_size, copy_quad->texture_size);
   EXPECT_EQ(swizzle_contents, copy_quad->swizzle_contents);
   EXPECT_EQ(nearest_neighbor, copy_quad->nearest_neighbor);
+}
+
+TEST(DrawQuadTest, CopyVideoHoleDrawQuad) {
+  gfx::Rect visible_rect(40, 50, 30, 20);
+  base::UnguessableToken overlay_id = base::UnguessableToken::Create();
+  CREATE_SHARED_STATE();
+
+  CREATE_QUAD_NEW(VideoHoleDrawQuad, visible_rect, overlay_id);
+  EXPECT_EQ(DrawQuad::VIDEO_HOLE, copy_quad->material);
+  EXPECT_EQ(visible_rect, copy_quad->visible_rect);
+  EXPECT_EQ(overlay_id, copy_quad->overlay_id);
+
+  CREATE_QUAD_ALL(VideoHoleDrawQuad, overlay_id);
+  EXPECT_EQ(DrawQuad::VIDEO_HOLE, copy_quad->material);
+  EXPECT_EQ(overlay_id, copy_quad->overlay_id);
 }
 
 TEST(DrawQuadTest, CopyYUVVideoDrawQuad) {
@@ -564,11 +588,13 @@ TEST_F(DrawQuadIteratorTest, StreamVideoDrawQuad) {
   gfx::Rect visible_rect(40, 50, 30, 20);
   ResourceId resource_id = 64;
   gfx::Size resource_size_in_pixels = gfx::Size(40, 41);
-  gfx::Transform matrix = gfx::Transform(0.5, 0.25, 1, 0.75, 0, 1);
+  gfx::PointF uv_top_left(0.25f, 0.3f);
+  gfx::PointF uv_bottom_right(0.75f, 0.7f);
 
   CREATE_SHARED_STATE();
   CREATE_QUAD_NEW(StreamVideoDrawQuad, visible_rect, needs_blending,
-                  resource_id, resource_size_in_pixels, matrix);
+                  resource_id, resource_size_in_pixels, uv_top_left,
+                  uv_bottom_right);
   EXPECT_EQ(resource_id, quad_new->resource_id());
   EXPECT_EQ(resource_size_in_pixels, quad_new->resource_size_in_pixels());
   EXPECT_EQ(1, IterateAndCount(quad_new));
@@ -583,7 +609,8 @@ TEST_F(DrawQuadIteratorTest, SurfaceDrawQuad) {
   CREATE_SHARED_STATE();
   CREATE_QUAD_NEW(SurfaceDrawQuad, visible_rect,
                   SurfaceRange(base::nullopt, surface_id), SK_ColorWHITE,
-                  false);
+                  /*stretch_content_to_fill_bounds=*/false,
+                  /*ignores_input_event=*/false);
   EXPECT_EQ(0, IterateAndCount(quad_new));
 }
 
@@ -627,6 +654,15 @@ TEST_F(DrawQuadIteratorTest, TileDrawQuad) {
   EXPECT_EQ(resource_id, quad_new->resource_id());
   EXPECT_EQ(1, IterateAndCount(quad_new));
   EXPECT_EQ(resource_id + 1, quad_new->resource_id());
+}
+
+TEST_F(DrawQuadIteratorTest, VideoHoleDrawQuad) {
+  gfx::Rect visible_rect(40, 50, 30, 20);
+  base::UnguessableToken overlay_id = base::UnguessableToken::Create();
+
+  CREATE_SHARED_STATE();
+  CREATE_QUAD_NEW(VideoHoleDrawQuad, visible_rect, overlay_id);
+  EXPECT_EQ(0, IterateAndCount(quad_new));
 }
 
 TEST_F(DrawQuadIteratorTest, YUVVideoDrawQuad) {
@@ -691,6 +727,9 @@ TEST(DrawQuadTest, LargestQuadType) {
       case DrawQuad::YUV_VIDEO_CONTENT:
         largest = std::max(largest, sizeof(YUVVideoDrawQuad));
         break;
+      case DrawQuad::VIDEO_HOLE:
+        largest = std::max(largest, sizeof(VideoHoleDrawQuad));
+        break;
       case DrawQuad::INVALID:
         break;
     }
@@ -731,6 +770,9 @@ TEST(DrawQuadTest, LargestQuadType) {
         break;
       case DrawQuad::YUV_VIDEO_CONTENT:
         LOG(ERROR) << "YUVVideoDrawQuad " << sizeof(YUVVideoDrawQuad);
+        break;
+      case DrawQuad::VIDEO_HOLE:
+        LOG(ERROR) << "VideoHoleDrawQuad " << sizeof(VideoHoleDrawQuad);
         break;
       case DrawQuad::INVALID:
         break;

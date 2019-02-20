@@ -84,6 +84,10 @@ class QUIC_EXPORT_PRIVATE QuicUtils {
   // once, or if it's a crypto packet we never expect to receive an ack for.
   static bool IsAckable(SentPacketState state);
 
+  // Returns true if frame with |type| is retransmittable. A retransmittable
+  // frame should be retransmitted if it is detected as lost.
+  static bool IsRetransmittableFrame(QuicFrameType type);
+
   // Returns packet state corresponding to |retransmission_type|.
   static SentPacketState RetransmissionTypeToPacketState(
       TransmissionType retransmission_type);
@@ -146,6 +150,19 @@ class QUIC_EXPORT_PRIVATE QuicUtils {
   // Generates a random 64bit connection ID using the provided QuicRandom.
   static QuicConnectionId CreateRandomConnectionId(QuicRandom* random,
                                                    Perspective perspective);
+
+  // Returns true if the QUIC version allows variable length connection IDs.
+  static bool VariableLengthConnectionIdAllowedForVersion(
+      QuicTransportVersion version);
+
+  // Returns true if the connection ID is valid for this QUIC version.
+  static bool IsConnectionIdValidForVersion(QuicConnectionId connection_id,
+                                            QuicTransportVersion version);
+
+  // Returns a connection ID suitable for QUIC use-cases that do not need the
+  // connection ID for multiplexing. If the version allows variable lengths,
+  // a connection of length zero is returned, otherwise 64bits set to zero.
+  static QuicConnectionId CreateZeroConnectionId(QuicTransportVersion version);
 
   // Generates a 128bit stateless reset token based on a connection ID.
   static QuicUint128 GenerateStatelessResetToken(

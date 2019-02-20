@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "ash/app_list/app_list_controller_observer.h"
 #include "ash/ash_export.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/session/session_observer.h"
@@ -15,6 +16,7 @@
 #include "ash/system/locale/locale_update_controller.h"
 #include "ash/wallpaper/wallpaper_controller_observer.h"
 #include "ash/wm/lock_state_observer.h"
+#include "ash/wm/overview/overview_observer.h"
 #include "ash/wm/wm_snap_to_pixel_layout_manager.h"
 #include "ash/wm/workspace/workspace_types.h"
 #include "base/macros.h"
@@ -49,7 +51,9 @@ class ShelfWidget;
 // closely with ShelfLayoutManager.
 // On mus, widget bounds management is handled by the window manager.
 class ASH_EXPORT ShelfLayoutManager
-    : public ShellObserver,
+    : public AppListControllerObserver,
+      public ShellObserver,
+      public OverviewObserver,
       public ::wm::ActivationChangeObserver,
       public keyboard::KeyboardControllerObserver,
       public LockStateObserver,
@@ -59,19 +63,6 @@ class ASH_EXPORT ShelfLayoutManager
       public WallpaperControllerObserver,
       public LocaleChangeObserver {
  public:
-  // The snapping threshold for dragging app list from shelf in tablet mode,
-  // measured in DIPs.
-  static constexpr int kAppListDragSnapToFullscreenThreshold = 320;
-
-  // The snapping thresholds for dragging app list from shelf in laptop mode,
-  // measured in DIPs.
-  static constexpr int kAppListDragSnapToClosedThreshold = 144;
-  static constexpr int kAppListDragSnapToPeekingThreshold = 561;
-
-  // The velocity the app list must be dragged in order to change the state of
-  // the app list for fling event, measured in DIPs/event.
-  static constexpr int kAppListDragVelocityThreshold = 6;
-
   ShelfLayoutManager(ShelfWidget* shelf_widget, Shelf* shelf);
   ~ShelfLayoutManager() override;
 
@@ -153,12 +144,18 @@ class ASH_EXPORT ShelfLayoutManager
   // ShellObserver:
   void OnShelfAutoHideBehaviorChanged(aura::Window* root_window) override;
   void OnPinnedStateChanged(aura::Window* pinned_window) override;
-  void OnAppListVisibilityChanged(bool shown,
-                                  aura::Window* root_window) override;
-  void OnOverviewModeStartingAnimationComplete(bool canceled) override;
-  void OnOverviewModeEndingAnimationComplete(bool canceled) override;
   void OnSplitViewModeStarted() override;
   void OnSplitViewModeEnded() override;
+
+  // OverviewObserver:
+  void OnOverviewModeStartingAnimationComplete(bool canceled) override;
+  void OnOverviewModeEndingAnimationComplete(bool canceled) override;
+
+  // AppListControllerObserver:
+  void OnAppListVisibilityChanged(bool shown, int64_t display_id) override;
+  void OnHomeLauncherTargetPositionChanged(bool showing,
+                                           int64_t display_id) override;
+  void OnHomeLauncherAnimationComplete(bool shown, int64_t display_id) override;
 
   // wm::ActivationChangeObserver:
   void OnWindowActivated(ActivationReason reason,
@@ -193,6 +190,10 @@ class ASH_EXPORT ShelfLayoutManager
   const gfx::Rect& user_work_area_bounds() const {
     return user_work_area_bounds_;
   }
+
+  // Returns the stable work area which is the work area when the shelf is
+  // visible.
+  gfx::Rect ComputeStableWorkArea() const;
 
   ShelfVisibilityState visibility_state() const {
     return state_.visibility_state;
@@ -287,8 +288,14 @@ class ASH_EXPORT ShelfLayoutManager
   // Stops any animations and progresses them to the end.
   void StopAnimating();
 
-  // Calculates the target bounds assuming visibility of |visible|.
-  void CalculateTargetBounds(const State& state, TargetBounds* target_bounds);
+  // Calculates the target bounds assuming visibility of
+  // |state.visibilty_state|, and returns the work area.
+  gfx::Rect CalculateTargetBounds(const State& state,
+                                  TargetBounds* target_bounds) const;
+
+  // Calculate the target bounds using |state_|, and updates the
+  // |user_work_area_bounds_|.
+  void CalculateTargetBoundsAndUpdateWorkArea(TargetBounds* target_bounds);
 
   // Updates the target bounds if a gesture-drag is in progress. This is only
   // used by |CalculateTargetBounds()|.
@@ -332,7 +339,7 @@ class ASH_EXPORT ShelfLayoutManager
   void UpdateShelfVisibilityAfterLoginUIChange();
 
   // Compute |target_bounds| opacity based on gesture and shelf visibility.
-  float ComputeTargetOpacity(const State& state);
+  float ComputeTargetOpacity(const State& state) const;
 
   // Returns true if there is a fullscreen window open that causes the shelf
   // to be hidden.
@@ -385,6 +392,14 @@ class ASH_EXPORT ShelfLayoutManager
   // Whether the app list is visible. This is maintained by
   // OnAppListVisibilityChanged.
   bool is_app_list_visible_ = false;
+
+  // Whether the HomeLauncher is being dragged to, or animating to fullscreen.
+  // This is maintained by OnHomeLauncherTargetPositionChanged.
+  bool is_home_launcher_target_position_shown_ = false;
+
+  // Whether the HomeLauncher is shown. This is maintained by
+  // OnHomeLauncherAnimationComplete.
+  bool is_home_launcher_shown_ = false;
 
   base::OneShotTimer auto_hide_timer_;
 

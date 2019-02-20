@@ -6,7 +6,10 @@ package org.chromium.chrome.browser.ntp;
 
 import android.os.SystemClock;
 import android.support.annotation.IntDef;
+import android.view.View;
+import android.view.ViewTreeObserver;
 
+import org.chromium.base.TimeUtils;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.browser.ChromeActivity;
@@ -22,7 +25,6 @@ import org.chromium.ui.base.PageTransition;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Records UMA stats for which actions the user takes on the NTP in the
@@ -121,13 +123,12 @@ public final class NewTabPageUma {
         int NUM_ENTRIES = 4;
     }
 
-    @IntDef({ContentSuggestionsDisplayStatus.VISIBLE, ContentSuggestionsDisplayStatus.COLLAPSED,
-            ContentSuggestionsDisplayStatus.DISABLED_BY_POLICY,
-            ContentSuggestionsDisplayStatus.NUM_ENTRIES})
-
     // These values are persisted to logs. Entries should not be renumbered and
     // numeric values should never be reused. This maps directly to
     // the ContentSuggestionsDisplayStatus enum defined in tools/metrics/enums.xml.
+    @IntDef({ContentSuggestionsDisplayStatus.VISIBLE, ContentSuggestionsDisplayStatus.COLLAPSED,
+            ContentSuggestionsDisplayStatus.DISABLED_BY_POLICY})
+    @Retention(RetentionPolicy.SOURCE)
     private @interface ContentSuggestionsDisplayStatus {
         int VISIBLE = 0;
         int COLLAPSED = 1;
@@ -272,12 +273,10 @@ public final class NewTabPageUma {
                 - IntentHandler.getTimestampFromIntent(activity.getIntent());
         if (activity.hadWarmStart()) {
             RecordHistogram.recordMediumTimesHistogram(
-                    "NewTabPage.SearchAvailableLoadTime2.WarmStart", timeFromIntent,
-                    TimeUnit.MILLISECONDS);
+                    "NewTabPage.SearchAvailableLoadTime2.WarmStart", timeFromIntent);
         } else {
             RecordHistogram.recordMediumTimesHistogram(
-                    "NewTabPage.SearchAvailableLoadTime2.ColdStart", timeFromIntent,
-                    TimeUnit.MILLISECONDS);
+                    "NewTabPage.SearchAvailableLoadTime2.ColdStart", timeFromIntent);
         }
     }
 
@@ -316,8 +315,8 @@ public final class NewTabPageUma {
             status = ContentSuggestionsDisplayStatus.COLLAPSED;
         }
 
-        RecordHistogram.recordEnumeratedHistogram("ContentSuggestions.Feed.DisplayStatus", status,
-                ContentSuggestionsDisplayStatus.NUM_ENTRIES);
+        RecordHistogram.recordEnumeratedHistogram("ContentSuggestions.Feed.DisplayStatusOnOpen",
+                status, ContentSuggestionsDisplayStatus.NUM_ENTRIES);
     }
 
     /**
@@ -330,5 +329,29 @@ public final class NewTabPageUma {
             if (!NewTabPage.isNTPUrl(tab.getUrl())) return;
             RecordUserAction.record("MobileNTPOpenedInNewTab");
         }
+    }
+
+    /**
+     * Setups up an onPreDraw listener for the given view to emit a metric exactly once. The view
+     * should be guaranteed to be shown on the page/screen on every load, otherwise the metric
+     * may not be emitted, or worse not emitted promptly.
+     * @param view The UI element to track.
+     * @param constructedTimeNs The timestamp at which the new tab page's construction started.
+     */
+    public static void trackTimeToFirstDraw(View view, long constructedTimeNs) {
+        // Use preDraw instead of draw because api level 25 and earlier doesn't seem to call the
+        // onDraw listener. Also, the onDraw version cannot be removed inside of the
+        // notification, which complicates this.
+        view.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                long timeToFirstDrawMs = (System.nanoTime() - constructedTimeNs)
+                        / TimeUtils.NANOSECONDS_PER_MILLISECOND;
+                RecordHistogram.recordTimesHistogram(
+                        "NewTabPage.TimeToFirstDraw2", timeToFirstDrawMs);
+                view.getViewTreeObserver().removeOnPreDrawListener(this);
+                return true;
+            }
+        });
     }
 }

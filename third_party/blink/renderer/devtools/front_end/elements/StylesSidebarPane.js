@@ -29,10 +29,9 @@
 
 Elements.StylesSidebarPane = class extends Elements.ElementsSidebarPane {
   constructor() {
-    super();
+    super(true /* delegatesFocus */);
     this.setMinimumSize(96, 26);
     this.registerRequiredCSS('elements/stylesSidebarPane.css');
-    this.element.tabIndex = -1;
 
     Common.moduleSetting('colorFormat').addChangeListener(this.update.bind(this));
     Common.moduleSetting('textEditorIndent').addChangeListener(this.update.bind(this));
@@ -95,7 +94,7 @@ Elements.StylesSidebarPane = class extends Elements.ElementsSidebarPane {
    * @return {!Element}
    */
   static createExclamationMark(property) {
-    const exclamationElement = createElement('label', 'dt-icon-label');
+    const exclamationElement = createElement('span', 'dt-icon-label');
     exclamationElement.className = 'exclamation-mark';
     if (!Elements.StylesSidebarPane.ignoreErrorsForProperty(property))
       exclamationElement.type = 'smallicon-warning';
@@ -404,11 +403,12 @@ Elements.StylesSidebarPane = class extends Elements.ElementsSidebarPane {
       return;
 
     const rule = treeElement.property.ownerStyle.parentRule;
-    const selectors = rule ? rule.selectorText() : undefined;
+    const selectorList = rule ? rule.selectorText() : undefined;
     for (const mode of ['padding', 'border', 'margin']) {
       if (!treeElement.name.startsWith(mode))
         continue;
-      this.node().domModel().overlayModel().highlightDOMNodeWithConfig(this.node().id, {mode, selectors});
+      this.node().domModel().overlayModel().highlightInOverlay(
+          {node: /** @type {!SDK.DOMNode} */ (this.node()), selectorList}, mode);
       this._isActivePropertyHighlighted = true;
       break;
     }
@@ -1105,8 +1105,8 @@ Elements.StylePropertiesSection = class {
     const node = this._parentPane.node();
     if (!node)
       return;
-    const selectors = this._style.parentRule ? this._style.parentRule.selectorText() : undefined;
-    node.domModel().overlayModel().highlightDOMNodeWithConfig(node.id, {mode, showInfo: undefined, selectors});
+    const selectorList = this._style.parentRule ? this._style.parentRule.selectorText() : undefined;
+    node.domModel().overlayModel().highlightInOverlay({node, selectorList}, mode);
   }
 
   /**

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
@@ -172,8 +173,16 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWebDialogBrowserTest, ReleaseWebContents) {
 
 // Tests that dialog autoresizes based on web contents when autoresizing
 // is enabled.
+// Flaky on CrOS: http://crbug.com/928924
+#if defined(OS_CHROMEOS)
+#define MAYBE_ContentResizeInAutoResizingDialog \
+  DISABLED_ContentResizeInAutoResizingDialog
+#else
+#define MAYBE_ContentResizeInAutoResizingDialog \
+  ContentResizeInAutoResizingDialog
+#endif
 IN_PROC_BROWSER_TEST_F(ConstrainedWebDialogBrowserTest,
-                       ContentResizeInAutoResizingDialog) {
+                       MAYBE_ContentResizeInAutoResizingDialog) {
   // During auto-resizing, dialogs size to (WebContents size) + 16.
   const int dialog_border_space = 16;
 
@@ -254,10 +263,18 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWebDialogBrowserTest,
 // ConstrainedWebDialogBrowserTest.ContentResizeInAutoResizingDialog but
 // has the surface synchronization flag turned on. Once surface synchronization
 // is on by default, this test can be deleted.
-// TODO(fsamuel): Fix tis for Mac too.
+// TODO(fsamuel): Fix this for Mac too.
 #if defined(USE_AURA)
+// Flaky on CrOS: http://crbug.com/928924
+#if defined(OS_CHROMEOS)
+#define MAYBE_ContentResizeInAutoResizingDialog \
+  DISABLED_ContentResizeInAutoResizingDialog
+#else
+#define MAYBE_ContentResizeInAutoResizingDialog \
+  ContentResizeInAutoResizingDialog
+#endif
 IN_PROC_BROWSER_TEST_F(ConstrainedWebDialogSurfaceSynchronizationBrowserTest,
-                       ContentResizeInAutoResizingDialog) {
+                       MAYBE_ContentResizeInAutoResizingDialog) {
   // During auto-resizing, dialogs size to (WebContents size) + 16.
   const int dialog_border_space = 16;
 

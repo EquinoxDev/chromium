@@ -159,6 +159,11 @@ void PreloadHelper::PreconnectIfNeeded(
   }
 }
 
+// Until the preload cache is defined in terms of range requests and media
+// fetches we can't reliably preload audio/video content and expect it to be
+// served from the cache correctly. Until
+// https://github.com/w3c/preload/issues/97 is resolved and implemented we need
+// to disable these preloads.
 base::Optional<ResourceType> PreloadHelper::GetResourceTypeFromAsAttribute(
     const String& as) {
   DCHECK_EQ(as.DeprecatedLower(), as);
@@ -168,10 +173,6 @@ base::Optional<ResourceType> PreloadHelper::GetResourceTypeFromAsAttribute(
     return ResourceType::kScript;
   if (as == "style")
     return ResourceType::kCSSStyleSheet;
-  if (as == "video")
-    return ResourceType::kVideo;
-  if (as == "audio")
-    return ResourceType::kAudio;
   if (as == "track")
     return ResourceType::kTextTrack;
   if (as == "font")
@@ -208,6 +209,7 @@ Resource* PreloadHelper::PreloadIfNeeded(
   KURL url;
   if (resource_type == ResourceType::kImage && !params.image_srcset.IsEmpty() &&
       RuntimeEnabledFeatures::PreloadImageSrcSetEnabled()) {
+    UseCounter::Count(document, WebFeature::kLinkRelPreloadImageSrcset);
     media_values = CreateMediaValues(document, viewport_description);
     float source_size =
         SizesAttributeParser(media_values, params.image_sizes).length();
@@ -253,7 +255,7 @@ Resource* PreloadHelper::PreloadIfNeeded(
   }
   ResourceRequest resource_request(url);
   resource_request.SetRequestContext(ResourceFetcher::DetermineRequestContext(
-      resource_type.value(), ResourceFetcher::kImageNotImageSet, false));
+      resource_type.value(), ResourceFetcher::kImageNotImageSet));
 
   resource_request.SetReferrerPolicy(params.referrer_policy);
 
@@ -282,7 +284,7 @@ Resource* PreloadHelper::PreloadIfNeeded(
                                      document.Fetcher());
 }
 
-// https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+// https://html.spec.whatwg.org/C/#link-type-modulepreload
 void PreloadHelper::ModulePreloadIfNeeded(
     const LinkLoadParameters& params,
     Document& document,
@@ -348,7 +350,7 @@ void PreloadHelper::ModulePreloadIfNeeded(
   }
 
   // Preload only if media matches.
-  // https://html.spec.whatwg.org/#processing-the-media-attribute
+  // https://html.spec.whatwg.org/C/#processing-the-media-attribute
   if (!params.media.IsEmpty()) {
     MediaValues* media_values =
         CreateMediaValues(document, viewport_description);
@@ -389,7 +391,8 @@ void PreloadHelper::ModulePreloadIfNeeded(
       params.href, destination,
       ScriptFetchOptions(params.nonce, integrity_metadata, params.integrity,
                          kNotParserInserted, credentials_mode,
-                         params.referrer_policy),
+                         params.referrer_policy,
+                         mojom::FetchImportanceMode::kImportanceAuto),
       Referrer::NoReferrer(), TextPosition::MinimumPosition());
 
   // Step 11. "Fetch a single module script given url, settings object,
@@ -519,6 +522,8 @@ Resource* PreloadHelper::StartPreload(ResourceType type,
       resource = RawResource::FetchImport(params, resource_fetcher, nullptr);
       break;
     case ResourceType::kRaw:
+      params.MutableResourceRequest().SetUseStreamOnResponse(true);
+      params.MutableOptions().data_buffering_policy = kDoNotBufferData;
       resource = RawResource::Fetch(params, resource_fetcher, nullptr);
       break;
     default:

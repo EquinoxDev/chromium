@@ -62,7 +62,7 @@
             </div>
           </div>
         </div>
-        <div id="offline-content-list" hidden>
+        <div id="offline-content-list" class="list-hidden" hidden>
           <div id="offline-content-list-visibility-card"
               onclick="toggleOfflineContentListVisibility(true)">
             <div id="offline-content-list-title"
@@ -117,12 +117,6 @@
             jsselect="reloadButton"
             jsvalues=".url:reloadUrl; .trackingId:reloadTrackingId"
             jscontent="msg"></button>
-        <button id="show-saved-copy-button"
-            class="blue-button text-button"
-            onclick="showSavedCopyButtonClick()"
-            jsselect="showSavedCopyButton"
-            jscontent="msg" jsvalues="title:title; .primary:primary">
-        </button>
         <button id="download-button"
             class="blue-button text-button"
             onclick="downloadButtonClick()"

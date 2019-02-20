@@ -390,7 +390,7 @@ bool LayoutBlockFlow::CheckIfIsSelfCollapsingBlock() const {
       StyleRef().MarginAfterCollapse() == EMarginCollapse::kSeparate)
     return false;
 
-  Length logical_height_length = StyleRef().LogicalHeight();
+  const Length& logical_height_length = StyleRef().LogicalHeight();
   bool has_auto_height = logical_height_length.IsAuto();
   if (logical_height_length.IsPercentOrCalc() &&
       !GetDocument().InQuirksMode()) {
@@ -2560,14 +2560,9 @@ bool LayoutBlockFlow::AreCachedLinesValidFor(const NGConstraintSpace&) const {
   return false;
 }
 
-void LayoutBlockFlow::SetPaintFragment(const NGBreakToken*,
-                                       scoped_refptr<const NGPhysicalFragment>,
-                                       NGPhysicalOffset) {}
-
-void LayoutBlockFlow::UpdatePaintFragmentFromCachedLayoutResult(
-    const NGBreakToken*,
-    scoped_refptr<const NGPhysicalFragment>,
-    NGPhysicalOffset) {}
+void LayoutBlockFlow::SetPaintFragment(
+    const NGBlockBreakToken*,
+    scoped_refptr<const NGPhysicalFragment>) {}
 
 void LayoutBlockFlow::ComputeVisualOverflow(
     bool recompute_floats) {
@@ -2582,10 +2577,6 @@ void LayoutBlockFlow::ComputeVisualOverflow(
       HasSelfPaintingLayer())
     AddVisualOverflowFromFloats();
   if (VisualOverflowRect() != previous_visual_overflow_rect) {
-    if (Layer()) {
-      Layer()->SetNeedsCompositingInputsUpdate(
-          PaintLayer::DoesNotNeedDescendantDependentUpdate);
-    }
     SetShouldCheckForPaintInvalidation();
     GetFrameView()->SetIntersectionObservationState(LocalFrameView::kDesired);
   }

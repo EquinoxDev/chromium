@@ -51,7 +51,6 @@
 #include "third_party/zlib/google/compression_utils.h"
 #include "ui/base/layout.h"
 #include "ui/events/gestures/blink/web_gesture_curve_impl.h"
-#include "ui/events/keycodes/dom/keycode_converter.h"
 
 using blink::WebData;
 using blink::WebLocalizedString;
@@ -108,10 +107,10 @@ static int ToMessageID(WebLocalizedString::Name name) {
       return IDS_AX_MEDIA_ENTER_PICTURE_IN_PICTURE_BUTTON;
     case WebLocalizedString::kAXMediaExitPictureInPictureButton:
       return IDS_AX_MEDIA_EXIT_PICTURE_IN_PICTURE_BUTTON;
-    case WebLocalizedString::kAXMediaShowClosedCaptionsButton:
-      return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_BUTTON;
-    case WebLocalizedString::kAXMediaHideClosedCaptionsButton:
-      return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_BUTTON;
+    case WebLocalizedString::kAXMediaShowClosedCaptionsMenuButton:
+      return IDS_AX_MEDIA_SHOW_CLOSED_CAPTIONS_MENU_BUTTON;
+    case WebLocalizedString::kAXMediaHideClosedCaptionsMenuButton:
+      return IDS_AX_MEDIA_HIDE_CLOSED_CAPTIONS_MENU_BUTTON;
     case WebLocalizedString::kAXMediaCastOffButton:
       return IDS_AX_MEDIA_CAST_OFF_BUTTON;
     case WebLocalizedString::kAXMediaCastOnButton:
@@ -588,8 +587,9 @@ WebString BlinkPlatformImpl::QueryLocalizedString(WebLocalizedString::Name name,
 }
 
 bool BlinkPlatformImpl::AllowScriptExtensionForServiceWorker(
-    const blink::WebURL& scriptUrl) {
-  return GetContentClient()->AllowScriptExtensionForServiceWorker(scriptUrl);
+    const blink::WebSecurityOrigin& script_origin) {
+  return GetContentClient()->AllowScriptExtensionForServiceWorker(
+      script_origin);
 }
 
 blink::WebCrypto* BlinkPlatformImpl::Crypto() {
@@ -678,31 +678,6 @@ size_t BlinkPlatformImpl::MaxDecodedImageBytes() {
 
 bool BlinkPlatformImpl::IsLowEndDevice() {
   return base::SysInfo::IsLowEndDevice();
-}
-
-WebString BlinkPlatformImpl::DomCodeStringFromEnum(int dom_code) {
-  return WebString::FromUTF8(ui::KeycodeConverter::DomCodeToCodeString(
-      static_cast<ui::DomCode>(dom_code)));
-}
-
-int BlinkPlatformImpl::DomEnumFromCodeString(const WebString& code) {
-  return static_cast<int>(
-      ui::KeycodeConverter::CodeStringToDomCode(code.Utf8()));
-}
-
-WebString BlinkPlatformImpl::DomKeyStringFromEnum(int dom_key) {
-  return WebString::FromUTF8(ui::KeycodeConverter::DomKeyToKeyString(
-      static_cast<ui::DomKey>(dom_key)));
-}
-
-int BlinkPlatformImpl::DomKeyEnumFromString(const WebString& key_string) {
-  return static_cast<int>(
-      ui::KeycodeConverter::KeyStringToDomKey(key_string.Utf8()));
-}
-
-bool BlinkPlatformImpl::IsDomKeyForModifier(int dom_key) {
-  return ui::KeycodeConverter::IsDomKeyForModifier(
-      static_cast<ui::DomKey>(dom_key));
 }
 
 scoped_refptr<base::SingleThreadTaskRunner> BlinkPlatformImpl::GetIOTaskRunner()

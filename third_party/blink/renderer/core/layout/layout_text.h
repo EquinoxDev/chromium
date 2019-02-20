@@ -86,7 +86,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
 
   const char* GetName() const override { return "LayoutText"; }
 
-  virtual bool IsTextFragment() const;
+  bool IsTextFragment() const { return is_text_fragment_; }
   virtual bool IsWordBreak() const;
 
   virtual scoped_refptr<StringImpl> OriginalText() const;
@@ -105,7 +105,7 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   // Returns first letter part of |LayoutTextFragment|.
   virtual LayoutText* GetFirstLetterPart() const { return nullptr; }
 
-  InlineTextBox* CreateInlineTextBox(int start, unsigned short length);
+  InlineTextBox* CreateInlineTextBox(int start, uint16_t length);
   void DirtyOrDeleteLineBoxesIfNeeded(bool full_layout);
   void DirtyLineBoxes();
 
@@ -314,10 +314,10 @@ class CORE_EXPORT LayoutText : public LayoutObject {
                                        unsigned* start,
                                        unsigned* end) const;
 
-  void AddInlineItem(NGInlineItem* item);
+  void SetInlineItems(NGInlineItem* begin, NGInlineItem* end);
   void ClearInlineItems();
   bool HasValidInlineItems() const { return valid_ng_items_; }
-  const Vector<NGInlineItem*>& InlineItems() const;
+  const NGInlineItems& InlineItems() const;
   // Inline items depends on context. It needs to be invalidated not only when
   // it was inserted/changed but also it was moved.
   void InvalidateInlineItems() { valid_ng_items_ = false; }
@@ -340,9 +340,8 @@ class CORE_EXPORT LayoutText : public LayoutObject {
       const LayoutRect& container_rect,
       TouchAction container_whitelisted_touch_action) const override;
 
-  virtual InlineTextBox* CreateTextBox(
-      int start,
-      unsigned short length);  // Subclassed by SVG.
+  virtual InlineTextBox* CreateTextBox(int start,
+                                       uint16_t length);  // Subclassed by SVG.
 
   void InvalidateDisplayItemClients(PaintInvalidationReason) const override;
 
@@ -427,6 +426,8 @@ class CORE_EXPORT LayoutText : public LayoutObject {
   unsigned contains_reversed_text_ : 1;
   mutable unsigned known_to_have_no_overflow_and_no_fallback_fonts_ : 1;
   unsigned contains_only_whitespace_or_nbsp_ : 2;
+
+  unsigned is_text_fragment_ : 1;
 
  private:
   // Used for LayoutNG with accessibility. True if inline fragments are

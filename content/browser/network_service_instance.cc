@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/environment.h"
 #include "base/feature_list.h"
@@ -128,14 +129,15 @@ CONTENT_EXPORT network::mojom::NetworkService* GetNetworkServiceFromConnector(
 
           base::File file(log_path, base::File::FLAG_CREATE_ALWAYS |
                                         base::File::FLAG_WRITE);
-          LOG_IF(ERROR, !file.IsValid())
-              << "Failed opening: " << log_path.value();
-
-          // TODO(mmenke): Get capture mode from the command line.
-          (*g_network_service_ptr)
-              ->StartNetLog(std::move(file),
-                            network::mojom::NetLogCaptureMode::DEFAULT,
-                            std::move(client_constants));
+          if (!file.IsValid()) {
+            LOG(ERROR) << "Failed opening: " << log_path.value();
+          } else {
+            // TODO(mmenke): Get capture mode from the command line.
+            (*g_network_service_ptr)
+                ->StartNetLog(std::move(file),
+                              network::mojom::NetLogCaptureMode::DEFAULT,
+                              std::move(client_constants));
+          }
         }
       }
 

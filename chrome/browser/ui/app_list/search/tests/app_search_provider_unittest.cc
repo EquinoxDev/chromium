@@ -14,6 +14,7 @@
 #include "ash/public/cpp/app_list/app_list_features.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_clock.h"
@@ -29,6 +30,7 @@
 #include "chrome/browser/ui/app_list/extension_app_model_builder.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/app_list/search/search_result_ranker/app_search_result_ranker.h"
+#include "chrome/browser/ui/app_list/search/search_result_ranker/ranking_item_util.h"
 #include "chrome/browser/ui/app_list/test/fake_app_list_model_updater.h"
 #include "chrome/browser/ui/app_list/test/test_app_list_controller_delegate.h"
 #include "chrome/common/chrome_constants.h"
@@ -204,7 +206,9 @@ class AppSearchProviderTest : public AppListTestBase {
   ArcAppTest& arc_test() { return arc_test_; }
 
   // Train the |app_search| provider with id.
-  void Train(const std::string& id) { app_search_->Train(id); }
+  void Train(const std::string& id) {
+    app_search_->Train(id, RankingItemType::kApp);
+  }
 
   sync_sessions::SyncedSessionTracker* session_tracker() {
     return session_tracker_.get();
@@ -824,7 +828,7 @@ TEST_P(AppSearchProviderWithExtensionInstallType, InstallInernallyRanking) {
             RunQuery(kRankingAppQuery));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ,
     AppSearchProviderWithExtensionInstallType,
     ::testing::ValuesIn({TestExtensionInstallType::CONTROLLED_BY_POLICY,
@@ -915,7 +919,7 @@ TEST_P(AppSearchProviderWithArcAppInstallType,
             RunQuery(kRankingAppQuery));
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     ,
     AppSearchProviderWithArcAppInstallType,
     ::testing::ValuesIn({TestArcAppInstallType::CONTROLLED_BY_POLICY,

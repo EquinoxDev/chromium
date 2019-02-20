@@ -91,6 +91,7 @@ class ASH_EXPORT LoginScreenController : public mojom::LoginScreen,
   void ShowResetScreen();
   void ShowAccountAccessHelpApp();
   void FocusOobeDialog();
+  void NotifyUserActivity();
 
   // Add or remove an observer.
   void AddObserver(LoginScreenControllerObserver* observer);
@@ -157,7 +158,8 @@ class ASH_EXPORT LoginScreenController : public mojom::LoginScreen,
   void SetShutdownButtonEnabled(bool enable) override;
   void SetAllowLoginAsGuest(bool allow_guest) override;
   void SetShowGuestButtonInOobe(bool show) override;
-  void SetShowParentAccess(bool show) override;
+  void SetShowParentAccessButton(bool show) override;
+  void SetShowParentAccessDialog(bool show) override;
   void FocusLoginShelf(bool reverse) override;
 
   // Flushes the mojo pipes - to be used in tests.

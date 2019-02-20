@@ -129,10 +129,6 @@ void NavigationContextImpl::SetResponseHeaders(
   response_headers_ = response_headers;
 }
 
-void NavigationContextImpl::SetIsRendererInitiated(bool is_renderer_initiated) {
-  is_renderer_initiated_ = is_renderer_initiated;
-}
-
 int NavigationContextImpl::GetNavigationItemUniqueID() const {
   return navigation_item_unique_id_;
 }
@@ -181,6 +177,14 @@ bool NavigationContextImpl::IsPlaceholderNavigation() const {
 
 void NavigationContextImpl::SetPlaceholderNavigation(bool flag) {
   is_placeholder_navigation_ = flag;
+}
+
+void NavigationContextImpl::SetMimeType(NSString* mime_type) {
+  mime_type_ = mime_type;
+}
+
+NSString* NavigationContextImpl::GetMimeType() const {
+  return mime_type_;
 }
 
 NavigationContextImpl::NavigationContextImpl(WebState* web_state,

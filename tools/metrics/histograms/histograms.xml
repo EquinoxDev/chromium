@@ -26439,7 +26439,7 @@ uploading your change for review.
   <summary>Status of drive cache metadata database open.</summary>
 </histogram>
 
-<histogram name="Drive.DeltaFeedLoadTime" units="ms" expires_after="M74">
+<histogram name="Drive.DeltaFeedLoadTime" units="ms" expires_after="M75">
   <owner>slangley@chromium.org</owner>
   <owner>weifangsun@chromium.org</owner>
   <summary>
@@ -26447,7 +26447,7 @@ uploading your change for review.
   </summary>
 </histogram>
 
-<histogram name="Drive.DirectoryFeedLoadTime" units="ms" expires_after="M74">
+<histogram name="Drive.DirectoryFeedLoadTime" units="ms" expires_after="M75">
   <owner>slangley@chromium.org</owner>
   <owner>weifangsun@chromium.org</owner>
   <summary>
@@ -26523,7 +26523,7 @@ uploading your change for review.
   </summary>
 </histogram>
 
-<histogram name="Drive.FullFeedLoadTime" units="ms" expires_after="M74">
+<histogram name="Drive.FullFeedLoadTime" units="ms" expires_after="M75">
   <owner>slangley@chromium.org</owner>
   <owner>weifangsun@chromium.org</owner>
   <summary>
@@ -56926,8 +56926,7 @@ uploading your change for review.
   <summary>
     Tracks events when the currently navigated domain name is a lookalike to one
     of the top 10K domains or a domain that the user interacted with, resulting
-    in a navigation suggestion in the form of &quot;Did you mean to go to
-    ...&quot;.
+    in a navigation suggestion interstitial.
   </summary>
 </histogram>
 
